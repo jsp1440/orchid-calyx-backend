@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -13,7 +14,6 @@ from app.brain_mission.service import (
     MemoryMissionRepository,
     MissionComponents,
 )
-from app.evidence_retrieval.routes import ENGINE
 from app.security import verify_owner_or_api_key
 from app.semantic_index.memory_repository import MemoryIndexRepository
 
@@ -72,9 +72,7 @@ def test_mission_fails_closed_when_adapter_is_unavailable():
 
 
 def test_canonical_source_reconstruction_requires_exact_active_index_identity(monkeypatch):
-    original_repo = ENGINE.repo
     test_repo = MemoryIndexRepository()
-    ENGINE.repo = test_repo
     monkeypatch.setattr(
         "app.brain_mission.routes.semantic_index_routes.get_repository_for_read",
         lambda: test_repo,
@@ -131,7 +129,39 @@ def test_canonical_source_reconstruction_requires_exact_active_index_identity(mo
             ExistingBrainMissionAdapter._canonical_source(result)
     finally:
         test_repo.documents[:] = original_documents
-        ENGINE.repo = original_repo
+
+
+
+def test_taxonomy_snapshot_identity_is_derived_only_from_explicit_evidence_metadata():
+    evidence = [
+        SimpleNamespace(
+            metadata={
+                "taxonomy_release_id": "world-plants:2.1.2026",
+                "taxon_identity": {
+                    "taxonomy_snapshot_id": "world-plants:2.1.2026",
+                },
+            }
+        ),
+        SimpleNamespace(
+            metadata={"taxonomy_snapshot_id": "world-plants:2.1.2026"}
+        ),
+    ]
+
+    assert ExistingBrainMissionAdapter._taxonomy_snapshot_ids(evidence) == (
+        "world-plants:2.1.2026",
+    )
+
+
+def test_taxonomy_snapshot_identity_remains_unavailable_when_missing_or_conflicting():
+    assert ExistingBrainMissionAdapter._taxonomy_snapshot_ids(
+        [SimpleNamespace(metadata={"taxon": "Phalaenopsis"})]
+    ) == ()
+    assert ExistingBrainMissionAdapter._taxonomy_snapshot_ids(
+        [
+            SimpleNamespace(metadata={"taxonomy_release_id": "release-a"}),
+            SimpleNamespace(metadata={"taxonomy_release_id": "release-b"}),
+        ]
+    ) == ("release-a", "release-b")
 
 
 def test_mission_api_derives_tenant_from_auth_and_hides_cross_tenant_status(monkeypatch):

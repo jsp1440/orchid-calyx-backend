@@ -1,3 +1,7 @@
+from dataclasses import replace
+
+import pytest
+
 from app.evals.improvement_discovery import (
     ImprovementDiscoveryEngine,
     ImprovementEligibility,
@@ -7,7 +11,7 @@ from app.evals.improvement_discovery import (
     PriorImprovementOutcome,
     material_change_fingerprint,
 )
-from app.evals.models import StrategyDecisionState
+from app.evals.models import MeasurementState, StrategyDecisionState
 
 
 def signal(*, material="m1", risk="low", value=0.72):
@@ -66,11 +70,17 @@ def test_no_benefit_is_suppressed_until_material_change():
         signal_material_fingerprint="m1",
         decision_state=StrategyDecisionState.KEEP_BASELINE,
     )
-    assert engine.classify_eligibility(sig, hyp, [prior]) == ImprovementEligibility.SUPPRESSED_NO_BENEFIT
+    assert (
+        engine.classify_eligibility(sig, hyp, [prior])
+        == ImprovementEligibility.SUPPRESSED_NO_BENEFIT
+    )
 
     changed = signal(material="m2", value=0.61)
     changed_hyp = hypothesis(changed)
-    assert engine.classify_eligibility(changed, changed_hyp, [prior]) == ImprovementEligibility.ELIGIBLE
+    assert (
+        engine.classify_eligibility(changed, changed_hyp, [prior])
+        == ImprovementEligibility.ELIGIBLE
+    )
 
 
 def test_queue_packet_requires_evals_and_never_auto_promotes():
@@ -82,9 +92,13 @@ def test_queue_packet_requires_evals_and_never_auto_promotes():
     assert packet.labels == ("oc-queued", "oc-p1")
     assert packet.requires_evaluation is True
     assert packet.auto_promotable is False
-    assert "OC-EVALS baseline/candidate evidence is required before promotion" in packet.body
+    assert (
+        "OC-EVALS baseline/candidate evidence is required before promotion"
+        in packet.body
+    )
     assert "rollback strategy: `baseline-fp`" in packet.body
-    assert "OC-QUEUE-CAPABILITY: improvement:bounded-hypothesis:v1" in packet.body
+    assert f"OC-QUEUE-CAPABILITY: {packet.capability}" in packet.body
+    assert hyp.candidate_material_fingerprint in packet.capability
 
 
 def test_high_risk_hypothesis_is_owner_gated_not_auto_promotable():
@@ -92,8 +106,11 @@ def test_high_risk_hypothesis_is_owner_gated_not_auto_promotable():
     sig = signal(risk="high")
     hyp = hypothesis(sig)
 
-    assert engine.classify_eligibility(sig, hyp) == ImprovementEligibility.REQUIRES_OWNER
+    assert (
+        engine.classify_eligibility(sig, hyp) == ImprovementEligibility.REQUIRES_OWNER
+    )
     packet = engine.build_queue_packet(sig, hyp)
+    assert packet.labels == ("oc-blocked", "oc-p1")
     assert "owner approval required: `true`" in packet.body
     assert packet.auto_promotable is False
 
@@ -109,7 +126,9 @@ def test_scientific_memory_summary_is_compact_evidence_not_reasoning():
     engine = ImprovementDiscoveryEngine()
     sig = signal()
     hyp = hypothesis(sig)
-    summary = engine.scientific_memory_summary(sig, hyp, ImprovementEligibility.ELIGIBLE)
+    summary = engine.scientific_memory_summary(
+        sig, hyp, ImprovementEligibility.ELIGIBLE
+    )
 
     assert summary["schema"] == "oc.improvement-discovery-memory.v1"
     assert summary["rollback_strategy_fingerprint"] == "baseline-fp"
@@ -121,3 +140,100 @@ def test_material_change_fingerprint_changes_with_material_payload():
     a = material_change_fingerprint({"eval_version": "1", "score": 0.7})
     b = material_change_fingerprint({"eval_version": "2", "score": 0.7})
     assert a != b
+
+
+@pytest.mark.parametrize("state", list(StrategyDecisionState))
+def test_queue_admission_enforces_prior_outcomes(state):
+    engine = ImprovementDiscoveryEngine()
+    sig = signal()
+    hyp = hypothesis(sig)
+    outcome = PriorImprovementOutcome(hyp.fingerprint, sig.material_fingerprint, state)
+    with pytest.raises(ValueError, match="suppressed"):
+        engine.build_queue_packet(sig, hyp, prior_outcomes=[outcome])
+
+
+def test_editorial_changes_do_not_evade_no_benefit_suppression():
+    engine = ImprovementDiscoveryEngine()
+    sig = signal()
+    hyp = hypothesis(sig)
+    outcome = PriorImprovementOutcome(
+        hyp.fingerprint,
+        sig.material_fingerprint,
+        StrategyDecisionState.KEEP_BASELINE,
+        hyp.candidate_material_fingerprint,
+    )
+    reworded = replace(hyp, proposed_change="Same candidate, different description.")
+    assert reworded.fingerprint != hyp.fingerprint
+    with pytest.raises(ValueError, match="suppressed"):
+        engine.build_queue_packet(sig, reworded, prior_outcomes=[outcome])
+    changed_sig = signal(material="new-evaluator-version")
+    changed = hypothesis(changed_sig)
+    assert engine.build_queue_packet(changed_sig, changed, prior_outcomes=[outcome])
+
+
+def test_capability_identity_separates_candidates_and_preserves_editorial_replay():
+    engine = ImprovementDiscoveryEngine()
+    sig = signal()
+    hyp = hypothesis(sig)
+    first = engine.build_queue_packet(sig, hyp)
+    reworded = engine.build_queue_packet(
+        sig, replace(hyp, expected_effect="Clearer wording.")
+    )
+    other = engine.build_queue_packet(
+        sig, replace(hyp, candidate_strategy_ref="candidate:other:v1")
+    )
+    assert first.capability == reworded.capability
+    assert first.capability != other.capability
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("signal_fingerprint", "stale"),
+        ("material_fingerprint", "stale"),
+        ("task_class_id", "other"),
+        ("risk_class", "high"),
+        ("rollback_strategy_fingerprint", ""),
+        ("rollback_strategy_fingerprint", "unrelated"),
+        ("baseline_strategy_fingerprint", ""),
+        ("evaluation_plan", ()),
+        ("evidence_refs", ()),
+    ],
+)
+def test_queue_admission_rejects_unbound_or_incomplete_hypotheses(field, value):
+    sig = signal()
+    with pytest.raises(ValueError):
+        ImprovementDiscoveryEngine().build_queue_packet(
+            sig, replace(hypothesis(sig), **{field: value})
+        )
+
+
+def test_unknown_unavailable_and_measured_zero_remain_distinct():
+    engine = ImprovementDiscoveryEngine()
+    missing = signal(value=None)
+    unavailable = replace(missing, measurement_state=MeasurementState.UNAVAILABLE)
+    zero = signal(value=0)
+    states = []
+    for sig in (missing, unavailable, zero):
+        hyp = hypothesis(sig)
+        summary = engine.scientific_memory_summary(
+            sig, hyp, engine.classify_eligibility(sig, hyp)
+        )
+        states.append(summary["measurement"])
+    assert states == [
+        {"state": "UNKNOWN", "value": None},
+        {"state": "UNAVAILABLE", "value": None},
+        {"state": "MEASURED", "value": 0},
+    ]
+    assert missing.fingerprint != unavailable.fingerprint
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("nan"), True])
+def test_invalid_measured_values_fail_closed(value):
+    with pytest.raises(ValueError):
+        signal(value=value)
+
+
+def test_version_is_part_of_signal_identity():
+    sig = signal()
+    assert replace(sig, version="2").fingerprint != sig.fingerprint

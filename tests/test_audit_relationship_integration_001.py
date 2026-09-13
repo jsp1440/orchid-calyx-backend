@@ -84,3 +84,78 @@ def test_missing_provenance_is_an_integrity_issue():
     assert report["knowledge_graph_node_edge_integrity"]["issues"][0]["issue"] == (
         "missing_provenance"
     )
+
+
+def _mycorrhiza_link(status: str, record_id: str) -> RelationshipLink:
+    return RelationshipLink(
+        source_domain="taxonomy",
+        source_record_id="tax-1",
+        target_domain="mycorrhiza",
+        target_record_id=record_id,
+        relationship_type="associated_with",
+        taxon_id="tax-1",
+        match_method="exact",
+        provenance={"source": "study-1"},
+        validation_status=status,
+    )
+
+
+def test_withdrawn_links_are_not_counted_as_coverage():
+    """A rejected or superseded link is not knowledge the Continuum holds.
+
+    Counting it reported coverage that had been thrown out — the exact failure
+    this audit exists to detect, happening inside the audit itself.
+    """
+    report = RelationshipIntegrationAudit(
+        [_mycorrhiza_link("rejected", "m1"), _mycorrhiza_link("superseded", "m2")]
+    ).report()
+    coverage = report["coverage"]["taxonomy_to_mycorrhiza"]
+
+    assert coverage["present"] is False
+    assert coverage["link_count"] == 0
+    assert coverage["linked_taxa"] == 0
+    assert "taxonomy_to_mycorrhiza" in report["missing_relationships"]
+
+
+def test_withdrawn_is_distinguished_from_never_asserted():
+    """Both have no coverage, and they call for opposite next actions.
+
+    A domain nobody has worked on needs curation started. A domain whose every
+    assertion was thrown out needs the rejections read. Reporting them as one
+    state sends the reader to the wrong work.
+    """
+    report = RelationshipIntegrationAudit([_mycorrhiza_link("rejected", "m1")]).report()
+
+    assert report["coverage"]["taxonomy_to_mycorrhiza"]["coverage_state"] == "withdrawn"
+    assert report["coverage"]["taxonomy_to_mycorrhiza"]["withdrawn_link_count"] == 1
+    # Pollinators were never asserted at all in this audit.
+    assert (
+        report["coverage"]["taxonomy_to_pollinators"]["coverage_state"]
+        == "never_asserted"
+    )
+    assert report["coverage"]["taxonomy_to_pollinators"]["withdrawn_link_count"] == 0
+
+
+def test_a_standing_link_still_counts_when_a_sibling_was_withdrawn():
+    """Withdrawing one assertion does not withdraw the domain."""
+    coverage = RelationshipIntegrationAudit(
+        [_mycorrhiza_link("verified", "m1"), _mycorrhiza_link("rejected", "m2")]
+    ).report()["coverage"]["taxonomy_to_mycorrhiza"]
+
+    assert coverage["present"] is True
+    assert coverage["link_count"] == 1
+    assert coverage["verified_links"] == 1
+    assert coverage["withdrawn_link_count"] == 1
+    assert coverage["coverage_state"] == "present"
+
+
+def test_provisional_links_still_count_as_coverage():
+    """Unreviewed is not withdrawn. A provisional assertion still asserts."""
+    coverage = RelationshipIntegrationAudit(
+        [_mycorrhiza_link("provisional", "m1")]
+    ).report()["coverage"]["taxonomy_to_mycorrhiza"]
+
+    assert coverage["present"] is True
+    assert coverage["link_count"] == 1
+    # But it is not verified, and the report must not imply that it is.
+    assert coverage["verified_links"] == 0

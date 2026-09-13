@@ -254,6 +254,11 @@ class ConstitutionalMissionOrchestrator:
             ]
         ):
             policies.append(self.policies["owner_approval_for_high_risk"])
+        if any(
+            term in lower
+            for term in ["audit", "finding", "remediation", "followthrough", "follow_through"]
+        ):
+            policies.append(self.policies["audit_requires_followthrough"])
         if any(term in lower for term in ["literature", "relationship", "pollinator", "mycorrhiza", "matrix"]):
             policies.append(self.policies["distinguish_evidence_from_inference"])
         if any(term in lower for term in ["homepage", "frontend", "university", "grant", "lesson"]):
@@ -313,6 +318,18 @@ class ConstitutionalMissionOrchestrator:
                 principle="Scientific outputs must distinguish established evidence, interpretation, hypothesis, and uncertainty.",
                 max_autonomy_level=AutonomyLevel.PROPOSE,
                 requires_rollback=True,
+                requires_provenance=True,
+            ),
+            ConstitutionalPolicy(
+                policy_id="audit_requires_followthrough",
+                title="Audits must create follow-through work",
+                principle=(
+                    "An audit is not complete when it produces findings. Every actionable finding "
+                    "must carry a terminal disposition or durable remediation work traceable to the "
+                    "originating audit; narrative-only completion is prohibited."
+                ),
+                max_autonomy_level=AutonomyLevel.TRUSTED_EXECUTION,
+                requires_rollback=False,
                 requires_provenance=True,
             ),
             ConstitutionalPolicy(

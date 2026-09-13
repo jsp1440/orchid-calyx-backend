@@ -18,3 +18,4 @@ cryptography>=44,<46
 httpx
 PyYAML>=6
 scipy>=1.11
+Pillow
