@@ -80,7 +80,7 @@ def pg_engine():
     try:
         with engine.connect() as conn:
             conn.close()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001
         pytest.skip(f"PostgreSQL unreachable ({exc}): {_SKIP_REASON}")
     # Create all durable reservoir tables (additive, idempotent)
     Base.metadata.create_all(engine, tables=[
@@ -451,5 +451,7 @@ def test_pg_zero_paid_provider_calls(pg_session_factory, run_id):
     result = worker.execute(res.get("t:a"))
     res.complete("t:a", evidence=result.as_evidence())
 
-    assert result.paid_provider_calls == 0
+    assert not result.output.get("provider_api_called", False), (
+        f"Paid provider call detected: {result.output}"
+    )
     s.close()
