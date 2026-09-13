@@ -196,8 +196,13 @@ class BoundedDispatcher:
         return result
 
 
-def _active_count(reservoir: DeepOrchestrate) -> int:
-    """Count tasks currently in an active (leased/running/validating) state."""
-    from .deep_orchestrate import _ACTIVE
+def _active_count(reservoir) -> int:
+    """Count tasks currently in an active (leased/running/validating) state.
 
-    return sum(1 for t in reservoir._tasks.values() if t.state in _ACTIVE)
+    Works with both DeepOrchestrate (in-memory _tasks dict) and DurableOrchestrate
+    (DB-backed active_tasks() method).
+    """
+    if hasattr(reservoir, "_tasks"):
+        from .deep_orchestrate import _ACTIVE
+        return sum(1 for t in reservoir._tasks.values() if t.state in _ACTIVE)
+    return len(reservoir.active_tasks())
