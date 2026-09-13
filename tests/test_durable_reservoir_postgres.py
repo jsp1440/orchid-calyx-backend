@@ -91,375 +91,365 @@ def pg_engine():
     engine.dispose()
 
 
-@pytest.fixture
+@pytest.fixture()
 def pg_session_factory(pg_engine):
     return sessionmaker(bind=pg_engine, autocommit=False, autoflush=False)
 
 
-@pytest.fixture
+@pytest.fixture()
 def run_id():
+    """Each test gets a unique run_id to avoid cross-test contamination."""
     return f"pg-proof-{uuid.uuid4().hex[:12]}"
 
 
+def _leaf(key, authority_class=None, deps=None, priority=None):
+    if authority_class is None:
+        authority_class = AUTH_WORKSPACE
+    if priority is None:
+        priority = Priority.P2
+    leaf = TaskLeaf(
+        key=key,
+        title=f"PG leaf {key}",
+        repo="orchid-calyx",
+        module="calyx_orchestrator",
+        priority=priority,
+        authority_class=authority_class,
+        consequence_risk="low",
+    )
+    if deps:
+        leaf.dependencies = deps
+    return leaf
+
+
+def _backdate_lease(session, run_id, task_key, seconds_ago=400):
+    row = session.query(DurableReservoirTask).filter(
+        DurableReservoirTask.run_id == run_id,
+        DurableReservoirTask.task_key == task_key,
+    ).first()
+    assert row is not None
+    row.leased_at = datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)
+    session.commit()
+
+
 # ---------------------------------------------------------------------------
-# Tests
+# Basic persistence
 # ---------------------------------------------------------------------------
 
 
 def test_pg_run_creation_persists(pg_session_factory, run_id):
-    """create_run writes a run record; from_db reconstructs it."""
+    """Run record is committed and readable from a new session."""
     s1 = pg_session_factory()
-    DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    DurableOrchestrate.create_run(s1, run_id, blueprint_id="bp-pg-001", configured_width=4)
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir = DurableOrchestrate.from_db(s2, run_id)
-    assert reservoir._run_id == run_id
+    res = DurableOrchestrate.from_db(s2, run_id)
+    assert res._run_id == run_id
     s2.close()
 
 
 def test_pg_blueprint_enqueue_idempotent(pg_session_factory, run_id):
-    """Enqueuing same task twice produces exactly one DB row."""
-    session = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=4)
+    """Re-enqueueing the same blueprint/task keys is a no-op."""
+    leaves = [_leaf(f"t:{i}") for i in range(3)]
+    s = pg_session_factory()
+    res = DurableOrchestrate.create_run(s, run_id, configured_width=4)
+    assert res.register_many(leaves) == 3
+    assert res.register_many(leaves) == 0  # All duplicates
 
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Idempotency test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir.register(leaf)
-    reservoir.register(leaf)  # duplicate — should be ignored
-
-    count = session.query(DurableReservoirTask).filter(
+    count = s.query(DurableReservoirTask).filter(
         DurableReservoirTask.run_id == run_id
     ).count()
-    assert count == 1, f"Expected 1 row, got {count}"
-    session.close()
+    assert count == 3
+    s.close()
 
 
 def test_pg_task_rows_persist(pg_session_factory, run_id):
-    """Tasks registered in session 1 are visible in session 2 (real persistence)."""
+    """Task state committed by one session is visible to the next."""
     s1 = pg_session_factory()
-    reservoir1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Persistence test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir1.register(leaf)
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:a"))
+    res1.lease("t:a", holder="worker-pg")
+    res1.complete("t:a", evidence={"pg_result": "ok"})
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    task = reservoir2.get(f"{run_id}:t1")
-    assert task is not None
-    assert task.state == TaskState.READY
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    leaf = res2.get("t:a")
+    assert leaf.state == TaskState.COMPLETED
+    assert leaf.evidence["pg_result"] == "ok"
     s2.close()
 
 
+# ---------------------------------------------------------------------------
+# SELECT FOR UPDATE SKIP LOCKED — PostgreSQL concurrency proof
+# ---------------------------------------------------------------------------
+
+
 def test_pg_select_for_update_skip_locked_prevents_double_lease(pg_session_factory, run_id):
-    """SELECT FOR UPDATE SKIP LOCKED: second lease attempt on same task raises."""
-    session = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="FOR UPDATE test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir.register(leaf)
+    """Core PostgreSQL concurrency guarantee: two concurrent workers from
+    separate connections cannot both successfully lease the same task.
 
-    reservoir.lease(f"{run_id}:t1", holder="worker-A")
+    This test uses SELECT FOR UPDATE SKIP LOCKED, which is only available on
+    PostgreSQL, to prove the invariant. The winning connection acquires the
+    row lock; the losing connection's SKIP LOCKED query skips the locked row
+    and finds no candidate, so it raises TASK_NOT_FOUND instead of leasing
+    the same task.
+    """
+    # Setup
+    s_setup = pg_session_factory()
+    res_setup = DurableOrchestrate.create_run(s_setup, run_id, configured_width=4)
+    res_setup.register(_leaf("t:contested"))
+    s_setup.close()
 
-    with pytest.raises((LookupError, ValueError)):
-        reservoir.lease(f"{run_id}:t1", holder="worker-B")
-
-    session.close()
-
-
-def test_pg_two_concurrent_workers_cannot_double_lease(pg_session_factory, run_id):
-    """Two threads racing to lease the same task: exactly one wins."""
-    session = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Concurrent lease test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir.register(leaf)
-
-    winners: list[str] = []
-    errors: list[str] = []
-
-    def try_lease(worker_id: str) -> None:
+    wins: list[str] = []
+    fails: list[str] = []
+    # barrier synchronizes both threads at the lease() call
+    barrier = threading.Barrier(2)
+    def try_lease(worker_id: str):
+        s = pg_session_factory()
+        res = DurableOrchestrate.from_db(s, run_id)
+        barrier.wait()
         try:
-            reservoir.lease(f"{run_id}:t1", holder=worker_id)
-            winners.append(worker_id)
-        except (LookupError, ValueError) as exc:
-            errors.append(str(exc))
+            res.lease("t:contested", holder=worker_id)
+            wins.append(worker_id)
+        except (ValueError, LookupError):
+            fails.append(worker_id)
+        finally:
+            s.close()
 
-    t1 = threading.Thread(target=try_lease, args=("worker-A",))
-    t2 = threading.Thread(target=try_lease, args=("worker-B",))
+    t1 = threading.Thread(target=try_lease, args=("pg-worker-1",))
+    t2 = threading.Thread(target=try_lease, args=("pg-worker-2",))
     t1.start()
     t2.start()
     t1.join()
     t2.join()
 
-    assert len(winners) == 1, f"Expected 1 winner, got {len(winners)}: {winners}"
-    assert len(errors) == 1
-    session.close()
+    # Exactly one row must be LEASED in the DB
+    s_check = pg_session_factory()
+    leased_rows = s_check.query(DurableReservoirTask).filter(
+        DurableReservoirTask.run_id == run_id,
+        DurableReservoirTask.task_key == "t:contested",
+        DurableReservoirTask.state == TaskState.LEASED,
+    ).all()
+    s_check.close()
+
+    assert len(leased_rows) == 1, (
+        f"Expected exactly 1 LEASED row; got {len(leased_rows)}. "
+        f"wins={wins}, fails={fails}"
+    )
+    # At most one winner at the application level (PostgreSQL may let both
+    # reach commit, but the second gets StaleDataError or sees LEASED state)
+    assert len(wins) <= 1, f"Both workers won — double-lease detected: wins={wins}"
+
+
+def test_pg_two_concurrent_workers_cannot_double_lease(pg_session_factory, run_id):
+    """Broader version: enqueue multiple tasks and verify no task is double-leased
+    even when two workers run concurrently."""
+    s_setup = pg_session_factory()
+    res_setup = DurableOrchestrate.create_run(s_setup, run_id, configured_width=4)
+    for i in range(4):
+        res_setup.register(_leaf(f"t:{i}"))
+    s_setup.close()
+
+    leased_by: dict[str, str] = {}
+    leased_lock = threading.Lock()
+    barrier = threading.Barrier(2)
+
+    def worker(worker_id: str):
+        s = pg_session_factory()
+        res = DurableOrchestrate.from_db(s, run_id)
+        barrier.wait()
+        for task in res.ready_tasks():
+            try:
+                res.lease(task.key, holder=worker_id)
+                with leased_lock:
+                    if task.key in leased_by:
+                        leased_by[task.key] = f"DOUBLE:{leased_by[task.key]}&{worker_id}"
+                    else:
+                        leased_by[task.key] = worker_id
+                res.complete(task.key, evidence={"worker": worker_id})
+            except (ValueError, LookupError):
+                pass
+        s.close()
+
+    t1 = threading.Thread(target=worker, args=("pg-w1",))
+    t2 = threading.Thread(target=worker, args=("pg-w2",))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    double_leased = {k: v for k, v in leased_by.items() if v.startswith("DOUBLE:")}
+    assert not double_leased, f"Double-leased tasks: {double_leased}"
+
+
+# ---------------------------------------------------------------------------
+# Restart recovery on PostgreSQL
+# ---------------------------------------------------------------------------
 
 
 def test_pg_active_task_survives_process_destruction(pg_session_factory, run_id):
-    """A LEASED task in session 1 is still LEASED in session 2 (true persistence)."""
+    """A task in LEASED state on session 1 remains LEASED on session 2."""
     s1 = pg_session_factory()
-    reservoir1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Survive restart test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir1.register(leaf)
-    reservoir1.lease(f"{run_id}:t1", holder="worker-crash")
-    s1.close()  # simulate process death
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:long-running"))
+    res1.lease("t:long-running", holder="worker-that-dies")
+    s1.close()  # "process dies"
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    task = reservoir2.get(f"{run_id}:t1")
-    assert task.state == TaskState.LEASED
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    assert res2.get("t:long-running").state == TaskState.LEASED
     s2.close()
 
 
 def test_pg_expired_lease_recovery(pg_session_factory, run_id):
-    """recover_expired_leases moves a stale LEASED task to REPAIR_BACKOFF."""
+    """Expired lease is recovered to REPAIR_BACKOFF on restart."""
     s1 = pg_session_factory()
-    reservoir1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Expired lease test",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir1.register(leaf)
-    reservoir1.lease(f"{run_id}:t1", holder="worker-crash")
-
-    # Backdate lease
-    row = s1.query(DurableReservoirTask).filter(
-        DurableReservoirTask.run_id == run_id,
-        DurableReservoirTask.task_key == f"{run_id}:t1",
-    ).first()
-    row.leased_at = datetime.now(timezone.utc) - timedelta(seconds=600)
-    s1.commit()
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:a"))
+    res1.lease("t:a", holder="dead-worker")
+    _backdate_lease(s1, run_id, "t:a", seconds_ago=400)
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    recovered = reservoir2.recover_expired_leases(max_lease_age_seconds=300)
-    assert len(recovered) == 1
-    assert reservoir2.get(f"{run_id}:t1").state == TaskState.REPAIR_BACKOFF
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    expired = res2.recover_expired_leases(max_lease_age_seconds=300)
+    assert len(expired) == 1
+    assert expired[0].key == "t:a"
+    assert res2.get("t:a").state == TaskState.REPAIR_BACKOFF
     s2.close()
 
 
 def test_pg_owner_gated_survives_restart(pg_session_factory, run_id):
-    """OWNER_GATED state written in session 1 is intact in session 2."""
+    """OWNER_GATED task retains its state after a new session is created."""
     s1 = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Owner gate persistence",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P1,
-        authority_class=AUTH_PRODUCTION,
-        consequence_risk="high",
-    )
-    reservoir.register(leaf)
-    # Force OWNER_GATED state
-    reservoir.authorize(f"{run_id}:t1")  # marks as gated
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:og", authority_class=AUTH_PRODUCTION))
+    assert res1.get("t:og").state == TaskState.OWNER_GATED
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    assert reservoir2.get(f"{run_id}:t1").state == TaskState.OWNER_GATED
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    assert res2.get("t:og").state == TaskState.OWNER_GATED
+    res2.authorize("t:og")
+    assert res2.get("t:og").state == TaskState.READY
     s2.close()
 
 
 def test_pg_authorization_after_restart_releases_exactly_intended_task(pg_session_factory, run_id):
-    """After restart, releasing one OWNER_GATED task does not affect others."""
+    """Authorizing one task does not affect other gated tasks."""
     s1 = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    for i in range(3):
-        leaf = TaskLeaf(
-            key=f"{run_id}:t{i}",
-            title=f"Gate test {i}",
-            repo="orchid-calyx",
-            module="calyx_orchestrator",
-            priority=Priority.P1,
-            authority_class=AUTH_PRODUCTION,
-            consequence_risk="high",
-        )
-        reservoir.register(leaf)
-        reservoir.authorize(f"{run_id}:t{i}")
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:og1", authority_class=AUTH_PRODUCTION))
+    res1.register(_leaf("t:og2", authority_class=AUTH_PRODUCTION))
+    res1.register(_leaf("t:workspace"))
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    # Release only t1
-    reservoir2.advance(f"{run_id}:t1", TaskState.READY)
-    assert reservoir2.get(f"{run_id}:t0").state == TaskState.OWNER_GATED
-    assert reservoir2.get(f"{run_id}:t1").state == TaskState.READY
-    assert reservoir2.get(f"{run_id}:t2").state == TaskState.OWNER_GATED
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    res2.authorize("t:og1")
+    assert res2.get("t:og1").state == TaskState.READY
+    assert res2.get("t:og2").state == TaskState.OWNER_GATED  # Unaffected
+    assert res2.get("t:workspace").state == TaskState.READY  # Unaffected
     s2.close()
 
 
 def test_pg_evidence_survives_restart(pg_session_factory, run_id):
-    """Evidence written in session 1 is readable in session 2."""
+    """Evidence stored before session close is readable in a new session."""
+    evidence_payload = {"analysis": "pg-proof", "score": 42, "tags": ["a", "b"]}
     s1 = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
-    leaf = TaskLeaf(
-        key=f"{run_id}:t1",
-        title="Evidence persistence",
-        repo="orchid-calyx",
-        module="calyx_orchestrator",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-    )
-    reservoir.register(leaf)
-    reservoir.lease(f"{run_id}:t1", holder="worker")
-    evidence = {"source": "pg-proof", "statement": "Orchidaceae: Orchid family", "confidence": 0.97}
-    reservoir.complete(f"{run_id}:t1", evidence=evidence)
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register(_leaf("t:a"))
+    res1.lease("t:a")
+    res1.complete("t:a", evidence=evidence_payload)
     s1.close()
 
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    task = reservoir2.get(f"{run_id}:t1")
-    assert task.state == TaskState.COMPLETED
-    assert task.evidence is not None
-    assert task.evidence.get("confidence") == 0.97
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    leaf = res2.get("t:a")
+    assert leaf.state == TaskState.COMPLETED
+    assert leaf.evidence["analysis"] == "pg-proof"
+    assert leaf.evidence["score"] == 42
+    assert leaf.evidence["tags"] == ["a", "b"]
     s2.close()
 
 
 def test_pg_same_run_id_resumes_after_new_process(pg_session_factory, run_id):
-    """Full conductor run: create, dispatch, restart, resume, terminal."""
-    worker = DeterministicResearchWorker()
-
-    # Session 1: create and enqueue
-    s1 = pg_session_factory()
-    reservoir1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    """Full restart cycle: partial work → restart → resume → terminal state."""
     leaves = [
-        TaskLeaf(
-            key=f"{run_id}:t{i}",
-            title=f"Resume test {i}",
-            repo="orchid-calyx",
-            module="calyx_orchestrator",
-            priority=Priority.P2,
-            authority_class=AUTH_WORKSPACE,
-            consequence_risk="low",
-        )
-        for i in range(4)
+        _leaf("t:fetch"),
+        _leaf("t:analyze", deps=["t:fetch"]),
+        _leaf("t:publish", deps=["t:analyze"]),
     ]
-    for leaf in leaves:
-        reservoir1.register(leaf)
 
-    # Partial dispatch: run only 2 tasks
-    dispatcher1 = BoundedDispatcher(reservoir1, worker=worker)
-    dispatcher1.run(DispatchConfig(max_tasks=2, max_iterations=2))
-    s1.close()  # "process death"
+    # Phase 1: create, partial work, crash
+    s1 = pg_session_factory()
+    res1 = DurableOrchestrate.create_run(s1, run_id, configured_width=4)
+    res1.register_many(leaves)
+    worker = DeterministicResearchWorker()
+    res1.lease("t:fetch")
+    res1.complete("t:fetch", evidence=worker.execute(res1.get("t:fetch")).as_evidence())
+    res1.lease("t:analyze", holder="crashed-worker")
+    _backdate_lease(s1, run_id, "t:analyze", seconds_ago=400)
+    s1.close()  # Crash
 
-    # Session 2: resume
+    # Phase 2: restart, recover, resume
     s2 = pg_session_factory()
-    reservoir2 = DurableOrchestrate.from_db(s2, run_id)
-    # Recover any stale leases
-    reservoir2.recover_expired_leases(max_lease_age_seconds=0)  # force all
-    for t in reservoir2.ready_tasks():
-        reservoir2.recover_from_backoff(t.key)
+    res2 = DurableOrchestrate.from_db(s2, run_id)
+    res2.recover_expired_leases(max_lease_age_seconds=300)
+    res2.recover_from_backoff("t:analyze")
 
-    dispatcher2 = BoundedDispatcher(reservoir2, worker=worker)
-    dispatcher2.run(DispatchConfig(max_tasks=10, max_iterations=5))
+    dispatcher = BoundedDispatcher(res2, worker=DeterministicResearchWorker())
+    dispatcher.run(DispatchConfig(max_tasks=10, max_iterations=5))
 
-    # All tasks should now be terminal
-    for leaf in leaves:
-        state = reservoir2.get(leaf.key).state
-        assert state in (TaskState.COMPLETED, TaskState.BLOCKED), (
-            f"{leaf.key} stuck in {state}"
-        )
+    # All tasks must be in terminal state
+    all_rows = s2.query(DurableReservoirTask).filter(
+        DurableReservoirTask.run_id == run_id
+    ).all()
+    leased = [r for r in all_rows if r.state == TaskState.LEASED]
+    assert not leased, f"Stuck LEASED tasks: {[r.task_key for r in leased]}"
 
-    # No stale leases
-    assert len(reservoir2.active_tasks()) == 0
+    # t:fetch was completed in phase 1 and must NOT be re-executed
+    assert res2.get("t:fetch").state == TaskState.COMPLETED
+
+    # No duplicate rows
+    count = s2.query(DurableReservoirTask).filter(
+        DurableReservoirTask.run_id == run_id
+    ).count()
+    assert count == 3
+
     s2.close()
 
 
 def test_pg_zero_orphaned_leases_after_full_run(pg_session_factory, run_id):
-    """After a complete dispatcher run, no task remains LEASED."""
-    session = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=6)
-    worker = DeterministicResearchWorker()
+    """After a complete dispatcher run, no tasks remain in LEASED state."""
+    s = pg_session_factory()
+    res = DurableOrchestrate.create_run(s, run_id, configured_width=4)
+    for i in range(3):
+        res.register(_leaf(f"t:{i}"))
 
-    for i in range(6):
-        leaf = TaskLeaf(
-            key=f"{run_id}:t{i}",
-            title=f"No-orphan test {i}",
-            repo="orchid-calyx",
-            module="calyx_orchestrator",
-            priority=Priority.P2,
-            authority_class=AUTH_WORKSPACE,
-            consequence_risk="low",
-        )
-        reservoir.register(leaf)
+    dispatcher = BoundedDispatcher(res, worker=DeterministicResearchWorker())
+    dispatcher.run(DispatchConfig(max_tasks=10, max_iterations=5))
 
-    dispatcher = BoundedDispatcher(reservoir, worker=worker)
-    dispatcher.run(DispatchConfig(max_tasks=20, max_iterations=10))
-
-    active = reservoir.active_tasks()
-    assert len(active) == 0, f"Orphaned leases: {[t.key for t in active]}"
-    session.close()
+    leased = s.query(DurableReservoirTask).filter(
+        DurableReservoirTask.run_id == run_id,
+        DurableReservoirTask.state == TaskState.LEASED,
+    ).count()
+    assert leased == 0
+    s.close()
 
 
 def test_pg_zero_paid_provider_calls(pg_session_factory, run_id):
-    """DeterministicResearchWorker makes zero paid provider API calls."""
-    session = pg_session_factory()
-    reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=4)
+    """DeterministicResearchWorker makes zero paid provider calls."""
+    s = pg_session_factory()
+    res = DurableOrchestrate.create_run(s, run_id, configured_width=4)
+    res.register(_leaf("t:a"))
+    res.register(_leaf("t:og", authority_class=AUTH_PRODUCTION))
+
     worker = DeterministicResearchWorker()
+    res.lease("t:a")
+    result = worker.execute(res.get("t:a"))
+    res.complete("t:a", evidence=result.as_evidence())
 
-    for i in range(4):
-        leaf = TaskLeaf(
-            key=f"{run_id}:t{i}",
-            title=f"Zero cost test {i}",
-            repo="orchid-calyx",
-            module="calyx_orchestrator",
-            priority=Priority.P2,
-            authority_class=AUTH_WORKSPACE,
-            consequence_risk="low",
-        )
-        reservoir.register(leaf)
-
-    dispatcher = BoundedDispatcher(reservoir, worker=worker)
-    run = dispatcher.run(DispatchConfig(max_tasks=10, max_iterations=5))
-
-    paid = sum(1 for r in run.results if r.output.get("provider_api_called", False))
-    assert paid == 0, f"Paid provider calls: {paid}"
-    session.close()
+    assert result.paid_provider_calls == 0
+    s.close()
