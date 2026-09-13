@@ -1,17 +1,21 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Annotated, Any
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+
+from app.parallel_platform.reasoning_contract_bridge import DomainLiteral
+from app.security import verify_owner_or_api_key
 
 from .blueprint import (
     BlueprintValidationError,
     ResearchBlueprint,
     decompose_governed_action,
 )
+from .candidate_proposal import build_candidate_knowledge_proposal
 from .claim_verification import CHECK_CALYX_VERSION, verify_claim
 from .discovery import (
     BibliographicVerificationService,
@@ -304,7 +308,6 @@ def build_manifest(payload: RunManifestIn):
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
 
-
 # ── Governance Admission Check ─────────────────────────────────────────────
 
 
@@ -414,3 +417,36 @@ def build_blueprint(payload: BlueprintIn) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
     return blueprint.summary()
+
+
+# ── Proposal-only Candidate Knowledge Handoff ─────────────────────────────────
+
+
+class CandidateProposalIn(BaseModel):
+    manifest: dict[str, Any]
+    verification_packet: dict[str, Any]
+    domain: DomainLiteral
+    source_object_type: str = Field(min_length=1)
+    source_object_id: int = Field(gt=0)
+    revision_id: int = Field(gt=0)
+    extraction_run_id: int = Field(gt=0)
+
+
+@router.post("/candidate-proposal")
+def prepare_candidate_proposal(
+    payload: CandidateProposalIn,
+    _owner: Annotated[Any, Depends(verify_owner_or_api_key)],
+) -> dict[str, Any]:
+    """Prepare a review-only canonical handoff; never persist or mutate knowledge."""
+    try:
+        return build_candidate_knowledge_proposal(
+            manifest=payload.manifest,
+            verification_packet=payload.verification_packet,
+            domain=payload.domain,
+            source_object_type=payload.source_object_type,
+            source_object_id=payload.source_object_id,
+            revision_id=payload.revision_id,
+            extraction_run_id=payload.extraction_run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
