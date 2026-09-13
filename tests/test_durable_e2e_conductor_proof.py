@@ -449,7 +449,9 @@ class TestDurableConductorProof:
             human_review_required = True
             task_leaves = (ws_leaf, og_leaf)
 
-        from app.calyx_orchestrator.blueprint_run_report import build_blueprint_run_report
+        from app.calyx_orchestrator.blueprint_run_report import (
+            build_blueprint_run_report,
+        )
 
         # Build a report that shows awaiting_owner_gate
         report = build_blueprint_run_report(_MiniBP(), run1, reservoir2)
