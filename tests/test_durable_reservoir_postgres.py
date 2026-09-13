@@ -74,9 +74,14 @@ except ImportError:
 @pytest.fixture(scope="module")
 def pg_engine():
     """Create a dedicated test schema on the live Postgres instance."""
-    if not (POSTGRES_URL.startswith("postgresql") and _HAS_PSYCOPG2):
+    if not (POSTGRES_URL.startswith("postgresql") and _HAS_PSYCOPG2 and IMPORTS_OK):
         pytest.skip(_SKIP_REASON)
     engine = create_engine(POSTGRES_URL, poolclass=NullPool)
+    try:
+        with engine.connect() as conn:
+            conn.close()
+    except Exception as exc:
+        pytest.skip(f"PostgreSQL unreachable ({exc}): {_SKIP_REASON}")
     # Create all durable reservoir tables (additive, idempotent)
     Base.metadata.create_all(engine, tables=[
         Base.metadata.tables["calyx_reservoir_runs"],
@@ -97,7 +102,11 @@ def run_id():
     return f"pg-proof-{uuid.uuid4().hex[:12]}"
 
 
-def _leaf(key, authority_class=AUTH_WORKSPACE, deps=None, priority=Priority.P2):
+def _leaf(key, authority_class=None, deps=None, priority=None):
+    if authority_class is None:
+        authority_class = AUTH_WORKSPACE
+    if priority is None:
+        priority = Priority.P2
     leaf = TaskLeaf(
         key=key,
         title=f"PG leaf {key}",
