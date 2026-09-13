@@ -675,3 +675,81 @@ def test_all_non_gated_steps_complete_not_blocked():
             f"Step '{step}' blocked unexpectedly: {result.error_reason}"
         )
         assert result.output.get("provider_api_called") is False
+
+
+# ---------------------------------------------------------------------------
+# Regression: authorized OWNER_GATED tasks ARE dispatched (was: skipped)
+# ---------------------------------------------------------------------------
+
+
+def test_authorized_owner_gated_task_is_dispatched():
+    """Regression: reservoir.authorize() moves task OWNER_GATED → READY.
+    After authorization the dispatcher MUST execute the task, not skip it.
+
+    Bug: _collect_ready_keys() was checking leaf.authority_class in
+    _OWNER_GATE_CLASSES, which permanently blocked AUTH_PRODUCTION tasks even
+    after they were explicitly authorized via reservoir.authorize(). The fix
+    checks leaf.state == OWNER_GATED instead (ready_tasks() only returns READY
+    leaves, so this is a belt-and-suspenders guard only).
+    """
+    from app.calyx_orchestrator.bounded_dispatcher import (
+        BoundedDispatcher,
+        DispatchConfig,
+    )
+    from app.calyx_orchestrator.deep_orchestrate import (
+        AUTH_PRODUCTION,
+        AUTH_WORKSPACE,
+        DeepOrchestrate,
+        Priority,
+        TaskLeaf,
+        TaskState,
+    )
+    from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
+
+    res = DeepOrchestrate(configured_width=4)
+    worker = DeterministicResearchWorker()
+
+    ws = TaskLeaf(
+        key="reg:t1:retrieve-evidence",
+        title="ws",
+        repo="r",
+        module="m",
+        priority=Priority.P1,
+        authority_class=AUTH_WORKSPACE,
+        consequence_risk="low",
+    )
+    og = TaskLeaf(
+        key="reg:t2:canonical-mutation",
+        title="og",
+        repo="r",
+        module="m",
+        priority=Priority.P1,
+        authority_class=AUTH_PRODUCTION,
+        consequence_risk="high",
+        dependencies=[ws.key],
+    )
+    res.register(ws)
+    res.register(og)
+    res.refill()
+
+    # Initial dispatch: ws completes; og stays OWNER_GATED.
+    d1 = BoundedDispatcher(res, worker=worker)
+    run1 = d1.run(DispatchConfig(max_tasks=5, max_iterations=3))
+    assert res.get(ws.key).state == TaskState.COMPLETED
+    assert res.get(og.key).state == TaskState.OWNER_GATED
+    assert run1.tasks_executed == 1
+
+    # Explicitly authorize the OWNER_GATED task.
+    res.authorize(og.key)
+    assert res.get(og.key).state == TaskState.READY
+
+    # Second dispatch: og is now READY and MUST be executed (not skipped).
+    d2 = BoundedDispatcher(res, worker=worker)
+    run2 = d2.run(DispatchConfig(max_tasks=5, max_iterations=3))
+    assert run2.tasks_executed == 1, (
+        f"Authorized OWNER_GATED task was skipped by dispatcher! "
+        f"tasks_executed={run2.tasks_executed}, og state={res.get(og.key).state}"
+    )
+    assert res.get(og.key).state in (TaskState.COMPLETED, TaskState.BLOCKED), (
+        f"og task stuck in unexpected state: {res.get(og.key).state}"
+    )
