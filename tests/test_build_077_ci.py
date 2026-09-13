@@ -122,3 +122,19 @@ def test_pr_workflow_has_no_path_to_configured_database():
     assert pr["run"] == "python -m scripts.build_077_ci"
     assert configured["if"] == "github.event_name != 'pull_request'"
     assert configured["env"]["DATABASE_URL"] == "${{ secrets.DATABASE_URL }}"
+
+
+def test_complete_suite_environment_installs_scientific_and_async_dependencies():
+    workflow = yaml.safe_load(
+        Path(".github/workflows/build-077-postgres-validation.yml").read_text()
+    )
+    steps = workflow["jobs"]["postgres-validation"]["steps"]
+    setup = next(
+        step for step in steps if step.get("uses") == "actions/setup-python@v5"
+    )
+    assert setup["with"]["python-version"] == "3.12"
+    install = next(
+        step for step in steps if step.get("name") == "Install backend dependencies"
+    )
+    assert "-r requirements-scientific.txt" in install["run"]
+    assert "pytest-asyncio" in install["run"]

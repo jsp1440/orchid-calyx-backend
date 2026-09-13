@@ -60,9 +60,9 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - name: Install backend dependencies
-        run: pip install -r requirements.txt pytest httpx
+        run: pip install -r requirements.txt -r requirements-scientific.txt pytest pytest-asyncio httpx
       - name: Validate BUILD-077 against isolated PR PostgreSQL
         if: github.event_name == 'pull_request'
         env:
