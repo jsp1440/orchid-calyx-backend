@@ -308,7 +308,6 @@ def build_manifest(payload: RunManifestIn):
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
 
-
 # ── Governance Admission Check ─────────────────────────────────────────────
 
 
@@ -418,7 +417,6 @@ def build_blueprint(payload: BlueprintIn) -> dict[str, Any]:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
 
     return blueprint.summary()
-
 
 
 # ── Proposal-only Candidate Knowledge Handoff ─────────────────────────────────
