@@ -19,13 +19,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from runtime.portfolio_steward_reconciler import _filter_prepared, _issue_to_leaf
 from scripts.oc_portfolio_steward_reconcile import (
     LabelDispatcher,
     LabelDispatchReceipt,
     build_frontend_snapshot,
     run_reconciliation,
 )
-from runtime.portfolio_steward_reconciler import _filter_prepared, _issue_to_leaf
 
 # ---------------------------------------------------------------------------
 # Shared fixtures (mirror orchid-continuum-frontend issue state)
@@ -180,21 +180,11 @@ def test_6_unchanged_fingerprint_zero_repeated_transitions():
     assert first["admitted_count"] == 1
     assert len(dispatcher1.receipts()) == 1
 
-    # Build snapshot representing #660 already queued
-    admitted_numbers = first["admitted_numbers"]
+    # Verify first pass produced at least one proposal
     proposals = first["report"]["bridge_result"].get("proposals", [])
     assert proposals, "First pass must yield at least one proposal"
-    fp = proposals[0]["material_fingerprint"]
-    sk = proposals[0]["semantic_key"]
 
-    snapshot_with_660 = {
-        "issues": [{"number": 660, "labels": ["oc-queued"],
-                    "material_fingerprint": fp, "semantic_key": sk}],
-        "leases": [],
-        "dispatch_fingerprints": [],
-    }
-
-    # Second pass — fingerprint already present
+    # Second pass — #660 now appears as oc-queued in all_issues; snapshot excludes it
     dispatcher2 = LabelDispatcher(execute=False)
     second = run_reconciliation(
         [_ISSUE_660], [_ISSUE_QUEUED], dispatcher=dispatcher2, reserve_depth=1

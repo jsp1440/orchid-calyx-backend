@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Portfolio Steward Reconciliation CLI — workflow entry point.
 
 Reads oc-prepared issues from the frontend repository, builds a deduplication
@@ -30,12 +29,11 @@ import sys
 from dataclasses import dataclass
 from typing import Any
 
+from runtime.deep_orchestrate_queue_bridge import _fingerprint as _leaf_fingerprint
 from runtime.portfolio_steward_reconciler import (
     _issue_to_leaf,
-    _filter_prepared,
     reconcile,
 )
-from runtime.deep_orchestrate_queue_bridge import _fingerprint as _leaf_fingerprint
 
 _QUEUED_LABELS = frozenset({"oc-queued", "oc-running", "oc-validating", "oc-done"})
 _SCHEMA = "oc.portfolio-steward-workflow-bridge.v1"
@@ -76,6 +74,7 @@ class LabelDispatcher:
                 ],
                 capture_output=True,
                 text=True,
+                check=False,
             )
             if result.returncode == 0:
                 receipt = LabelDispatchReceipt(
@@ -195,8 +194,7 @@ def _write_github_output(path: str, result: dict[str, Any]) -> None:
         "no_api_mode=true",
     ]
     with open(path, "a") as fh:
-        for line in lines:
-            fh.write(line + "\n")
+        fh.writelines(line + "\n" for line in lines)
 
 
 def main(argv: list[str] | None = None) -> int:
