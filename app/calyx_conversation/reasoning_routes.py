@@ -15,6 +15,7 @@ from app.evidence_retrieval.models import RetrievalQuery
 from app.security import verify_owner_or_api_key
 from runtime.knowledge_graph import PostgresGraphRepository
 
+from .adaptive_communication import VoiceProfile, render_adaptive_answer
 from .routes import ENGINE
 
 router = APIRouter(
@@ -40,6 +41,7 @@ class CalyxReasoningQueryRequest(CalyxReasoningMapRequest):
     evidence_limit: int = Field(default=8, ge=1, le=25)
     internal_access: bool = True
     pathway_limit: int = Field(default=5, ge=1, le=20)
+    voice_profile: VoiceProfile | None = None
 
 
 def _graph_repository() -> PostgresGraphRepository:
@@ -174,16 +176,39 @@ def reasoning_query(payload: CalyxReasoningQueryRequest) -> dict[str, Any]:
     except (ValueError, TypeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+    canonical_answer = compose_reasoning_answer(
+        payload.message,
+        reasoning,
+        retrieval,
+        pathway_limit=payload.pathway_limit,
+    )
+
+    if payload.voice_profile is None:
+        answer = canonical_answer
+        communication = {
+            "mode": "canonical",
+            "profile": None,
+            "scientific_firewall_passed": True,
+            "fallback_used": False,
+            "provider_free": True,
+        }
+    else:
+        rendered = render_adaptive_answer(canonical_answer, payload.voice_profile)
+        answer = rendered.answer
+        communication = {
+            "mode": rendered.mode,
+            "profile": rendered.profile.model_dump(),
+            "scientific_firewall_passed": rendered.firewall_passed,
+            "fallback_used": rendered.fallback_used,
+            "provider_free": True,
+        }
+
     return {
-        "answer": compose_reasoning_answer(
-            payload.message,
-            reasoning,
-            retrieval,
-            pathway_limit=payload.pathway_limit,
-        ),
+        "answer": answer,
         "reasoning_map": reasoning,
         "retrieval": retrieval,
         "question": payload.message,
+        "communication": communication,
         "epistemic_policy": {
             "continuum_first": True,
             "reasoning_map_read_only": True,
