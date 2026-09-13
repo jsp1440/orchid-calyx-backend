@@ -34,6 +34,26 @@ def _request_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _governed_taxonomy_snapshot_id(governed_context: dict[str, Any]) -> str | None:
+    """Return one explicit, agreeing taxonomy snapshot identity or fail closed."""
+
+    mission = governed_context.get("mission") or {}
+    containers = (
+        mission.get("artifacts") or {},
+        mission,
+        governed_context.get("continuum") or {},
+        governed_context.get("retrieval") or {},
+    )
+    identities = {
+        str(container.get(key) or "").strip()
+        for container in containers
+        if isinstance(container, dict)
+        for key in ("taxonomy_snapshot_id", "taxonomy_release_id")
+        if str(container.get(key) or "").strip()
+    }
+    return next(iter(identities)) if len(identities) == 1 else None
+
+
 def _scientific_system_prompt() -> str:
     scientific_governance = (
         "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
@@ -151,6 +171,9 @@ class DeterministicGovernedReplyProvider:
             "confidence": mission.get("confidence"),
             "review_status": mission.get("review_status"),
         }
+        taxonomy_snapshot_id = _governed_taxonomy_snapshot_id(governed_context)
+        if taxonomy_snapshot_id is not None:
+            composed.structure["taxonomy_snapshot_id"] = taxonomy_snapshot_id
 
         return GeneratedReply(
             text=composed.text,

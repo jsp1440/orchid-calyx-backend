@@ -88,6 +88,7 @@ class TaskLeaf:
     estimated_size: str = "m"  # "xs" | "s" | "m" | "l" | "xl"
     dependencies: list[str] = field(default_factory=list)  # task keys
     acceptance_criteria: list[str] = field(default_factory=list)
+    resources: list[str] = field(default_factory=list)  # exclusive resource locks
     issue_number: int | None = None  # GitHub issue if materialized
     pr_number: int | None = None
     # Mutable execution state (managed by DeepOrchestrate)
@@ -116,6 +117,7 @@ class TaskLeaf:
             "estimated_size": self.estimated_size,
             "dependencies": self.dependencies,
             "acceptance_criteria": self.acceptance_criteria,
+            "resources": self.resources,
             "issue_number": self.issue_number,
             "pr_number": self.pr_number,
             "state": self.state,
@@ -142,6 +144,7 @@ class TaskLeaf:
             estimated_size=d.get("estimated_size", "m"),
             dependencies=d.get("dependencies", []),
             acceptance_criteria=d.get("acceptance_criteria", []),
+            resources=d.get("resources", []),
             issue_number=d.get("issue_number"),
             pr_number=d.get("pr_number"),
         )
@@ -247,12 +250,20 @@ class DeepOrchestrate:
     # Lease / state transitions
     # ------------------------------------------------------------------
 
+    def held_resources(self) -> frozenset[str]:
+        """Resources exclusively held by active (leased/running/validating) tasks."""
+        held: set[str] = set()
+        for leaf in self._tasks.values():
+            if leaf.state in _ACTIVE:
+                held.update(leaf.resources)
+        return frozenset(held)
+
     def lease(self, key: str, *, holder: str = "claude") -> TaskLeaf:
         """Atomically lease a task.
 
         Raises:
             LookupError: task not found.
-            ValueError: task not in READY state or deps unmet.
+            ValueError: task not in READY state, deps unmet, or resource conflict.
         """
         with self._lock:
             leaf = self._tasks.get(key)
@@ -262,6 +273,14 @@ class DeepOrchestrate:
                 raise ValueError(
                     f"TASK_NOT_READY:{key}:state={leaf.state}"
                 )
+            # Resource conflict check — exclusive locks.
+            if leaf.resources:
+                held = self.held_resources()
+                conflict = set(leaf.resources) & held
+                if conflict:
+                    raise ValueError(
+                        f"RESOURCE_CONFLICT:{key}:resources={sorted(conflict)!r}"
+                    )
             leaf.state = TaskState.LEASED
             leaf.leased_at = time.time()
             leaf.lease_holder = holder
@@ -375,6 +394,34 @@ class DeepOrchestrate:
             leaf.blocked_reason = None
             leaf.updated_at = time.time()
             return leaf
+
+    def recover_expired_leases(self, max_lease_age_seconds: float) -> list[TaskLeaf]:
+        """Return LEASED/RUNNING/VALIDATING tasks whose lease has exceeded the age limit.
+
+        Expired tasks are moved to REPAIR_BACKOFF so they are not re-dispatched
+        automatically. A human or recovery process calls recover_from_backoff()
+        once the root cause is understood. This prevents permanently stranded work
+        when a worker dies after leasing a task.
+        """
+        now = time.time()
+        expired: list[TaskLeaf] = []
+        with self._lock:
+            for leaf in self._tasks.values():
+                if leaf.state not in _ACTIVE:
+                    continue
+                if leaf.leased_at is None:
+                    continue
+                if now - leaf.leased_at > max_lease_age_seconds:
+                    leaf.state = TaskState.REPAIR_BACKOFF
+                    leaf.blocked_reason = (
+                        f"LEASE_EXPIRED:max={max_lease_age_seconds}s"
+                        f":holder={leaf.lease_holder}"
+                    )
+                    leaf.leased_at = None
+                    leaf.lease_holder = None
+                    leaf.updated_at = now
+                    expired.append(leaf)
+        return expired
 
     def authorize(self, key: str) -> TaskLeaf:
         """Move an owner-gated task to READY after explicit owner approval."""
