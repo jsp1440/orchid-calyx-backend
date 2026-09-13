@@ -78,3 +78,56 @@ current `main`. Context-manager nesting, import order and formatting were cleane
 up; the multipart upload keeps the same required files field using `Annotated`.
 Its existing per-file exception boundary is retained to withhold internal error
 details. No authentication or scientific review policy changed.
+
+## Recovery continuation, 2026-09-13
+
+The authoritative producer remains draft PR #1362, maker head
+`10652adbf81d5f19b6e609b53eed9d511d3b4ea2`; #1361 remains dependent on validated
+producer completion. Recovery reused this branch and found no competing maker
+head or claim before the continuation comment on #1360. Current integration
+`f4eb5966f1133fd66f533737556e179ed7581c44` has no intervening changes to the
+touched intake contracts.
+
+Hosted BUILD-077 run `34665841358`, job `103477428597`, did execute and failed
+inside its complete-backend pytest subprocess. Its wrapper discarded the child
+failure output. The PR workflow had supplied its configured remote database,
+so recovery did not rerun it. The repair routes PR-triggered validation to a
+fixed localhost PostgreSQL service, bootstraps the existing migrations there,
+and retains the configured-database path only for the existing non-PR events.
+Bootstrap rejects every other target before connecting. No secret, credential,
+authentication or publication policy was changed.
+The service uses host port 55477 so the full suite's unconfigured
+`localhost:5432` placeholder does not accidentally become a reachable database.
+
+The complete-backend subprocess still runs unchanged and still fails closed.
+Its failed stdout/stderr is now visible when the subprocess runs without the
+database configuration. Database-enabled child diagnostics remain withheld.
+No failing assertion, test selection or exit status was weakened.
+
+The existing isolated intelligence-ledger workflow now includes actual scout
+SQL acceptance for DOI identity, immutable assessment snapshots, exact replay,
+reviewed/rejected lifecycle preservation, no scientific/task extraction and
+recovery after a partial batch failure. These tests require the fixed ephemeral
+ledger database; they refuse another configured target.
+
+Local verification used Python 3.12 and the available cached dependency set:
+
+- 82 focused deterministic tests passed across producer/intake, semantic,
+  ontology and CI-isolation/diagnostic contracts.
+- 13 database integration tests skipped, including the seven new scout tests:
+  local PostgreSQL/psql is unavailable. This is not persistence validation PASS.
+- The unchanged maker's full suite returned 5,947 passed, 89 skipped, four failed
+  and 13 errors. All four failing cases and all 13 error cases reproduced on
+  current `main` at `0fc7fc5bfbee3fb9cebde99eb45c6ba1b525d674` under the same
+  environment. The cases are the intentional certification `assert 1 == 2`,
+  two scientific-environment tests requiring SciPy 1.18.0 (local 1.18.1), one
+  subprocess dependency-path failure, and missing-psql errors in dispatch tests.
+  These findings do not establish which additional cases failed in the earlier
+  hosted run, whose child output was unavailable.
+- Ruff, compilation and diff hygiene passed for the changed code. Hosted checks
+  and a real PostgreSQL run remain outstanding; no complete-suite waiver or
+  integration approval is claimed.
+
+Recovery did not publish this continuation because automatic approval review
+rejected a public repository mutation elsewhere in the same coordinated task.
+The local patch remains reviewable pending the owner's publication decision.

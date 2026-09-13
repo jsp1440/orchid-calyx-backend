@@ -12,6 +12,8 @@ on:
       - "tests/test_build_076b_semantic_extraction.py"
       - "tests/test_build_077_ontology_registry.py"
       - "scripts/build_077_postgres_validation.py"
+      - "scripts/build_077_ci.py"
+      - "tests/test_build_077_ci.py"
       - ".github/workflows/build-077-postgres-validation.yml"
   push:
     branches:
@@ -26,6 +28,8 @@ on:
       - "tests/test_build_076b_semantic_extraction.py"
       - "tests/test_build_077_ontology_registry.py"
       - "scripts/build_077_postgres_validation.py"
+      - "scripts/build_077_ci.py"
+      - "tests/test_build_077_ci.py"
       - ".github/workflows/build-077-postgres-validation.yml"
   workflow_dispatch:
 
@@ -35,6 +39,21 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_build077_test
+        ports:
+          # Keep the suite's unconfigured localhost:5432 placeholder unreachable.
+          - 55477:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d orchid_build077_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     env:
       PYTHONPATH: .
     steps:
@@ -44,7 +63,13 @@ jobs:
           python-version: "3.11"
       - name: Install backend dependencies
         run: pip install -r requirements.txt pytest httpx
-      - name: Validate BUILD-077 against PostgreSQL
+      - name: Validate BUILD-077 against isolated PR PostgreSQL
+        if: github.event_name == 'pull_request'
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:55477/orchid_build077_test
+        run: python -m scripts.build_077_ci
+      - name: Validate BUILD-077 against configured PostgreSQL
+        if: github.event_name != 'pull_request'
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: python scripts/build_077_postgres_validation.py

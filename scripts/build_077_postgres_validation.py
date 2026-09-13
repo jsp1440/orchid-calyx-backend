@@ -1,9 +1,9 @@
 """BUILD-077 PostgreSQL staging validation.
 
-This script is intended to run inside GitHub Actions with DATABASE_URL supplied
-from repository secrets. It never prints the secret value. It performs additive
-migration validation and writes only clearly marked BUILD-077 validation rows in
-the intake, semantic, and ontology schemas.
+This script runs against an explicitly configured DATABASE_URL. Pull requests
+use an isolated service through build_077_ci. It never prints the secret value.
+It performs additive migration validation and writes only clearly marked
+BUILD-077 validation rows in the intake, semantic, and ontology schemas.
 """
 
 from __future__ import annotations
@@ -121,7 +121,7 @@ def count_rows(cur, schema: str, table: str) -> int | None:
     try:
         cur.execute(f'SELECT COUNT(*) AS count FROM "{schema}"."{table}"')
         return int(cur.fetchone()["count"])
-    except Exception:
+    except Exception:  # noqa: BLE001 - best-effort inventory preserves unknown counts
         return None
 
 
@@ -420,7 +420,7 @@ def exercise_services(dsn: str, marker: str, ids: dict[str, int]) -> dict[str, A
     evidence_service = EvidenceRegistryService(repo)
     readiness_service = PublicationReadinessService(repo)
 
-    checksum = hashlib.sha256(f"registry:{marker}".encode("utf-8")).hexdigest()
+    checksum = hashlib.sha256(f"registry:{marker}".encode()).hexdigest()
     registry = registry_service.create_registry(
         {
             "namespace": f"build-077-validation-{marker}",
@@ -502,9 +502,8 @@ def exercise_services(dsn: str, marker: str, ids: dict[str, int]) -> dict[str, A
 
 def expect_raises(conn, sql: str, params: tuple[Any, ...], expected_sqlstate_prefix: str | None = None) -> str:
     try:
-        with conn.transaction():
-            with conn.cursor() as cur:
-                cur.execute(sql, params)
+        with conn.transaction(), conn.cursor() as cur:
+            cur.execute(sql, params)
     except Exception as exc:
         sqlstate = getattr(exc, "sqlstate", "")
         if expected_sqlstate_prefix and not str(sqlstate).startswith(expected_sqlstate_prefix):
@@ -514,7 +513,6 @@ def expect_raises(conn, sql: str, params: tuple[Any, ...], expected_sqlstate_pre
 
 
 def negative_constraint_tests(conn, ids: dict[str, int], service_result: dict[str, Any]) -> dict[str, str]:
-    registry_id = service_result["registry_id"]
     term_one, term_two = service_result["term_ids"]
     evidence_registry_id = service_result["evidence_registry_id"]
     with conn.cursor() as cur:
@@ -616,7 +614,15 @@ def run_command(args: list[str], *, expose_database_url: bool = False) -> str:
     if not expose_database_url:
         env.pop("DATABASE_URL", None)
         env.pop("TEST_DATABASE_URL", None)
-    completed = subprocess.run(args, cwd=ROOT, check=True, text=True, capture_output=True, env=env)
+    completed = subprocess.run(args, cwd=ROOT, check=False, text=True, capture_output=True, env=env)
+    if completed.returncode:
+        # The broad regression suite receives no database credentials. Preserve
+        # its actual failure evidence rather than only CalledProcessError's
+        # command summary. Database-enabled child diagnostics stay withheld.
+        if not expose_database_url:
+            print(completed.stdout, file=sys.stderr)
+            print(completed.stderr, file=sys.stderr)
+        completed.check_returncode()
     return completed.stdout.strip()
 
 
@@ -693,7 +699,7 @@ def main() -> int:
     regressions = run_regressions()
     report = {
         "database_url_available": True,
-        "secret_supply": "GitHub Actions repository secret DATABASE_URL, scoped to BUILD-077 validation job env",
+        "secret_supply": "Explicit DATABASE_URL; pull requests use a fixed isolated PostgreSQL service",
         "target": target,
         "migrations_applied": applied,
         "object_report": object_report,
