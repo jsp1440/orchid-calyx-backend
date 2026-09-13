@@ -196,7 +196,6 @@ def test_bridge_rejects_packet_with_empty_candidate_id():
         verification_packet_to_handoff_request(bad, domain="cultivation", **_DB_IDS)
 
 
-
 def test_bridge_rejects_packet_allowing_canonical_mutation():
     bad = dict(_PHALAENOPSIS_PACKET, canonical_knowledge_mutation_allowed=True)
     with pytest.raises(ValueError, match="PACKET_GOVERNANCE_INVALID"):
