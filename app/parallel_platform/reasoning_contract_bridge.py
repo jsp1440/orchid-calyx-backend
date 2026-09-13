@@ -78,6 +78,10 @@ def verification_packet_to_handoff_request(
         raise ValueError("PACKET_GOVERNANCE_INVALID")
     if verification_packet.get("automatic_scientific_publication_allowed") is not False:
         raise ValueError("PACKET_GOVERNANCE_INVALID")
+    if verification_packet.get("canonical_knowledge_mutation_allowed") is not False:
+        raise ValueError("PACKET_GOVERNANCE_INVALID")
+    if verification_packet.get("verification_state") != "ready_for_review":
+        raise ValueError("PACKET_NOT_READY_FOR_REVIEW")
 
     reasoning = verification_packet.get("reasoning") or {}
     candidate = reasoning.get("candidate_knowledge") or {}
