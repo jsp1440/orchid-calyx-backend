@@ -68,6 +68,12 @@ jobs:
           tests/test_calyx_live_runtime_repairs.py
           tests/test_calyx_anti_robot_conversation.py
           tests/test_calyx_phalaenopsis_thermal_traits.py
+      - name: Lint adaptive communication changes
+        run: >-
+          ruff check
+          app/calyx_conversation/adaptive_communication.py
+          app/calyx_conversation/reasoning_routes.py
+          tests/test_calyx_adaptive_communication.py
       - name: Lint Calyx conversation slice
         run: >-
           ruff check
