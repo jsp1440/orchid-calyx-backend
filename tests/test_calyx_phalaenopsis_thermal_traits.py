@@ -249,6 +249,15 @@ def test_phalaenopsis_benchmark_preserves_provenance_review_state_and_read_only_
     families = set(synthesis["reconciliation"]["source_families"])
     assert {"brain_mission", "continuum_retrieval", "external_literature", "knowledge_graph"} <= families
     assert synthesis["reconciliation"]["external_literature_review_required"] is True
+    readiness = synthesis["reconciliation"]["evidence_class_readiness"]
+    assert readiness["status"] == "ready"
+    assert readiness["literature_present"] is True
+    assert readiness["literature_review_required"] is True
+    assert readiness["continuum_evidence_class_count"] >= 2
+    assert {"trait_record", "occurrence_summary"} <= set(
+        readiness["continuum_evidence_classes"]
+    )
+    assert readiness["missing_requirements"] == []
     assert synthesis["publication_boundary"] == {
         "read_only": True,
         "automatic_publication": False,
@@ -257,6 +266,32 @@ def test_phalaenopsis_benchmark_preserves_provenance_review_state_and_read_only_
     assert structure["governed_provenance"]["evidence_packet_id"] == "ep-phalaenopsis-thermal-traits"
     assert structure["taxonomy_snapshot_id"] == "world-plants:2.1.2026"
     assert any("Phalaenopsis thermal-trait fixture" in item for item in structure["citations"])
+
+
+def test_phalaenopsis_benchmark_keeps_incomplete_evidence_gate_closed():
+    retrieval = deepcopy(RETRIEVAL)
+    retrieval["results"] = retrieval["results"][:1]
+    retrieval["external_literature"]["results"] = []
+    continuum = deepcopy(CONTINUUM)
+    continuum["taxa"][0]["environmental_facts"] = []
+
+    synthesis = build_synthesis_packet(
+        question=QUESTION,
+        retrieval=retrieval,
+        continuum=continuum,
+        climate=CLIMATE,
+        mission=None,
+        mission_error=None,
+    )
+
+    readiness = synthesis["reconciliation"]["evidence_class_readiness"]
+    assert readiness["status"] == "evidence_incomplete"
+    assert readiness["literature_present"] is False
+    assert readiness["continuum_evidence_class_count"] == 1
+    assert readiness["missing_requirements"] == [
+        "review-required literature with provenance",
+        "at least two distinct canonical Continuum evidence classes with provenance",
+    ]
 
 
 def test_phalaenopsis_benchmark_refuses_conflicting_taxonomy_snapshot_identities():
