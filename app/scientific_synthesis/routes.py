@@ -7,6 +7,9 @@ import requests
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.parallel_platform.reasoning_contract_bridge import DomainLiteral
+from app.security import verify_owner_or_api_key
+
 from .blueprint import (
     BlueprintValidationError,
     ResearchBlueprint,
