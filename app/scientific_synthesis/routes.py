@@ -7,6 +7,11 @@ import requests
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .blueprint import (
+    BlueprintValidationError,
+    ResearchBlueprint,
+    decompose_governed_action,
+)
 from .claim_verification import CHECK_CALYX_VERSION, verify_claim
 from .discovery import (
     BibliographicVerificationService,
@@ -350,3 +355,61 @@ def check_governance(payload: GovernanceCheckIn) -> GovernanceCheckOut:
         reason=decision.reason,
         blocking_flags=decision.blocking_flags,
     )
+
+
+# ── Blueprint Decomposition ────────────────────────────────────────────────────
+
+
+class BlueprintIn(BaseModel):
+    manifest: dict[str, Any] = Field(
+        description="oc-run-evidence-manifest-v1 dict as returned by POST /synthesis/run-manifest"
+    )
+    proposed_action: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    taxon_id: str = Field(min_length=1)
+    research_question: str = Field(min_length=1)
+
+
+@router.post("/blueprint")
+def build_blueprint(payload: BlueprintIn) -> dict[str, Any]:
+    """Decompose an admitted GovernanceDecision into a bounded ResearchBlueprint.
+
+    The endpoint:
+    1. Calls check_manifest_governance() to obtain a fresh GovernanceDecision.
+    2. Fails closed (422) if the decision is not admitted.
+    3. Calls decompose_governed_action() → ResearchBlueprint (bounded, validated).
+    4. Returns the blueprint summary — does NOT enqueue (enqueue is a separate operation).
+
+    This is the blueprint/task-decomposition step in the autonomy chain:
+      governance-check → blueprint → canonical queue → worker execution
+    """
+    try:
+        decision: GovernanceDecision = check_manifest_governance(
+            payload.manifest, payload.proposed_action
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    if not decision.admitted:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "GOVERNANCE_NOT_ADMITTED",
+                "outcome": decision.outcome.value,
+                "blocking_flags": decision.blocking_flags,
+            },
+        )
+
+    try:
+        blueprint: ResearchBlueprint = decompose_governed_action(
+            decision,
+            payload.manifest,
+            payload.proposed_action,
+            run_id=payload.run_id,
+            taxon_id=payload.taxon_id,
+            research_question=payload.research_question,
+        )
+    except BlueprintValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    return blueprint.summary()
