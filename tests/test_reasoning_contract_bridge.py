@@ -175,6 +175,18 @@ def test_bridge_rejects_packet_allowing_publication():
         verification_packet_to_handoff_request(bad, domain="cultivation", **_DB_IDS)
 
 
+def test_bridge_rejects_packet_allowing_canonical_mutation():
+    bad = dict(_PHALAENOPSIS_PACKET, canonical_knowledge_mutation_allowed=True)
+    with pytest.raises(ValueError, match="PACKET_GOVERNANCE_INVALID"):
+        verification_packet_to_handoff_request(bad, domain="cultivation", **_DB_IDS)
+
+
+def test_bridge_rejects_packet_not_ready_for_review():
+    bad = dict(_PHALAENOPSIS_PACKET, verification_state="evidence_incomplete")
+    with pytest.raises(ValueError, match="PACKET_NOT_READY_FOR_REVIEW"):
+        verification_packet_to_handoff_request(bad, domain="cultivation", **_DB_IDS)
+
+
 def test_bridge_rejects_packet_with_no_resolved_evidence():
     no_evidence = dict(_PHALAENOPSIS_PACKET, resolved_evidence=[])
     with pytest.raises(ValueError, match="RESOLVED_EVIDENCE_REQUIRED"):
