@@ -29,8 +29,28 @@ def graph() -> InMemoryGraphRepository:
             Node(3, "phenotype", "phenotype:flowering", "Flowering"),
         ],
         edges=[
-            Edge(1, "reduces", 1, 2, "paper_claim", "p1", "curated", 0.90, "high"),
-            Edge(2, "promotes", 2, 3, "paper_claim", "p2", "curated", 0.80, "high"),
+            Edge(
+                1,
+                "reduces",
+                1,
+                2,
+                "paper_claim",
+                "p1",
+                "curated",
+                0.90,
+                "high",
+            ),
+            Edge(
+                2,
+                "promotes",
+                2,
+                3,
+                "paper_claim",
+                "p2",
+                "curated",
+                0.80,
+                "high",
+            ),
         ],
     )
 
@@ -78,7 +98,10 @@ def client(monkeypatch) -> TestClient:
 
 
 @pytest.mark.parametrize("audience", ["grower", "student", "researcher"])
-def test_profiles_preserve_all_protected_scientific_segments(monkeypatch, audience):
+def test_profiles_preserve_all_protected_scientific_segments(
+    monkeypatch,
+    audience,
+):
     canonical = canonical_answer(monkeypatch)
     rendered = render_adaptive_answer(
         canonical,
@@ -95,12 +118,17 @@ def test_profiles_preserve_all_protected_scientific_segments(monkeypatch, audien
 
 def test_grower_student_and_researcher_have_distinct_framing(monkeypatch):
     canonical = canonical_answer(monkeypatch)
-    grower = render_adaptive_answer(canonical, VoiceProfile(audience="grower")).answer
+    grower = render_adaptive_answer(
+        canonical,
+        VoiceProfile(audience="grower"),
+    ).answer
     student = render_adaptive_answer(
-        canonical, VoiceProfile(audience="student", teaching_mode=True)
+        canonical,
+        VoiceProfile(audience="student", teaching_mode=True),
     ).answer
     researcher = render_adaptive_answer(
-        canonical, VoiceProfile(audience="researcher")
+        canonical,
+        VoiceProfile(audience="researcher"),
     ).answer
 
     assert "practical interpretation" in grower
