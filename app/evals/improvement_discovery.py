@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any, Iterable
+from typing import Any
 
-from .models import StrategyDecisionState, canonical_json, stable_fingerprint
+from .models import StrategyDecisionState, stable_fingerprint
 
 
 class ImprovementSignalSource(StrEnum):
@@ -215,4 +216,4 @@ This packet is discovery output only. Execution must remain on the canonical Dee
 
 
 def material_change_fingerprint(payload: dict[str, Any]) -> str:
-    return stable_fingerprint(canonical_json(payload))
+    return stable_fingerprint(payload)
