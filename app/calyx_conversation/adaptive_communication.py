@@ -44,22 +44,21 @@ def protected_segments_from_answer(answer: str) -> tuple[str, ...]:
     the epistemic interpretation boundary and therefore must survive exactly.
     """
 
+    protected_prefixes = (
+        "Reasoning map:",
+        "Indexed evidence:",
+        "No qualifying causal pathway",
+        "No eligible indexed evidence",
+        "Interpretation boundary:",
+    )
     protected: list[str] = []
     for line in answer.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
-        if stripped.startswith("Reasoning map:"):
-            protected.append(line)
-        elif stripped.startswith("Indexed evidence:"):
-            protected.append(line)
-        elif stripped.startswith("No qualifying causal pathway"):
-            protected.append(line)
-        elif stripped.startswith("No eligible indexed evidence"):
-            protected.append(line)
-        elif stripped.startswith("Interpretation boundary:"):
-            protected.append(line)
-        elif stripped[:1].isdigit() and ". " in stripped:
+        if stripped.startswith(protected_prefixes) or (
+            stripped[:1].isdigit() and ". " in stripped
+        ):
             protected.append(line)
     return tuple(protected)
 
