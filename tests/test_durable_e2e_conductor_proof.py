@@ -246,6 +246,8 @@ class TestDurableConductorProof:
 
         paid = _count_provider_calls(dispatch_run.results)
         assert paid == 0, f"Paid provider calls: {paid}"
+        global _PAID_PROVIDER_CALLS
+        _PAID_PROVIDER_CALLS += paid
         assert dispatch_run.tasks_executed > 0, "Dispatcher executed 0 tasks"
 
         # No tasks stuck in LEASED after completion
@@ -368,6 +370,8 @@ class TestDurableConductorProof:
 
         paid = _count_provider_calls(run.results)
         assert paid == 0
+        global _PAID_PROVIDER_CALLS
+        _PAID_PROVIDER_CALLS += paid
 
         # Both tasks should now be terminal
         t1_state = reservoir2.get("restart:t1:retrieve-evidence").state
@@ -484,6 +488,8 @@ class TestDurableConductorProof:
 
         paid = _count_provider_calls(gate_result.post_dispatch_run.results if gate_result.post_dispatch_run else [])
         assert paid == 0
+        global _PAID_PROVIDER_CALLS
+        _PAID_PROVIDER_CALLS += paid
 
         session2.close()
         assert _PAID_PROVIDER_CALLS == 0
