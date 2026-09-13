@@ -51,7 +51,10 @@ def build_candidate_knowledge_proposal(
         "canonical_activation_requires_human_authority": True,
         "immutable": True,
     }
-    if any(\n        manifest.get(key) is not value\n        for key, value in required_manifest_flags.items()\n    ):
+    if any(
+        manifest.get(key) is not value
+        for key, value in required_manifest_flags.items()
+    ):
         raise ValueError("MANIFEST_GOVERNANCE_INVALID")
     if manifest.get("verification_state") != "ready_for_review":
         raise ValueError("MANIFEST_NOT_READY_FOR_REVIEW")
