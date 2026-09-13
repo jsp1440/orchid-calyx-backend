@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Annotated, Any
 
 import requests
 from fastapi import APIRouter, Depends, HTTPException
@@ -435,7 +435,7 @@ class CandidateProposalIn(BaseModel):
 @router.post("/candidate-proposal")
 def prepare_candidate_proposal(
     payload: CandidateProposalIn,
-    _owner: Any = Depends(verify_owner_or_api_key),
+    _owner: Annotated[Any, Depends(verify_owner_or_api_key)],
 ) -> dict[str, Any]:
     """Prepare a review-only canonical handoff; never persist or mutate knowledge."""
     try:
