@@ -12,7 +12,8 @@ Hard boundaries enforced here:
 - max_tasks:      total tasks executed across the run (default 20)
 - max_iterations: times the reservoir is scanned for ready work (default 10)
 - width:          maximum concurrent task leases (default: reservoir width)
-- OWNER_GATED tasks are never leased — skipped without error
+- OWNER_GATED-state tasks are never leased — skipped without error
+  (tasks authorized via reservoir.authorize() are READY and ARE dispatched)
 - Completed tasks are never re-executed (idempotent)
 - Expired leases are recovered before each iteration
 
@@ -26,7 +27,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from .deep_orchestrate import _OWNER_GATE_CLASSES, DeepOrchestrate, TaskLeaf
+from .deep_orchestrate import DeepOrchestrate, TaskLeaf, TaskState
 from .leaf_worker import DeterministicResearchWorker, TaskExecutionResult
 
 log = logging.getLogger(__name__)
@@ -125,15 +126,21 @@ class BoundedDispatcher:
     # ── Internals ─────────────────────────────────────────────────────────────
 
     def _collect_ready_keys(self, slots: int) -> list[str]:
-        """Return up to `slots` READY, non-owner-gated task keys."""
+        """Return up to `slots` READY, dispatchable task keys.
+
+        Tasks that are still in OWNER_GATED state are skipped; tasks that were
+        authorized via reservoir.authorize() are in READY state and ARE dispatched.
+        ready_tasks() only returns state==READY leaves, so the state check below
+        is a defensive belt-and-suspenders guard only.
+        """
         if slots <= 0:
             return []
         keys: list[str] = []
         for leaf in self.reservoir.ready_tasks():
             if len(keys) >= slots:
                 break
-            if leaf.authority_class in _OWNER_GATE_CLASSES:
-                continue  # OWNER_GATED tasks are never auto-dispatched.
+            if leaf.state == TaskState.OWNER_GATED:
+                continue  # Still pending explicit authorization; never auto-dispatch.
             keys.append(leaf.key)
         return keys
 
