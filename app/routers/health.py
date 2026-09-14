@@ -3,6 +3,7 @@ import os
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.archive.routes import router as archive_router
+from app.evals.observability import router as evals_observability_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.multimodal_intelligence.routes import router as multimodal_intelligence_router
 from app.parallel_platform.routes import router as parallel_platform_router
@@ -156,6 +157,7 @@ from app.workflow.routes import router as workflow_router
 
 router.include_router(release_identity_router)
 router.include_router(mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
+router.include_router(evals_observability_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_operations_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(owner_session_token_router, dependencies=[Depends(add_mission_control_cors_headers)])
 router.include_router(live_mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)])
