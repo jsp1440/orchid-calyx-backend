@@ -18,6 +18,8 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from app.calyx_orchestrator.github_coding_executor import BudgetClass, ConvergenceClass
+from app.calyx_orchestrator.paid_api_budget_governor import PaidAPIBudgetGovernor
+from app.calyx_orchestrator.paid_api_provider import MockPaidProvider
 from app.calyx_orchestrator.paid_api_worker import (
     PaidAPIWorker,
     build_paid_api_worker_with_mock,
@@ -75,6 +77,16 @@ class BarrierPaidWorker:
         finally:
             with self.lock:
                 self.active -= 1
+
+
+class SelectiveFailProvider(MockPaidProvider):
+    """Fail only the chosen task while allowing its peer to complete."""
+
+    def call(self, *, governor, reservation, **kwargs):  # type: ignore[override]
+        if reservation.task_key == "stage-c:bad":
+            governor.release_reservation(reservation.reservation_id)
+            raise RuntimeError("simulated provider failure")
+        return super().call(governor=governor, reservation=reservation, **kwargs)
 
 
 def test_stage_c_two_simultaneous_leases_use_canonical_dispatcher() -> None:
@@ -157,17 +169,17 @@ def test_stage_c_owner_gate_does_not_consume_lane_or_provider_budget() -> None:
 def test_stage_c_one_blocked_lane_does_not_prevent_peer_completion() -> None:
     reservoir = DeepOrchestrate(configured_width=2)
     reservoir.register_many([_leaf("stage-c:bad"), _leaf("stage-c:good")])
-    worker, _, provider = build_paid_api_worker_with_mock(
-        responses=[RuntimeError("simulated provider failure"), "good", RuntimeError("still failed")]
-    )
+    provider = SelectiveFailProvider(responses=["good"])
+    governor = PaidAPIBudgetGovernor(ceiling_usd=50.0)
+    worker = PaidAPIWorker(provider=provider, governor=governor)
 
     run = BoundedDispatcher(reservoir, worker=worker).run(
         DispatchConfig(max_tasks=2, max_iterations=2, width=2, lease_holder="stage-c-isolation")
     )
 
-    states = {reservoir.get("stage-c:bad").state, reservoir.get("stage-c:good").state}
-    assert TaskState.COMPLETED in states
-    assert TaskState.BLOCKED in states
+    assert reservoir.get("stage-c:bad").state == TaskState.BLOCKED
+    assert reservoir.get("stage-c:good").state == TaskState.COMPLETED
     assert run.tasks_executed == 2
-    assert len(provider.calls) >= 2
+    assert len(provider.calls) == 1
+    assert governor.reserved_usd == 0.0
     assert reservoir.active_tasks() == []
