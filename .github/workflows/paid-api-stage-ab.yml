@@ -1,4 +1,5 @@
 name: Paid API Stage A+B Canary
+# Exact-head validation retrigger after Ruff repair; no provider call on push.
 
 on:
   workflow_dispatch:
