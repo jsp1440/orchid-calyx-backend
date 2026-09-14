@@ -1,32 +1,39 @@
-"""ChatGPT Business / Codex Programmatic CodingAgentProvider.
+"""ChatGPT Business / Codex CLI CodingAgentProvider.
 
-Dispatches governed Orchid Continuum engineering missions to OpenAI Codex
-using a ChatGPT Business workspace access token.
+TRANSPORT: Process/subprocess invoking the Codex CLI — NOT an HTTP REST API.
 
-Authentication contract:
-- ONLY accepts a CodexBusinessCredential (CALYX_CHATGPT_BUSINESS_CODEX_TOKEN).
-- OPENAI_API_KEY path is prohibited; its presence fails closed.
-- The token value is never included in logs, receipts, or error messages.
-- Receipts record AUTH_MODE only.
+The ChatGPT Business Codex programmatic access surface is the Codex CLI
+(@openai/codex npm package, github.com/openai/codex) running in an isolated
+worker or private runner environment authenticated by a ChatGPT workspace
+token.
 
-Provider behaviour:
-- NEW/CONVERGE/SUPERSEDE → POST to the Codex task creation endpoint.
-  Returns a task_id / session_id that Codex uses to create a branch + PR.
-- CONTINUE → POST an iteration instruction comment on the existing PR.
-- ALREADY_DONE → raises; executor must not dispatch this.
+There is NO documented OpenAI API Platform HTTP endpoint for this access
+pattern. The following endpoints were invented in a prior draft and are
+explicitly prohibited from reappearing:
 
-The HTTP transport is injected so tests can supply a mock without any real
-network call. The production transport (CodexRequestsTransport) reads its
-authorization from the CodexBusinessCredential and never logs the value.
+    PROHIBITED (invented, undocumented):
+        https://api.openai.com/v1/codex/sessions
+        https://api.openai.com/v1/codex/sessions/{id}/iterations
+        /codex/prs/{pr}/iterations
+        Any other /v1/codex/* path
 
-No paid API key is accepted. No model inference is triggered by this module.
+Official invocation surface (as of 2026-09, from openai/codex GitHub):
+    CLI:  codex --approval-mode full-auto "<task>"
+    NPM:  npx @openai/codex@latest --approval-mode full-auto "<task>"
+
+INTENTIONALLY UNBOUND items (see class docstrings):
+    CodexCLICommand.command        — exact CLI argv, TBD until verified
+    CodexCredentialMapping.env_var — env var the Codex CLI reads for Business
+                                     tokens; must NOT default to OPENAI_API_KEY
+
+Tests use MockCodexProcessTransport which never invokes any subprocess or HTTP.
 """
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+import subprocess
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .chatgpt_business_codex_credential import (
@@ -37,68 +44,258 @@ from .chatgpt_business_codex_credential import (
 from .github_coding_executor import ConvergenceClass, DispatchRequest, DispatchResult
 
 # ---------------------------------------------------------------------------
-# Codex API surface (ChatGPT Business programmatic access)
+# Prohibited endpoint sentinel — regression guard
 # ---------------------------------------------------------------------------
 
-CODEX_API_BASE = "https://api.openai.com/v1"
-CODEX_TASK_ENDPOINT = "/codex/sessions"  # POST — creates an async coding session
-CODEX_ITERATION_ENDPOINT = "/codex/sessions/{session_id}/iterations"  # POST — add instruction
+# This tuple is imported by the regression test to confirm none of these
+# strings appear in any production code path.
+PROHIBITED_API_PLATFORM_ENDPOINTS: tuple[str, ...] = (
+    "/v1/codex/sessions",
+    "/codex/sessions",
+    "/codex/prs/",
+    "api.openai.com/v1/codex",
+)
+
+
+# ---------------------------------------------------------------------------
+# Credential mapping (UNBOUND)
+# ---------------------------------------------------------------------------
+
+
+class CodexCredentialMappingError(CodexCredentialError):
+    """Raised when the Codex CLI credential env-var mapping is unresolved."""
+
+
+class CodexCredentialMapping:
+    """Maps CALYX_CHATGPT_BUSINESS_CODEX_TOKEN to the env var the Codex CLI reads.
+
+    The Codex CLI community release uses OPENAI_API_KEY (the paid Platform
+    billing path — PROHIBITED for the ChatGPT Business lane).
+
+    The exact env var for ChatGPT Business workspace tokens is NOT currently
+    confirmed in sources available to this codebase. When official
+    documentation or a verified integration test establishes the mapping,
+    set BUSINESS_TOKEN_CLI_ENV_VAR to the correct name.
+
+    DO NOT set this to "OPENAI_API_KEY". The credential check in
+    chatgpt_business_codex_credential.py raises CodexApiKeyFallbackError
+    when OPENAI_API_KEY is present specifically to block that path.
+    """
+
+    # The env var the Codex CLI reads for ChatGPT Business tokens.
+    # Set to a string when the official interface is confirmed.
+    # MUST NOT be "OPENAI_API_KEY".
+    BUSINESS_TOKEN_CLI_ENV_VAR: str | None = None  # TBD — intentionally unbound
+
+    @classmethod
+    def is_bound(cls) -> bool:
+        return cls.BUSINESS_TOKEN_CLI_ENV_VAR is not None
+
+    @classmethod
+    def build_cli_env(cls, credential: CodexBusinessCredential) -> dict[str, str]:
+        """Build the subprocess environment containing the credential.
+
+        Raises CodexCredentialMappingError when BUSINESS_TOKEN_CLI_ENV_VAR is
+        unbound — the caller must not proceed to subprocess invocation.
+        """
+        if not cls.is_bound():
+            raise CodexCredentialMappingError(
+                "CODEX_CLI_CREDENTIAL_ENV_VAR_UNBOUND: The env var that the "
+                "Codex CLI reads for a ChatGPT Business workspace token has not "
+                "been verified from authoritative documentation. "
+                "Set CodexCredentialMapping.BUSINESS_TOKEN_CLI_ENV_VAR to the "
+                "correct name (NOT 'OPENAI_API_KEY'). "
+                "Lane parked safely until resolved."
+            )
+        var_name = cls.BUSINESS_TOKEN_CLI_ENV_VAR
+        if var_name == "OPENAI_API_KEY":
+            raise CodexCredentialMappingError(
+                "CODEX_CLI_CREDENTIAL_ENV_VAR_PROHIBITED: "
+                "BUSINESS_TOKEN_CLI_ENV_VAR must not be set to OPENAI_API_KEY. "
+                "That is the paid Platform billing path."
+            )
+        return {var_name: credential.bearer_value}
+
+
+# ---------------------------------------------------------------------------
+# CLI command (UNBOUND)
+# ---------------------------------------------------------------------------
+
+
+class CodexCLIUnboundError(RuntimeError):
+    """Raised when the Codex CLI command is not yet configured."""
+
+
+@dataclass
+class CodexCLICommand:
+    """The subprocess command to invoke the Codex CLI.
+
+    The exact command is INTENTIONALLY UNBOUND until verified. Known candidate
+    (from openai/codex GitHub, unverified for Business non-interactive mode):
+
+        ["npx", "@openai/codex@latest", "--approval-mode", "full-auto", "--quiet"]
+
+    Set `command` to the verified argv list before production use.
+    """
+
+    command: list[str] | None = None  # None = unbound
+
+    # Suggested candidate — set this when verified:
+    # command: list[str] = field(default_factory=lambda: [
+    #     "npx", "@openai/codex@latest",
+    #     "--approval-mode", "full-auto",
+    #     "--quiet",
+    # ])
+
+    def is_bound(self) -> bool:
+        return bool(self.command)
+
+    def argv(self, *, task: str) -> list[str]:
+        if not self.is_bound():
+            raise CodexCLIUnboundError(
+                "CODEX_CLI_COMMAND_UNBOUND: The Codex CLI command has not been "
+                "configured. Set CodexCLICommand.command to the verified argv "
+                "list (e.g. ['npx', '@openai/codex@latest', '--approval-mode', "
+                "'full-auto']) before production use. Lane parked safely."
+            )
+        return list(self.command) + [task]
+
+
+# ---------------------------------------------------------------------------
+# Process transport protocol + implementations
+# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True, slots=True)
-class CodexTransportResponse:
-    status_code: int
-    payload: object
+class CodexProcessResult:
+    """Result of one Codex CLI subprocess invocation."""
+
+    exit_code: int
+    stdout: str
+    stderr: str
+    branch: str | None = None
+    pull_request_number: int | None = None
+    pull_request_url: str | None = None
+    head_sha: str | None = None
+    session_id: str | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        return self.exit_code == 0
 
 
-class CodexTransport(Protocol):
-    """Injected HTTP transport. Secrets stay inside the implementation."""
+class CodexProcessTransport(Protocol):
+    """Injected transport for Codex CLI execution. Mock in tests; subprocess in prod."""
 
-    def request(
+    def run(
         self,
-        method: str,
-        path: str,
         *,
-        json_body: Mapping[str, Any] | None = None,
-    ) -> CodexTransportResponse: ...
+        task: str,
+        repository: str,
+        base_ref: str,
+        base_sha: str,
+        env: dict[str, str],
+    ) -> CodexProcessResult: ...
 
 
-class CodexRequestsTransport:
-    """Production HTTPS transport. Bearer token is never logged or repr'd."""
+@dataclass
+class MockCodexProcessTransport:
+    """Deterministic mock. Never invokes subprocess, HTTP, or any real API."""
 
-    def __init__(self, credential: CodexBusinessCredential) -> None:
-        self._credential = credential
+    responses: list[CodexProcessResult]
+    calls: list[dict[str, str]] = field(default_factory=list)
 
-    def request(
+    def run(
         self,
-        method: str,
-        path: str,
         *,
-        json_body: Mapping[str, Any] | None = None,
-    ) -> CodexTransportResponse:
-        import requests  # local import — test runs never reach this
+        task: str,
+        repository: str,
+        base_ref: str,
+        base_sha: str,
+        env: dict[str, str],
+    ) -> CodexProcessResult:
+        self.calls.append({
+            "task": task,
+            "repository": repository,
+            "base_ref": base_ref,
+            "base_sha": base_sha,
+            # env keys are recorded but NOT values (never log credential values)
+            "env_keys": ",".join(sorted(env.keys())),
+        })
+        return self.responses.pop(0)
 
-        url = f"{CODEX_API_BASE}{path}"
-        headers = {
-            "Authorization": f"Bearer {self._credential.bearer_value}",
-            "Content-Type": "application/json",
-            "X-Auth-Mode": self._credential.auth_mode,
-        }
-        resp = requests.request(
-            method,
-            url,
-            headers=headers,
-            data=json.dumps(json_body) if json_body is not None else None,
-            timeout=60,
-        )
+
+class SubprocessCodexTransport:
+    """Production Codex CLI subprocess transport.
+
+    Invokes the Codex CLI in an isolated working directory. The credential
+    is injected via the env var determined by CodexCredentialMapping — never
+    via OPENAI_API_KEY.
+
+    Both the command and credential mapping must be BOUND (non-None) before
+    run() is callable; otherwise CodexCLIUnboundError or
+    CodexCredentialMappingError is raised and the lane parks safely.
+    """
+
+    def __init__(
+        self,
+        *,
+        cli_command: CodexCLICommand,
+        working_dir: str | None = None,
+        timeout_seconds: int = 1800,
+    ) -> None:
+        self._cli = cli_command
+        self._working_dir = working_dir
+        self._timeout = timeout_seconds
+
+    def run(
+        self,
+        *,
+        task: str,
+        repository: str,
+        base_ref: str,
+        base_sha: str,
+        env: dict[str, str],
+    ) -> CodexProcessResult:
+        argv = self._cli.argv(task=task)  # raises if unbound
+        import os
+        proc_env = {**os.environ, **env}
+        # Remove OPENAI_API_KEY from the subprocess env as a hard safety measure;
+        # the Business token must flow through the explicitly configured var only.
+        proc_env.pop("OPENAI_API_KEY", None)
+
         try:
-            payload: object = resp.json()
-        except Exception:
-            payload = resp.text
-        return CodexTransportResponse(status_code=resp.status_code, payload=payload)
+            proc = subprocess.run(
+                argv,
+                env=proc_env,
+                cwd=self._working_dir,
+                capture_output=True,
+                text=True,
+                timeout=self._timeout,
+            )
+        except subprocess.TimeoutExpired:
+            return CodexProcessResult(
+                exit_code=124,
+                stdout="",
+                stderr=f"CODEX_CLI_TIMEOUT after {self._timeout}s",
+            )
+        except FileNotFoundError as exc:
+            return CodexProcessResult(
+                exit_code=127,
+                stdout="",
+                stderr=f"CODEX_CLI_NOT_FOUND: {exc}",
+            )
+
+        # Parse any structured output the CLI emits (branch/PR/head-sha).
+        # Exact output format is TBD until CLI is verified; returns raw for now.
+        return CodexProcessResult(
+            exit_code=proc.returncode,
+            stdout=proc.stdout,
+            stderr=proc.stderr,
+        )
 
     def __repr__(self) -> str:
-        return f"CodexRequestsTransport(auth_mode={self._credential.auth_mode!r}, bearer=<redacted>)"
+        return f"SubprocessCodexTransport(command_bound={self._cli.is_bound()!r})"
 
 
 # ---------------------------------------------------------------------------
@@ -106,99 +303,128 @@ class CodexRequestsTransport:
 # ---------------------------------------------------------------------------
 
 
-class ChatGPTBusinessCodexProvider:
-    """Dispatch governed missions to ChatGPT Business Codex programmatic API.
+class CodexCLIAdapter:
+    """Dispatch governed missions to the Codex CLI running in a private runner.
 
-    NEW/CONVERGE/SUPERSEDE missions POST a coding session. Codex creates a
-    branch and draft PR asynchronously. CONTINUE missions POST an iteration
-    instruction to the existing session. ALREADY_DONE must not be dispatched.
+    Replaces the HTTP-API–based ChatGPTBusinessCodexProvider. The execution
+    surface is a subprocess (the Codex CLI), not an API Platform HTTP call.
 
-    The credential object is received at construction; it is never stored in
-    receipts, logs, or outputs. All receipt evidence uses AUTH_MODE only.
+    NEW / CONVERGE / SUPERSEDE → invoke Codex CLI with the mission objective.
+      Codex creates a branch, implements, tests, commits, opens a draft PR.
+    CONTINUE → invoke Codex CLI with a continuation instruction against the
+      existing PR branch.
+    ALREADY_DONE → raises; executor must not dispatch.
 
-    No fallback to OPENAI_API_KEY is permitted. The constructor will accept
-    only a CodexBusinessCredential whose auth_mode is AUTH_MODE_BUSINESS_TOKEN.
+    Both the CLI command and the credential env-var mapping must be BOUND
+    before live dispatch. The mock transport is used for tests without binding.
     """
 
-    provider_name = "chatgpt-business-codex-programmatic"
-    executor_class = "codex_cloud_session_or_iteration"
+    provider_name = "chatgpt-business-codex-cli"
+    executor_class = "codex_cli_subprocess_or_continuation"
 
     def __init__(
         self,
         *,
-        transport: CodexTransport,
+        transport: CodexProcessTransport,
         credential: CodexBusinessCredential,
         repository_allowlist: Sequence[str],
+        credential_mapping: type[CodexCredentialMapping] = CodexCredentialMapping,
     ) -> None:
         allowlist = frozenset(
             item.strip() for item in repository_allowlist if item.strip()
         )
         if not allowlist:
-            raise ValueError("CODEX_PROVIDER_REPOSITORY_ALLOWLIST_REQUIRED")
+            raise ValueError("CODEX_ADAPTER_REPOSITORY_ALLOWLIST_REQUIRED")
         if credential.auth_mode != AUTH_MODE_BUSINESS_TOKEN:
             raise CodexCredentialError(
-                "CODEX_PROVIDER_CREDENTIAL_AUTH_MODE_INVALID: "
+                "CODEX_ADAPTER_CREDENTIAL_AUTH_MODE_INVALID: "
                 "only chatgpt_business_codex_token is accepted"
             )
         self._transport = transport
         self._credential = credential
         self._repository_allowlist = allowlist
+        self._credential_mapping = credential_mapping
 
-    # Receipt evidence: auth mode, never the secret value.
     def _auth_evidence(self) -> str:
         return f"auth_mode:{self._credential.auth_mode}"
 
     def dispatch(self, request: DispatchRequest) -> DispatchResult:
         if request.repository not in self._repository_allowlist:
-            raise PermissionError("CODEX_PROVIDER_REPOSITORY_NOT_ALLOWED")
+            raise PermissionError("CODEX_ADAPTER_REPOSITORY_NOT_ALLOWED")
         if request.base_ref != "main":
-            raise PermissionError("CODEX_PROVIDER_BASE_REF_NOT_ALLOWED")
+            raise PermissionError("CODEX_ADAPTER_BASE_REF_NOT_ALLOWED")
         if request.convergence_class == ConvergenceClass.ALREADY_DONE:
-            raise PermissionError("CODEX_PROVIDER_ALREADY_DONE_MUST_NOT_DISPATCH")
+            raise PermissionError("CODEX_ADAPTER_ALREADY_DONE_MUST_NOT_DISPATCH")
         if request.convergence_class == ConvergenceClass.CONTINUE:
-            return self._continue_existing_session(request)
-        return self._create_coding_session(request)
+            return self._continue_mission(request)
+        return self._start_mission(request)
 
-    def _create_coding_session(self, request: DispatchRequest) -> DispatchResult:
-        """POST a new Codex coding session for NEW/CONVERGE/SUPERSEDE missions."""
-        payload: dict[str, Any] = {
-            "mission_id": request.mission_id,
-            "repository": request.repository,
-            "base_branch": request.base_ref,
-            "base_sha": request.base_sha,
-            "objective": request.objective[:2000],
-            "acceptance_criteria": list(request.acceptance_criteria),
-            "validation_commands": list(request.validation_commands),
-            "budget_class": request.budget_class.value,
-            "convergence_class": request.convergence_class.value,
-            "draft_pr": True,
-            "authority_boundary": (
-                "Draft PR only. No merge, deployment, production mutation, "
-                "scientific publication, credential creation, spending, "
-                "force-push, branch deletion, or repository deletion."
-            ),
-        }
-        response = self._transport.request("POST", CODEX_TASK_ENDPOINT, json_body=payload)
-        self._require_status(response, {200, 201, 202}, "CODEX_PROVIDER_SESSION_CREATE_FAILED")
-        body = self._mapping(response.payload)
-        session_id = self._nonempty_str(body.get("id") or body.get("session_id"), "CODEX_PROVIDER_SESSION_ID_MISSING")
-        pr_number = self._optional_int(body.get("pull_request_number"))
-        pr_url = self._optional_str(body.get("pull_request_url"))
-        branch = self._optional_str(body.get("branch"))
-        state = "session_created" if pr_number is None else "dispatched"
+    def _build_cli_env(self) -> dict[str, str]:
+        """Build the subprocess env. Raises if credential mapping is unbound."""
+        return self._credential_mapping.build_cli_env(self._credential)
 
+    def _task_prompt(self, request: DispatchRequest) -> str:
+        criteria = "\n".join(f"- {c}" for c in request.acceptance_criteria)
+        validation = "\n".join(f"- {v}" for v in request.validation_commands)
+        return (
+            f"Mission: {request.mission_id}\n"
+            f"Repository: {request.repository}\n"
+            f"Base: {request.base_ref}@{request.base_sha}\n"
+            f"Convergence: {request.convergence_class.value}\n"
+            f"Budget: {request.budget_class.value}\n\n"
+            f"Objective:\n{request.objective}\n\n"
+            f"Acceptance criteria:\n{criteria}\n\n"
+            f"Validation commands:\n{validation}\n\n"
+            "Authority boundary: Draft PR only. No merge, deployment, "
+            "production mutation, scientific publication, credential creation, "
+            "spending, force-push, branch deletion, or repository deletion."
+        )
+
+    def _continuation_prompt(self, request: DispatchRequest) -> str:
+        prs = list(request.continuation_pr_numbers)
+        criteria = "\n".join(f"- {c}" for c in request.acceptance_criteria)
+        validation = "\n".join(f"- {v}" for v in request.validation_commands)
+        return (
+            f"Continue governed mission {request.mission_id} on PR {prs}.\n"
+            f"Do not create a competing PR.\n\n"
+            f"Objective:\n{request.objective}\n\n"
+            f"Acceptance criteria:\n{criteria}\n\n"
+            f"Validation:\n{validation}\n\n"
+            "Keep draft. No merge, deploy, production mutation, publish, "
+            "credential changes, spending, force-push, or branch deletion."
+        )
+
+    def _start_mission(self, request: DispatchRequest) -> DispatchResult:
+        try:
+            env = self._build_cli_env()
+        except CodexCredentialMappingError as exc:
+            raise PermissionError(f"CODEX_ADAPTER_CREDENTIAL_MAPPING_UNBOUND: {exc}") from exc
+
+        result = self._transport.run(
+            task=self._task_prompt(request),
+            repository=request.repository,
+            base_ref=request.base_ref,
+            base_sha=request.base_sha,
+            env=env,
+        )
+        state = "session_created" if result.pull_request_number is None else "dispatched"
+        if not result.succeeded:
+            state = "cli_failed"
+
+        session_id = result.session_id or f"codex-proc-{request.mission_id}"
         return DispatchResult(
             provider=self.provider_name,
             executor_class=self.executor_class,
             repository=request.repository,
             base_sha=request.base_sha,
-            branch=branch,
+            branch=result.branch,
             issue_number=None,
-            pull_request_number=pr_number,
-            pull_request_url=pr_url,
+            pull_request_number=result.pull_request_number,
+            pull_request_url=result.pull_request_url,
             draft=True,
-            head_sha=self._optional_str(body.get("head_sha")),
+            head_sha=result.head_sha,
             state=state,
+            blocker_code=None if result.succeeded else f"CODEX_CLI_EXIT_{result.exit_code}",
             validation_evidence=(
                 f"codex-session:{session_id}",
                 f"repo-commit:{request.repository}@{request.base_sha}",
@@ -206,94 +432,51 @@ class ChatGPTBusinessCodexProvider:
             ),
         )
 
-    def _continue_existing_session(self, request: DispatchRequest) -> DispatchResult:
-        """POST an iteration instruction to an existing Codex session (CONTINUE)."""
+    def _continue_mission(self, request: DispatchRequest) -> DispatchResult:
         prs = request.continuation_pr_numbers
         if len(prs) != 1:
-            raise PermissionError("CODEX_PROVIDER_CONTINUE_REQUIRES_ONE_PR")
+            raise PermissionError("CODEX_ADAPTER_CONTINUE_REQUIRES_ONE_PR")
         pr_number = prs[0]
-        # Reuse the pr_number as the session reference for the iteration endpoint.
-        path = f"/codex/prs/{pr_number}/iterations"
-        payload: dict[str, Any] = {
-            "mission_id": request.mission_id,
-            "instruction": self._iteration_instruction(request),
-            "draft_pr": True,
-        }
-        response = self._transport.request("POST", path, json_body=payload)
-        self._require_status(response, {200, 201, 202}, "CODEX_PROVIDER_ITERATION_FAILED")
-        body = self._mapping(response.payload)
-        iteration_id = self._nonempty_str(
-            body.get("id") or body.get("iteration_id"),
-            "CODEX_PROVIDER_ITERATION_ID_MISSING",
+
+        try:
+            env = self._build_cli_env()
+        except CodexCredentialMappingError as exc:
+            raise PermissionError(f"CODEX_ADAPTER_CREDENTIAL_MAPPING_UNBOUND: {exc}") from exc
+
+        result = self._transport.run(
+            task=self._continuation_prompt(request),
+            repository=request.repository,
+            base_ref=request.base_ref,
+            base_sha=request.base_sha,
+            env=env,
         )
+        state = "iteration_requested" if result.succeeded else "cli_failed"
+        session_id = result.session_id or f"codex-iter-{request.mission_id}"
         return DispatchResult(
             provider=self.provider_name,
             executor_class=self.executor_class,
             repository=request.repository,
             base_sha=request.base_sha,
-            branch=None,
+            branch=result.branch,
             issue_number=None,
             pull_request_number=pr_number,
             pull_request_url=f"https://github.com/{request.repository}/pull/{pr_number}",
             draft=True,
-            state="iteration_requested",
+            state=state,
+            blocker_code=None if result.succeeded else f"CODEX_CLI_EXIT_{result.exit_code}",
             validation_evidence=(
-                f"codex-iteration:{iteration_id}",
+                f"codex-session:{session_id}",
                 f"github-pr:{request.repository}#{pr_number}",
                 f"repo-commit:{request.repository}@{request.base_sha}",
                 self._auth_evidence(),
             ),
         )
 
-    @staticmethod
-    def _iteration_instruction(request: DispatchRequest) -> str:
-        criteria = "\n".join(f"- {item}" for item in request.acceptance_criteria)
-        validation = "\n".join(f"- `{item}`" for item in request.validation_commands)
-        return (
-            f"Continue this governed mission; do not create a competing PR.\n"
-            f"Mission: {request.mission_id}\n"
-            f"Objective: {request.objective}\n\n"
-            f"Acceptance criteria:\n{criteria}\n\n"
-            f"Validation:\n{validation}\n\n"
-            "Keep the PR in draft. "
-            "Do not merge, deploy, mutate production state, publish science, "
-            "change credentials, spend funds, force-push, or delete branches/repos."
-        )
 
-    # ── Helpers ───────────────────────────────────────────────────────────────
+# ---------------------------------------------------------------------------
+# Back-compat alias (old name referenced in worker adapter)
+# ---------------------------------------------------------------------------
 
-    @staticmethod
-    def _require_status(
-        response: CodexTransportResponse,
-        allowed: set[int],
-        code: str,
-    ) -> None:
-        if response.status_code not in allowed:
-            raise RuntimeError(f"{code}:{response.status_code}")
-
-    @staticmethod
-    def _mapping(value: object) -> Mapping[str, Any]:
-        if not isinstance(value, Mapping):
-            raise TypeError("CODEX_PROVIDER_RESPONSE_INVALID")
-        return value
-
-    @staticmethod
-    def _nonempty_str(value: object, code: str) -> str:
-        s = str(value or "").strip()
-        if not s:
-            raise RuntimeError(code)
-        return s
-
-    @staticmethod
-    def _optional_int(value: object) -> int | None:
-        if value is None:
-            return None
-        try:
-            return int(value)
-        except (TypeError, ValueError):
-            return None
-
-    @staticmethod
-    def _optional_str(value: object) -> str | None:
-        s = str(value or "").strip()
-        return s if s else None
+# Keep the old class name as an alias so callers that import
+# ChatGPTBusinessCodexProvider still compile; it is the CLI adapter now.
+ChatGPTBusinessCodexProvider = CodexCLIAdapter

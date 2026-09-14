@@ -45,7 +45,7 @@ from .chatgpt_business_codex_credential import (
     CodexCredentialError,
     load_codex_business_credential,
 )
-from .chatgpt_business_codex_provider import CodexRequestsTransport
+from .chatgpt_business_codex_provider import CodexCLICommand, SubprocessCodexTransport
 from .codex_worker_adapter import CodexCodingWorker
 from .deep_orchestrate import AUTH_WORKSPACE, DeepOrchestrate, Priority, TaskLeaf, TaskState
 from .github_coding_executor import BudgetClass, ConvergenceClass
@@ -93,7 +93,7 @@ def _preflight(repository: str, environ: dict | None = None) -> CodexCodingWorke
     credential = load_codex_business_credential(environ=environ)  # raises if absent/wrong
     print(f"[PREFLIGHT] auth_mode={credential.auth_mode!r} — credential present")
 
-    transport = CodexRequestsTransport(credential)
+    transport = SubprocessCodexTransport(cli_command=CodexCLICommand())  # UNBOUND until CLI verified
     worker = CodexCodingWorker(
         transport=transport,
         credential=credential,

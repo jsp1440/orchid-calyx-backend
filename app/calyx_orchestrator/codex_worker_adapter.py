@@ -1,32 +1,33 @@
-"""Codex Worker Adapter — wires BoundedDispatcher to ChatGPT Business Codex.
+"""Codex Worker Adapter — wires BoundedDispatcher to ChatGPT Business Codex CLI.
 
 This is the execution boundary that connects the existing eight-lane
 BoundedDispatcher (deep_orchestrate + bounded_dispatcher) to real coding
-work via the ChatGPT Business Codex programmatic API.
+work via the ChatGPT Business Codex CLI running in an isolated worker/runner.
+
+Transport: SUBPROCESS / PROCESS (Codex CLI) — NOT an HTTP REST API.
 
 Execution flow per lane:
     eligible queued issue (TaskLeaf / GitHub issue)
     → graph admission (DeepOrchestrate/BoundedDispatcher)
     → exclusive durable execution lease   (DeepOrchestrate.lease)
-    → isolated branch / worktree          (encoded in Codex session)
+    → isolated branch / worktree          (Codex CLI manages internally)
     → bounded execution packet            (CodexExecutionPacket)
-    → Codex worker invocation             (ChatGPTBusinessCodexProvider.dispatch)
-    → tests / branch / draft PR / receipt (Codex cloud; recorded in receipt)
-    → durable execution receipt           (TaskExecutionResult / ExecReceipt)
+    → Codex CLI invocation                (CodexCLIAdapter.dispatch)
+    → tests / branch / draft PR           (Codex CLI; running in private runner)
+    → durable execution receipt           (CodexWorkerReceipt)
     → lease release                       (BoundedDispatcher.complete/block)
     → automatic lane refill               (DeepOrchestrate.refill)
 
 Authentication interface:
-- load_codex_business_credential() is called at the start of each execution.
+- load_codex_business_credential() enforces fail-closed credential checks.
 - If OPENAI_API_KEY is present → CodexApiKeyFallbackError → lane parked safely.
-- If CALYX_CHATGPT_BUSINESS_CODEX_TOKEN absent → CodexCredentialError → lane
-  parked safely; issue not marked running/completed.
+- If CALYX_CHATGPT_BUSINESS_CODEX_TOKEN absent → CodexCredentialError → parked.
 - Receipts record AUTH_MODE only; the credential value is never recorded.
+- The env-var the Codex CLI reads for Business tokens is INTENTIONALLY UNBOUND
+  (CodexCredentialMapping.BUSINESS_TOKEN_CLI_ENV_VAR = None) until official
+  documentation confirms the interface.
 
-This module is PROVIDER-FREE for deterministic tests: inject a mock
-CodexTransport and a test credential to exercise the full lifecycle without
-any real API call. The real credential injection is a one-step deployment
-action when the ChatGPT Business MFA gate is cleared.
+Tests use MockCodexProcessTransport — no subprocess, no HTTP, no real API.
 """
 
 from __future__ import annotations
@@ -43,9 +44,13 @@ from .chatgpt_business_codex_credential import (
     CodexCredentialError,
 )
 from .chatgpt_business_codex_provider import (
-    ChatGPTBusinessCodexProvider,
-    CodexTransport,
+    CodexCLIAdapter,
+    CodexProcessTransport,
+    MockCodexProcessTransport,
 )
+
+# Back-compat alias used in tests and older imports
+ChatGPTBusinessCodexProvider = CodexCLIAdapter
 from .deep_orchestrate import AUTH_GOVERNANCE, AUTH_PRODUCTION, AUTH_SCIENCE_PUB, AUTH_SECURITY, TaskLeaf
 from .github_coding_executor import BudgetClass, ConvergenceClass, DispatchRequest
 
@@ -188,9 +193,10 @@ def _leaf_to_packet(leaf: TaskLeaf) -> CodexExecutionPacket:
 class CodexCodingWorker:
     """Worker that dispatches TaskLeaves to ChatGPT Business Codex.
 
-    Inject a mock CodexTransport + test CodexBusinessCredential to run
-    deterministic proofs without any real API call (provider_api_called=False
-    in the mock receipt). The real transport is CodexRequestsTransport.
+    Inject a MockCodexProcessTransport + test credential to run deterministic
+    proofs without any subprocess, HTTP, or real API call.
+    The production transport is SubprocessCodexTransport (requires CLI bound +
+    credential mapping bound before live use).
 
     One CodexCodingWorker instance is shared across all lanes; each lane
     gets an exclusive lease from the reservoir before this worker is called.
@@ -200,22 +206,28 @@ class CodexCodingWorker:
     - Missing repository in leaf evidence → BLOCKED:CODEX_REPOSITORY_REQUIRED
     - Missing base_sha → BLOCKED:CODEX_BASE_SHA_REQUIRED
     - Credential error → BLOCKED:CODEX_AUTH_MISSING (lane parked safely)
-    - Provider dispatch error → BLOCKED:<error>
+    - CLI command unbound → BLOCKED:CODEX_CLI_COMMAND_UNBOUND (lane parked)
+    - Credential mapping unbound → BLOCKED:CODEX_CLI_CREDENTIAL_ENV_VAR_UNBOUND
+    - CLI execution error → BLOCKED:CODEX_CLI_EXIT_<code>
     """
 
     def __init__(
         self,
         *,
-        transport: CodexTransport,
+        transport: CodexProcessTransport,
         credential: CodexBusinessCredential,
         repository_allowlist: tuple[str, ...],
         worker_id: str = CODEX_WORKER_ID,
+        credential_mapping: Any = None,
     ) -> None:
-        self._provider = ChatGPTBusinessCodexProvider(
-            transport=transport,
-            credential=credential,
-            repository_allowlist=list(repository_allowlist),
-        )
+        kwargs: dict[str, Any] = {
+            "transport": transport,
+            "credential": credential,
+            "repository_allowlist": list(repository_allowlist),
+        }
+        if credential_mapping is not None:
+            kwargs["credential_mapping"] = credential_mapping
+        self._provider = CodexCLIAdapter(**kwargs)
         self._credential = credential
         self._worker_id = worker_id
 
@@ -359,14 +371,16 @@ def build_codex_worker_from_env(
     Raises CodexCredentialError / CodexApiKeyFallbackError on misconfiguration;
     callers should catch and park the lane.
 
-    The production transport (CodexRequestsTransport) is used; not suitable
-    for unit tests (use build_codex_worker_with_mock instead).
+    Production transport: SubprocessCodexTransport with an UNBOUND command.
+    The command must be set in CodexCLICommand.command and the credential
+    env-var in CodexCredentialMapping.BUSINESS_TOKEN_CLI_ENV_VAR before
+    live dispatch can succeed.
     """
     from .chatgpt_business_codex_credential import load_codex_business_credential
-    from .chatgpt_business_codex_provider import CodexRequestsTransport
+    from .chatgpt_business_codex_provider import CodexCLICommand, SubprocessCodexTransport
 
     credential = load_codex_business_credential(environ=environ)
-    transport = CodexRequestsTransport(credential)
+    transport = SubprocessCodexTransport(cli_command=CodexCLICommand())  # UNBOUND
     return CodexCodingWorker(
         transport=transport,
         credential=credential,
@@ -374,21 +388,34 @@ def build_codex_worker_from_env(
     )
 
 
+class _MockCredentialMapping:
+    """Test-only credential mapping that returns an empty env dict.
+
+    Used with MockCodexProcessTransport so that the credential env-var
+    check is bypassed in deterministic tests. Never used in production.
+    """
+
+    @classmethod
+    def build_cli_env(cls, credential: CodexBusinessCredential) -> dict[str, str]:
+        return {}  # mock transport ignores env; no real credential injected
+
+
 def build_codex_worker_with_mock(
     *,
-    transport: CodexTransport,
+    transport: CodexProcessTransport,
     repository_allowlist: tuple[str, ...],
     test_token: str = "test-placeholder-not-real",
 ) -> CodexCodingWorker:
-    """Build a CodexCodingWorker with a mock transport for deterministic tests.
+    """Build a CodexCodingWorker with a mock process transport for deterministic tests.
 
-    The test_token is a placeholder value. It is NEVER treated as a real
-    credential; it exists solely to satisfy the non-blank check in
-    CodexBusinessCredential. Deterministic proofs use this factory.
+    The test_token is a placeholder value — NEVER a real credential.
+    The MockCodexProcessTransport never invokes any subprocess, HTTP, or real API.
+    Deterministic control-plane proofs use this factory exclusively.
     """
     credential = CodexBusinessCredential(test_token, auth_mode=AUTH_MODE_BUSINESS_TOKEN)
     return CodexCodingWorker(
         transport=transport,
         credential=credential,
         repository_allowlist=repository_allowlist,
+        credential_mapping=_MockCredentialMapping,
     )
