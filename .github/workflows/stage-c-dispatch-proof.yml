@@ -19,6 +19,7 @@ concurrency:
   group: stage-c-canonical-dispatch-proof
   cancel-in-progress: true
 
+# Exact-head human-authored retrigger after automated Ruff repair.
 jobs:
   deterministic-stage-c:
     runs-on: ubuntu-latest
