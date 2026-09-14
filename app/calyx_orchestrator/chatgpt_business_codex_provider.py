@@ -34,7 +34,7 @@ from __future__ import annotations
 import subprocess
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Protocol
+from typing import Protocol
 
 from .chatgpt_business_codex_credential import (
     AUTH_MODE_BUSINESS_TOKEN,
@@ -272,6 +272,7 @@ class SubprocessCodexTransport:
                 capture_output=True,
                 text=True,
                 timeout=self._timeout,
+                check=False,
             )
         except subprocess.TimeoutExpired:
             return CodexProcessResult(

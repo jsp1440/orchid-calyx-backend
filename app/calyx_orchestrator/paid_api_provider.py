@@ -16,9 +16,13 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Protocol, Sequence
+from typing import Any, Protocol
 
-from .paid_api_budget_governor import BudgetReceipt, BudgetReservation, PaidAPIBudgetGovernor
+from .paid_api_budget_governor import (
+    BudgetReceipt,
+    BudgetReservation,
+    PaidAPIBudgetGovernor,
+)
 
 # ── Model constants ───────────────────────────────────────────────────────────
 

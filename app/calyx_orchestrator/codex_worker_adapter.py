@@ -34,7 +34,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -46,12 +46,17 @@ from .chatgpt_business_codex_credential import (
 from .chatgpt_business_codex_provider import (
     CodexCLIAdapter,
     CodexProcessTransport,
-    MockCodexProcessTransport,
 )
 
 # Back-compat alias used in tests and older imports
 ChatGPTBusinessCodexProvider = CodexCLIAdapter
-from .deep_orchestrate import AUTH_GOVERNANCE, AUTH_PRODUCTION, AUTH_SCIENCE_PUB, AUTH_SECURITY, TaskLeaf
+from .deep_orchestrate import (
+    AUTH_GOVERNANCE,
+    AUTH_PRODUCTION,
+    AUTH_SCIENCE_PUB,
+    AUTH_SECURITY,
+    TaskLeaf,
+)
 from .github_coding_executor import BudgetClass, ConvergenceClass, DispatchRequest
 
 # Authority classes that must never auto-execute via the Codex worker.
@@ -377,7 +382,10 @@ def build_codex_worker_from_env(
     live dispatch can succeed.
     """
     from .chatgpt_business_codex_credential import load_codex_business_credential
-    from .chatgpt_business_codex_provider import CodexCLICommand, SubprocessCodexTransport
+    from .chatgpt_business_codex_provider import (
+        CodexCLICommand,
+        SubprocessCodexTransport,
+    )
 
     credential = load_codex_business_credential(environ=environ)
     transport = SubprocessCodexTransport(cli_command=CodexCLICommand())  # UNBOUND
