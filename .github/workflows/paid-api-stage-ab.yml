@@ -21,6 +21,13 @@ on:
         description: "Budget ceiling in USD (hard max: 50.00)"
         required: false
         default: "50.00"
+  push:
+    branches:
+      - claude/orchid-worker-codex-adapter-u0rxqr
+    paths:
+      - ".github/workflows/paid-api-stage-ab.yml"
+      - "app/calyx_orchestrator/paid_api_*.py"
+      - "tests/test_paid_api_worker.py"
 
 # No concurrent paid runs — prevents double-spending
 concurrency:
