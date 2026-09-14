@@ -1,0 +1,98 @@
+name: Paid API Stage A+B Canary
+
+on:
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: "Stage to run: a, b, or ab"
+        required: false
+        default: "ab"
+        type: choice
+        options: [a, b, ab]
+      issue_a:
+        description: "Issue number for Stage A (default: 1330)"
+        required: false
+        default: "1330"
+      issues_b:
+        description: "Comma-separated issue numbers for Stage B (default: 1330,1402)"
+        required: false
+        default: "1330,1402"
+      ceiling_usd:
+        description: "Budget ceiling in USD (hard max: 50.00)"
+        required: false
+        default: "50.00"
+
+# No concurrent paid runs — prevents double-spending
+concurrency:
+  group: paid-api-canary
+  cancel-in-progress: false
+
+jobs:
+  canary:
+    name: "Paid API Stage ${{ inputs.stage || 'ab' }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    permissions:
+      contents: read
+      issues: write   # needed to post receipt comments to #1330
+
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: claude/orchid-worker-codex-adapter-u0rxqr
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]" 2>/dev/null || pip install -r requirements.txt 2>/dev/null || pip install -e . 2>/dev/null || true
+          pip install anthropic openai pytest
+
+      - name: Verify no API keys leaked to non-actions env
+        run: |
+          echo "Verifying required secrets are present..."
+          if [ -z "$OPENAI_API_KEY" ] && [ -z "$ANTHROPIC_API_KEY" ]; then
+            echo "FAIL: Neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is set."
+            echo "Configure repository secrets before triggering this workflow."
+            exit 3
+          fi
+          echo "At least one provider key is configured."
+
+      - name: Run deterministic unit tests (no real API calls)
+        run: |
+          python -m pytest tests/test_paid_api_worker.py -q --tb=short
+          python -m pytest tests/test_codex_worker_adapter.py -q --tb=short
+
+      - name: Run paid API canary — Stage ${{ inputs.stage || 'ab' }}
+        id: canary
+        run: |
+          python -m app.calyx_orchestrator.paid_api_canary \
+            --stage "${{ inputs.stage || 'ab' }}" \
+            --issue "${{ inputs.issue_a || '1330' }}" \
+            --issues "${{ inputs.issues_b || '1330,1402' }}" \
+            --ceiling "${{ inputs.ceiling_usd || '50.00' }}"
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload canary log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: canary-log-${{ github.run_number }}
+          path: /tmp/paid-api-canary-*.log
+          if-no-files-found: ignore
+          retention-days: 30
