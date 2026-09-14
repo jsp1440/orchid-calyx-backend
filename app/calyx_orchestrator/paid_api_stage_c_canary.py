@@ -14,7 +14,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from .bounded_dispatcher import BoundedDispatcher, DispatchConfig
-from .deep_orchestrate import AUTH_WORKSPACE, DeepOrchestrate, Priority, TaskLeaf, TaskState
+from .deep_orchestrate import (
+    AUTH_WORKSPACE,
+    DeepOrchestrate,
+    Priority,
+    TaskLeaf,
+    TaskState,
+)
 from .github_coding_executor import BudgetClass, ConvergenceClass
 from .paid_api_worker import PaidAPIWorker, build_paid_api_worker_from_env
 
