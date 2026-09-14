@@ -16,31 +16,41 @@ requires Codex CLI integration or additional agentic tooling).
 from __future__ import annotations
 
 import time
-import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Mapping
+from typing import Any
 
-from .deep_orchestrate import AUTH_GOVERNANCE, AUTH_PRODUCTION, AUTH_SCIENCE_PUB, AUTH_SECURITY, TaskLeaf
-from .paid_api_budget_governor import BudgetExhaustedError, BudgetReceipt, PaidAPIBudgetGovernor
-from .paid_api_provider import MockPaidProvider, PaidAPICallResult, PaidAPIProvider, build_cheapest_provider_from_env
+from .deep_orchestrate import (
+    AUTH_GOVERNANCE,
+    AUTH_PRODUCTION,
+    AUTH_SCIENCE_PUB,
+    AUTH_SECURITY,
+    TaskLeaf,
+)
+from .paid_api_budget_governor import BudgetExhaustedError, PaidAPIBudgetGovernor
+from .paid_api_provider import (
+    MockPaidProvider,
+    PaidAPICallResult,
+    PaidAPIProvider,
+    build_cheapest_provider_from_env,
+)
 
 MAX_RETRIES = 2  # no unbounded retry loops
 
-_NEVER_AUTO_EXECUTE = frozenset({AUTH_PRODUCTION, AUTH_SCIENCE_PUB, AUTH_SECURITY, AUTH_GOVERNANCE})
+_NEVER_AUTO_EXECUTE = frozenset(
+    {AUTH_PRODUCTION, AUTH_SCIENCE_PUB, AUTH_SECURITY, AUTH_GOVERNANCE}
+)
 
-# Tight default: keeps cost low for control-plane proofs
 DEFAULT_MAX_OUTPUT_TOKENS = 512
-DEFAULT_RESERVATION_MULTIPLIER = 3.0  # estimate × 3× safety margin
+DEFAULT_RESERVATION_MULTIPLIER = 3.0
 
 
 @dataclass(frozen=True, slots=True)
 class PaidAPIWorkerReceipt:
-    """Durable evidence record for one paid API execution."""
-
     task_key: str
     worker_id: str
-    status: str  # "completed" | "blocked" | "budget_exhausted" | "failed"
+    status: str
     provider: str
     model: str
     run_id: str | None
@@ -48,7 +58,7 @@ class PaidAPIWorkerReceipt:
     output_tokens: int
     estimated_usd: float
     actual_usd: float
-    analysis_excerpt: str  # first 200 chars of AI response
+    analysis_excerpt: str
     receipt_ledger_line: str | None
     error_reason: str | None
     started_at: str
@@ -85,7 +95,6 @@ class PaidAPIWorkerReceipt:
 
 
 def _build_analysis_prompt(leaf: TaskLeaf) -> tuple[str, str]:
-    """Build system + user prompts for an issue analysis task."""
     ev = leaf.evidence or {}
     objective = str(ev.get("objective") or leaf.key)
     criteria = ev.get("acceptance_criteria") or []
@@ -113,18 +122,6 @@ def _build_analysis_prompt(leaf: TaskLeaf) -> tuple[str, str]:
 
 
 class PaidAPIWorker:
-    """Worker that dispatches TaskLeaves to a paid AI provider.
-
-    Separate from CodexCodingWorker (different auth path, different budget).
-    Reuses the same DeepOrchestrate lease system and BoundedDispatcher.
-
-    Safety invariants:
-    - Owner-gate authority classes never auto-execute.
-    - Budget reserved BEFORE every API call; confirmed/released after.
-    - MAX_RETRIES = 2 per task.
-    - No merge, deployment, production mutation, publication.
-    """
-
     WORKER_ID = "paid-api-worker-v1"
 
     def __init__(
@@ -139,7 +136,6 @@ class PaidAPIWorker:
         self._max_output_tokens = max_output_tokens
 
     def execute(self, leaf: TaskLeaf) -> PaidAPIWorkerReceipt:
-        """Execute one TaskLeaf via paid API. Returns receipt; never raises."""
         started = time.monotonic()
         started_at = datetime.now(timezone.utc).isoformat()
 
@@ -148,9 +144,11 @@ class PaidAPIWorker:
 
         system_prompt, user_prompt = _build_analysis_prompt(leaf)
         prompt_chars = len(system_prompt) + len(user_prompt)
-        estimated_usd = self._provider.estimate_usd(prompt_chars=prompt_chars) * DEFAULT_RESERVATION_MULTIPLIER
+        estimated_usd = (
+            self._provider.estimate_usd(prompt_chars=prompt_chars)
+            * DEFAULT_RESERVATION_MULTIPLIER
+        )
 
-        # Pre-reserve budget before any API call
         try:
             reservation = self._governor.reserve(
                 leaf.key,
@@ -158,7 +156,13 @@ class PaidAPIWorker:
                 provider_hint=self._provider.provider_name,
             )
         except BudgetExhaustedError as exc:
-            return self._blocked(leaf, f"BUDGET_EXHAUSTED: {exc}", started_at, started, estimated_usd)
+            return self._blocked(
+                leaf,
+                f"BUDGET_EXHAUSTED: {exc}",
+                started_at,
+                started,
+                estimated_usd,
+            )
 
         call_result: PaidAPICallResult | None = None
         last_error: str | None = None
@@ -167,9 +171,10 @@ class PaidAPIWorker:
         while attempts < MAX_RETRIES:
             attempts += 1
             try:
-                # If first attempt's reservation was used, make a new one for retries
-                active_reservation = reservation if attempts == 1 else (
-                    self._governor.reserve(
+                active_reservation = (
+                    reservation
+                    if attempts == 1
+                    else self._governor.reserve(
                         leaf.key,
                         estimated_usd,
                         provider_hint=self._provider.provider_name,
@@ -182,25 +187,24 @@ class PaidAPIWorker:
                     governor=self._governor,
                     reservation=active_reservation,
                 )
-                break  # success — exit retry loop
+                break
             except BudgetExhaustedError as exc:
                 last_error = f"BUDGET_EXHAUSTED: {exc}"
-                break  # don't retry budget failures
-            except Exception as exc:
+                break
+            except Exception as exc:  # noqa: BLE001 - provider SDK boundary
                 last_error = str(exc)
                 if attempts < MAX_RETRIES:
-                    time.sleep(1.0)  # brief backoff between retries; no unbounded loop
-                continue
+                    time.sleep(1.0)
 
         elapsed = time.monotonic() - started
         completed_at = datetime.now(timezone.utc).isoformat()
 
         if call_result is None:
-            # All attempts failed; release reservation if still held
             try:
                 self._governor.release_reservation(reservation.reservation_id)
-            except Exception:
-                pass
+            except Exception as exc:  # noqa: BLE001 - cleanup must not mask primary failure
+                suffix = f"reservation_release_failed={exc}"
+                last_error = f"{last_error}; {suffix}" if last_error else suffix
             return PaidAPIWorkerReceipt(
                 task_key=leaf.key,
                 worker_id=self.WORKER_ID,
@@ -220,11 +224,7 @@ class PaidAPIWorker:
                 duration_seconds=max(0.0, elapsed),
             )
 
-        receipt_line = (
-            call_result.receipt.ledger_line()
-            if call_result.receipt
-            else None
-        )
+        receipt_line = call_result.receipt.ledger_line() if call_result.receipt else None
         return PaidAPIWorkerReceipt(
             task_key=leaf.key,
             worker_id=self.WORKER_ID,
@@ -257,7 +257,11 @@ class PaidAPIWorker:
             task_key=leaf.key,
             worker_id=self.WORKER_ID,
             status="blocked",
-            provider=self._provider.provider_name if hasattr(self._provider, "provider_name") else "none",
+            provider=(
+                self._provider.provider_name
+                if hasattr(self._provider, "provider_name")
+                else "none"
+            ),
             model=self._provider.model if hasattr(self._provider, "model") else "none",
             run_id=None,
             input_tokens=0,
@@ -273,19 +277,12 @@ class PaidAPIWorker:
         )
 
 
-# ── Factory helpers ───────────────────────────────────────────────────────────
-
-
 def build_paid_api_worker_from_env(
     environ: Mapping[str, str] | None = None,
     ceiling_usd: float = 50.0,
 ) -> tuple[PaidAPIWorker, PaidAPIBudgetGovernor]:
-    """Build a PaidAPIWorker from environment variables.
-
-    Returns (worker, governor) so the caller can check governor.summary() after execution.
-    Raises RuntimeError if neither OPENAI_API_KEY nor ANTHROPIC_API_KEY is set.
-    """
     import os
+
     env = dict(environ) if environ is not None else dict(os.environ)
     provider = build_cheapest_provider_from_env(env)
     governor = PaidAPIBudgetGovernor(ceiling_usd=ceiling_usd)
@@ -295,7 +292,6 @@ def build_paid_api_worker_from_env(
 def build_paid_api_worker_with_mock(
     responses: list[str] | None = None,
 ) -> tuple[PaidAPIWorker, PaidAPIBudgetGovernor, MockPaidProvider]:
-    """Build a PaidAPIWorker with mock provider for deterministic tests."""
     provider = MockPaidProvider(responses=list(responses or ["mock-analysis"]))
     governor = PaidAPIBudgetGovernor(ceiling_usd=50.0)
     worker = PaidAPIWorker(provider=provider, governor=governor)
