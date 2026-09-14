@@ -18,7 +18,10 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from app.calyx_orchestrator.github_coding_executor import BudgetClass, ConvergenceClass
-from app.calyx_orchestrator.paid_api_worker import PaidAPIWorker, build_paid_api_worker_with_mock
+from app.calyx_orchestrator.paid_api_worker import (
+    PaidAPIWorker,
+    build_paid_api_worker_with_mock,
+)
 
 FAKE_SHA = "a" * 40
 
