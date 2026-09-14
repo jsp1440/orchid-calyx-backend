@@ -1,0 +1,63 @@
+name: One-shot Ruff Repair PR 1423
+
+on:
+  push:
+    branches:
+      - claude/orchid-worker-codex-adapter-u0rxqr
+    paths:
+      - .github/workflows/one-shot-ruff-repair-1423.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: claude/orchid-worker-codex-adapter-u0rxqr
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install Ruff
+        run: pip install ruff
+      - name: Apply safe Ruff fixes
+        run: ruff check app/calyx_orchestrator tests/test_calyx_agent_003.py --fix || true
+      - name: Repair remaining intentional boundary lint findings
+        shell: python
+        run: |
+          from pathlib import Path
+
+          p = Path('app/calyx_orchestrator/chatgpt_business_codex_provider.py')
+          s = p.read_text()
+          s = s.replace('                timeout=self._timeout,\n            )', '                timeout=self._timeout,\n                check=False,\n            )')
+          p.write_text(s)
+
+          p = Path('app/calyx_orchestrator/paid_api_canary.py')
+          s = p.read_text()
+          s = s.replace('        except Exception as exc:\n            print(f"[WARN] Could not fetch issue #{issue_number}: {exc}", file=sys.stderr)', '        except Exception as exc:  # noqa: BLE001 - network boundary; canary must report and continue\n            print(f"[WARN] Could not fetch issue #{issue_number}: {exc}", file=sys.stderr)')
+          s = s.replace('    except Exception as exc:\n        print(f"[WARN] Could not post ledger receipt: {exc}", file=sys.stderr)', '    except Exception as exc:  # noqa: BLE001 - GitHub API boundary; receipt post is best-effort\n        print(f"[WARN] Could not post ledger receipt: {exc}", file=sys.stderr)')
+          s = s.replace('        except Exception as exc:\n            blocker = f"STAGE_A_EXCEPTION: {exc}"', '        except Exception as exc:  # noqa: BLE001 - top-level canary boundary\n            blocker = f"STAGE_A_EXCEPTION: {exc}"')
+          s = s.replace('        except Exception as exc:\n            blocker = f"STAGE_B_EXCEPTION: {exc}"', '        except Exception as exc:  # noqa: BLE001 - top-level canary boundary\n            blocker = f"STAGE_B_EXCEPTION: {exc}"')
+          p.write_text(s)
+
+          p = Path('app/calyx_orchestrator/paid_api_worker.py')
+          s = p.read_text()
+          s = s.replace('            except Exception as exc:\n                last_error = str(exc)', '            except Exception as exc:  # noqa: BLE001 - provider SDK boundary\n                last_error = str(exc)')
+          s = s.replace('            except Exception:\n                pass', '            except Exception as release_exc:  # noqa: BLE001 - cleanup must not mask primary failure\n                last_error = f"{last_error}; reservation_release_failed={release_exc}"')
+          p.write_text(s)
+      - name: Verify Ruff clean
+        run: ruff check app/calyx_orchestrator tests/test_calyx_agent_003.py
+      - name: Commit repair
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app/calyx_orchestrator
+          if git diff --cached --quiet; then
+            echo 'No changes required.'
+          else
+            git commit -m 'fix: satisfy orchestrator Ruff validation'
+            git push origin HEAD:claude/orchid-worker-codex-adapter-u0rxqr
+          fi
