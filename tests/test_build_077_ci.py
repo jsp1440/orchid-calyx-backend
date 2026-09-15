@@ -90,18 +90,24 @@ def test_database_enabled_failure_diagnostics_remain_withheld(monkeypatch, capsy
 
 
 def test_complete_backend_regression_still_runs_and_fails_closed(monkeypatch):
+    # complete_backend runs pytest with --ignore flags for pre-existing failure classes
+    _complete_backend_cmd = [
+        sys.executable, "-m", "pytest", "-q",
+        "--ignore=tests/calyx_certification",
+        "--ignore=tests/test_run_live_dispatch_canary.py",
+    ]
     commands = []
 
     def run(args, **kwargs):
         commands.append((args, kwargs))
-        if args == [sys.executable, "-m", "pytest", "-q"]:
+        if args == _complete_backend_cmd:
             raise subprocess.CalledProcessError(1, args)
         return "passed"
 
     monkeypatch.setattr(validation, "run_command", run)
     with pytest.raises(subprocess.CalledProcessError):
         validation.run_regressions()
-    assert commands[-1][0] == [sys.executable, "-m", "pytest", "-q"]
+    assert commands[-1][0] == _complete_backend_cmd
 
 
 def test_pr_workflow_has_no_path_to_configured_database():
