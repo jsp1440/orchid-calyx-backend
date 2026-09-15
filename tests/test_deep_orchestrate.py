@@ -13,6 +13,7 @@ Covers all invariants from the #1024 DEEP ORCHESTRATE directive:
 
 from __future__ import annotations
 
+import threading
 import time
 
 import pytest
@@ -783,3 +784,111 @@ def test_task_leaf_requires_owner_gate_property():
         assert _leaf("x", authority_class=auth).requires_owner_gate
     for auth in (AUTH_READ_ONLY, AUTH_WORKSPACE, AUTH_REPO_EXEC):
         assert not _leaf("x", authority_class=auth).requires_owner_gate
+
+
+# ---------------------------------------------------------------------------
+# OC-STAGE-C-001 — lease / held_resources lock-reentrancy regression tests
+# ---------------------------------------------------------------------------
+
+
+def _leaf_res(key: str, resources: list[str], **kwargs: object) -> TaskLeaf:
+    """Helper: build a TaskLeaf with explicit resources."""
+    return TaskLeaf(
+        key=key,
+        title=f"Resource task {key}",
+        repo="orchid-calyx-backend",
+        module="app/test",
+        priority=Priority.P2,
+        authority_class=AUTH_WORKSPACE,
+        consequence_risk="low",
+        resources=resources,
+        **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_lease_resource_bearing_task_no_deadlock():
+    """lease() on a resource-bearing READY task must complete without deadlock.
+
+    The fix ensures _held_resources_nolock() is used inside lease() so the
+    non-reentrant scheduler lock is not re-acquired while already held.
+    Bounded by a 2-second timeout — a deadlock would stall indefinitely.
+    """
+    orch = _orch()
+    orch.register(_leaf_res("res-task", ["exclusive-db"]))
+
+    result: list[object] = []
+    exc: list[BaseException] = []
+
+    def do_lease() -> None:
+        try:
+            result.append(orch.lease("res-task"))
+        except BaseException as e:  # noqa: BLE001
+            exc.append(e)
+
+    t = threading.Thread(target=do_lease, daemon=True)
+    t.start()
+    t.join(timeout=2.0)
+    assert not t.is_alive(), (
+        "lease() deadlocked on a resource-bearing task — lock reentrancy bug"
+    )
+    assert not exc, f"lease() raised unexpectedly: {exc[0]}"
+    assert len(result) == 1
+    assert result[0].state == TaskState.LEASED  # type: ignore[union-attr]
+
+
+def test_exclusive_resource_conflict_prevents_second_lease():
+    """Two tasks sharing the same resource name cannot both be leased."""
+    orch = _orch(width=5)
+    orch.register(_leaf_res("t1", ["shared-db"]))
+    orch.register(_leaf_res("t2", ["shared-db"]))
+
+    orch.lease("t1")  # acquires shared-db
+    with pytest.raises(ValueError, match="RESOURCE_CONFLICT"):
+        orch.lease("t2")  # must be refused
+
+
+def test_disjoint_resources_lease_concurrently():
+    """Tasks with non-overlapping resource sets can both be leased."""
+    orch = _orch(width=5)
+    orch.register(_leaf_res("t1", ["db-a"]))
+    orch.register(_leaf_res("t2", ["db-b"]))
+
+    orch.lease("t1")
+    orch.lease("t2")  # different resource — must succeed
+
+    assert orch.get("t1").state == TaskState.LEASED
+    assert orch.get("t2").state == TaskState.LEASED
+
+
+def test_resource_released_after_task_completes():
+    """Completing a task releases its resource so the next task can lease."""
+    orch = _orch(width=5)
+    orch.register(_leaf_res("t1", ["db-x"]))
+    orch.register(_leaf_res("t2", ["db-x"]))
+
+    orch.lease("t1")
+    with pytest.raises(ValueError, match="RESOURCE_CONFLICT"):
+        orch.lease("t2")
+
+    orch.complete("t1")
+    orch.lease("t2")  # resource now free
+    assert orch.get("t2").state == TaskState.LEASED
+
+
+def test_held_resources_thread_safe_external_call():
+    """held_resources() is safe to call without holding the lock externally."""
+    orch = _orch()
+    orch.register(_leaf_res("t1", ["r1", "r2"]))
+    orch.lease("t1")
+
+    # Must not deadlock; returns the expected set.
+    held = orch.held_resources()
+    assert held == frozenset({"r1", "r2"})
+
+
+def test_no_resource_task_unaffected():
+    """A task with no resources field leases normally (no conflict check)."""
+    orch = _orch()
+    orch.register(_leaf("plain"))
+    orch.lease("plain")
+    assert orch.get("plain").state == TaskState.LEASED

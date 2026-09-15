@@ -250,13 +250,23 @@ class DeepOrchestrate:
     # Lease / state transitions
     # ------------------------------------------------------------------
 
-    def held_resources(self) -> frozenset[str]:
-        """Resources exclusively held by active (leased/running/validating) tasks."""
+    def _held_resources_nolock(self) -> frozenset[str]:
+        """Like held_resources() but caller must already hold self._lock."""
         held: set[str] = set()
         for leaf in self._tasks.values():
             if leaf.state in _ACTIVE:
                 held.update(leaf.resources)
         return frozenset(held)
+
+    def held_resources(self) -> frozenset[str]:
+        """Resources exclusively held by active (leased/running/validating) tasks.
+
+        Thread-safe: acquires the scheduler lock. Do NOT call from within a
+        method that already holds self._lock — use _held_resources_nolock()
+        instead to avoid a non-reentrant deadlock.
+        """
+        with self._lock:
+            return self._held_resources_nolock()
 
     def lease(self, key: str, *, holder: str = "claude") -> TaskLeaf:
         """Atomically lease a task.
@@ -274,8 +284,10 @@ class DeepOrchestrate:
                     f"TASK_NOT_READY:{key}:state={leaf.state}"
                 )
             # Resource conflict check — exclusive locks.
+            # Use _held_resources_nolock() because we already hold self._lock;
+            # calling held_resources() here would deadlock (non-reentrant lock).
             if leaf.resources:
-                held = self.held_resources()
+                held = self._held_resources_nolock()
                 conflict = set(leaf.resources) & held
                 if conflict:
                     raise ValueError(
