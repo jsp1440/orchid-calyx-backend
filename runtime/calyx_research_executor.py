@@ -369,7 +369,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return None
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT payload FROM oc_admin.build051_research_requests WHERE id = %s",
@@ -447,7 +447,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -492,7 +492,7 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -524,7 +524,7 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     _ensure_history_table(cur)
                     cur.execute(
@@ -639,7 +639,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
                 with conn.cursor() as cur:
                     _ensure_projects_table(cur)
                     cur.execute(

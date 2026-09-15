@@ -26,8 +26,6 @@ from runtime.calyx_research_executor import (
     ExecutionResult,
     _project_id_for,
 )
-
-
 # ── Fixtures ────────────────────────────────────────────────────
 
 
