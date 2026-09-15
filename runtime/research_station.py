@@ -44,7 +44,7 @@ def _atomic(path: Path, payload: Any) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             os.unlink(temporary)
         except FileNotFoundError:
@@ -194,7 +194,7 @@ class ResearchStationService:
                     kind="project",
                     record_id=project_id,
                 )
-            except Exception:
+            except Exception:  # noqa: BLE001
                 stored = None
             if stored is not None:
                 _atomic(path, stored)
@@ -234,7 +234,7 @@ class ResearchStationService:
                 stored = self._record_store.get(
                     owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 stored = None
                 self.durability_degraded = type(exc).__name__
             if stored is not None:
@@ -248,7 +248,7 @@ class ResearchStationService:
                 self._record_store.put(
                     owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id, record=record
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.durability_degraded = type(exc).__name__
         return {"created": True, "project": record}
 
@@ -496,7 +496,7 @@ class ResearchStationService:
                 stored = self._record_store.get(
                     owner_key=owner_key, project_id=project_id, kind=singular, record_id=record_id
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 stored = None
                 self.durability_degraded = type(exc).__name__
             if stored is not None:
@@ -510,7 +510,7 @@ class ResearchStationService:
                 self._record_store.put(
                     owner_key=owner_key, project_id=project_id, kind=singular, record_id=record_id, record=record
                 )
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001
                 self.durability_degraded = type(exc).__name__
         return {"created": True, singular: record}
 
@@ -534,7 +534,7 @@ class ResearchStationService:
                     stored_list = self._record_store.list(
                         owner_key=owner_key, project_id=project_id, kind=singular
                     )
-                except Exception:
+                except Exception:  # noqa: BLE001
                     stored_list = []
                 for stored_record in stored_list:
                     record_id = stored_record.get(f"{singular}_id", "")
