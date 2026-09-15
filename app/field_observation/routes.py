@@ -15,12 +15,12 @@ Epistemic contract:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timezone
+from typing import Annotated, Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .models import EpistemicCertaintyLabel, ObservationCurationState
+from .models import ObservationCurationState
 from .schemas import (
     FieldObservationCreate,
     FieldObservationOut,
@@ -37,8 +37,8 @@ router = APIRouter(
 # ---------------------------------------------------------------------------
 # In-memory stub store for MVP (DB integration is follow-up)
 # ---------------------------------------------------------------------------
-_observations: Dict[str, Dict[str, Any]] = {}
-_photos: Dict[str, Dict[str, Any]] = {}
+_observations: dict[str, dict[str, Any]] = {}
+_photos: dict[str, dict[str, Any]] = {}
 
 
 # ---------------------------------------------------------------------------
@@ -57,8 +57,8 @@ def create_observation(payload: FieldObservationCreate) -> FieldObservationOut:
     by the caller and only after consent has been verified upstream.
     """
     obs_id = str(uuid.uuid4())
-    now = datetime.utcnow()
-    record: Dict[str, Any] = {
+    now = datetime.now(tz=timezone.utc)
+    record: dict[str, Any] = {
         "id": obs_id,
         "observer_id": payload.observer_id,
         "observed_at": payload.observed_at,
@@ -79,13 +79,13 @@ def create_observation(payload: FieldObservationCreate) -> FieldObservationOut:
     return _to_out(record)
 
 
-@router.get("", response_model=Dict[str, Any], status_code=200)
+@router.get("", response_model=dict[str, Any], status_code=200)
 def list_observations(
-    observer_id: Optional[str] = Query(default=None),
-    curation_state: Optional[ObservationCurationState] = Query(default=None),
-    limit: int = Query(default=20, ge=1, le=200),
-    offset: int = Query(default=0, ge=0),
-) -> Dict[str, Any]:
+    observer_id: Annotated[str | None, Query()] = None,
+    curation_state: Annotated[ObservationCurationState | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 20,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
     """
     List field observations, optionally filtered by observer_id and/or
     curation_state.  Results are ordered by created_at descending.
@@ -132,8 +132,8 @@ def attach_photo(
     if observation_id not in _observations:
         raise HTTPException(status_code=404, detail="Observation not found")
     photo_id = str(uuid.uuid4())
-    now = datetime.utcnow()
-    photo: Dict[str, Any] = {
+    now = datetime.now(tz=timezone.utc)
+    photo: dict[str, Any] = {
         "id": photo_id,
         "observation_id": observation_id,
         "storage_key": payload.storage_key,
@@ -174,7 +174,7 @@ def request_taxon_suggestion(observation_id: str) -> TaxonSuggestionResponse:
     confidence = None
     model_id = "NO_API_MODE_STUB"
 
-    now = datetime.utcnow()
+    now = datetime.now(tz=timezone.utc)
     # Persist suggestion back to the observation record.
     _observations[observation_id]["ai_taxon_suggestion"] = suggestion
     _observations[observation_id]["ai_suggestion_confidence"] = confidence
@@ -197,7 +197,7 @@ def _photo_count(observation_id: str) -> int:
     return sum(1 for p in _photos.values() if p["observation_id"] == observation_id)
 
 
-def _to_out(record: Dict[str, Any]) -> FieldObservationOut:
+def _to_out(record: dict[str, Any]) -> FieldObservationOut:
     return FieldObservationOut(
         id=record["id"],
         observer_id=record["observer_id"],

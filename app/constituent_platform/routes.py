@@ -14,10 +14,10 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, Field
 
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key

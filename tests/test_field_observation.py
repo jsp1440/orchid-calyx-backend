@@ -17,8 +17,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.field_observation.models import EpistemicCertaintyLabel, ObservationCurationState
-from app.field_observation.routes import router, _observations, _photos
+from app.field_observation.models import (
+    EpistemicCertaintyLabel,
+    ObservationCurationState,
+)
+from app.field_observation.routes import _observations, _photos, router
 
 
 @pytest.fixture(autouse=True)

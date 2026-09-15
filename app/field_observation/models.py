@@ -16,11 +16,11 @@ from datetime import datetime
 from enum import Enum
 
 from sqlalchemy import (
+    JSON,
     Column,
     DateTime,
     Float,
     ForeignKey,
-    JSON,
     String,
     Text,
 )
