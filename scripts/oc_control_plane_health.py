@@ -45,6 +45,31 @@ def classify_ci(runs: Iterable[dict]) -> dict:
         # yet. Preserve UNKNOWN rather than fabricating a code failure every pulse.
         return {"state": UNKNOWN, "reason": "run_not_completed", "run_id": latest.get("id")}
     if latest.get("conclusion") == "success":
+        # Guard: contradictory evidence — a job with failure/cancelled/timed_out inside
+        # a "success" run must never certify success; retain diagnostic and run ID.
+        _BAD = frozenset({"failure", "cancelled", "timed_out"})
+        contradictory = [job for job in jobs if job.get("conclusion") in _BAD]
+        if contradictory:
+            return {
+                "state": "NOT_HEALTHY",
+                "reason": "contradictory_success_evidence",
+                "run_id": latest.get("id"),
+                "contradictory_job_count": len(contradictory),
+            }
+        # Guard: require at least one job with a runner and an executed successful step.
+        # A run whose only evidence is skipped or missing steps is not proven healthy.
+        def _has_executed_success(job: dict) -> bool:
+            return (
+                job.get("conclusion") == "success"
+                and job.get("runner_id") not in (0, None)
+                and any(s.get("conclusion") == "success" for s in (job.get("steps") or []))
+            )
+        if not any(_has_executed_success(job) for job in jobs):
+            return {
+                "state": UNKNOWN,
+                "reason": "no_executed_success_evidence",
+                "run_id": latest.get("id"),
+            }
         return {"state": "HEALTHY", "reason": "executed_success", "run_id": latest.get("id")}
     return {"state": "CODE_OR_CHECK_FAILURE", "reason": "runner_executed_non_success", "run_id": latest.get("id")}
 
