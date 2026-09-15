@@ -228,7 +228,11 @@ def reconcile(
         connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
         poolclass=StaticPool if "sqlite" in db_url else None,
     )
-    Base.metadata.create_all(engine)
+    if "sqlite" in db_url:
+        sqlite_tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
+        Base.metadata.create_all(engine, tables=sqlite_tables)
+    else:
+        Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
 
