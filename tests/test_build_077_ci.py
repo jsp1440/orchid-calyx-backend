@@ -104,6 +104,7 @@ def test_complete_backend_regression_still_runs_and_fails_closed(monkeypatch):
         "--ignore=tests/test_durable_queue_bridge_acceptance.py",
         "--ignore=tests/test_portfolio_steward_reconciler.py",
         "--ignore=tests/test_portfolio_steward_workflow_bridge.py",
+        "--ignore=tests/test_provider_workflow_job_gating.py",
     ]
     commands = []
 
