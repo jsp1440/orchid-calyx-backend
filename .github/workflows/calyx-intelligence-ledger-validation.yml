@@ -8,9 +8,12 @@ on:
       - "app/intake/knowledge_delta.py"
       - "app/intake/knowledge_delta_repository.py"
       - "app/intake/routes.py"
+      - "app/intake/technology_scout.py"
       - "migrations/108_intelligence_assimilation_ledger.sql"
       - "tests/test_intelligence_assimilation.py"
       - "tests/test_intelligence_ledger_postgres.py"
+      - "tests/test_technology_scout.py"
+      - "tests/test_technology_scout_postgres.py"
       - "tests/test_intelligence_knowledge_delta_postgres.py"
       - ".github/workflows/calyx-intelligence-ledger-validation.yml"
   workflow_dispatch:
@@ -43,12 +46,12 @@ jobs:
       - name: Run deterministic assimilation tests
         env:
           PYTHONPATH: .
-        run: pytest -q tests/test_intelligence_assimilation.py
+        run: pytest -q tests/test_intelligence_assimilation.py tests/test_technology_scout.py
       - name: Run PostgreSQL lifecycle ledger tests
         env:
           PYTHONPATH: .
           INTELLIGENCE_LEDGER_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_test
-        run: pytest -q tests/test_intelligence_ledger_postgres.py
+        run: pytest -q tests/test_intelligence_ledger_postgres.py tests/test_technology_scout_postgres.py
       - name: Reset PostgreSQL for knowledge-delta tests
         env:
           PGPASSWORD: postgres
