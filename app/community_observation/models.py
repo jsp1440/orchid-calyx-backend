@@ -11,7 +11,6 @@ from __future__ import annotations
 import uuid
 from datetime import date, datetime
 from enum import Enum
-from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -64,11 +63,11 @@ class CommunityObservation(BaseModel):
     observation_date: date
     epistemic_label: ObservationEpistemicLabel
     moderation_state: ModerationState = ModerationState.SUBMITTED
-    notes: Optional[str] = None
-    evidence_media_ids: List[str] = Field(default_factory=list)
+    notes: str | None = None
+    evidence_media_ids: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    moderated_at: Optional[datetime] = None
-    moderation_reason: Optional[str] = None
+    moderated_at: datetime | None = None
+    moderation_reason: str | None = None
 
     model_config = {"use_enum_values": False}
 
@@ -83,8 +82,8 @@ class ObservationSubmitRequest(BaseModel):
     location_verbatim: str = Field(..., min_length=1, max_length=1000)
     observation_date: date
     epistemic_label: ObservationEpistemicLabel
-    notes: Optional[str] = Field(default=None, max_length=5000)
-    evidence_media_ids: List[str] = Field(default_factory=list)
+    notes: str | None = Field(default=None, max_length=5000)
+    evidence_media_ids: list[str] = Field(default_factory=list)
 
 
 class ObservationSubmitResponse(BaseModel):
@@ -101,10 +100,10 @@ class ObservationModerationDecision(BaseModel):
     """
     observation_id: uuid.UUID
     new_state: ModerationState
-    reason: Optional[str] = Field(default=None, max_length=2000)
+    reason: str | None = Field(default=None, max_length=2000)
 
 
 class ObservationListResponse(BaseModel):
     """Paginated observation list."""
-    items: List[ObservationSubmitResponse]
+    items: list[ObservationSubmitResponse]
     total: int

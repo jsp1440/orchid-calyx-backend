@@ -12,7 +12,6 @@ Covers:
 """
 from __future__ import annotations
 
-import uuid
 from datetime import date
 
 import pytest
@@ -20,7 +19,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.community_observation.models import ModerationState
-from app.community_observation.routes import router, _store
+from app.community_observation.routes import _store, router
 
 
 @pytest.fixture(autouse=True)
