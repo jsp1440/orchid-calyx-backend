@@ -5,6 +5,7 @@ from fastapi import Depends, FastAPI
 from pydantic import BaseModel
 from starlette.responses import Response as StarletteResponse
 
+from app.ark.routes import router as ark_router
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
@@ -619,3 +620,5 @@ app.include_router(knowledge_graph.router)
 from app.routers import calyx_evolve
 
 app.include_router(calyx_evolve.router)
+
+app.include_router(ark_router)
