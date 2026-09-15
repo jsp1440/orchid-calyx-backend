@@ -23,7 +23,6 @@ from app.calyx_conversation.external_literature import (
     search_europe_pmc,
 )
 
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 _EXTRA_TAXA = [
@@ -267,6 +266,7 @@ def test_research_station_literature_override_works():
 def test_research_station_import_has_no_stale_side_effect():
     """Importing research_station must not raise ImportError for missing module."""
     import importlib
+
     import runtime.research_station as rs_module
 
     importlib.reload(rs_module)  # re-import; must not blow up

@@ -17,14 +17,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from app.calyx_orchestrator.artifact_registry import (
     ArtifactRegistration,
-    ArtifactRelationType,
     ImmutableArtifactRegistry,
 )
 from runtime.research_station import ResearchStationService
@@ -293,7 +293,7 @@ class CalyxResearchExecutorService:
                 status_history=existing.get("status_history", []),
             )
 
-        step1 = self.claim(request_id)
+        self.claim(request_id)
         step2 = self.start_running(request_id)
         project_id: str = step2.get("research_project_id", _project_id_for(request_id))
 
@@ -369,7 +369,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return None
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
                 with conn.cursor() as cur:
                     cur.execute(
                         "SELECT payload FROM oc_admin.build051_research_requests WHERE id = %s",
@@ -379,7 +379,7 @@ class CalyxResearchExecutorService:
                     if row is None:
                         return None
                     return dict(row["payload"])
-        except Exception:
+        except Exception:  # noqa: BLE001
             return None
 
     def _transition(
@@ -447,7 +447,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -458,7 +458,7 @@ class CalyxResearchExecutorService:
                         (Jsonb(payload), request_id),
                     )
                 conn.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def _patch_request_field(
@@ -492,7 +492,7 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -508,7 +508,7 @@ class CalyxResearchExecutorService:
                         ),
                     )
                 conn.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def _persist_history_entry(
@@ -524,7 +524,7 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
                 with conn.cursor() as cur:
                     _ensure_history_table(cur)
                     cur.execute(
@@ -542,7 +542,7 @@ class CalyxResearchExecutorService:
                         ),
                     )
                 conn.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # ── Research Station project binding ─────────────────────────────────────
@@ -605,7 +605,7 @@ class CalyxResearchExecutorService:
                     "rationale": f"Calyx Gate 2 research request {request_id}",
                 },
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     def _persist_project(
@@ -639,7 +639,7 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:  # noqa: SIM117
                 with conn.cursor() as cur:
                     _ensure_projects_table(cur)
                     cur.execute(
@@ -652,7 +652,7 @@ class CalyxResearchExecutorService:
                         (project_id, request_id, Jsonb(payload)),
                     )
                 conn.commit()
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     # ── GitHub feedback ───────────────────────────────────────────────────────
@@ -695,5 +695,5 @@ class CalyxResearchExecutorService:
                 marker=marker,
                 message=message,
             )
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
