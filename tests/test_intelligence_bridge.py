@@ -349,7 +349,7 @@ class TestAC4TaskKeyStableAndDeduplicable:
     def test_second_proposal_returns_existing_leaf(self):
         b = _make_bridge()
         gate = _make_gate()
-        item_fn = lambda _: _make_item()
+        def item_fn(_): return _make_item()
         leaf1 = b.propose_task(item_id=1, gate=gate, assessor="a", get_item=item_fn)
         leaf2 = b.propose_task(item_id=1, gate=gate, assessor="b", get_item=item_fn)
         assert isinstance(leaf1, TaskLeaf)
@@ -372,7 +372,7 @@ class TestAC5PriorTerminalOutcomeSuppresses:
     def test_completed_task_in_reservoir_suppresses_rediscovery(self):
         b = _make_bridge()
         gate = _make_gate()
-        item_fn = lambda _: _make_item()
+        def item_fn(_): return _make_item()
 
         leaf1 = b.propose_task(item_id=1, gate=gate, assessor="a", get_item=item_fn)
         assert isinstance(leaf1, TaskLeaf)
@@ -386,7 +386,7 @@ class TestAC5PriorTerminalOutcomeSuppresses:
     def test_blocked_task_in_reservoir_suppresses(self):
         b = _make_bridge()
         gate = _make_gate()
-        item_fn = lambda _: _make_item()
+        def item_fn(_): return _make_item()
 
         leaf1 = b.propose_task(item_id=1, gate=gate, assessor="a", get_item=item_fn)
         assert isinstance(leaf1, TaskLeaf)
@@ -410,7 +410,7 @@ class TestAC5PriorTerminalOutcomeSuppresses:
     def test_active_task_allows_idempotent_return(self):
         b = _make_bridge()
         gate = _make_gate()
-        item_fn = lambda _: _make_item()
+        def item_fn(_): return _make_item()
 
         leaf1 = b.propose_task(item_id=1, gate=gate, assessor="a", get_item=item_fn)
         assert isinstance(leaf1, TaskLeaf)
