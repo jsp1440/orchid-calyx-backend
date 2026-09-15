@@ -426,6 +426,8 @@ def test_precheck_paid_mode_provider_in_allowlist_authorizes() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            "OC_GOVERNOR_DAILY_SPEND_USD": "0.00",
+            "OC_GOVERNOR_MONTHLY_SPEND_USD": "0.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
@@ -460,6 +462,7 @@ def test_precheck_daily_budget_blocks() -> None:
             "OC_GOVERNOR_PROVIDER": "anthropic",
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_DAILY_SPEND_USD": "4.80",
+            "OC_GOVERNOR_MONTHLY_SPEND_USD": "4.80",
             "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.30",
@@ -479,6 +482,7 @@ def test_precheck_monthly_budget_blocks() -> None:
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
             "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
             "OC_GOVERNOR_MONTHLY_SPEND_USD": "19.90",
+            "OC_GOVERNOR_DAILY_SPEND_USD": "0.00",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.20",
         }
@@ -494,6 +498,8 @@ def test_precheck_per_run_budget_blocks() -> None:
             "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
             "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
             "OC_GOVERNOR_PROVIDER": "anthropic",
+            "OC_GOVERNOR_DAILY_SPEND_USD": "0.00",
+            "OC_GOVERNOR_MONTHLY_SPEND_USD": "0.00",
             "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
             "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "2.00",
             "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
@@ -535,6 +541,31 @@ def test_precheck_paid_mode_missing_budget_blocks_fail_closed() -> None:
     )
     assert out.get("authorized") == "false"
     assert out.get("reason", "").startswith("BLOCKED_MISSING_")
+
+
+@pytest.mark.parametrize("period", ["DAILY", "MONTHLY"])
+@pytest.mark.parametrize("missing", [None, "", "   "])
+def test_precheck_missing_spend_never_becomes_zero(period, missing) -> None:
+    env = {
+        "NO_API_MODE": "false",
+        "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+        "OC_GOVERNOR_PROVIDER_ALLOWLIST": "fixture-provider",
+        "OC_GOVERNOR_PROVIDER": "fixture-provider",
+        "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.01",
+        "OC_GOVERNOR_PER_RUN_BUDGET_USD": "0.10",
+        "OC_GOVERNOR_DAILY_BUDGET_USD": "0.10",
+        "OC_GOVERNOR_MONTHLY_BUDGET_USD": "1.00",
+        "OC_GOVERNOR_DAILY_SPEND_USD": "0.00",
+        "OC_GOVERNOR_MONTHLY_SPEND_USD": "0.00",
+    }
+    key = f"OC_GOVERNOR_{period}_SPEND_USD"
+    if missing is None:
+        del env[key]
+    else:
+        env[key] = missing
+    _, out = _run_precheck(env)
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == f"BLOCKED_MISSING_{period}_SPEND_USD"
 
 
 def test_precheck_paid_mode_malformed_budget_blocks_fail_closed() -> None:
