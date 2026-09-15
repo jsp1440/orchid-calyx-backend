@@ -10,7 +10,22 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+import app.calyx_orchestrator.durable_reservoir_models
+
+import app.calyx_orchestrator.git_proposal_ci_repair
+import app.calyx_orchestrator.git_proposal_mutation_journal
+import app.calyx_orchestrator.github_agent_dispatch_store
+
+# Import all modules that extend Base so autogenerate sees every table.
+import app.calyx_orchestrator.models
+import app.calyx_orchestrator.program_models
+import app.calyx_orchestrator.proposal_authorization_models
+import app.calyx_orchestrator.sandbox_supervisor_models
+import app.calyx_orchestrator.specialist_models
+import app.conversation_memory.models
+import app.research_workspace.models
 from app.models import Base
+
 target_metadata = Base.metadata
 
 def get_url():
