@@ -1,36 +1,51 @@
-from typing import List
+# ruff: noqa: B008
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, or_
 
-from app.deps import get_db
-from app.models import (
-    Organization, Show, Contact, MessageTemplate, Event, File, IntegrationConnection
-)
-from app.schemas import (
-    OrganizationCreate, OrganizationOut,
-    ShowCreate, ShowOut,
-    ContactCreate, ContactOut,
-    MessageTemplateCreate, MessageTemplateOut, TemplateRenderRequest, TemplateRenderResponse,
-    EventCreate, EventOut,
-    FileCreate, FileOut,
-    IntegrationCreate, IntegrationOut,
-)
-from app.routers.calyx_operator_workflow import router as calyx_operator_router
-from app.university.routes import router as university_router
-from app.calyx_conversation.routes import router as calyx_conversation_router
 from app.calyx_conversation.file_routes import router as calyx_file_analysis_router
 from app.calyx_conversation.reasoning_routes import router as calyx_reasoning_router
+from app.calyx_conversation.routes import router as calyx_conversation_router
 from app.calyx_conversation.speak_routes import router as calyx_speak_router
+from app.deps import get_db
 from app.kalix.routes import router as kalix_router
 from app.lexicon.routes import router as lexicon_router
+from app.models import (
+    Contact,
+    Event,
+    File,
+    IntegrationConnection,
+    MessageTemplate,
+    Organization,
+    Show,
+)
+from app.routers.calyx_operator_workflow import router as calyx_operator_router
+from app.schemas import (
+    ContactCreate,
+    ContactOut,
+    EventCreate,
+    EventOut,
+    FileCreate,
+    FileOut,
+    IntegrationCreate,
+    IntegrationOut,
+    MessageTemplateCreate,
+    MessageTemplateOut,
+    OrganizationCreate,
+    OrganizationOut,
+    ShowCreate,
+    ShowOut,
+    TemplateRenderRequest,
+    TemplateRenderResponse,
+)
+from app.university.routes import router as university_router
 from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
 
 
-@router.get("/organizations", response_model=List[OrganizationOut])
+@router.get("/organizations", response_model=list[OrganizationOut])
 def list_organizations(db: Session = Depends(get_db)):
     return db.execute(select(Organization)).scalars().all()
 
@@ -44,7 +59,7 @@ def create_organization(payload: OrganizationCreate, db: Session = Depends(get_d
     return org
 
 
-@router.get("/organizations/{org_id}/shows", response_model=List[ShowOut])
+@router.get("/organizations/{org_id}/shows", response_model=list[ShowOut])
 def list_org_shows(org_id: str, db: Session = Depends(get_db)):
     return db.execute(select(Show).where(Show.organization_id == org_id)).scalars().all()
 
@@ -61,7 +76,7 @@ def create_org_show(org_id: str, payload: ShowCreate, db: Session = Depends(get_
     return show
 
 
-@router.get("/shows/{show_id}/contacts", response_model=List[ContactOut])
+@router.get("/shows/{show_id}/contacts", response_model=list[ContactOut])
 def list_show_contacts(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
@@ -87,7 +102,7 @@ def create_show_contact(show_id: str, payload: ContactCreate, db: Session = Depe
     return contact
 
 
-@router.get("/shows/{show_id}/templates", response_model=List[MessageTemplateOut])
+@router.get("/shows/{show_id}/templates", response_model=list[MessageTemplateOut])
 def list_show_templates(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
@@ -128,7 +143,7 @@ def render_template(show_id: str, template_id: str, payload: TemplateRenderReque
     return TemplateRenderResponse(subject=subject, body=body)
 
 
-@router.get("/shows/{show_id}/events", response_model=List[EventOut])
+@router.get("/shows/{show_id}/events", response_model=list[EventOut])
 def list_show_events(show_id: str, db: Session = Depends(get_db)):
     return db.execute(select(Event).where(Event.show_id == show_id)).scalars().all()
 
@@ -165,7 +180,7 @@ def export_events_ics(show_id: str, db: Session = Depends(get_db)):
     return "\r\n".join(lines)
 
 
-@router.get("/shows/{show_id}/files", response_model=List[FileOut])
+@router.get("/shows/{show_id}/files", response_model=list[FileOut])
 def list_show_files(show_id: str, db: Session = Depends(get_db)):
     return db.execute(select(File).where(File.show_id == show_id)).scalars().all()
 
@@ -182,7 +197,7 @@ def create_show_file(show_id: str, payload: FileCreate, db: Session = Depends(ge
     return file
 
 
-@router.get("/shows/{show_id}/integrations", response_model=List[IntegrationOut])
+@router.get("/shows/{show_id}/integrations", response_model=list[IntegrationOut])
 def list_show_integrations(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
