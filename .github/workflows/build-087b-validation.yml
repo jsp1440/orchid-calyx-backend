@@ -114,6 +114,16 @@ jobs:
               last_audit jsonb,
               updated_at timestamptz NOT NULL DEFAULT now()
           );
+          CREATE TABLE IF NOT EXISTS oc_admin.research_station_records (
+              owner_key  text NOT NULL,
+              project_id text NOT NULL,
+              kind       text NOT NULL,
+              record_id  text NOT NULL,
+              payload    jsonb NOT NULL DEFAULT '{}',
+              created_at timestamptz NOT NULL DEFAULT now(),
+              updated_at timestamptz NOT NULL DEFAULT now(),
+              PRIMARY KEY (owner_key, project_id, kind, record_id)
+          );
           SQL
         env:
           BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
