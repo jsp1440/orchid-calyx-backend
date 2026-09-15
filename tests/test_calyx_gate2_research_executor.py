@@ -13,15 +13,14 @@ Acceptance criteria (from issue #1187 Gate 2):
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
 from runtime.calyx_research_executor import (
-    TRANSITION_MAP,
     TERMINAL_STATES,
+    TRANSITION_MAP,
     VALID_BLOCKER_CODES,
     CalyxResearchExecutorService,
     ExecutionResult,
@@ -29,7 +28,7 @@ from runtime.calyx_research_executor import (
 )
 
 
-# ── Fixtures ──────────────────────────────────────────────────────────────────
+# ── Fixtures ────────────────────────────────────────────────────
 
 
 def _make_request(
@@ -76,7 +75,7 @@ def _executor(
     return svc, mem_requests, mem_projects, registry
 
 
-# ── State machine transition table ───────────────────────────────────────────
+# ── State machine transition table ──────────────────────────────────
 
 
 def test_transition_map_is_complete():
@@ -104,12 +103,12 @@ def test_blocker_codes_are_bounded():
         assert code.isupper(), f"Blocker code must be UPPER_SNAKE: {code}"
 
 
-# ── Claim (idempotent, exactly-once) ─────────────────────────────────────────
+# ── Claim (idempotent, exactly-once) ──────────────────────────────────
 
 
 def test_claim_transitions_from_queued_waiting(tmp_path):
     req = _make_request()
-    svc, mem_req, _, _ = _executor([req], workspace=tmp_path)
+    svc, _mem_req, _, _ = _executor([req], workspace=tmp_path)
     result = svc.claim("RSR-GH-TEST001")
     assert result["status"] == "queued"
     assert len(result["status_history"]) == 1
@@ -149,12 +148,12 @@ def test_claim_raises_for_unknown_request(tmp_path):
         svc.claim("RSR-GH-MISSING")
 
 
-# ── Start running and project binding ────────────────────────────────────────
+# ── Start running and project binding ───────────────────────────────
 
 
 def test_start_running_transitions_queued_to_running(tmp_path):
     req = _make_request(status="queued")
-    svc, mem_req, mem_proj, _ = _executor([req], workspace=tmp_path)
+    svc, _mem_req, _mem_proj, _ = _executor([req], workspace=tmp_path)
     result = svc.start_running("RSR-GH-TEST001")
     assert result["status"] == "running"
     assert result.get("research_project_id")
@@ -188,12 +187,12 @@ def test_start_running_raises_for_wrong_state(tmp_path):
         svc.start_running("RSR-GH-TEST001")
 
 
-# ── Complete ──────────────────────────────────────────────────────────────────
+# ── Complete ──────────────────────────────────────────────────────
 
 
 def test_complete_transitions_running_to_completed(tmp_path):
     req = _make_request(status="running")
-    svc, mem_req, _, _ = _executor([req], workspace=tmp_path)
+    svc, _mem_req, _, _ = _executor([req], workspace=tmp_path)
     result = svc.complete(
         "RSR-GH-TEST001",
         artifact_ids=["calyx-result-art001"],
@@ -221,7 +220,7 @@ def test_complete_raises_for_wrong_state(tmp_path):
         svc.complete("RSR-GH-TEST001", artifact_ids=[])
 
 
-# ── Block ─────────────────────────────────────────────────────────────────────
+# ── Block ─────────────────────────────────────────────────────────
 
 
 def test_block_transitions_running_to_blocked(tmp_path):
@@ -260,7 +259,7 @@ def test_block_raises_for_wrong_state(tmp_path):
         svc.block("RSR-GH-TEST001", code="TIMEOUT")
 
 
-# ── Full fake execution (Gate 2 acceptance) ───────────────────────────────────
+# ── Full fake execution (Gate 2 acceptance) ─────────────────────────────
 
 
 def test_fake_executor_completes_full_state_machine(tmp_path):
@@ -301,7 +300,7 @@ def test_fake_executor_completes_full_state_machine(tmp_path):
 
 def test_fake_executor_full_state_history_is_ordered(tmp_path):
     req = _make_request()
-    svc, mem_req, _, _ = _executor([req], workspace=tmp_path)
+    svc, _mem_req, _, _ = _executor([req], workspace=tmp_path)
     result = svc.execute_fake("RSR-GH-TEST001")
 
     history = result.status_history
@@ -313,7 +312,7 @@ def test_fake_executor_full_state_history_is_ordered(tmp_path):
 
 def test_duplicate_execution_does_not_duplicate_project_or_artifacts(tmp_path):
     req = _make_request()
-    svc, mem_req, mem_proj, registry = _executor([req], workspace=tmp_path)
+    svc, _mem_req, mem_proj, registry = _executor([req], workspace=tmp_path)
 
     result1 = svc.execute_fake("RSR-GH-TEST001")
     result2 = svc.execute_fake("RSR-GH-TEST001")
@@ -345,7 +344,7 @@ def test_no_request_stuck_in_running_after_completion(tmp_path):
     assert record["status"] not in {"running", "queued"}
 
 
-# ── Governance / no mutation assertions ──────────────────────────────────────
+# ── Governance / no mutation assertions ──────────────────────────────
 
 
 def test_governance_flags_in_project_are_false(tmp_path):
@@ -376,7 +375,7 @@ def test_artifact_content_carries_no_publication_authority(tmp_path):
     )
 
 
-# ── Retry / restart safety ────────────────────────────────────────────────────
+# ── Retry / restart safety ───────────────────────────────────────────
 
 
 def test_retry_from_queued_waiting_resumes_safely(tmp_path):

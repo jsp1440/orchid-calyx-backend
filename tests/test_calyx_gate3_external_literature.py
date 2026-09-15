@@ -23,8 +23,7 @@ from app.calyx_conversation.external_literature import (
     search_europe_pmc,
 )
 
-
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────
 
 _EXTRA_TAXA = [
     # (genus, species, human label)  — none appear in _ORCHID_GENERA
@@ -48,7 +47,7 @@ def test_extra_taxa_not_in_known_genera():
         )
 
 
-# ── _extract_genera_from_query ────────────────────────────────────────────────
+# ── _extract_genera_from_query ────────────────────────────────────────────
 
 
 def test_extract_genera_catches_markdown_italic_binomial():
@@ -80,7 +79,7 @@ def test_extract_genera_deduplicates():
     assert result.count("Calypso") == 1
 
 
-# ── _mentioned_genera — arbitrary taxa ───────────────────────────────────────
+# ── _mentioned_genera — arbitrary taxa ───────────────────────────────────
 
 
 def test_mentioned_genera_finds_extra_genus_from_binomial():
@@ -103,7 +102,7 @@ def test_mentioned_genera_empty_for_no_match():
     assert genera == []
 
 
-# ── _query_plan — 5+ extra orchid taxa produce genus-specific queries ─────────
+# ── _query_plan — 5+ extra orchid taxa produce genus-specific queries ────────
 
 
 def _is_genus_specific(query: str, genus: str) -> bool:
@@ -157,7 +156,7 @@ def test_query_plan_respects_max_queries():
     assert len(plan) <= 5
 
 
-# ── availability_state in search_europe_pmc ───────────────────────────────────
+# ── availability_state in search_europe_pmc ──────────────────────────────
 
 
 def _mock_empty_response():
@@ -243,7 +242,7 @@ def test_diagnostics_capture_source_failure():
         assert "query" in entry
 
 
-# ── Research station — no stale import ───────────────────────────────────────
+# ── Research station — no stale import ──────────────────────────────────
 
 
 def test_research_station_raises_not_implemented_without_override():
@@ -267,6 +266,7 @@ def test_research_station_literature_override_works():
 def test_research_station_import_has_no_stale_side_effect():
     """Importing research_station must not raise ImportError for missing module."""
     import importlib
+
     import runtime.research_station as rs_module
 
     importlib.reload(rs_module)  # re-import; must not blow up
