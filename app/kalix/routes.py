@@ -105,12 +105,12 @@ def kalix_speak(payload: KalixSpeakRequest, auth: AuthDependency) -> dict[str, A
     provider_error: str | None = None
     try:
         reply = provider.generate(messages=messages, governed_context=governed_context)
-    except Exception as primary_error:  # noqa: BLE001
+    except Exception:
         try:
             fallback = DeterministicGovernedReplyProvider()
             reply = fallback.generate(messages=messages, governed_context=governed_context)
             provider_error = "primary provider unavailable; deterministic fallback used"
-        except Exception as fallback_error:  # noqa: BLE001
+        except Exception as fallback_error:
             raise HTTPException(
                 503,
                 detail={"code": "PROVIDER_UNAVAILABLE"},
