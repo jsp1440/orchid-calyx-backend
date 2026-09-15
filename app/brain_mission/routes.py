@@ -162,6 +162,23 @@ class ExistingBrainMissionAdapter:
             metadata=metadata,
         )
 
+    @staticmethod
+    def _taxonomy_snapshot_ids(evidence: list[EvidenceInput]) -> tuple[str, ...]:
+        """Return explicit governed taxonomy identities without inventing one."""
+
+        identities: set[str] = set()
+        for item in evidence:
+            containers = [item.metadata]
+            taxon_identity = item.metadata.get("taxon_identity")
+            if isinstance(taxon_identity, dict):
+                containers.append(taxon_identity)
+            for container in containers:
+                for key in ("taxonomy_snapshot_id", "taxonomy_release_id"):
+                    value = container.get(key)
+                    if isinstance(value, str) and value.strip():
+                        identities.add(value.strip())
+        return tuple(sorted(identities))
+
     def aggregate(self, context: dict[str, Any]) -> dict[str, Any]:
         translated: list[EvidenceInput] = []
         gaps: list[dict[str, Any]] = []
@@ -283,6 +300,31 @@ class ExistingBrainMissionAdapter:
             for item in inputs
         ]
         contradictory_ids = {value for pair in conflict_pairs for value in pair}
+        taxonomy_snapshot_ids = self._taxonomy_snapshot_ids(translated)
+        if len(taxonomy_snapshot_ids) > 1:
+            gaps.append(
+                {
+                    "source_id": None,
+                    "reason": "CONFLICTING_TAXONOMY_SNAPSHOT_IDENTITIES",
+                }
+            )
+        artifacts = {
+            "candidate_run_id": candidate_plan["candidate_run_id"],
+            "candidate_status": candidate_status["state"],
+            "canonical_evidence": [asdict(item) for item in translated],
+            "translation_gaps": gaps,
+            "aggregate_run_id": aggregate_plan["aggregate_run_id"],
+            "aggregate_status": aggregate_status["state"],
+            "aggregate_version_ids": [
+                item["aggregate_version_id"] for item in aggregates
+            ],
+            "aggregate_records": aggregates,
+            "candidate_confidences": {
+                str(item.candidate_id): item.confidence for item in inputs
+            },
+        }
+        if len(taxonomy_snapshot_ids) == 1:
+            artifacts["taxonomy_snapshot_id"] = taxonomy_snapshot_ids[0]
         return {
             "supporting_evidence": [
                 item
@@ -294,21 +336,7 @@ class ExistingBrainMissionAdapter:
                 for item in evidence_records
                 if item["candidate_id"] in contradictory_ids
             ],
-            "artifacts": {
-                "candidate_run_id": candidate_plan["candidate_run_id"],
-                "candidate_status": candidate_status["state"],
-                "canonical_evidence": [asdict(item) for item in translated],
-                "translation_gaps": gaps,
-                "aggregate_run_id": aggregate_plan["aggregate_run_id"],
-                "aggregate_status": aggregate_status["state"],
-                "aggregate_version_ids": [
-                    item["aggregate_version_id"] for item in aggregates
-                ],
-                "aggregate_records": aggregates,
-                "candidate_confidences": {
-                    str(item.candidate_id): item.confidence for item in inputs
-                },
-            },
+            "artifacts": artifacts,
         }
 
     @staticmethod

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.calyx_orchestrator.deep_orchestrate import Priority
 from runtime.portfolio_steward_reconciler import (
     PortfolioStewardReport,
     _filter_prepared,
@@ -20,8 +21,6 @@ from runtime.portfolio_steward_reconciler import (
     _priority_from_labels,
     reconcile,
 )
-
-from app.calyx_orchestrator.deep_orchestrate import Priority
 
 # ---------------------------------------------------------------------------
 # Real-world issue fixtures matching orchid-continuum-frontend state

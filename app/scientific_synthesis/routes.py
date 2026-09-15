@@ -1,18 +1,28 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Annotated, Any
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.parallel_platform.reasoning_contract_bridge import DomainLiteral
+from app.security import verify_owner_or_api_key
+
+from .blueprint import (
+    BlueprintValidationError,
+    ResearchBlueprint,
+    decompose_governed_action,
+)
+from .candidate_proposal import build_candidate_knowledge_proposal
 from .claim_verification import CHECK_CALYX_VERSION, verify_claim
 from .discovery import (
     BibliographicVerificationService,
     CrossrefProvider,
     LiteratureDiscoveryService,
 )
+from .governance import GovernanceDecision, check_manifest_governance
 from .models import (
     ArticleDraft,
     ArticleSentence,
@@ -24,6 +34,7 @@ from .models import (
     SynthesisClaim,
     VerificationState,
 )
+from .run_manifest import build_run_evidence_manifest
 from .service import ScientificSynthesisService
 
 SERVICE = ScientificSynthesisService()
@@ -148,7 +159,9 @@ def _domain_payload(payload: SynthesisValidationIn):
             evidence_id=value.evidence_id,
             source_id=value.source_id,
             evidence_class=value.evidence_class,
-            anchors=tuple(EvidenceAnchor(**anchor.model_dump()) for anchor in value.anchors),
+            anchors=tuple(
+                EvidenceAnchor(**anchor.model_dump()) for anchor in value.anchors
+            ),
             taxon=value.taxon,
             intervention=value.intervention,
             comparator=value.comparator,
@@ -258,3 +271,182 @@ def health():
         "private_chain_of_thought_exposed": False,
         "publishes_knowledge": False,
     }
+
+
+# ── Run Evidence Manifest ──────────────────────────────────────────────────────
+
+
+class RunManifestIn(BaseModel):
+    run_id: str = Field(min_length=1)
+    research_question: str = Field(min_length=1)
+    taxon_id: str = Field(min_length=1)
+    taxonomy_snapshot_id: str = Field(min_length=1)
+    verification_packets: list[dict[str, Any]] = Field(min_length=1)
+    review_records: list[dict[str, Any]] = []
+    epistemic_memory_entries: list[dict[str, Any]] = []
+
+
+@router.post("/run-manifest")
+def build_manifest(payload: RunManifestIn):
+    """Build an immutable, fingerprinted run evidence manifest.
+
+    Accepts one or more oc-verification-handoff-v1 packets and returns an
+    oc-run-evidence-manifest-v1 record. All governance flags are enforced;
+    human review is required before any canonical activation.
+    """
+    try:
+        return build_run_evidence_manifest(
+            run_id=payload.run_id,
+            research_question=payload.research_question,
+            taxon_id=payload.taxon_id,
+            taxonomy_snapshot_id=payload.taxonomy_snapshot_id,
+            verification_packets=tuple(payload.verification_packets),
+            review_records=tuple(payload.review_records),
+            epistemic_memory_entries=tuple(payload.epistemic_memory_entries),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+# ── Governance Admission Check ─────────────────────────────────────────────
+
+
+class GovernanceCheckIn(BaseModel):
+    manifest: dict[str, Any] = Field(
+        description="oc-run-evidence-manifest-v1 dict as returned by POST /synthesis/run-manifest"
+    )
+    proposed_action: str = Field(
+        min_length=1,
+        description=(
+            "One of: canonical_knowledge_mutation, automatic_scientific_publication, "
+            "canonical_activation, human_review_submission, read_evidence, "
+            "build_synthesis, build_manifest"
+        ),
+    )
+
+
+class GovernanceCheckOut(BaseModel):
+    outcome: str
+    admitted: bool
+    reason: str
+    blocking_flags: list[str]
+
+
+@router.post("/governance-check", response_model=GovernanceCheckOut)
+def check_governance(payload: GovernanceCheckIn) -> GovernanceCheckOut:
+    """Evaluate whether a proposed action is permitted by a manifest's governance flags.
+
+    Takes a RunEvidenceManifest (oc-run-evidence-manifest-v1) and a proposed action
+    type and returns a typed admission decision. The check is deterministic and
+    provider-free: it reads governance flags already embedded in the manifest.
+
+    This is the executable governance/admission step in the autonomy chain:
+      immutable decision manifest → governance-check → blueprint/task decomposition
+
+    Returns 422 when the manifest contract is invalid, the fingerprint is malformed,
+    or the action is not in the governed action set.
+    """
+    try:
+        decision: GovernanceDecision = check_manifest_governance(
+            payload.manifest, payload.proposed_action
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    return GovernanceCheckOut(
+        outcome=decision.outcome.value,
+        admitted=decision.admitted,
+        reason=decision.reason,
+        blocking_flags=decision.blocking_flags,
+    )
+
+
+# ── Blueprint Decomposition ────────────────────────────────────────────────────
+
+
+class BlueprintIn(BaseModel):
+    manifest: dict[str, Any] = Field(
+        description="oc-run-evidence-manifest-v1 dict as returned by POST /synthesis/run-manifest"
+    )
+    proposed_action: str = Field(min_length=1)
+    run_id: str = Field(min_length=1)
+    taxon_id: str = Field(min_length=1)
+    research_question: str = Field(min_length=1)
+
+
+@router.post("/blueprint")
+def build_blueprint(payload: BlueprintIn) -> dict[str, Any]:
+    """Decompose an admitted GovernanceDecision into a bounded ResearchBlueprint.
+
+    The endpoint:
+    1. Calls check_manifest_governance() to obtain a fresh GovernanceDecision.
+    2. Fails closed (422) if the decision is not admitted.
+    3. Calls decompose_governed_action() → ResearchBlueprint (bounded, validated).
+    4. Returns the blueprint summary — does NOT enqueue (enqueue is a separate operation).
+
+    This is the blueprint/task-decomposition step in the autonomy chain:
+      governance-check → blueprint → canonical queue → worker execution
+    """
+    try:
+        decision: GovernanceDecision = check_manifest_governance(
+            payload.manifest, payload.proposed_action
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    if not decision.admitted:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "GOVERNANCE_NOT_ADMITTED",
+                "outcome": decision.outcome.value,
+                "blocking_flags": decision.blocking_flags,
+            },
+        )
+
+    try:
+        blueprint: ResearchBlueprint = decompose_governed_action(
+            decision,
+            payload.manifest,
+            payload.proposed_action,
+            run_id=payload.run_id,
+            taxon_id=payload.taxon_id,
+            research_question=payload.research_question,
+        )
+    except BlueprintValidationError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+    return blueprint.summary()
+
+
+# ── Proposal-only Candidate Knowledge Handoff ─────────────────────────────────
+
+
+class CandidateProposalIn(BaseModel):
+    manifest: dict[str, Any]
+    verification_packet: dict[str, Any]
+    domain: DomainLiteral
+    source_object_type: str = Field(min_length=1)
+    source_object_id: int = Field(gt=0)
+    revision_id: int = Field(gt=0)
+    extraction_run_id: int = Field(gt=0)
+
+
+@router.post("/candidate-proposal")
+def prepare_candidate_proposal(
+    payload: CandidateProposalIn,
+    _owner: Annotated[Any, Depends(verify_owner_or_api_key)],
+) -> dict[str, Any]:
+    """Prepare a review-only canonical handoff; never persist or mutate knowledge."""
+    try:
+        return build_candidate_knowledge_proposal(
+            manifest=payload.manifest,
+            verification_packet=payload.verification_packet,
+            domain=payload.domain,
+            source_object_type=payload.source_object_type,
+            source_object_id=payload.source_object_id,
+            revision_id=payload.revision_id,
+            extraction_run_id=payload.extraction_run_id,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc

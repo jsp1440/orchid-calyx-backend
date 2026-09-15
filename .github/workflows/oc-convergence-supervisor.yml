@@ -1,114 +1,234 @@
 name: OC Convergence Supervisor
 
+# A completion event dispatched by the existing worker, using trusted integration
+# code. This replaces the legacy PR-marker-only merge path. No scheduled paid loop.
 on:
-  schedule:
-    - cron: '*/5 * * * *'
-  push:
-    branches: [oc-autonomous-integration]
   workflow_dispatch:
-  pull_request:
-    branches: [oc-autonomous-integration]
-    types: [opened, synchronize, ready_for_review, reopened]
+    inputs:
+      issue:
+        required: true
+        type: string
+      pr:
+        required: true
+        type: string
+      maker_head:
+        required: true
+        type: string
+      worker_run:
+        required: true
+        type: string
+      worker_attempt:
+        required: true
+        type: string
+      lease:
+        required: true
+        type: string
+      wave:
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        required: false
+        default: "1"
+        type: string
 
+# The checker shares the existing global paid slot with makers. One request,
+# no provider fallback, no paid retry. Settlement/evidence release this slot last.
 concurrency:
-  group: oc-convergence-supervisor-${{ github.repository }}
+  group: swarm-paid-execution-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:
-  contents: write
-  actions: write
-  pull-requests: write
-  issues: write
+  contents: read
+  actions: read
+  issues: read
+  pull-requests: read
+
+env:
+  ISSUE: ${{ inputs.issue }}
+  PR: ${{ inputs.pr }}
+  MAKER_HEAD: ${{ inputs.maker_head }}
+  WORKER_RUN: ${{ inputs.worker_run }}
+  WORKER_ATTEMPT: ${{ inputs.worker_attempt }}
+  LEASE: ${{ inputs.lease }}
+  EVIDENCE_DIR: ${{ github.workspace }}/hosted-evidence
 
 jobs:
-  converge-one-green-pr:
+  checker:
+    if: github.ref == 'refs/heads/oc-autonomous-integration' && vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      GH_TOKEN: ${{ github.token }}
-      REPO: ${{ github.repository }}
-      INTEGRATION_BRANCH: oc-autonomous-integration
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+      pull-requests: read
     steps:
-      - name: Select oldest explicitly authorized convergence PR
-        id: select
-        shell: bash
-        run: |
-          set -euo pipefail
-          pr=$(gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 100 \
-            --json number,body,createdAt \
-            --jq '[.[] | select((.body // "") | contains("OC-AUTO-CONVERGENCE: true"))] | sort_by(.createdAt) | .[0].number // empty')
-          echo "pr=$pr" >> "$GITHUB_OUTPUT"
-          [[ -z "$pr" ]] || echo "Selected PR #$pr"
-
-      - name: Verify exact-head validation and integration boundary
-        if: steps.select.outputs.pr != ''
-        id: verify
-        shell: bash
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Resolve actual worker and validation completion evidence
         env:
-          PR: ${{ steps.select.outputs.pr }}
-        run: |
-          set -euo pipefail
-          data=$(gh pr view "$PR" --repo "$REPO" --json baseRefName,headRefName,headRefOid,isDraft,mergeStateStatus,body)
-          base=$(jq -r '.baseRefName' <<<"$data")
-          head=$(jq -r '.headRefName' <<<"$data")
-          sha=$(jq -r '.headRefOid' <<<"$data")
-          state=$(jq -r '.mergeStateStatus' <<<"$data")
-          body=$(jq -r '.body // ""' <<<"$data")
-
-          [[ "$base" == "$INTEGRATION_BRANCH" ]] || { echo "::error::PR #$PR targets $base"; exit 1; }
-          grep -Fq 'OC-AUTO-CONVERGENCE: true' <<<"$body" || { echo "::error::Missing convergence authorization marker"; exit 1; }
-          if grep -Fq 'OC-AUTO-HOLD: true' <<<"$body"; then
-            echo "hold=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          runs=$(gh run list --repo "$REPO" --workflow orchid-autonomous-validation.yml --branch "$head" --limit 30 --json headSha,status,conclusion || echo '[]')
-          result=$(jq -r --arg sha "$sha" '[.[] | select(.headSha == $sha)][0] | if . then [.status, (.conclusion // "")] | join(" ") else "" end' <<<"$runs")
-          if [[ -z "$result" ]]; then
-            gh workflow run orchid-autonomous-validation.yml --repo "$REPO" --ref "$head"
-            echo "waiting=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$result" != completed* ]]; then
-            echo "waiting=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$result" != "completed success" ]]; then
-            gh pr comment "$PR" --repo "$REPO" --body "[OC-AUTO] Convergence held: exact-head backend validation is \`$result\` at \`$sha\`."
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          if [[ "$state" == "BEHIND" ]]; then
-            gh api -X PUT "repos/$REPO/pulls/$PR/update-branch" >/dev/null
-            echo "waiting=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          if [[ "$state" == "DIRTY" || "$state" == "BLOCKED" ]]; then
-            gh pr comment "$PR" --repo "$REPO" --body "[OC-AUTO] Convergence held: merge state is \`$state\` at \`$sha\`."
-            echo "blocked=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-
-          echo "sha=$sha" >> "$GITHUB_OUTPUT"
-          echo "draft=$(jq -r '.isDraft' <<<"$data")" >> "$GITHUB_OUTPUT"
-          echo "ready=true" >> "$GITHUB_OUTPUT"
-
-      - name: Mark ready and merge exactly one green convergence PR
-        if: steps.select.outputs.pr != '' && steps.verify.outputs.ready == 'true' && steps.verify.outputs.hold != 'true' && steps.verify.outputs.waiting != 'true' && steps.verify.outputs.blocked != 'true'
-        shell: bash
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.oc_hosted_completion prepare --directory "$EVIDENCE_DIR"
+      - name: Load durable governor spend snapshot
+        id: ledger
         env:
-          PR: ${{ steps.select.outputs.pr }}
-          EXPECTED_SHA: ${{ steps.verify.outputs.sha }}
-          WAS_DRAFT: ${{ steps.verify.outputs.draft }}
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/swarm_governor_github_ledger.py --ledger-issue 1330 --github-output "$GITHUB_OUTPUT"
+      - name: Gate the single independent checker request
+        id: governor
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: '0'
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: '0.08'
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
+        run: python3 scripts/swarm_governor_precheck.py
+      - name: Reserve one durable checker attempt before credentials
+        if: steps.governor.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.oc_hosted_completion reserve --directory "$EVIDENCE_DIR"
+      - name: Independent read-only checker session
+        if: steps.governor.outputs.authorized == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python3 -m scripts.oc_hosted_completion check --directory "$EVIDENCE_DIR"
+      - name: Persist exact checker evidence
+        if: steps.governor.outputs.authorized == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.oc_hosted_completion record --directory "$EVIDENCE_DIR"
+      - name: Fail closed on provider admission denial
+        if: steps.governor.outputs.authorized != 'true'
+        run: exit 1
+      - name: Retain bounded evidence including failure usage
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-checker-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: warn
+          retention-days: 7
+      - name: Record failed checker handoff without paid retry
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOP_REASON: checker_or_admission_failed_closed
+        run: python3 -m scripts.oc_hosted_completion failure --directory "$EVIDENCE_DIR"
+
+  factory:
+    needs: checker
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+      issues: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        with:
+          name: hosted-checker-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+      - name: Revalidate factory authority and settle only a verified merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -m scripts.oc_hosted_completion settle --directory "$EVIDENCE_DIR"
+      - name: Record incomplete settlement without paid retry
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOP_REASON: factory_or_settlement_failed_closed
+        run: python3 -m scripts.oc_hosted_completion failure --directory "$EVIDENCE_DIR"
+      - name: Retain factory and settlement evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-settlement-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+          if-no-files-found: error
+          retention-days: 7
+
+  observation:
+    needs: [checker, factory]
+    if: always() && github.ref == 'refs/heads/oc-autonomous-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+      issues: write
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/download-artifact@v4
+        if: needs.checker.result == 'success'
+        with:
+          name: hosted-settlement-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}
+      - name: Preserve full observer and Brain evidence before enforcing health
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 -m scripts.oc_hosted_completion observe --directory "$EVIDENCE_DIR"
+      - name: Retain health evidence even when unhealthy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosted-health-${{ github.run_id }}
+          path: ${{ env.EVIDENCE_DIR }}/health.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Record observation or capture failure
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STOP_REASON: observer_unhealthy_or_evidence_capture_failed
+        run: python3 -m scripts.oc_hosted_completion failure --directory "$EVIDENCE_DIR"
+
+  continuation:
+    needs: [factory, observation]
+    if: vars.OC_GOVERNOR_AUTO_REFILL == 'true' && needs.factory.result == 'success' && needs.observation.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - name: Continue only within existing refill authorization and wave limit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          WAVE: ${{ inputs.wave }}
+          MAX_WAVES: ${{ inputs.max_waves }}
         run: |
           set -euo pipefail
-          current=$(gh pr view "$PR" --repo "$REPO" --json headRefOid,baseRefName --jq '[.headRefOid,.baseRefName] | @tsv')
-          IFS=$'\t' read -r current_sha current_base <<<"$current"
-          [[ "$current_sha" == "$EXPECTED_SHA" ]] || { echo "::error::PR head moved; refusing merge"; exit 1; }
-          [[ "$current_base" == "$INTEGRATION_BRANCH" ]] || { echo "::error::Base changed; refusing merge"; exit 1; }
-          if [[ "$WAS_DRAFT" == "true" ]]; then
-            gh pr ready "$PR" --repo "$REPO"
-          fi
-          gh pr merge "$PR" --repo "$REPO" --squash --delete-branch=false
-          echo "Merged PR #$PR at validated head $EXPECTED_SHA into $INTEGRATION_BRANCH."
+          [[ "$WAVE" =~ ^[1-4]$ && "$MAX_WAVES" =~ ^[1-4]$ ]]
+          (( WAVE < MAX_WAVES )) || exit 0
+          gh workflow run orchid-swarm-controller.yml --repo "$GITHUB_REPOSITORY" \
+            --ref oc-autonomous-integration -f worker_slots=1 \
+            -f wave="$((WAVE + 1))" -f max_waves="$MAX_WAVES"

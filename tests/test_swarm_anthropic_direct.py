@@ -40,6 +40,155 @@ def test_direct_executor_rejects_arbitrary_validation_command() -> None:
     assert result == "ERROR: unsupported check: curl"
 
 
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "",
+        "other@" + "a" * 40,
+        "claude-direct/issue-2-99@" + "a" * 40,
+        "claude-direct/issue-1-99@main",
+    ],
+)
+def test_resume_rejects_unbound_or_wrong_issue_head(declaration):
+    with pytest.raises(direct.DirectExecutorError):
+        direct._resume_from_packet("OC-SWARM-RESUME: " + declaration, "1")
+
+
+def test_resume_packet_requires_unique_exact_head():
+    marker = "OC-SWARM-RESUME: claude-direct/issue-1-99@" + "a" * 40
+    assert direct._resume_from_packet("ordinary work", "1") is None
+    assert direct._resume_from_packet(marker, "1") == (
+        "claude-direct/issue-1-99",
+        "a" * 40,
+    )
+    with pytest.raises(direct.DirectExecutorError):
+        direct._resume_from_packet(marker + "\n" + marker, "1")
+
+
+def test_resume_real_git_retains_partial_work_and_new_control_plane(
+    tmp_path, monkeypatch
+):
+    import subprocess
+
+    def git(cwd, *args):
+        return subprocess.run(
+            ["git", *args], cwd=cwd, text=True, capture_output=True, check=True
+        ).stdout.strip()
+
+    remote = tmp_path / "origin.git"
+    git(tmp_path, "init", "--bare", str(remote))
+    seed = tmp_path / "seed"
+    git(tmp_path, "clone", str(remote), str(seed))
+    git(seed, "config", "user.name", "fixture")
+    git(seed, "config", "user.email", "fixture@example.invalid")
+    git(seed, "checkout", "-b", "oc-autonomous-integration")
+    (seed / "app").mkdir()
+    (seed / "app/example.py").write_text("VALUE = 1\n")
+    git(seed, "add", ".")
+    git(seed, "commit", "-m", "base")
+    git(seed, "push", "origin", "oc-autonomous-integration")
+    branch = "claude-direct/issue-1-99"
+    git(seed, "checkout", "-b", branch)
+    (seed / "app/example.py").write_text("VALUE = 2\n")
+    git(seed, "commit", "-am", "partial")
+    partial = git(seed, "rev-parse", "HEAD")
+    git(seed, "push", "origin", branch)
+    git(seed, "checkout", "oc-autonomous-integration")
+    (seed / "current-control-plane.txt").write_text("repaired executor\n")
+    git(seed, "add", ".")
+    git(seed, "commit", "-m", "new control plane")
+    current = git(seed, "rev-parse", "HEAD")
+    git(seed, "push", "origin", "oc-autonomous-integration")
+    worker = tmp_path / "worker"
+    git(
+        tmp_path,
+        "clone",
+        "--branch",
+        "oc-autonomous-integration",
+        str(remote),
+        str(worker),
+    )
+    monkeypatch.setattr(direct, "REPO_ROOT", worker)
+    assert (
+        direct._prepare_branch(
+            "1", "100", "oc-autonomous-integration", resume=(branch, partial)
+        )
+        == branch
+    )
+    assert (worker / "app/example.py").read_text() == "VALUE = 2\n"
+    assert (worker / "current-control-plane.txt").read_text() == "repaired executor\n"
+    git(worker, "merge-base", "--is-ancestor", partial, "HEAD")
+    git(worker, "merge-base", "--is-ancestor", current, "HEAD")
+
+
+@pytest.mark.parametrize(
+    "moved,protected", [(False, False), (True, False), (False, True)]
+)
+def test_resume_preserves_partial_branch_and_current_integration(
+    monkeypatch, moved, protected
+):
+    from subprocess import CompletedProcess
+
+    calls = []
+
+    def run(cmd, **kwargs):
+        calls.append(cmd)
+        stdout = ""
+        if cmd[1] == "rev-parse":
+            stdout = "b" * 40 if moved else "a" * 40
+        elif cmd[1:3] == ["diff", "--name-only"]:
+            stdout = ".github/workflows/unsafe.yml" if protected else "app/example.py"
+        return CompletedProcess(cmd, 0, stdout, "")
+
+    monkeypatch.setattr(direct, "_run", run)
+    if moved or protected:
+        with pytest.raises(direct.DirectExecutorError):
+            direct._prepare_branch(
+                "1",
+                "100",
+                "oc-autonomous-integration",
+                resume=("claude-direct/issue-1-99", "a" * 40),
+            )
+        assert not any(c[1] == "checkout" for c in calls)
+    else:
+        assert (
+            direct._prepare_branch(
+                "1",
+                "100",
+                "oc-autonomous-integration",
+                resume=("claude-direct/issue-1-99", "a" * 40),
+            )
+            == "claude-direct/issue-1-99"
+        )
+        assert [
+            "git",
+            "merge",
+            "--no-edit",
+            "origin/oc-autonomous-integration",
+        ] in calls
+        assert not any("--force" in c for c in calls)
+
+
+def test_validation_receipt_retains_exit_code_without_command_output(
+    monkeypatch, capsys
+):
+    from subprocess import CompletedProcess
+
+    monkeypatch.setattr(
+        direct,
+        "_run",
+        lambda cmd, **kwargs: CompletedProcess(cmd, 1, "private test output", ""),
+    )
+    result = direct._tool_run_check(
+        {"name": "pytest", "target": "tests/test_example.py"}
+    )
+    logged = capsys.readouterr().out
+    assert '"exit_code": 1' in logged
+    assert '"check": "pytest"' in logged
+    assert "private test output" not in logged
+    assert "private test output" in result
+
+
 def test_direct_executor_builds_anthropic_messages_request() -> None:
     captured = {}
 
@@ -107,8 +256,18 @@ def test_max_turns_uses_direct_executor_error_for_settlement() -> None:
     assert 'raise DirectExecutorError("direct executor reached max turns")' in text
 
 
+@pytest.mark.parametrize(
+    "malformed",
+    [
+        None,
+        {},
+        {"path": "app/example.py"},
+        {"path": "app/example.py", "content": None},
+        [],
+    ],
+)
 def test_direct_executor_full_success_path_without_live_provider(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, malformed
 ) -> None:
     packet = tmp_path / "packet.md"
     packet.write_text("Implement a bounded test change.\n")
@@ -137,6 +296,23 @@ def test_direct_executor_full_success_path_without_live_provider(
             },
         ]
     )
+    if malformed is not None:
+        responses = iter(
+            [
+                {
+                    "content": [
+                        {
+                            "type": "tool_use",
+                            "id": "malformed-write",
+                            "name": "write_file",
+                            "input": malformed,
+                        }
+                    ],
+                    "usage": {"input_tokens": 3, "output_tokens": 2},
+                },
+                *responses,
+            ]
+        )
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GITHUB_RUN_ID", "999")
@@ -177,10 +353,14 @@ def test_direct_executor_full_success_path_without_live_provider(
     result = json.loads(execution_file.read_text())
     assert result["subtype"] == "success"
     assert result["is_error"] is False
-    assert result["num_turns"] == 2
+    assert result["num_turns"] == (2 if malformed is None else 3)
     assert result["pr_url"] == "https://example.invalid/pr/1"
-    assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == 40
-    assert result["modelUsage"]["claude-haiku-4-5"]["outputTokens"] == 15
+    assert result["modelUsage"]["claude-haiku-4-5"]["inputTokens"] == (
+        40 if malformed is None else 43
+    )
+    assert result["modelUsage"]["claude-haiku-4-5"]["outputTokens"] == (
+        15 if malformed is None else 17
+    )
     assert (tmp_path / "app" / "example.py").read_text() == "VALUE = 1\n"
 
     output_text = github_output.read_text()
@@ -615,3 +795,54 @@ def test_prepare_branch_configures_git_identity(monkeypatch) -> None:
         "user.email",
         "41898282+github-actions[bot]@users.noreply.github.com",
     ] in commands
+
+
+def test_small_edit_replaces_exactly_one_match(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    target = tmp_path / "example.py"
+    target.write_text("before\nVALUE = 1\nafter\n")
+    direct._tool_write_file(
+        {"path": "example.py", "old_text": "VALUE = 1", "content": "VALUE = 2"}
+    )
+    assert target.read_text() == "before\nVALUE = 2\nafter\n"
+
+
+@pytest.mark.parametrize("old_text", ["", "missing", "x", None])
+def test_invalid_small_edit_never_changes_the_file(tmp_path, monkeypatch, old_text):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    target = tmp_path / "example.py"
+    target.write_text("x\nx\n")
+    with pytest.raises(ValueError):
+        direct._tool_write_file(
+            {"path": "example.py", "old_text": old_text, "content": "replacement"}
+        )
+    assert target.read_text() == "x\nx\n"
+
+
+def test_small_edit_preserves_protected_path_boundary():
+    assert direct._tool_write_file(
+        {
+            "path": "scripts/swarm_anthropic_direct.py",
+            "old_text": "anything",
+            "content": "anything",
+        }
+    ).startswith("ERROR: protected")
+
+
+def test_durable_execution_summary_excludes_model_text_and_retains_usage(
+    tmp_path, capsys
+):
+    payload = {
+        "type": "result",
+        "subtype": "error",
+        "num_turns": 2,
+        "modelUsage": {"model": {"inputTokens": 100, "outputTokens": 30}},
+        "error": "max_turns",
+        "result": "private model output",
+    }
+    direct._write_result(tmp_path / "receipt.json", payload)
+    output = capsys.readouterr().out
+    assert "private model output" not in output
+    receipt = json.loads(output.split("[OC-DIRECT-RECEIPT] ")[1])
+    assert receipt["modelUsage"] == payload["modelUsage"]
+    assert receipt["error"] == "max_turns" and receipt["num_turns"] == 2

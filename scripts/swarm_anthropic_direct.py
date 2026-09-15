@@ -57,6 +57,7 @@ PROTECTED_FILES = {
     "scripts/swarm_governor_precheck.py",
     "scripts/swarm_governor_postrun.py",
     "scripts/swarm_governor_github_ledger.py",
+    "scripts/oc_hosted_completion.py",
 }
 PROTECTED_BASENAMES = {
     ".env",
@@ -101,12 +102,17 @@ TOOLS = [
     },
     {
         "name": "write_file",
-        "description": "Replace a repository text file with supplied UTF-8 content.",
+        "description": (
+            "Write UTF-8 content. For a small edit to an existing file, provide "
+            "old_text to replace exactly one matching literal with content. "
+            "Prefer small edits to avoid truncating large whole-file tool calls."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
                 "content": {"type": "string"},
+                "old_text": {"type": "string", "minLength": 1},
             },
             "required": ["path", "content"],
         },
@@ -225,10 +231,20 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 
 
 def _tool_write_file(args: dict[str, Any]) -> str:
+    if not isinstance(args["path"], str) or not isinstance(args["content"], str):
+        raise TypeError("write_file requires string path and content")
     path = _safe_path(str(args["path"]))
     if not _writable(path):
         return f"ERROR: protected path is not writable: {_relative(path)}"
-    content = str(args["content"])
+    content = args["content"]
+    if "old_text" in args:
+        old_text = args["old_text"]
+        if not isinstance(old_text, str) or not old_text:
+            raise ValueError("old_text must be a nonempty string")
+        current = path.read_text(encoding="utf-8")
+        if current.count(old_text) != 1:
+            raise ValueError("old_text must match exactly once; read the file again")
+        content = current.replace(old_text, content, 1)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return f"WROTE {_relative(path)} bytes={len(content.encode('utf-8'))}"
@@ -268,6 +284,11 @@ def _tool_run_check(args: dict[str, Any]) -> str:
         return f"ERROR: unsupported check: {name}"
 
     result = _run(cmd, timeout=180)
+    print(
+        "[OC-DIRECT-CHECK] "
+        + json.dumps({"check": name, "target": target, "exit_code": result.returncode}),
+        flush=True,
+    )
     combined = (result.stdout or "") + (result.stderr or "")
     return _truncate(f"exit_code={result.returncode}\n{combined}", 16000)
 
@@ -327,10 +348,56 @@ def _content_text(content: list[dict[str, Any]]) -> str:
     )
 
 
-def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
+def _resume_from_packet(packet: str, issue_number: str) -> tuple[str, str] | None:
+    declarations = re.findall(r"^OC-SWARM-RESUME:[ \t]*(.*)$", packet, re.MULTILINE)
+    if not declarations:
+        return None
+    if len(declarations) != 1:
+        raise DirectExecutorError("resume declaration must be unique")
+    match = re.fullmatch(
+        rf"(claude-direct/issue-{re.escape(issue_number)}-[0-9]+)@([a-f0-9]{{40}})",
+        declarations[0].strip(),
+    )
+    if not match:
+        raise DirectExecutorError(
+            "resume must bind this issue to an exact partial head"
+        )
+    return match.group(1), match.group(2)
+
+
+def _prepare_branch(
+    issue_number: str,
+    run_id: str,
+    base: str,
+    *,
+    resume: tuple[str, str] | None = None,
+) -> str:
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
-    _run(["git", "checkout", "-B", branch, f"origin/{base}"], timeout=60, check=True)
+    if resume:
+        if base != "oc-autonomous-integration":
+            raise DirectExecutorError("resume requires the integration boundary")
+        branch, expected_sha = resume
+        _run(["git", "fetch", "origin", branch], timeout=120, check=True)
+        actual_sha = _run(
+            ["git", "rev-parse", f"origin/{branch}"], check=True
+        ).stdout.strip()
+        if actual_sha != expected_sha:
+            raise DirectExecutorError("partial branch moved; refresh the repair packet")
+        # A normal merge must retain both the partial work and current control
+        # plane. Fail before a provider call if ancestry or protected scope is
+        # unavailable; never force-push or silently reset the remote branch.
+        _run(["git", "merge-base", expected_sha, f"origin/{base}"], check=True)
+        files = _run(
+            ["git", "diff", "--name-only", f"origin/{base}...{expected_sha}"],
+            check=True,
+        ).stdout.splitlines()
+        if not files or any(not _writable(_safe_path(path)) for path in files):
+            raise DirectExecutorError("partial branch has no admissible work set")
+        start = expected_sha
+    else:
+        start = f"origin/{base}"
+    _run(["git", "checkout", "-B", branch, start], timeout=60, check=True)
     _run(
         ["git", "config", "user.name", "orchid-continuum-orchestrator[bot]"],
         timeout=30,
@@ -346,6 +413,13 @@ def _prepare_branch(issue_number: str, run_id: str, base: str) -> str:
         timeout=30,
         check=True,
     )
+    if resume:
+        _run(["git", "merge", "--no-edit", f"origin/{base}"], timeout=120, check=True)
+        print(
+            "[OC-DIRECT-RESUME] "
+            + json.dumps({"branch": branch, "source_sha": resume[1]}),
+            flush=True,
+        )
     return branch
 
 
@@ -400,6 +474,25 @@ def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str
 
 def _write_result(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    # Keep execution/usage evidence in the durable job log as well as the
+    # runner-local classifier input. Never log model text or raw API errors.
+    receipt = {
+        key: payload[key]
+        for key in (
+            "type",
+            "subtype",
+            "is_error",
+            "num_turns",
+            "modelUsage",
+            "pr_url",
+            "branch",
+            "partial_branch",
+            "error",
+            "api_error_status",
+        )
+        if key in payload
+    }
+    print("[OC-DIRECT-RECEIPT] " + json.dumps(receipt, sort_keys=True), flush=True)
 
 
 def _github_output(values: dict[str, Any]) -> None:
@@ -442,7 +535,12 @@ def main() -> int:
     final_text = ""
 
     try:
-        branch = _prepare_branch(args.issue_number, run_id, args.base)
+        branch = _prepare_branch(
+            args.issue_number,
+            run_id,
+            args.base,
+            resume=_resume_from_packet(packet, args.issue_number),
+        )
         system = (
             "You are the Orchid Continuum bounded engineering executor. Work only on the supplied "
             "task. Use repository tools to inspect and edit. Do not modify .github/workflows, "
@@ -488,8 +586,25 @@ def main() -> int:
                 else:
                     try:
                         tool_result = handler(dict(block.get("input") or {}))
-                    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+                    except (
+                        OSError,
+                        ValueError,
+                        KeyError,
+                        TypeError,
+                        subprocess.SubprocessError,
+                    ) as exc:
                         tool_result = f"ERROR: {type(exc).__name__}: {exc}"
+                print(
+                    "[OC-DIRECT-TOOL] "
+                    + json.dumps(
+                        {
+                            "turn": turn,
+                            "tool": name if handler else "unsupported",
+                            "input_error": tool_result.startswith("ERROR:"),
+                        }
+                    ),
+                    flush=True,
+                )
                 results.append(
                     {
                         "type": "tool_result",
@@ -544,6 +659,8 @@ def main() -> int:
         DirectExecutorError,
         OSError,
         ValueError,
+        KeyError,
+        TypeError,
         subprocess.SubprocessError,
     ) as exc:
         if not error_kind:

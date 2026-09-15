@@ -6,6 +6,18 @@ on:
       issue_number:
         required: true
         type: string
+      wave:
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        required: false
+        default: "1"
+        type: string
+      lease_comment_id:
+        required: false
+        default: ""
+        type: string
   workflow_dispatch:
     inputs:
       issue_number:
@@ -49,8 +61,23 @@ jobs:
       - name: Verify scheduler lease
         id: lease
         shell: bash
+        env:
+          LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
         run: |
           set -euo pipefail
+          # Swarm supplies a specific durable claim. Legacy manual dispatches
+          # retain their existing label-based check below.
+          if [[ -n "$LEASE_COMMENT_ID" ]]; then
+            if python3 -m scripts.oc_swarm_claim \
+              --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+              --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+              --run-attempt "$GITHUB_RUN_ATTEMPT"; then
+              echo "execute=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "execute=false" >> "$GITHUB_OUTPUT"
+            fi
+            exit 0
+          fi
           labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
           if [[ "$labels" == *oc-repair-backoff* ]]; then
             echo "execute=false" >> "$GITHUB_OUTPUT"
@@ -172,13 +199,21 @@ jobs:
           OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
         run: python3 scripts/swarm_governor_precheck.py
 
-      - name: Return issue to queue when governor blocks primary provider
+      - name: Park denied provider work without restoring paid eligibility
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
         shell: bash
+        env:
+          LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
+          DENIAL_REASON: ${{ steps.governor.outputs.reason || 'GOVERNOR_ADMISSION_UNCONFIRMED' }}
         run: |
           set -euo pipefail
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized. reason=${{ steps.governor.outputs.reason }}; packet=${{ steps.packet.outputs.fingerprint }}. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          # A verified Swarm claim is required for unattended state mutation.
+          # Legacy manual dispatches without a durable claim fail closed here.
+          [[ -n "$LEASE_COMMENT_ID" ]]
+          python3 -m scripts.oc_swarm_claim \
+            --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --park-denied "$DENIAL_REASON"
 
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'
@@ -189,6 +224,21 @@ jobs:
             --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
+      - name: Prepare worker validation Python
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install worker validation dependencies
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        run: |
+          python3 -m pip install -r requirements.txt
+          python3 -m pip install pytest ruff
+          python3 -m pytest --version
+          python3 -m ruff --version
 
       - name: Execute issue with governed direct Anthropic API
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
@@ -549,6 +599,7 @@ jobs:
             --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
 
       - name: Classify result, dispatch validation, release slot
+        id: settlement
         if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         env:
           CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
@@ -583,6 +634,7 @@ jobs:
           fi
 
           if [[ -n "$pr" ]]; then
+            echo "pr=$pr" >> "$GITHUB_OUTPUT"
             gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
@@ -628,3 +680,20 @@ jobs:
               gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. One bounded repair attempt remains; automatic refill remains disabled unless explicitly authorized." >/dev/null
             fi
           fi
+
+      - name: Dispatch trusted hosted completion consumer
+        if: steps.settlement.outcome == 'success' && steps.settlement.outputs.pr != '' && inputs.lease_comment_id != ''
+        env:
+          PR: ${{ steps.settlement.outputs.pr }}
+          LEASE: ${{ inputs.lease_comment_id }}
+          WAVE: ${{ inputs.wave || '1' }}
+          MAX_WAVES: ${{ inputs.max_waves || '1' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head=$(gh pr view "$PR" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')
+          gh workflow run oc-convergence-supervisor.yml --repo "$GITHUB_REPOSITORY" \
+            --ref oc-autonomous-integration \
+            -f issue="$ISSUE_NUMBER" -f pr="$PR" -f maker_head="$head" \
+            -f worker_run="$GITHUB_RUN_ID" -f worker_attempt="$GITHUB_RUN_ATTEMPT" \
+            -f lease="$LEASE" -f wave="$WAVE" -f max_waves="$MAX_WAVES"
