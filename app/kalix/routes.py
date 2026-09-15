@@ -105,7 +105,7 @@ def kalix_speak(payload: KalixSpeakRequest, auth: AuthDependency) -> dict[str, A
     provider_error: str | None = None
     try:
         reply = provider.generate(messages=messages, governed_context=governed_context)
-    except Exception:
+    except Exception:  # noqa: BLE001
         try:
             fallback = DeterministicGovernedReplyProvider()
             reply = fallback.generate(messages=messages, governed_context=governed_context)
