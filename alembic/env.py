@@ -22,7 +22,7 @@ import app.calyx_orchestrator.proposal_authorization_models
 import app.calyx_orchestrator.sandbox_supervisor_models
 import app.calyx_orchestrator.specialist_models
 import app.conversation_memory.models
-import app.research_workspace.models
+import app.research_workspace.models  # noqa: F401
 from app.models import Base
 
 target_metadata = Base.metadata
