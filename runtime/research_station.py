@@ -44,7 +44,7 @@ def _atomic(path: Path, payload: Any) -> None:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
-    except Exception:  # noqa: BLE001
+    except Exception:
         try:
             os.unlink(temporary)
         except FileNotFoundError:
