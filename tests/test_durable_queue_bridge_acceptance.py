@@ -55,6 +55,12 @@ _ISSUE_660_KEY = "issue-660:retrieve-evidence"   # Research Station → Matrix (
 _ISSUE_1264_KEY = "issue-1264:retrieve-evidence"  # Completion observer/healer (#1264)
 _ISSUE_1085_KEY = "issue-1085:retrieve-evidence"  # Freshness backfill matrix (#1085)
 
+
+def _sqlite_create_all(engine) -> None:
+    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
+    Base.metadata.create_all(engine, tables=tables)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -67,7 +73,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    _sqlite_create_all(e)
     yield e
     e.dispose()
 
@@ -394,7 +400,7 @@ def test_queue_bridge_acceptance_run_1_summary():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    _sqlite_create_all(e)
     factory = sessionmaker(bind=e, autocommit=False, autoflush=False)
     session = factory()
     run_id = f"qb-summary-{uuid.uuid4().hex[:8]}"

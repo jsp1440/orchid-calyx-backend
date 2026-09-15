@@ -6,6 +6,7 @@ on:
       - "app/scientific_interpretation/**"
       - "app/main.py"
       - "runtime/knowledge_graph/**"
+      - "runtime/calyx_research_executor.py"
       - "migrations/087b_context_preserving_interpretation.sql"
       - "migrations/BUILD-051-owner-operations-console.sql"
       - "tests/test_build_087b_scientific_interpretation.py"
@@ -24,6 +25,9 @@ on:
       - "tests/test_calyx_scientific_runtime_readiness_617.py"
       - "tests/test_calyx_scientific_uncertainty_617.py"
       - "tests/test_specialist_council_persistence.py"
+      - "tests/test_calyx_gate2_research_executor.py"
+      - "tests/test_calyx_gate3_external_literature.py"
+      - "app/calyx_conversation/external_literature.py"
       - "requirements-scientific.txt"
       - "docs/BUILD-087B-IMPLEMENTATION-REPORT.md"
       - "docs/brain/CI-BASELINE-001*.md"
@@ -119,6 +123,16 @@ jobs:
               last_budget jsonb,
               last_audit jsonb,
               updated_at timestamptz NOT NULL DEFAULT now()
+          );
+          CREATE TABLE IF NOT EXISTS oc_admin.research_station_records (
+              owner_key  text NOT NULL,
+              project_id text NOT NULL,
+              kind       text NOT NULL,
+              record_id  text NOT NULL,
+              payload    jsonb NOT NULL DEFAULT '{}',
+              created_at timestamptz NOT NULL DEFAULT now(),
+              updated_at timestamptz NOT NULL DEFAULT now(),
+              PRIMARY KEY (owner_key, project_id, kind, record_id)
           );
           SQL
         env:
