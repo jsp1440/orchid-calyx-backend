@@ -16,6 +16,7 @@ from .intelligence import (
     intelligence_tasks,
     parse_external_intelligence,
 )
+from .intelligence_bridge import ProposeTaskRequest
 from .intelligence_repository import (
     get_intelligence_item,
     list_intelligence_items,
@@ -139,6 +140,31 @@ def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
 def technology_scout(payload: ScoutBatch):
     """Screen bibliographic leads through the existing authenticated intake."""
     return ingest_scout_batch(payload)
+
+
+@router.post("/intelligence/propose-task", status_code=201)
+def propose_intelligence_task(payload: ProposeTaskRequest):
+    """Validate evidence gates and promote an assessed intelligence item to a TaskLeaf.
+
+    A paper-discovery metadata signal (lifecycle='DISCOVERED') is rejected.
+    All twelve triage dimensions must be explicitly assessed.
+    The material fingerprint must match the computed sha256 of specification + criteria.
+    Returns 201 with the TaskLeaf dict on success; 409 with gate rejection details on failure.
+    """
+    from .intelligence_bridge import GateRejection
+    from .intelligence_bridge import bridge as _bridge
+
+    result = _bridge.propose_task(
+        item_id=payload.item_id,
+        gate=payload.gate,
+        assessor=payload.assessor,
+    )
+    if isinstance(result, GateRejection):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": result.gate, "reason": result.reason},
+        )
+    return result.to_dict()
 
 
 @router.post("/intelligence/collect/twin-gmail")
