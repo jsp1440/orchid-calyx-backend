@@ -71,13 +71,11 @@ def _lexicon_entries(
 ) -> list[dict[str, Any]]:
     """Return up to *limit* Lexicon entries relevant to *query*.
 
-    *loader* is injectable for testing; production uses the live DB via
-    app.lexicon.routes._load_entries.
+    *loader* is injectable for testing; production uses the stable public
+    Lexicon search interface.
     """
     if loader is None:
-        from app.lexicon.routes import (
-            _load_entries as loader,  # type: ignore[assignment]
-        )
+        from app.lexicon.routes import search_concepts as loader
 
     terms = _query_terms(query)
     if not terms:
@@ -145,13 +143,6 @@ def build_lexicon_context(
 
 
 # ── Literature context ────────────────────────────────────────────────────────
-
-
-def _paper_ids_from_root(root: Path) -> list[str]:
-    if not root.is_dir():
-        return []
-    return [d.name for d in root.iterdir() if d.is_dir() and (d / "paper.json").is_file()]
-
 
 def _score_paper(paper: Any, terms: list[str]) -> int:
     meta = getattr(paper, "metadata", None)
@@ -242,12 +233,12 @@ def build_literature_context(
             "LITERATURE_EXTRACTION_ROOT", "runtime/literature_extraction"
         )
         repository = LiteratureResultRepository(lit_root)
-        scan_root = Path(str(lit_root))
-    else:
-        scan_root = getattr(repository, "root", Path("runtime/literature_extraction"))
 
     terms = _query_terms(query)
-    paper_ids = _paper_ids_from_root(scan_root)
+    try:
+        paper_ids = repository.list_paper_ids()
+    except Exception:  # noqa: BLE001 — repository unavailable; bridge continues
+        paper_ids = []
 
     if not paper_ids:
         return {

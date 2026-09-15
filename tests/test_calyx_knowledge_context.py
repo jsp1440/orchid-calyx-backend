@@ -10,14 +10,12 @@ Six required behavioral axes:
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.calyx_conversation.knowledge_context import (
-    _paper_ids_from_root,
     _query_terms,
     _term_overlap,
     build_knowledge_context,
@@ -72,7 +70,7 @@ def _mock_loader(entries: list[dict[str, Any]]) -> Any:
 
 def _mock_repository(papers: dict[str, Any]) -> Any:
     repo = MagicMock()
-    repo.root = Path("/nonexistent")
+    repo.list_paper_ids.return_value = sorted(papers)
     def get(paper_id: str) -> Any:
         return papers.get(paper_id)
     repo.get.side_effect = get
@@ -110,6 +108,25 @@ def test_lexicon_context_schema_field_present() -> None:
     assert ctx["source"] == "oc_lexicon"
 
 
+
+
+def test_default_lexicon_loader_uses_public_search_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def public_search(*, q: str, limit: int) -> list[dict[str, Any]]:
+        calls.append((q, limit))
+        return [ORCHID_ENTRY]
+
+    monkeypatch.setattr("app.lexicon.routes.search_concepts", public_search)
+    ctx = build_lexicon_context("Dendrobium culture")
+
+    assert ctx["available"] is True
+    assert calls
+    assert calls[0][0] == "Dendrobium culture"
+
+
 def test_lexicon_context_included_in_knowledge_context() -> None:
     loader = _mock_loader([ORCHID_ENTRY])
     ctx = build_knowledge_context(
@@ -123,31 +140,21 @@ def test_lexicon_context_included_in_knowledge_context() -> None:
 
 # ── 2. Literature context reaches Calyx ───────────────────────────────────────
 
-def test_literature_context_returns_matched_papers(tmp_path: Path) -> None:
-    paper_dir = tmp_path / "paper-001"
-    paper_dir.mkdir()
-    (paper_dir / "paper.json").write_text("{}")
-
+def test_literature_context_returns_matched_papers() -> None:
     claim = _make_claim("c1", "Cattleya grows in bright light.")
     paper = _make_paper("paper-001", "Cattleya culture study", claims=[claim])
     repo = _mock_repository({"paper-001": paper})
-    repo.root = tmp_path
 
-    ctx = build_literature_context("Cattleya bright light", repository=repo, root=tmp_path)
+    ctx = build_literature_context("Cattleya bright light", repository=repo)
     assert ctx["available"] is True
     assert ctx["matched_papers"] == 1
     assert ctx["papers"][0]["citation"]["title"] == "Cattleya culture study"
 
 
-def test_literature_context_included_in_knowledge_context(tmp_path: Path) -> None:
-    paper_dir = tmp_path / "paper-abc"
-    paper_dir.mkdir()
-    (paper_dir / "paper.json").write_text("{}")
-
+def test_literature_context_included_in_knowledge_context() -> None:
     claim = _make_claim("c2", "Orchid roots absorb humidity.", review_status="accepted")
     paper = _make_paper("paper-abc", "Root biology of epiphytes", claims=[claim])
     repo = _mock_repository({"paper-abc": paper})
-    repo.root = tmp_path
 
     ctx = build_knowledge_context(
         "orchid root humidity",
@@ -168,17 +175,12 @@ def test_lexicon_provenance_preserved() -> None:
     assert prov["validation_status"] == "APPROVED"
 
 
-def test_literature_claim_provenance_preserved(tmp_path: Path) -> None:
-    paper_dir = tmp_path / "p1"
-    paper_dir.mkdir()
-    (paper_dir / "paper.json").write_text("{}")
-
+def test_literature_claim_provenance_preserved() -> None:
     claim = _make_claim("c3", "Phalaenopsis prefers low light.")
     paper = _make_paper("p1", "Moth orchid guide", claims=[claim])
     repo = _mock_repository({"p1": paper})
-    repo.root = tmp_path
 
-    ctx = build_literature_context("Phalaenopsis light", repository=repo, root=tmp_path)
+    ctx = build_literature_context("Phalaenopsis light", repository=repo)
     claim_out = ctx["papers"][0]["claims"][0]
     prov_out = claim_out["provenance"]
     assert prov_out["method"] == "rule_extracted"
@@ -187,18 +189,13 @@ def test_literature_claim_provenance_preserved(tmp_path: Path) -> None:
     assert prov_out["extractor"] == "test-extractor"
 
 
-def test_rejected_claims_excluded(tmp_path: Path) -> None:
-    paper_dir = tmp_path / "p2"
-    paper_dir.mkdir()
-    (paper_dir / "paper.json").write_text("{}")
-
+def test_rejected_claims_excluded() -> None:
     accepted = _make_claim("ca", "Good claim.", review_status="accepted")
     rejected = _make_claim("cr", "Rejected claim.", review_status="rejected")
     paper = _make_paper("p2", "Test paper", claims=[accepted, rejected])
     repo = _mock_repository({"p2": paper})
-    repo.root = tmp_path
 
-    ctx = build_literature_context("test query", repository=repo, root=tmp_path)
+    ctx = build_literature_context("test query", repository=repo)
     ids = [c["claim_id"] for c in ctx["papers"][0]["claims"]]
     assert "ca" in ids
     assert "cr" not in ids
@@ -221,24 +218,16 @@ def test_lexicon_db_failure_does_not_raise() -> None:
     assert ctx["available"] is False
 
 
-def test_literature_empty_root_returns_available_false(tmp_path: Path) -> None:
-    empty_root = tmp_path / "empty"
-    empty_root.mkdir()
-    repo = MagicMock()
-    repo.root = empty_root
-    ctx = build_literature_context("Dendrobium", repository=repo, root=empty_root)
+def test_literature_empty_repository_returns_available_false() -> None:
+    repo = _mock_repository({})
+    ctx = build_literature_context("Dendrobium", repository=repo)
     assert ctx["available"] is False
     assert ctx["matched_papers"] == 0
 
 
-def test_combined_lexicon_failure_does_not_affect_literature(tmp_path: Path) -> None:
-    paper_dir = tmp_path / "p3"
-    paper_dir.mkdir()
-    (paper_dir / "paper.json").write_text("{}")
-
+def test_combined_lexicon_failure_does_not_affect_literature() -> None:
     paper = _make_paper("p3", "Vanilla planifolia study")
     repo = _mock_repository({"p3": paper})
-    repo.root = tmp_path
 
     def boom(**_kw: Any) -> list[Any]:
         raise RuntimeError("Lexicon exploded")
@@ -255,8 +244,7 @@ def test_combined_lexicon_failure_does_not_affect_literature(tmp_path: Path) -> 
 def test_combined_literature_failure_does_not_affect_lexicon() -> None:
     loader = _mock_loader([ORCHID_ENTRY])
 
-    repo = MagicMock()
-    repo.root = Path("/nonexistent_xyz")
+    repo = _mock_repository({})
 
     ctx = build_knowledge_context(
         "Dendrobium culture",
@@ -322,19 +310,21 @@ def test_knowledge_context_dict_is_json_serialisable() -> None:
     assert decoded["schema"] == "oc.calyx-knowledge-context.v1"
 
 
-def test_paper_ids_from_root_empty_dir(tmp_path: Path) -> None:
-    assert _paper_ids_from_root(tmp_path) == []
+def test_literature_uses_repository_paper_id_interface() -> None:
+    paper = _make_paper("paper-1", "Repository abstraction")
+    repo = _mock_repository({"paper-1": paper})
+
+    ctx = build_literature_context("Repository abstraction", repository=repo)
+
+    repo.list_paper_ids.assert_called_once_with()
+    assert ctx["matched_papers"] == 1
 
 
-def test_paper_ids_from_root_nonexistent() -> None:
-    assert _paper_ids_from_root(Path("/does/not/exist")) == []
+def test_literature_repository_listing_failure_fails_gracefully() -> None:
+    repo = MagicMock()
+    repo.list_paper_ids.side_effect = RuntimeError("storage unavailable")
 
+    ctx = build_literature_context("Dendrobium", repository=repo)
 
-def test_paper_ids_from_root_finds_directories(tmp_path: Path) -> None:
-    (tmp_path / "paper-1").mkdir()
-    (tmp_path / "paper-1" / "paper.json").write_text("{}")
-    (tmp_path / "paper-2").mkdir()
-    (tmp_path / "paper-2" / "paper.json").write_text("{}")
-    (tmp_path / "not-a-paper").mkdir()  # no paper.json
-    ids = set(_paper_ids_from_root(tmp_path))
-    assert ids == {"paper-1", "paper-2"}
+    assert ctx["available"] is False
+    assert ctx["matched_papers"] == 0
