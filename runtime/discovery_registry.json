@@ -45,12 +45,14 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "app.literature_extraction.registry",
         "dataclasses",
         "datetime",
         "os",
         "psycopg",
         "psycopg.rows",
         "psycopg.types.json",
+        "runtime.knowledge_graph.source_registry",
         "typing"
       ],
       "description": "DefaultTaskExecutor provides: Execute runtime work",
@@ -66,12 +68,14 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "app.literature_extraction.registry",
         "dataclasses",
         "datetime",
         "os",
         "psycopg",
         "psycopg.rows",
         "psycopg.types.json",
+        "runtime.knowledge_graph.source_registry",
         "typing"
       ],
       "description": "DefaultTaskExecutor provides: Inspect Brain state",
@@ -892,6 +896,25 @@
         "Provide runtime component"
       ],
       "provider": "KnowledgeGraphReadProtocol"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.deep_orchestrate",
+        "hashlib",
+        "json",
+        "scripts.oc_backlog_refiller",
+        "typing"
+      ],
+      "description": "DeepOrchestrateQueueBridge provides: Plan runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Plan runtime work",
+      "outputs": [
+        "Plan runtime work"
+      ],
+      "provider": "DeepOrchestrateQueueBridge"
     },
     {
       "category": "Planning",
@@ -2299,6 +2322,34 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "app.calyx_orchestrator.bounded_dispatcher",
+        "app.calyx_orchestrator.deep_orchestrate",
+        "app.calyx_orchestrator.durable_reservoir",
+        "app.calyx_orchestrator.leaf_worker",
+        "app.database",
+        "dataclasses",
+        "datetime",
+        "runtime.deep_orchestrate_queue_bridge",
+        "scripts.oc_portfolio_scheduler",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "sqlalchemy.pool",
+        "typing",
+        "uuid"
+      ],
+      "description": "PortfolioStewardReport provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "PortfolioStewardReport"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "collections.abc",
         "dataclasses",
         "datetime",
@@ -2573,6 +2624,8 @@
       "dependencies": [
         "__future__",
         "adaptive_harvest_worker",
+        "app.calyx_orchestrator.worker",
+        "app.database",
         "bottlenecks",
         "dataclasses",
         "goals",
@@ -2584,6 +2637,7 @@
         "memory",
         "mission",
         "os",
+        "socket",
         "threading",
         "time",
         "typing"
@@ -3656,6 +3710,22 @@
       "provider": "AtlasRegistry"
     },
     {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "typing"
+      ],
+      "description": "ExceptionDecision provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ExceptionDecision"
+    },
+    {
       "category": "Brain",
       "dependencies": [
         "reasoning",
@@ -4610,6 +4680,40 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "dataclasses",
+        "pydantic",
+        "typing"
+      ],
+      "description": "VoiceProfile provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "VoiceProfile"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "re",
+        "typing"
+      ],
+      "description": "ComposedAnswer provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ComposedAnswer"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "literature_ingest",
         "os",
         "re",
@@ -4647,7 +4751,9 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "conversational_synthesis",
         "dataclasses",
+        "evidence_synthesis",
         "hashlib",
         "json",
         "os",
@@ -4668,6 +4774,7 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "evidence_synthesis",
         "json",
         "logging",
         "os",
@@ -4688,6 +4795,7 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "adaptive_communication",
         "app.brain.reasoning_map",
         "app.evidence_retrieval.models",
         "app.security",
@@ -4814,6 +4922,7 @@
         "app.security",
         "climate_context",
         "continuum_context",
+        "conversational_synthesis",
         "external_literature",
         "fastapi",
         "interaction_context",
@@ -4876,6 +4985,49 @@
         "Provide runtime component"
       ],
       "provider": "AnthropicPatchProviderError"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.github_agent_ci_policy",
+        "dataclasses",
+        "enum",
+        "github",
+        "provider",
+        "repair_loop"
+      ],
+      "description": "CompletionState provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CompletionState"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.models",
+        "completion_loop",
+        "datetime",
+        "github",
+        "json",
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "uuid"
+      ],
+      "description": "EngineeringCompletionScheduler provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "EngineeringCompletionScheduler"
     },
     {
       "category": "Runtime",
@@ -4978,14 +5130,18 @@
         "app.calyx_orchestrator.models",
         "app.database",
         "app.security",
+        "completion_loop",
+        "completion_scheduler",
         "fastapi",
         "github",
         "inspection",
+        "json",
         "provider",
         "pydantic",
         "repair",
         "repair_loop",
         "service",
+        "sqlalchemy",
         "sqlalchemy.orm",
         "typing"
       ],
@@ -5008,14 +5164,18 @@
         "app.calyx_orchestrator.models",
         "app.database",
         "app.security",
+        "completion_loop",
+        "completion_scheduler",
         "fastapi",
         "github",
         "inspection",
+        "json",
         "provider",
         "pydantic",
         "repair",
         "repair_loop",
         "service",
+        "sqlalchemy",
         "sqlalchemy.orm",
         "typing"
       ],
@@ -5205,6 +5365,46 @@
       "provider": "AutonomousCycleRequest"
     },
     {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "bounded_dispatcher",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "leaf_worker",
+        "typing"
+      ],
+      "description": "BlueprintRunReport provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "BlueprintRunReport"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "concurrent.futures",
+        "dataclasses",
+        "deep_orchestrate",
+        "leaf_worker",
+        "logging",
+        "typing"
+      ],
+      "description": "DispatchConfig provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "DispatchConfig"
+    },
+    {
       "category": "Brain",
       "dependencies": [
         "__future__",
@@ -5230,6 +5430,85 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "collections.abc",
+        "os"
+      ],
+      "description": "CodexCredentialError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CodexCredentialError"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "chatgpt_business_codex_credential",
+        "collections.abc",
+        "dataclasses",
+        "github_coding_executor",
+        "os",
+        "subprocess",
+        "typing"
+      ],
+      "description": "CodexCredentialMappingError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CodexCredentialMappingError"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "chatgpt_business_codex_credential",
+        "chatgpt_business_codex_provider",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "github_coding_executor",
+        "time",
+        "typing"
+      ],
+      "description": "CodexCodingWorker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "CodexCodingWorker"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "description": "Priority provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "Priority"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "assignment_factory",
         "dataclasses",
         "datetime",
@@ -5247,6 +5526,48 @@
         "Execute runtime work"
       ],
       "provider": "DryRunExecutionResult"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "deep_orchestrate",
+        "durable_reservoir_models",
+        "logging",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "description": "DurableOrchestrate provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "DurableOrchestrate"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "datetime",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "sqlalchemy.types"
+      ],
+      "description": "DurableReservoirRun provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "DurableReservoirRun"
     },
     {
       "category": "Runtime",
@@ -5326,6 +5647,24 @@
         "Execute runtime work"
       ],
       "provider": "AutonomyProbeExecutor"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "hashlib",
+        "json"
+      ],
+      "description": "RiskTier provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "RiskTier"
     },
     {
       "category": "Runtime",
@@ -5822,6 +6161,21 @@
       "provider": "GitHubRepositoryConvergenceInspector"
     },
     {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "description": "IssueCommentClient provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "IssueCommentClient"
+    },
+    {
       "category": "Execution",
       "dependencies": [
         "__future__",
@@ -5847,6 +6201,25 @@
       "provider": "IsolatedWorkspacePatchExecutor"
     },
     {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "time",
+        "typing"
+      ],
+      "description": "DeterministicResearchWorker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "DeterministicResearchWorker"
+    },
+    {
       "category": "Runtime",
       "dependencies": [
         "__future__",
@@ -5864,6 +6237,27 @@
         "Provide runtime component"
       ],
       "provider": "CalyxJob"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "blueprint_run_report",
+        "bounded_dispatcher",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "leaf_worker",
+        "typing"
+      ],
+      "description": "AuthorizationDecision provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "AuthorizationDecision"
     },
     {
       "category": "Runtime",
@@ -5888,6 +6282,69 @@
         "Provide runtime component"
       ],
       "provider": "OwnerVerificationKey"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "threading",
+        "typing",
+        "uuid"
+      ],
+      "description": "BudgetExhaustedError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "BudgetExhaustedError"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "anthropic",
+        "dataclasses",
+        "openai",
+        "os",
+        "paid_api_budget_governor",
+        "typing",
+        "uuid"
+      ],
+      "description": "PaidAPICallResult provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "PaidAPICallResult"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "os",
+        "paid_api_budget_governor",
+        "paid_api_provider",
+        "time",
+        "typing",
+        "uuid"
+      ],
+      "description": "PaidAPIWorker provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "PaidAPIWorker"
     },
     {
       "category": "Runtime",
@@ -7150,6 +7607,90 @@
         "Harvest engineering memory"
       ],
       "provider": "ConversationMemoryService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "copy",
+        "models",
+        "typing"
+      ],
+      "description": "DataDisclosureDenied provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "DataDisclosureDenied"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "models",
+        "policy"
+      ],
+      "description": "ModelProcessingDenied provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ModelProcessingDenied"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum"
+      ],
+      "description": "DataSensitivity provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "DataSensitivity"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "models"
+      ],
+      "description": "ProtectedValueKind provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ProtectedValueKind"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "description": "DataPolicyEngine provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "DataPolicyEngine"
     },
     {
       "category": "Runtime",
@@ -11937,6 +12478,35 @@
     {
       "category": "API",
       "dependencies": [
+        "__future__",
+        "app.calyx_engineering.github",
+        "app.calyx_orchestrator.github_research_feedback",
+        "app.routers.owner_operations",
+        "app.security",
+        "dataclasses",
+        "fastapi",
+        "hashlib",
+        "hmac",
+        "json",
+        "os",
+        "psycopg.types.json",
+        "re",
+        "typing"
+      ],
+      "description": "BridgeConfig provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "BridgeConfig"
+    },
+    {
+      "category": "API",
+      "dependencies": [
         "app.security",
         "fastapi",
         "runtime.graph_pipeline_readiness",
@@ -12007,6 +12577,7 @@
         "app.parallel_platform.routes",
         "app.routers.calyx_queue",
         "app.routers.conservatory",
+        "app.routers.github_research_bridge",
         "app.routers.graph_pipeline_readiness",
         "app.routers.live_mission_control",
         "app.routers.matrix_identification",
@@ -13251,6 +13822,7 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "claim_verification",
         "discovery",
         "fastapi",
         "models",
@@ -13275,6 +13847,7 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "claim_verification",
         "discovery",
         "fastapi",
         "models",
@@ -14104,6 +14677,78 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "collections",
+        "hashlib",
+        "json",
+        "math",
+        "os",
+        "pathlib",
+        "platform",
+        "runtime.research_analysis_workflow",
+        "runtime.research_station",
+        "runtime.scientific_analysis",
+        "runtime.scientific_dataset_snapshots",
+        "runtime.scientific_diagnostics",
+        "tempfile",
+        "typing"
+      ],
+      "description": "AppliedAIDataScienceService provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "AppliedAIDataScienceService"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "ai_data_science",
+        "config",
+        "fastapi",
+        "learner_auth",
+        "pydantic",
+        "typing"
+      ],
+      "description": "PrepareModuleRequest provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "PrepareModuleRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "ai_data_science",
+        "config",
+        "fastapi",
+        "learner_auth",
+        "pydantic",
+        "typing"
+      ],
+      "description": "PrepareModuleRequest provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "PrepareModuleRequest"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "durable_config",
         "os",
         "psycopg",
@@ -14151,6 +14796,7 @@
       "dependencies": [
         "__future__",
         "activation_service",
+        "ai_data_science_routes",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.health",
@@ -14475,7 +15121,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 1863,
+    "edge_count": 1978,
     "edges": [
       {
         "from": "GovernanceService",
@@ -14513,12 +15159,22 @@
         "type": "import"
       },
       {
+        "from": "CDSRegistryError",
+        "to": "DefaultTaskExecutor",
+        "type": "import"
+      },
+      {
         "from": "CrossLaneIntegration",
         "to": "DefaultTaskExecutor",
         "type": "import"
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "DefaultTaskExecutor",
+        "type": "import"
+      },
+      {
+        "from": "PostgresSourceRegistryRepository",
         "to": "DefaultTaskExecutor",
         "type": "import"
       },
@@ -14845,6 +15501,11 @@
       {
         "from": "CrossLaneIntegration",
         "to": "KnowledgeGraphReadProtocol",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "DeepOrchestrateQueueBridge",
         "type": "import"
       },
       {
@@ -15443,7 +16104,7 @@
         "type": "import"
       },
       {
-        "from": "BHLClient",
+        "from": "IssueCommentClient",
         "to": "LiteratureHarvester",
         "type": "import"
       },
@@ -15683,6 +16344,41 @@
         "type": "import"
       },
       {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "DurableReservoirRun",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "Worker",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "Portfolio",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "PortfolioStewardReport",
+        "type": "import"
+      },
+      {
         "from": "Policy",
         "to": "ProgramAutonomyWorker",
         "type": "import"
@@ -15829,6 +16525,16 @@
       },
       {
         "from": "Worker",
+        "to": "InProcessHarvester",
+        "type": "import"
+      },
+      {
+        "from": "BrainIntegrationWorker",
+        "to": "InProcessHarvester",
+        "type": "import"
+      },
+      {
+        "from": "Database",
         "to": "InProcessHarvester",
         "type": "import"
       },
@@ -17138,6 +17844,21 @@
         "type": "import"
       },
       {
+        "from": "DeployedPreflight",
+        "to": "ComposedAnswer",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "EvidenceSynthesis",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "EvidenceSynthesis",
+        "type": "import"
+      },
+      {
         "from": "LiteratureIngestion",
         "to": "ExternalLiterature",
         "type": "import"
@@ -17218,6 +17939,11 @@
         "type": "import"
       },
       {
+        "from": "EvidenceSynthesis",
+        "to": "GeneratedReply",
+        "type": "import"
+      },
+      {
         "from": "JsonActivationStateStore",
         "to": "GeneratedReply",
         "type": "import"
@@ -17230,6 +17956,11 @@
       {
         "from": "Persona",
         "to": "GeneratedReply",
+        "type": "import"
+      },
+      {
+        "from": "EvidenceSynthesis",
+        "to": "OpenAIRuntimeResponsesProvider",
         "type": "import"
       },
       {
@@ -17438,6 +18169,76 @@
         "type": "import"
       },
       {
+        "from": "Policy",
+        "to": "CompletionState",
+        "type": "import"
+      },
+      {
+        "from": "GitHubConnector",
+        "to": "CompletionState",
+        "type": "import"
+      },
+      {
+        "from": "SourceProvider",
+        "to": "CompletionState",
+        "type": "import"
+      },
+      {
+        "from": "GitHubConnector",
+        "to": "EngineeringCompletionScheduler",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "EngineeringCompletionScheduler",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "EngineeringCompletionScheduler",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "EngineeringCompletionScheduler",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "EngineeringCompletionScheduler",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "GitHubConnector",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "CompletionWorker",
+        "type": "import"
+      },
+      {
         "from": "JsonActivationStateStore",
         "to": "GitHubAutomationError",
         "type": "import"
@@ -17533,12 +18334,22 @@
         "type": "import"
       },
       {
+        "from": "EngineeringCompletionScheduler",
+        "to": "ChangeRequest",
+        "type": "import"
+      },
+      {
         "from": "Api",
         "to": "ChangeRequest",
         "type": "import"
       },
       {
         "from": "GitHubConnector",
+        "to": "ChangeRequest",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
         "to": "ChangeRequest",
         "type": "import"
       },
@@ -17688,6 +18499,26 @@
         "type": "import"
       },
       {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "BlueprintRunReport",
+        "type": "import"
+      },
+      {
+        "from": "Worker",
+        "to": "BlueprintRunReport",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "DispatchConfig",
+        "type": "import"
+      },
+      {
+        "from": "Worker",
+        "to": "DispatchConfig",
+        "type": "import"
+      },
+      {
         "from": "JsonActivationStateStore",
         "to": "BrainRecordType",
         "type": "import"
@@ -17695,6 +18526,61 @@
       {
         "from": "Review",
         "to": "BrainRecordType",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "CodexCredentialError",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "CodexCredentialMappingError",
+        "type": "import"
+      },
+      {
+        "from": "Provider",
+        "to": "CodexCanary",
+        "type": "import"
+      },
+      {
+        "from": "Worker",
+        "to": "CodexCanary",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "CodexCanary",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "CodexCanary",
+        "type": "import"
+      },
+      {
+        "from": "ExecutiveSubsystem",
+        "to": "CodexCanary",
+        "type": "import"
+      },
+      {
+        "from": "Provider",
+        "to": "CodexCodingWorker",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "CodexCodingWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "CodexCodingWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "Priority",
         "type": "import"
       },
       {
@@ -17715,6 +18601,31 @@
       {
         "from": "OperatorMessage",
         "to": "DryRunExecutionResult",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "DurableOrchestrate",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "DurableOrchestrate",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "DurableOrchestrate",
+        "type": "import"
+      },
+      {
+        "from": "Database",
+        "to": "DurableReservoirRun",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "DurableReservoirRun",
         "type": "import"
       },
       {
@@ -17768,6 +18679,11 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "RiskTier",
+        "type": "import"
+      },
+      {
         "from": "ProposalAuthorizationDecisionRecord",
         "to": "OwnerGrantSignatureVerifier",
         "type": "import"
@@ -17799,6 +18715,11 @@
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "CiConclusion",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "CiConclusion",
         "type": "import"
       },
@@ -17854,6 +18775,11 @@
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "GitProposalMutationJournalEventRecord",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "GitProposalMutationJournalEventRecord",
         "type": "import"
       },
@@ -18063,6 +18989,16 @@
         "type": "import"
       },
       {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "DeterministicResearchWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "DeterministicResearchWorker",
+        "type": "import"
+      },
+      {
         "from": "Database",
         "to": "CalyxJob",
         "type": "import"
@@ -18098,6 +19034,21 @@
         "type": "import"
       },
       {
+        "from": "BlueprintRunReport",
+        "to": "AuthorizationDecision",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "AuthorizationDecision",
+        "type": "import"
+      },
+      {
+        "from": "Worker",
+        "to": "AuthorizationDecision",
+        "type": "import"
+      },
+      {
         "from": "JsonActivationStateStore",
         "to": "OwnerVerificationKey",
         "type": "import"
@@ -18110,6 +19061,91 @@
       {
         "from": "DeployedPreflight",
         "to": "OwnerVerificationKey",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "ExecutiveSubsystem",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "ActionEvaluationRequest",
+        "to": "PaidApiCanary",
+        "type": "import"
+      },
+      {
+        "from": "AnthropicPatchProviderError",
+        "to": "PaidAPICallResult",
+        "type": "import"
+      },
+      {
+        "from": "OpenAIRuntimeResponsesProvider",
+        "to": "PaidAPICallResult",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "PaidAPICallResult",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidAPICallResult",
+        "type": "import"
+      },
+      {
+        "from": "DeepOrchestrateQueueBridge",
+        "to": "PaidAPIWorker",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "PaidAPIWorker",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidAPIWorker",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PaidAPIWorker",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "PaidAPIWorker",
         "type": "import"
       },
       {
@@ -18178,7 +19214,7 @@
         "type": "import"
       },
       {
-        "from": "Portfolio",
+        "from": "PortfolioStewardReport",
         "to": "PortfolioRoutes",
         "type": "import"
       },
@@ -18334,6 +19370,11 @@
       },
       {
         "from": "ProposalAuthorizationDecisionRecord",
+        "to": "DurableProposalAuthorizationStore",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "DurableProposalAuthorizationStore",
         "type": "import"
       },
@@ -18515,6 +19556,21 @@
       {
         "from": "RepositoryEvidenceExecutor",
         "to": "IsolatedWorkspaceStaticValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "EngineeringCompletionScheduler",
+        "to": "Worker",
+        "type": "import"
+      },
+      {
+        "from": "GitHubConnector",
+        "to": "Worker",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "Worker",
         "type": "import"
       },
       {
@@ -18850,6 +19906,26 @@
       {
         "from": "OperatorMessage",
         "to": "ConversationMemoryService",
+        "type": "import"
+      },
+      {
+        "from": "Access",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "DataDisclosureDenied",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "ChangeWindowPolicy",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "ChangeWindowPolicy",
+        "to": "ModelProcessingDenied",
         "type": "import"
       },
       {
@@ -19413,7 +20489,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "Routes",
         "type": "import"
       },
@@ -19468,7 +20544,7 @@
         "type": "import"
       },
       {
-        "from": "BHLClient",
+        "from": "IssueCommentClient",
         "to": "Init",
         "type": "import"
       },
@@ -19488,7 +20564,7 @@
         "type": "import"
       },
       {
-        "from": "BHLClient",
+        "from": "IssueCommentClient",
         "to": "BHLHarvester",
         "type": "import"
       },
@@ -19503,7 +20579,7 @@
         "type": "import"
       },
       {
-        "from": "BHLClient",
+        "from": "IssueCommentClient",
         "to": "GBIFHarvester",
         "type": "import"
       },
@@ -19523,7 +20599,7 @@
         "type": "import"
       },
       {
-        "from": "BHLClient",
+        "from": "IssueCommentClient",
         "to": "INaturalistHarvester",
         "type": "import"
       },
@@ -20593,6 +21669,11 @@
         "type": "import"
       },
       {
+        "from": "ExceptionDecision",
+        "to": "ProposalExecutionStatus",
+        "type": "import"
+      },
+      {
         "from": "OperatorMessage",
         "to": "ProposalExecutionStatus",
         "type": "import"
@@ -20608,7 +21689,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "Routes",
         "type": "import"
       },
@@ -20648,7 +21729,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "MissionControlBriefingService",
         "type": "import"
       },
@@ -20663,7 +21744,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "Routes",
         "type": "import"
       },
@@ -20688,7 +21769,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "MissionControlReleaseReadiness",
         "type": "import"
       },
@@ -21188,6 +22269,11 @@
         "type": "import"
       },
       {
+        "from": "ExceptionDecision",
+        "to": "StaleLedgerVersionError",
+        "type": "import"
+      },
+      {
         "from": "OperatorMessage",
         "to": "StaleLedgerVersionError",
         "type": "import"
@@ -21229,6 +22315,11 @@
       },
       {
         "from": "BottleneckService",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "Routes",
         "type": "import"
       },
@@ -21428,6 +22519,11 @@
         "type": "import"
       },
       {
+        "from": "ExceptionDecision",
+        "to": "ResearchWorkspaceService",
+        "type": "import"
+      },
+      {
         "from": "OperatorMessage",
         "to": "ResearchWorkspaceService",
         "type": "import"
@@ -21438,7 +22534,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "Dependencies",
         "type": "import"
       },
@@ -21478,7 +22574,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "ReviewDecisionRequest",
         "type": "import"
       },
@@ -21518,7 +22614,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "ReviewQueueOperations",
         "type": "import"
       },
@@ -21533,7 +22629,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "GovernedReviewTaskService",
         "type": "import"
       },
@@ -21548,7 +22644,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "WorkforceImportError",
         "type": "import"
       },
@@ -21933,6 +23029,51 @@
         "type": "import"
       },
       {
+        "from": "GitHubConnector",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "Feedback",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "Operations",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
         "from": "Security",
         "to": "GraphPipelineReadiness",
         "type": "import"
@@ -22094,6 +23235,11 @@
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "Judging",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "Judging",
         "type": "import"
       },
@@ -22713,6 +23859,11 @@
         "type": "import"
       },
       {
+        "from": "ExceptionDecision",
+        "to": "TaxonomyReleases",
+        "type": "import"
+      },
+      {
         "from": "Api",
         "to": "Tiles",
         "type": "import"
@@ -22754,6 +23905,11 @@
       },
       {
         "from": "BrainIntegrationWorker",
+        "to": "VolunteerOps",
+        "type": "import"
+      },
+      {
+        "from": "ExceptionDecision",
         "to": "VolunteerOps",
         "type": "import"
       },
@@ -22888,6 +24044,11 @@
         "type": "import"
       },
       {
+        "from": "BottleneckService",
+        "to": "ClaimVerification",
+        "type": "import"
+      },
+      {
         "from": "DeployedPreflight",
         "to": "LiteratureDiscoveryService",
         "type": "import"
@@ -22960,6 +24121,11 @@
       {
         "from": "BottleneckService",
         "to": "BibliographyIn",
+        "type": "import"
+      },
+      {
+        "from": "ClaimVerification",
+        "to": "BibliographicRecordIn",
         "type": "import"
       },
       {
@@ -23428,7 +24594,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "UniversityActivationService",
         "type": "import"
       },
@@ -23450,6 +24616,61 @@
       {
         "from": "BottleneckService",
         "to": "UniversityActivationService",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "CrossLaneIntegration",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "ResearchAnalysisWorkflowService",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "ResearchStationService",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "ScientificAnalysisService",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "ScientificDatasetSnapshotService",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "ScientificDiagnosticsService",
+        "to": "AppliedAIDataScienceService",
+        "type": "import"
+      },
+      {
+        "from": "AppliedAIDataScienceService",
+        "to": "PrepareModuleRequest",
+        "type": "import"
+      },
+      {
+        "from": "BrainConfigError",
+        "to": "PrepareModuleRequest",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "PrepareModuleRequest",
+        "type": "import"
+      },
+      {
+        "from": "LearnerAuth",
+        "to": "PrepareModuleRequest",
         "type": "import"
       },
       {
@@ -23518,7 +24739,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "ReviewerRoutes",
         "type": "import"
       },
@@ -23553,7 +24774,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "ReviewerWorkspace",
         "type": "import"
       },
@@ -23578,7 +24799,7 @@
         "type": "import"
       },
       {
-        "from": "MissionControl",
+        "from": "Access",
         "to": "Routes",
         "type": "import"
       },
@@ -23815,6 +25036,10 @@
         "module": "KnowledgeGraphReadProtocol"
       },
       {
+        "dependency": "app.calyx_orchestrator.deep_orchestrate",
+        "module": "DeepOrchestrateQueueBridge"
+      },
+      {
         "dependency": "runtime.executive.executive_state",
         "module": "Engine"
       },
@@ -23881,6 +25106,10 @@
       {
         "dependency": "runtime_executor",
         "module": "PlannerRouter"
+      },
+      {
+        "dependency": "app.calyx_orchestrator.bounded_dispatcher",
+        "module": "PortfolioStewardReport"
       },
       {
         "dependency": "app.calyx_orchestrator.program_cycle",
@@ -24060,6 +25289,10 @@
       },
       {
         "dependency": "app.calyx_orchestrator.models",
+        "module": "EngineeringCompletionScheduler"
+      },
+      {
+        "dependency": "app.calyx_orchestrator.models",
         "module": "ChangeRequest"
       },
       {
@@ -24089,6 +25322,10 @@
       {
         "dependency": "app.research_workspace.models",
         "module": "ConversationMemoryService"
+      },
+      {
+        "dependency": "app.mission_control_access",
+        "module": "Access"
       },
       {
         "dependency": "app.source_registry.dependencies",
@@ -24177,25 +25414,9 @@
       {
         "dependency": "app.knowledge_publication.graph_models",
         "module": "CanonicalPublicationGate"
-      },
-      {
-        "dependency": "app.knowledge_publication.models",
-        "module": "CanonicalPublicationGate"
-      },
-      {
-        "dependency": "app.reasoning_ledger.models",
-        "module": "ReasoningLedgerPublicationService"
-      },
-      {
-        "dependency": "app.review_tasks.models",
-        "module": "ReviewDecisionRequest"
-      },
-      {
-        "dependency": "app.models",
-        "module": "Awards"
       }
     ],
-    "node_count": 834,
+    "node_count": 871,
     "nodes": [
       {
         "category": "Runtime",
@@ -24699,6 +25920,13 @@
         "health": "healthy",
         "name": "KnowledgeGraphReadProtocol",
         "path": "runtime/continuum_graph_tool.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DeepOrchestrateQueueBridge",
+        "path": "runtime/deep_orchestrate_queue_bridge.py",
         "type": "python_module"
       },
       {
@@ -25346,6 +26574,13 @@
         "type": "api_router"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "PortfolioStewardReport",
+        "path": "runtime/portfolio_steward_reconciler.py",
+        "type": "python_module"
+      },
+      {
         "category": "Execution",
         "health": "available",
         "name": "ProgramAutonomyWorker",
@@ -25941,6 +27176,13 @@
         "type": "python_module"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ExceptionDecision",
+        "path": "app/autonomy/exception_policy.py",
+        "type": "python_module"
+      },
+      {
         "category": "Brain",
         "health": "healthy",
         "name": "Init",
@@ -26159,6 +27401,13 @@
       },
       {
         "category": "Runtime",
+        "health": "healthy",
+        "name": "VoiceProfile",
+        "path": "app/calyx_conversation/adaptive_communication.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
         "health": "available",
         "name": "ClimateContext",
         "path": "app/calyx_conversation/climate_context.py",
@@ -26169,6 +27418,20 @@
         "health": "available",
         "name": "ContinuumContext",
         "path": "app/calyx_conversation/continuum_context.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ComposedAnswer",
+        "path": "app/calyx_conversation/conversational_synthesis.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "EvidenceSynthesis",
+        "path": "app/calyx_conversation/evidence_synthesis.py",
         "type": "python_module"
       },
       {
@@ -26314,6 +27577,27 @@
       {
         "category": "Runtime",
         "health": "healthy",
+        "name": "CompletionState",
+        "path": "app/calyx_engineering/completion_loop.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "EngineeringCompletionScheduler",
+        "path": "app/calyx_engineering/completion_scheduler.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Execution",
+        "health": "available",
+        "name": "CompletionWorker",
+        "path": "app/calyx_engineering/completion_worker.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
         "name": "GitHubAutomationError",
         "path": "app/calyx_engineering/github.py",
         "type": "python_module"
@@ -26445,6 +27729,20 @@
         "type": "api_router"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "BlueprintRunReport",
+        "path": "app/calyx_orchestrator/blueprint_run_report.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DispatchConfig",
+        "path": "app/calyx_orchestrator/bounded_dispatcher.py",
+        "type": "python_module"
+      },
+      {
         "category": "Brain",
         "health": "healthy",
         "name": "BrainRecordType",
@@ -26454,8 +27752,57 @@
       {
         "category": "Runtime",
         "health": "healthy",
+        "name": "CodexCredentialError",
+        "path": "app/calyx_orchestrator/chatgpt_business_codex_credential.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CodexCredentialMappingError",
+        "path": "app/calyx_orchestrator/chatgpt_business_codex_provider.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "CodexCanary",
+        "path": "app/calyx_orchestrator/codex_canary.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Execution",
+        "health": "healthy",
+        "name": "CodexCodingWorker",
+        "path": "app/calyx_orchestrator/codex_worker_adapter.py",
+        "type": "worker"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Priority",
+        "path": "app/calyx_orchestrator/deep_orchestrate.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
         "name": "DryRunExecutionResult",
         "path": "app/calyx_orchestrator/dry_run_service.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DurableOrchestrate",
+        "path": "app/calyx_orchestrator/durable_reservoir.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DurableReservoirRun",
+        "path": "app/calyx_orchestrator/durable_reservoir_models.py",
         "type": "python_module"
       },
       {
@@ -26484,6 +27831,13 @@
         "health": "healthy",
         "name": "AutonomyProbeExecutor",
         "path": "app/calyx_orchestrator/executor_registry.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "RiskTier",
+        "path": "app/calyx_orchestrator/factory_policy.py",
         "type": "python_module"
       },
       {
@@ -26655,11 +28009,25 @@
         "type": "python_module"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "IssueCommentClient",
+        "path": "app/calyx_orchestrator/github_research_feedback.py",
+        "type": "python_module"
+      },
+      {
         "category": "Execution",
         "health": "healthy",
         "name": "IsolatedWorkspacePatchExecutor",
         "path": "app/calyx_orchestrator/isolated_patch_executor.py",
         "type": "python_module"
+      },
+      {
+        "category": "Execution",
+        "health": "healthy",
+        "name": "DeterministicResearchWorker",
+        "path": "app/calyx_orchestrator/leaf_worker.py",
+        "type": "worker"
       },
       {
         "category": "Runtime",
@@ -26678,9 +28046,44 @@
       {
         "category": "Runtime",
         "health": "healthy",
+        "name": "AuthorizationDecision",
+        "path": "app/calyx_orchestrator/owner_authorization_gate.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
         "name": "OwnerVerificationKey",
         "path": "app/calyx_orchestrator/owner_signature_verifier.py",
         "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "BudgetExhaustedError",
+        "path": "app/calyx_orchestrator/paid_api_budget_governor.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "PaidApiCanary",
+        "path": "app/calyx_orchestrator/paid_api_canary.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "PaidAPICallResult",
+        "path": "app/calyx_orchestrator/paid_api_provider.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Execution",
+        "health": "healthy",
+        "name": "PaidAPIWorker",
+        "path": "app/calyx_orchestrator/paid_api_worker.py",
+        "type": "worker"
       },
       {
         "category": "Runtime",
@@ -27115,6 +28518,55 @@
         "name": "ConversationMemoryService",
         "path": "app/conversation_memory/service.py",
         "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "app/data_governance/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Access",
+        "path": "app/data_governance/access.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DataDisclosureDenied",
+        "path": "app/data_governance/disclosure.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ModelProcessingDenied",
+        "path": "app/data_governance/model_gate.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DataSensitivity",
+        "path": "app/data_governance/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ProtectedValueKind",
+        "path": "app/data_governance/output_guard.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DataPolicyEngine",
+        "path": "app/data_governance/policy.py",
+        "type": "engine"
       },
       {
         "category": "Runtime",
@@ -29135,6 +30587,13 @@
       {
         "category": "API",
         "health": "healthy",
+        "name": "BridgeConfig",
+        "path": "app/routers/github_research_bridge.py",
+        "type": "api_router"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
         "name": "GraphPipelineReadiness",
         "path": "app/routers/graph_pipeline_readiness.py",
         "type": "api_router"
@@ -29452,6 +30911,13 @@
         "health": "available",
         "name": "Init",
         "path": "app/scientific_synthesis/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "ClaimVerification",
+        "path": "app/scientific_synthesis/claim_verification.py",
         "type": "python_module"
       },
       {
@@ -29847,6 +31313,20 @@
         "type": "service"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "AppliedAIDataScienceService",
+        "path": "app/university/ai_data_science.py",
+        "type": "service"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "PrepareModuleRequest",
+        "path": "app/university/ai_data_science_routes.py",
+        "type": "api_router"
+      },
+      {
         "category": "Configuration",
         "health": "available",
         "name": "Config",
@@ -30120,18 +31600,23 @@
       ],
       "dependencies": [
         "__future__",
+        "app.literature_extraction.registry",
         "dataclasses",
         "datetime",
         "os",
         "psycopg",
         "psycopg.rows",
         "psycopg.types.json",
+        "runtime.knowledge_graph.source_registry",
         "typing"
       ],
       "functions": [
+        "_literature_extractor_names",
+        "_literature_source_query",
         "utc_now",
         "_json",
         "execute",
+        "_execute_literature_kg",
         "evaluate",
         "risky_action",
         "__init__",
@@ -30150,10 +31635,7 @@
         "run_once",
         "_select_next_task",
         "_agent_for_task",
-        "_finish_task",
-        "log_observation",
-        "observations",
-        "runs"
+        "_finish_task"
       ],
       "module_type": "python_module",
       "name": "DefaultTaskExecutor",
@@ -31823,6 +33305,31 @@
       "module_type": "python_module",
       "name": "KnowledgeGraphReadProtocol",
       "path": "runtime/continuum_graph_tool.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Plan runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.deep_orchestrate",
+        "hashlib",
+        "json",
+        "scripts.oc_backlog_refiller",
+        "typing"
+      ],
+      "functions": [
+        "_fingerprint",
+        "_candidate",
+        "plan_deep_orchestrate_refill"
+      ],
+      "module_type": "python_module",
+      "name": "DeepOrchestrateQueueBridge",
+      "path": "runtime/deep_orchestrate_queue_bridge.py",
       "routers": [],
       "status": "healthy"
     },
@@ -34674,6 +36181,44 @@
       "status": "healthy"
     },
     {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "PortfolioStewardReport"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.bounded_dispatcher",
+        "app.calyx_orchestrator.deep_orchestrate",
+        "app.calyx_orchestrator.durable_reservoir",
+        "app.calyx_orchestrator.leaf_worker",
+        "app.database",
+        "dataclasses",
+        "datetime",
+        "runtime.deep_orchestrate_queue_bridge",
+        "scripts.oc_portfolio_scheduler",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "sqlalchemy.pool",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "_priority_from_labels",
+        "_issue_to_leaf",
+        "_filter_prepared",
+        "reconcile",
+        "as_dict"
+      ],
+      "module_type": "python_module",
+      "name": "PortfolioStewardReport",
+      "path": "runtime/portfolio_steward_reconciler.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
       "capabilities": [],
       "category": "Execution",
       "classes": [],
@@ -35167,11 +36712,14 @@
       "category": "Runtime",
       "classes": [
         "InProcessHarvester",
+        "InProcessEngineeringCompletion",
         "CalyxHeartbeat"
       ],
       "dependencies": [
         "__future__",
         "adaptive_harvest_worker",
+        "app.calyx_orchestrator.worker",
+        "app.database",
         "bottlenecks",
         "dataclasses",
         "goals",
@@ -35183,6 +36731,7 @@
         "memory",
         "mission",
         "os",
+        "socket",
         "threading",
         "time",
         "typing"
@@ -35195,6 +36744,12 @@
         "status",
         "_loop",
         "_run_cycle",
+        "__init__",
+        "runtime_ready",
+        "start",
+        "stop",
+        "status",
+        "_loop",
         "__init__",
         "run_once"
       ],
@@ -37451,6 +39006,29 @@
     },
     {
       "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ExceptionDecision"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "typing"
+      ],
+      "functions": [
+        "classify_exception",
+        "as_dict"
+      ],
+      "module_type": "python_module",
+      "name": "ExceptionDecision",
+      "path": "app/autonomy/exception_policy.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Inspect Brain state"
       ],
       "category": "Brain",
@@ -38444,13 +40022,50 @@
       "capabilities": [],
       "category": "Runtime",
       "classes": [],
-      "dependencies": [],
-      "functions": [],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "_has_usable_local_evidence",
+        "_augment_retrieval_with_governed_local_coverage"
+      ],
       "module_type": "python_module",
       "name": "Init",
       "path": "app/calyx_conversation/__init__.py",
       "routers": [],
       "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "VoiceProfile",
+        "AdaptiveRenderResult",
+        "ScientificFirewallError"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [
+        "protected_segments_from_answer",
+        "verify_scientific_firewall",
+        "_audience_intro",
+        "_path_heading",
+        "_evidence_heading",
+        "deterministic_render",
+        "render_adaptive_answer"
+      ],
+      "module_type": "python_module",
+      "name": "VoiceProfile",
+      "path": "app/calyx_conversation/adaptive_communication.py",
+      "routers": [],
+      "status": "healthy"
     },
     {
       "capabilities": [],
@@ -38499,6 +40114,70 @@
       "module_type": "python_module",
       "name": "ContinuumContext",
       "path": "app/calyx_conversation/continuum_context.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ComposedAnswer"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "_clean",
+        "_sentence",
+        "_humanize",
+        "_is_serialized_blob",
+        "_statement_of",
+        "is_follow_up",
+        "resolve_subject",
+        "_evidence_by_id",
+        "_claim_groups",
+        "_integrated_sentence",
+        "_crosses_source_families",
+        "compose_conversational_answer"
+      ],
+      "module_type": "python_module",
+      "name": "ComposedAnswer",
+      "path": "app/calyx_conversation/conversational_synthesis.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "hashlib",
+        "json",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "_fingerprint",
+        "_text",
+        "_terms",
+        "_evidence_item",
+        "_mission_items",
+        "_question_claims",
+        "_claim_evidence_edges",
+        "_reasoning_graph",
+        "_bounded_graph_evidence",
+        "build_synthesis_packet",
+        "provider_context"
+      ],
+      "module_type": "python_module",
+      "name": "EvidenceSynthesis",
+      "path": "app/calyx_conversation/evidence_synthesis.py",
       "routers": [],
       "status": "available"
     },
@@ -38741,7 +40420,9 @@
       ],
       "dependencies": [
         "__future__",
+        "conversational_synthesis",
         "dataclasses",
+        "evidence_synthesis",
         "hashlib",
         "json",
         "os",
@@ -38752,15 +40433,11 @@
       "functions": [
         "_request_hash",
         "_scientific_system_prompt",
+        "_current_question",
+        "semantic_provider_context",
         "configured_reply_provider",
         "generate",
-        "_supporting_evidence_summary",
-        "_contradicting_evidence_summary",
-        "_collect_citations",
-        "_format_mission_answer",
-        "_format_continuum_context",
-        "_format_external_literature",
-        "_format_climate_context",
+        "_citations",
         "generate",
         "__init__",
         "generate",
@@ -38784,6 +40461,7 @@
       ],
       "dependencies": [
         "__future__",
+        "evidence_synthesis",
         "json",
         "logging",
         "os",
@@ -38795,6 +40473,7 @@
         "_runtime_model",
         "_provider_http_error",
         "_compact_value",
+        "_current_user_message",
         "compact_governed_context",
         "_compact_messages",
         "runtime_provider_configuration",
@@ -38826,6 +40505,7 @@
       ],
       "dependencies": [
         "__future__",
+        "adaptive_communication",
         "app.brain.reasoning_map",
         "app.evidence_retrieval.models",
         "app.security",
@@ -38994,6 +40674,7 @@
         "app.security",
         "climate_context",
         "continuum_context",
+        "conversational_synthesis",
         "external_literature",
         "fastapi",
         "interaction_context",
@@ -39010,6 +40691,7 @@
         "_deep_research_requested",
         "_effective_retrieval_limit",
         "_mission_question",
+        "_reference_trail",
         "_safe_retrieval",
         "_safe_continuum_context",
         "_safe_climate_context",
@@ -39066,6 +40748,7 @@
         "get",
         "recent",
         "history_text",
+        "user_turns",
         "provider_messages"
       ],
       "module_type": "python_module",
@@ -39145,6 +40828,102 @@
       ],
       "category": "Runtime",
       "classes": [
+        "CompletionState",
+        "CompletionReceipt",
+        "GovernedAutonomousCompletionLoop"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.github_agent_ci_policy",
+        "dataclasses",
+        "enum",
+        "github",
+        "provider",
+        "repair_loop"
+      ],
+      "functions": [
+        "to_dict",
+        "__init__",
+        "_check_conclusions",
+        "_receipt",
+        "advance"
+      ],
+      "module_type": "python_module",
+      "name": "CompletionState",
+      "path": "app/calyx_engineering/completion_loop.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "EngineeringCompletionScheduler"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.models",
+        "completion_loop",
+        "datetime",
+        "github",
+        "json",
+        "os",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "uuid"
+      ],
+      "functions": [
+        "__init__",
+        "poll_seconds",
+        "enqueue",
+        "claim",
+        "_renew_lease",
+        "_finish",
+        "advance_claimed",
+        "run_once"
+      ],
+      "module_type": "python_module",
+      "name": "EngineeringCompletionScheduler",
+      "path": "app/calyx_engineering/completion_scheduler.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Execution",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "collections.abc",
+        "completion_scheduler",
+        "github",
+        "json",
+        "os",
+        "service",
+        "time"
+      ],
+      "functions": [
+        "runtime_ready",
+        "run_once",
+        "run_forever",
+        "main",
+        "emit"
+      ],
+      "module_type": "python_module",
+      "name": "CompletionWorker",
+      "path": "app/calyx_engineering/completion_worker.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
         "GitHubAutomationError",
         "_NoRedirect",
         "FileChange",
@@ -39170,11 +40949,15 @@
         "default_branch_sha",
         "get_text_file",
         "create_issue",
+        "issue_comments",
+        "create_issue_comment",
+        "update_issue_comment",
         "create_branch",
         "put_file",
         "open_pull_request",
         "pull_request",
         "workflow_runs_for_head",
+        "check_runs_for_head",
         "workflow_jobs",
         "workflow_job_logs"
       ],
@@ -39304,6 +41087,8 @@
         "ExecuteRequest",
         "InspectRequest",
         "RepairRequest",
+        "CompletionCycleRequest",
+        "CompletionJobRequest",
         "ProviderRequest"
       ],
       "dependencies": [
@@ -39312,25 +41097,37 @@
         "app.calyx_orchestrator.models",
         "app.database",
         "app.security",
+        "completion_loop",
+        "completion_scheduler",
         "fastapi",
         "github",
         "inspection",
+        "json",
         "provider",
         "pydantic",
         "repair",
         "repair_loop",
         "service",
+        "sqlalchemy",
         "sqlalchemy.orm",
         "typing"
       ],
       "functions": [
         "_owner",
         "_proposal",
+        "_completion_scheduler",
         "status",
         "anthropic_provider",
         "inspect_repository",
         "inspect_failures",
         "repair_pull_request",
+        "inspect_completion_cycle",
+        "create_completion_job",
+        "_completion_job_view",
+        "_isoformat",
+        "list_completion_jobs",
+        "read_completion_job",
+        "run_completion_job_once",
         "proposal",
         "execute"
       ],
@@ -39343,6 +41140,11 @@
         "POST /inspect",
         "GET /pull-requests/{pull_request_number}/failures",
         "POST /pull-requests/{pull_request_number}/repair",
+        "POST /pull-requests/{pull_request_number}/completion-cycle",
+        "POST /pull-requests/{pull_request_number}/completion-jobs",
+        "GET /completion-jobs",
+        "GET /completion-jobs/{job_id}",
+        "POST /completion-jobs/run-once",
         "POST /findings/{finding_id}/proposal",
         "POST /findings/{finding_id}/execute"
       ],
@@ -39727,6 +41529,69 @@
     },
     {
       "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "BlueprintRunReport"
+      ],
+      "dependencies": [
+        "__future__",
+        "bounded_dispatcher",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "leaf_worker",
+        "typing"
+      ],
+      "functions": [
+        "build_blueprint_run_report",
+        "_leaf_entry",
+        "_compute_run_status",
+        "as_dict"
+      ],
+      "module_type": "python_module",
+      "name": "BlueprintRunReport",
+      "path": "app/calyx_orchestrator/blueprint_run_report.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DispatchConfig",
+        "DispatchRun",
+        "BoundedDispatcher"
+      ],
+      "dependencies": [
+        "__future__",
+        "concurrent.futures",
+        "dataclasses",
+        "deep_orchestrate",
+        "leaf_worker",
+        "logging",
+        "typing"
+      ],
+      "functions": [
+        "_active_count",
+        "summary",
+        "__init__",
+        "run",
+        "_collect_ready_keys",
+        "_dispatch_batch",
+        "_execute_one"
+      ],
+      "module_type": "python_module",
+      "name": "DispatchConfig",
+      "path": "app/calyx_orchestrator/bounded_dispatcher.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Inspect Brain state"
       ],
       "category": "Brain",
@@ -39761,6 +41626,212 @@
     },
     {
       "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CodexCredentialError",
+        "CodexApiKeyFallbackError",
+        "CodexBusinessCredential"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "os"
+      ],
+      "functions": [
+        "_load_token",
+        "check_no_openai_api_key_fallback",
+        "load_codex_business_credential",
+        "__init__",
+        "bearer_value",
+        "__repr__"
+      ],
+      "module_type": "python_module",
+      "name": "CodexCredentialError",
+      "path": "app/calyx_orchestrator/chatgpt_business_codex_credential.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CodexCredentialMappingError",
+        "CodexCredentialMapping",
+        "CodexCLIUnboundError",
+        "CodexCLICommand",
+        "CodexProcessResult",
+        "CodexProcessTransport",
+        "MockCodexProcessTransport",
+        "SubprocessCodexTransport",
+        "CodexCLIAdapter"
+      ],
+      "dependencies": [
+        "__future__",
+        "chatgpt_business_codex_credential",
+        "collections.abc",
+        "dataclasses",
+        "github_coding_executor",
+        "os",
+        "subprocess",
+        "typing"
+      ],
+      "functions": [
+        "is_bound",
+        "build_cli_env",
+        "is_bound",
+        "argv",
+        "succeeded",
+        "run",
+        "run",
+        "__init__",
+        "run",
+        "__repr__",
+        "__init__",
+        "_auth_evidence",
+        "dispatch",
+        "_build_cli_env",
+        "_task_prompt",
+        "_continuation_prompt",
+        "_start_mission",
+        "_continue_mission"
+      ],
+      "module_type": "python_module",
+      "name": "CodexCredentialMappingError",
+      "path": "app/calyx_orchestrator/chatgpt_business_codex_provider.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "argparse",
+        "chatgpt_business_codex_credential",
+        "chatgpt_business_codex_provider",
+        "codex_worker_adapter",
+        "concurrent.futures",
+        "datetime",
+        "deep_orchestrate",
+        "github_coding_executor",
+        "json",
+        "sys",
+        "typing"
+      ],
+      "functions": [
+        "_build_leaf_from_github_issue",
+        "_preflight",
+        "_run_stage_a",
+        "_run_stage_b",
+        "_run_stage_c",
+        "_parse_issues",
+        "_report",
+        "main"
+      ],
+      "module_type": "python_module",
+      "name": "CodexCanary",
+      "path": "app/calyx_orchestrator/codex_canary.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Execution",
+      "classes": [
+        "CodexExecutionPacket",
+        "CodexWorkerReceipt",
+        "CodexCodingWorker",
+        "_MockCredentialMapping"
+      ],
+      "dependencies": [
+        "__future__",
+        "chatgpt_business_codex_credential",
+        "chatgpt_business_codex_provider",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "github_coding_executor",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "_leaf_to_packet",
+        "build_codex_worker_from_env",
+        "build_codex_worker_with_mock",
+        "as_evidence",
+        "__init__",
+        "execute",
+        "_blocked",
+        "build_cli_env"
+      ],
+      "module_type": "worker",
+      "name": "CodexCodingWorker",
+      "path": "app/calyx_orchestrator/codex_worker_adapter.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "Priority",
+        "TaskState",
+        "TaskLeaf",
+        "DeepOrchestrate"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "seed_from_1024",
+        "requires_owner_gate",
+        "to_dict",
+        "from_dict",
+        "__init__",
+        "register",
+        "register_many",
+        "_is_ready",
+        "ready_tasks",
+        "active_tasks",
+        "owner_gated_tasks",
+        "blocked_tasks",
+        "get",
+        "held_resources",
+        "lease",
+        "advance",
+        "complete",
+        "_propagate_completion",
+        "block",
+        "enter_repair_backoff",
+        "recover_from_backoff",
+        "recover_expired_leases",
+        "authorize",
+        "refill",
+        "snapshot"
+      ],
+      "module_type": "python_module",
+      "name": "Priority",
+      "path": "app/calyx_orchestrator/deep_orchestrate.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Execute runtime work"
       ],
       "category": "Runtime",
@@ -39787,6 +41858,85 @@
       "module_type": "python_module",
       "name": "DryRunExecutionResult",
       "path": "app/calyx_orchestrator/dry_run_service.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DurableOrchestrate"
+      ],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "deep_orchestrate",
+        "durable_reservoir_models",
+        "logging",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "_ts_to_dt",
+        "_dt_to_ts",
+        "_row_to_leaf",
+        "_is_ready_row",
+        "__init__",
+        "create_run",
+        "from_db",
+        "_all_rows",
+        "_get_row",
+        "_completed_keys",
+        "_held_resources_from",
+        "_dialect_name",
+        "_commit",
+        "register",
+        "register_many",
+        "ready_tasks",
+        "active_tasks",
+        "owner_gated_tasks",
+        "blocked_tasks",
+        "get",
+        "held_resources",
+        "lease",
+        "advance",
+        "complete",
+        "_propagate_completion"
+      ],
+      "module_type": "python_module",
+      "name": "DurableOrchestrate",
+      "path": "app/calyx_orchestrator/durable_reservoir.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DurableReservoirRun",
+        "DurableReservoirTask"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "datetime",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "sqlalchemy.types"
+      ],
+      "functions": [
+        "_utcnow"
+      ],
+      "module_type": "python_module",
+      "name": "DurableReservoirRun",
+      "path": "app/calyx_orchestrator/durable_reservoir_models.py",
       "routers": [],
       "status": "healthy"
     },
@@ -39921,6 +42071,41 @@
       "module_type": "python_module",
       "name": "AutonomyProbeExecutor",
       "path": "app/calyx_orchestrator/executor_registry.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "RiskTier",
+        "CheckerVerdict",
+        "FactoryAction",
+        "MissionStatus",
+        "WorkIntent",
+        "ValidationEvidence",
+        "FactoryDecision",
+        "MissionState"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "hashlib",
+        "json"
+      ],
+      "functions": [
+        "evaluate_factory_gate",
+        "_requires_owner",
+        "material_fingerprint",
+        "independent_checker",
+        "__post_init__"
+      ],
+      "module_type": "python_module",
+      "name": "RiskTier",
+      "path": "app/calyx_orchestrator/factory_policy.py",
       "routers": [],
       "status": "healthy"
     },
@@ -40836,6 +43021,30 @@
     },
     {
       "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "IssueCommentClient"
+      ],
+      "dependencies": [
+        "__future__",
+        "typing"
+      ],
+      "functions": [
+        "upsert_research_status_comment",
+        "issue_comments",
+        "create_issue_comment",
+        "update_issue_comment"
+      ],
+      "module_type": "python_module",
+      "name": "IssueCommentClient",
+      "path": "app/calyx_orchestrator/github_research_feedback.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Execute runtime work"
       ],
       "category": "Execution",
@@ -40881,6 +43090,44 @@
       "module_type": "python_module",
       "name": "IsolatedWorkspacePatchExecutor",
       "path": "app/calyx_orchestrator/isolated_patch_executor.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Execution",
+      "classes": [
+        "TaskExecutionResult",
+        "DeterministicResearchWorker"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "as_evidence",
+        "__init__",
+        "execute",
+        "_dispatch",
+        "_retrieve_evidence",
+        "_normalize_evidence",
+        "_assess_contradictions",
+        "_produce_synthesis_artifact",
+        "_run_verification",
+        "_submit_for_human_review",
+        "_submit_human_review_record",
+        "_build_run_manifest_step",
+        "_result"
+      ],
+      "module_type": "worker",
+      "name": "DeterministicResearchWorker",
+      "path": "app/calyx_orchestrator/leaf_worker.py",
       "routers": [],
       "status": "healthy"
     },
@@ -40945,6 +43192,38 @@
       ],
       "category": "Runtime",
       "classes": [
+        "AuthorizationDecision",
+        "TaskAuthorizationOutcome",
+        "OwnerAuthorizationResult",
+        "OwnerAuthorizationGate"
+      ],
+      "dependencies": [
+        "__future__",
+        "blueprint_run_report",
+        "bounded_dispatcher",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "leaf_worker",
+        "typing"
+      ],
+      "functions": [
+        "as_dict",
+        "__init__",
+        "authorize"
+      ],
+      "module_type": "python_module",
+      "name": "AuthorizationDecision",
+      "path": "app/calyx_orchestrator/owner_authorization_gate.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
         "OwnerVerificationKey",
         "Ed25519OwnerGrantSignatureVerifier"
       ],
@@ -40976,6 +43255,160 @@
       "module_type": "python_module",
       "name": "OwnerVerificationKey",
       "path": "app/calyx_orchestrator/owner_signature_verifier.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "BudgetExhaustedError",
+        "BudgetReservation",
+        "BudgetReceipt",
+        "PaidAPIBudgetGovernor"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "threading",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "ledger_line",
+        "as_evidence",
+        "__init__",
+        "ceiling_usd",
+        "spent_usd",
+        "reserved_usd",
+        "committed_usd",
+        "available_usd",
+        "reserve",
+        "confirm",
+        "release_reservation",
+        "all_receipts",
+        "summary"
+      ],
+      "module_type": "python_module",
+      "name": "BudgetExhaustedError",
+      "path": "app/calyx_orchestrator/paid_api_budget_governor.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "argparse",
+        "concurrent.futures",
+        "datetime",
+        "deep_orchestrate",
+        "github_coding_executor",
+        "json",
+        "os",
+        "paid_api_budget_governor",
+        "paid_api_provider",
+        "paid_api_worker",
+        "sys",
+        "typing",
+        "urllib.request"
+      ],
+      "functions": [
+        "_leaf_for_issue",
+        "_post_ledger_receipt",
+        "_run_stage_a",
+        "_run_stage_b",
+        "_print_receipt",
+        "_final_report",
+        "main"
+      ],
+      "module_type": "python_module",
+      "name": "PaidApiCanary",
+      "path": "app/calyx_orchestrator/paid_api_canary.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "PaidAPICallResult",
+        "PaidAPIProvider",
+        "AnthropicPaidProvider",
+        "OpenAIPaidProvider",
+        "MockPaidProvider"
+      ],
+      "dependencies": [
+        "__future__",
+        "anthropic",
+        "dataclasses",
+        "openai",
+        "os",
+        "paid_api_budget_governor",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "build_cheapest_provider_from_env",
+        "succeeded",
+        "as_evidence",
+        "estimate_usd",
+        "call",
+        "__init__",
+        "estimate_usd",
+        "call",
+        "__init__",
+        "estimate_usd",
+        "call",
+        "estimate_usd",
+        "call"
+      ],
+      "module_type": "python_module",
+      "name": "PaidAPICallResult",
+      "path": "app/calyx_orchestrator/paid_api_provider.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Execution",
+      "classes": [
+        "PaidAPIWorkerReceipt",
+        "PaidAPIWorker"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "datetime",
+        "deep_orchestrate",
+        "os",
+        "paid_api_budget_governor",
+        "paid_api_provider",
+        "time",
+        "typing",
+        "uuid"
+      ],
+      "functions": [
+        "_build_analysis_prompt",
+        "build_paid_api_worker_from_env",
+        "build_paid_api_worker_with_mock",
+        "as_evidence",
+        "__init__",
+        "execute",
+        "_blocked"
+      ],
+      "module_type": "worker",
+      "name": "PaidAPIWorker",
+      "path": "app/calyx_orchestrator/paid_api_worker.py",
       "routers": [],
       "status": "healthy"
     },
@@ -41869,6 +44302,9 @@
       "classes": [],
       "dependencies": [
         "__future__",
+        "app.calyx_engineering.completion_scheduler",
+        "app.calyx_engineering.github",
+        "app.calyx_engineering.service",
         "app.database",
         "os",
         "service",
@@ -41877,6 +44313,10 @@
       ],
       "functions": [
         "enabled",
+        "engineering_enabled",
+        "engineering_runtime_ready",
+        "worker_enabled",
+        "run_cycle",
         "run_forever"
       ],
       "module_type": "python_module",
@@ -42956,6 +45396,172 @@
       "module_type": "service",
       "name": "ConversationMemoryService",
       "path": "app/conversation_memory/service.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "access",
+        "disclosure",
+        "model_gate",
+        "models",
+        "output_guard",
+        "policy"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "app/data_governance/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.mission_control_access",
+        "models"
+      ],
+      "functions": [
+        "access_context_from_principal"
+      ],
+      "module_type": "python_module",
+      "name": "Access",
+      "path": "app/data_governance/access.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DataDisclosureDenied"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "copy",
+        "models",
+        "typing"
+      ],
+      "functions": [
+        "apply_disclosure",
+        "_generalize_generic_payload",
+        "_apply_location_disclosure",
+        "_apply_image_disclosure",
+        "_existence_envelope",
+        "_aggregate_envelope",
+        "_safe_provenance",
+        "_contains_any_key",
+        "_governance_metadata"
+      ],
+      "module_type": "python_module",
+      "name": "DataDisclosureDenied",
+      "path": "app/data_governance/disclosure.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ModelProcessingDenied",
+        "ModelProcessingAuthorization"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "models",
+        "policy"
+      ],
+      "functions": [
+        "authorize_model_processing"
+      ],
+      "module_type": "python_module",
+      "name": "ModelProcessingDenied",
+      "path": "app/data_governance/model_gate.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DataSensitivity",
+        "DisclosureMode",
+        "DataPolicy",
+        "DataAccessContext",
+        "DataPolicyDecision"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "DataSensitivity",
+      "path": "app/data_governance/models.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ProtectedValueKind",
+        "ProtectedValue",
+        "GuardedText"
+      ],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "enum",
+        "models"
+      ],
+      "functions": [
+        "guard_generated_text",
+        "_kind_is_disclosable"
+      ],
+      "module_type": "python_module",
+      "name": "ProtectedValueKind",
+      "path": "app/data_governance/output_guard.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DataPolicyEngine"
+      ],
+      "dependencies": [
+        "__future__",
+        "models"
+      ],
+      "functions": [
+        "evaluate",
+        "_deny"
+      ],
+      "module_type": "engine",
+      "name": "DataPolicyEngine",
+      "path": "app/data_governance/policy.py",
       "routers": [],
       "status": "healthy"
     },
@@ -51967,6 +54573,56 @@
         "Expose API endpoints"
       ],
       "category": "API",
+      "classes": [
+        "BridgeConfig"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.calyx_engineering.github",
+        "app.calyx_orchestrator.github_research_feedback",
+        "app.routers.owner_operations",
+        "app.security",
+        "dataclasses",
+        "fastapi",
+        "hashlib",
+        "hmac",
+        "json",
+        "os",
+        "psycopg.types.json",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "_csv_env",
+        "bridge_config",
+        "_reject",
+        "_verify_signature",
+        "_unique_strings",
+        "_extract_taxa",
+        "_extract_outputs",
+        "_priority",
+        "_normalize",
+        "_persist_idempotently",
+        "_send_feedback",
+        "_bridge_rows",
+        "readiness",
+        "configured",
+        "blockers",
+        "_write"
+      ],
+      "module_type": "api_router",
+      "name": "BridgeConfig",
+      "path": "app/routers/github_research_bridge.py",
+      "routers": [
+        "GET /readiness"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
       "classes": [],
       "dependencies": [
         "app.security",
@@ -52106,6 +54762,7 @@
         "app.parallel_platform.routes",
         "app.routers.calyx_queue",
         "app.routers.conservatory",
+        "app.routers.github_research_bridge",
         "app.routers.graph_pipeline_readiness",
         "app.routers.live_mission_control",
         "app.routers.matrix_identification",
@@ -53811,6 +56468,32 @@
       "status": "available"
     },
     {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "dataclasses",
+        "models",
+        "service",
+        "typing"
+      ],
+      "functions": [
+        "_check",
+        "_source_payload",
+        "_evidence_payload",
+        "_anchors_complete",
+        "_verified_source",
+        "_verdict",
+        "verify_claim"
+      ],
+      "module_type": "python_module",
+      "name": "ClaimVerification",
+      "path": "app/scientific_synthesis/claim_verification.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
       "capabilities": [
         "Discover runtime capabilities"
       ],
@@ -54081,11 +56764,13 @@
         "ArticleSentenceIn",
         "ArticleDraftIn",
         "SynthesisValidationIn",
+        "ClaimVerificationIn",
         "DiscoveryIn",
         "DoiVerificationIn"
       ],
       "dependencies": [
         "__future__",
+        "claim_verification",
         "discovery",
         "fastapi",
         "models",
@@ -54097,9 +56782,11 @@
       ],
       "functions": [
         "_external_operation",
+        "_domain_payload",
         "discover_literature",
         "verify_doi",
         "validate_synthesis",
+        "check_calyx_claim",
         "health"
       ],
       "module_type": "api_router",
@@ -54109,6 +56796,7 @@
         "POST /discovery/search",
         "POST /discovery/verify-doi",
         "POST /validate",
+        "POST /check-claim",
         "GET /health"
       ],
       "status": "healthy"
@@ -54154,8 +56842,7 @@
         "hmac",
         "os",
         "secrets",
-        "time",
-        "typing"
+        "time"
       ],
       "functions": [
         "get_api_key",
@@ -55607,6 +58294,102 @@
       "status": "healthy"
     },
     {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "AppliedAIDataScienceService"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections",
+        "hashlib",
+        "json",
+        "math",
+        "os",
+        "pathlib",
+        "platform",
+        "runtime.research_analysis_workflow",
+        "runtime.research_station",
+        "runtime.scientific_analysis",
+        "runtime.scientific_dataset_snapshots",
+        "runtime.scientific_diagnostics",
+        "tempfile",
+        "typing"
+      ],
+      "functions": [
+        "_stable",
+        "_sha",
+        "_atomic",
+        "_text",
+        "_first",
+        "_finite_float",
+        "_int_or_none",
+        "_redact_locality",
+        "_counter_dict",
+        "__init__",
+        "module",
+        "_safe_row",
+        "_quality",
+        "build_dataset_view",
+        "_project_id",
+        "_manifest_path",
+        "_promotion_path",
+        "_read",
+        "_persist_immutable",
+        "prepare",
+        "get_manifest",
+        "_assessment",
+        "execute"
+      ],
+      "module_type": "service",
+      "name": "AppliedAIDataScienceService",
+      "path": "app/university/ai_data_science.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Execute runtime work",
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [
+        "PrepareModuleRequest",
+        "ExecuteModuleRequest"
+      ],
+      "dependencies": [
+        "__future__",
+        "ai_data_science",
+        "config",
+        "fastapi",
+        "learner_auth",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [
+        "_require_university",
+        "_require_session_writes",
+        "_owner",
+        "_translate",
+        "get_module",
+        "prepare_module",
+        "get_manifest",
+        "execute_manifest"
+      ],
+      "module_type": "api_router",
+      "name": "PrepareModuleRequest",
+      "path": "app/university/ai_data_science_routes.py",
+      "routers": [
+        "GET /modules/{module_id}",
+        "POST /modules/{module_id}/prepare",
+        "GET /projects/{project_id}/manifests/{manifest_id}",
+        "POST /projects/{project_id}/manifests/{manifest_id}/execute"
+      ],
+      "status": "healthy"
+    },
+    {
       "capabilities": [],
       "category": "Configuration",
       "classes": [],
@@ -55815,6 +58598,7 @@
       "dependencies": [
         "__future__",
         "activation_service",
+        "ai_data_science_routes",
         "app.mission_control_access",
         "app.review_api.dependencies",
         "app.routers.health",
@@ -56501,12 +59285,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 686,
+    "capabilities": 717,
     "degraded": 1,
-    "graph_edges": 1863,
-    "graph_nodes": 834,
-    "healthy": 598,
-    "modules": 834,
+    "graph_edges": 1978,
+    "graph_nodes": 871,
+    "healthy": 628,
+    "modules": 871,
     "recommendations": 3
   }
 }
