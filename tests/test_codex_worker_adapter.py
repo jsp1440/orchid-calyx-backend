@@ -274,18 +274,14 @@ class TestProofA_SingleIssueFullLifecycle:
 
         receipt = worker.execute(leaf)
 
-        assert receipt.status == "session_created"
-        assert receipt.error_reason is None
+        assert receipt.status == "blocked"
+        assert receipt.error_reason == "CODEX_DRAFT_PR_REQUIRED"
         assert receipt.automatic_merge is False
         assert receipt.automatic_deployment is False
         assert receipt.production_mutation is False
         assert receipt.publication is False
         # Auth mode recorded, never the secret
         assert receipt.auth_mode == AUTH_MODE_BUSINESS_TOKEN
-        # Session evidence captured
-        assert any("codex-session:s1" in e for e in receipt.session_evidence)
-        assert any(f"repo-commit:{ALLOWED_REPO}@{FAKE_SHA}" in e for e in receipt.session_evidence)
-        assert any("auth_mode:chatgpt_business_codex_token" in e for e in receipt.session_evidence)
         # One mock call made, not a real subprocess
         assert len(transport.calls) == 1
         call = transport.calls[0]
@@ -297,17 +293,31 @@ class TestProofA_SingleIssueFullLifecycle:
     def test_full_lifecycle_with_pr(self) -> None:
         worker, _ = _worker([_ok_result_with_pr("s2", 99)])
         receipt = worker.execute(_issue_leaf("issue:full-lifecycle:pr"))
-        assert receipt.status == "dispatched"
+        assert receipt.status == "completed"
         assert receipt.pull_request_number == 99
 
     def test_receipt_as_evidence_is_serialisable(self) -> None:
-        worker, _ = _worker([_ok_result()])
+        worker, _ = _worker([_ok_result_with_pr()])
         receipt = worker.execute(_issue_leaf("issue:evidence-serial:001"))
         ev = receipt.as_evidence()
         assert isinstance(ev, dict)
         assert ev["auth_mode"] == AUTH_MODE_BUSINESS_TOKEN
+        assert ev["status"] == "completed"
         # The placeholder secret must not appear in the receipt
         assert PLACEHOLDER_TOKEN not in str(ev)
+
+    def test_cli_failure_produces_blocked_receipt_no_secrets(self) -> None:
+        """Failed CLI execution must remain blocked; secrets must not appear in receipt."""
+        worker, transport = _worker([_fail_result(exit_code=2)])
+        receipt = worker.execute(_issue_leaf("issue:cli-fail:001"))
+
+        assert receipt.status == "blocked"
+        assert receipt.error_reason is not None
+        assert "CODEX_CLI_EXIT_2" in receipt.error_reason
+        # Credential value must not leak into the receipt or its evidence
+        ev = receipt.as_evidence()
+        assert PLACEHOLDER_TOKEN not in str(ev)
+        assert len(transport.calls) == 1
 
 
 # =============================================================================
@@ -830,15 +840,14 @@ class TestEightLaneMockDispatch:
             worker.execute(_issue_leaf(key)) for key in issue_keys
         ]
 
-        session_ids = [
-            next(
-                (e.split("codex-session:")[1] for e in r.session_evidence if "codex-session:" in e),
-                None,
-            )
-            for r in receipts
-        ]
-        assert len(set(session_ids)) == 8
-        assert all(r.status == "session_created" for r in receipts)
+        # Without a PR, each result must be blocked/CODEX_DRAFT_PR_REQUIRED.
+        # Session uniqueness is verified through transport call records because
+        # blocked receipts carry no session_evidence.
+        assert all(r.status == "blocked" for r in receipts)
+        assert all(r.error_reason == "CODEX_DRAFT_PR_REQUIRED" for r in receipts)
         assert len(transport.calls) == 8
+        # Verify 8 unique tasks were dispatched (each task prompt contains the unique issue key)
+        dispatched_tasks = [call["task"] for call in transport.calls]
+        assert len(set(dispatched_tasks)) == 8
         # Credential value never in call records
         assert PLACEHOLDER_TOKEN not in str(transport.calls)

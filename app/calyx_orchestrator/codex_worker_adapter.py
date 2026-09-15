@@ -109,7 +109,7 @@ class CodexWorkerReceipt:
 
     task_key: str
     worker_id: str
-    status: str  # "dispatched" | "blocked" | "session_created" | "iteration_requested"
+    status: str  # "completed" | "blocked"
     auth_mode: str
     started_at: str
     completed_at: str
@@ -304,10 +304,34 @@ class CodexCodingWorker:
 
         elapsed = time.monotonic() - started
         completed_at = datetime.now(timezone.utc).isoformat()
+
+        # Map provider state to BoundedDispatcher terminal status.
+        # BoundedDispatcher requires exactly "completed" to record a task done;
+        # any non-terminal legacy state must route to "blocked" with an
+        # explicit reason so the lane is parked safely rather than leaked.
+        if result.state == "cli_failed":
+            return self._blocked(
+                leaf,
+                error_reason=result.blocker_code or "CODEX_CLI_FAILED",
+                started_at=started_at,
+                elapsed=elapsed,
+                provider_api_called=True,
+            )
+        if result.pull_request_number is not None:
+            worker_status = "completed"
+        else:
+            return self._blocked(
+                leaf,
+                error_reason="CODEX_DRAFT_PR_REQUIRED",
+                started_at=started_at,
+                elapsed=elapsed,
+                provider_api_called=True,
+            )
+
         return CodexWorkerReceipt(
             task_key=leaf.key,
             worker_id=self._worker_id,
-            status=result.state,
+            status=worker_status,
             auth_mode=self._credential.auth_mode,
             started_at=started_at,
             completed_at=completed_at,
