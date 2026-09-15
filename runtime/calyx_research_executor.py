@@ -369,16 +369,15 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return None
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT payload FROM oc_admin.build051_research_requests WHERE id = %s",
-                        (request_id,),
-                    )
-                    row = cur.fetchone()
-                    if row is None:
-                        return None
-                    return dict(row["payload"])
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
+                cur.execute(
+                    "SELECT payload FROM oc_admin.build051_research_requests WHERE id = %s",
+                    (request_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return None
+                return dict(row["payload"])
         except Exception:  # noqa: BLE001
             return None
 
@@ -447,16 +446,15 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE oc_admin.build051_research_requests
-                        SET payload = %s, updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (Jsonb(payload), request_id),
-                    )
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE oc_admin.build051_research_requests
+                    SET payload = %s, updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (Jsonb(payload), request_id),
+                )
                 conn.commit()
         except Exception:  # noqa: BLE001, S110
             pass
@@ -492,21 +490,20 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        UPDATE oc_admin.build051_research_requests
-                        SET payload = jsonb_set(payload, %s, %s, true),
-                            updated_at = NOW()
-                        WHERE id = %s
-                        """,
-                        (
-                            "{" + field + "}",
-                            Jsonb(value),
-                            request_id,
-                        ),
-                    )
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE oc_admin.build051_research_requests
+                    SET payload = jsonb_set(payload, %s, %s, true),
+                        updated_at = NOW()
+                    WHERE id = %s
+                    """,
+                    (
+                        "{" + field + "}",
+                        Jsonb(value),
+                        request_id,
+                    ),
+                )
                 conn.commit()
         except Exception:  # noqa: BLE001, S110
             pass
@@ -524,23 +521,22 @@ class CalyxResearchExecutorService:
             from psycopg.rows import dict_row
             from psycopg.types.json import Jsonb
 
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
-                    _ensure_history_table(cur)
-                    cur.execute(
-                        """
-                        INSERT INTO oc_admin.calyx_research_state_history
-                            (request_id, from_state, to_state, actor, detail)
-                        VALUES (%s, %s, %s, %s, %s)
-                        """,
-                        (
-                            request_id,
-                            transition["from_state"],
-                            transition["to_state"],
-                            transition["actor"],
-                            Jsonb(transition.get("detail", {})),
-                        ),
-                    )
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
+                _ensure_history_table(cur)
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.calyx_research_state_history
+                        (request_id, from_state, to_state, actor, detail)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (
+                        request_id,
+                        transition["from_state"],
+                        transition["to_state"],
+                        transition["actor"],
+                        Jsonb(transition.get("detail", {})),
+                    ),
+                )
                 conn.commit()
         except Exception:  # noqa: BLE001, S110
             pass
@@ -639,18 +635,17 @@ class CalyxResearchExecutorService:
             url = _db_url()
             if not url:
                 return
-            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn:
-                with conn.cursor() as cur:
-                    _ensure_projects_table(cur)
-                    cur.execute(
-                        """
-                        INSERT INTO oc_admin.calyx_research_projects
-                            (id, request_id, payload, created_at, updated_at)
-                        VALUES (%s, %s, %s, NOW(), NOW())
-                        ON CONFLICT (id) DO NOTHING
-                        """,
-                        (project_id, request_id, Jsonb(payload)),
-                    )
+            with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
+                _ensure_projects_table(cur)
+                cur.execute(
+                    """
+                    INSERT INTO oc_admin.calyx_research_projects
+                        (id, request_id, payload, created_at, updated_at)
+                    VALUES (%s, %s, %s, NOW(), NOW())
+                    ON CONFLICT (id) DO NOTHING
+                    """,
+                    (project_id, request_id, Jsonb(payload)),
+                )
                 conn.commit()
         except Exception:  # noqa: BLE001, S110
             pass
