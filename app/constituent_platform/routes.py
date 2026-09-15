@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Query
 from pydantic import BaseModel, Field
