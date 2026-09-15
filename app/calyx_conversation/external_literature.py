@@ -143,150 +143,45 @@ _FLOWERING_TERMS = (
 )
 
 
-#: Words that look like a genus or a species epithet to a regular expression
-#: and are not. Sentence-initial English is the whole problem here: "Could
-#: this" has the exact shape of a binomial, and a planner that searched for it
-#: would return literature about nothing while looking like it had worked.
-#: Historical Knowledge Graph work hit this same false-positive class.
-_NOT_A_TAXON_WORD = frozenset(
-    {
-        # sentence-initial words that scan as a capitalised genus
-        "could", "would", "should", "which", "these", "those", "there", "their",
-        "where", "when", "what", "does", "will", "have", "here",
-        "review", "compare", "describe", "explain", "summarise", "summarize",
-        "please", "given", "using", "based", "under", "about", "after",
-        "before", "during", "within", "across", "between", "orchid", "orchids",
-        "plant", "plants", "species", "genus", "taxa", "taxon", "study",
-        "studies", "research", "evidence", "literature", "known", "report",
-        "reports", "paper", "papers", "data", "record", "records",
-        # words that scan as a species epithet
-        "this", "that", "them", "they", "with", "from", "into", "over",
-        "than", "then", "also", "such", "some", "many", "most", "more",
-        "less", "other", "same", "both", "each", "been", "were",
-        "make", "made", "used", "show", "shows", "found", "help",
-        "affect", "affects", "grow", "grows", "growing", "flower", "flowers",
-        "flowering", "carbon", "water", "light", "shade", "winter", "summer",
-        "spring", "autumn", "native", "wild", "range", "ranges", "habitat",
-        "ecology", "biology", "culture", "care", "notes", "history",
-    }
-)
+def _extract_genera_from_query(question: str) -> list[str]:
+    """Extract scientific genera from binomial name patterns in a question.
 
-#: A capitalised word followed by a lowercase word: the shape of a binomial.
-_BINOMIAL = re.compile(r"\b([A-Z][a-z]{3,})\s+([a-z][a-z-]{3,})\b")
-
-#: Terminations a Latin species epithet actually takes.
-#:
-#: A denylist of English words cannot be finished — "General enquiry" has the
-#: shape of a binomial and slipped through one — so the epithet must also look
-#: like an epithet. This is a positive signal rather than another exclusion,
-#: and it is why "enquiry", "flowering" and "acquisition" are rejected without
-#: anyone having to think of them first.
-#:
-#: Still a heuristic, and the reason ``resolver`` exists: canonical taxonomy
-#: settles what a name is, and these rules are only what stands in when no
-#: resolver is available.
-_EPITHET_ENDING = re.compile(
-    r"(ae|ii|is|us|um|ense|ensis|oides|iana|ana|ata|osa|ifolia|iflora|ps|a|i)$"
-)
-
-
-def _looks_like_binomial(genus: str, epithet: str) -> bool:
-    """True when a Genus-epithet pair is plausibly a scientific name.
-
-    Deliberately conservative in one direction only. A missed taxon costs a
-    narrower search; a false one sends a scientific query after an English
-    phrase and returns literature about nothing, which is worse because it
-    looks like a result.
+    Matches patterns such as ``*Calypso bulbosa*``, ``Calypso bulbosa``, or
+    any Title-case word followed by a lowercase species epithet (≥4 chars),
+    which is the standard signature of a scientific binomial.
     """
-    if genus.casefold() in _NOT_A_TAXON_WORD:
-        return False
-    if epithet.casefold() in _NOT_A_TAXON_WORD:
-        return False
-    # A hyphen inside an epithet is legitimate; a trailing one is not a name.
-    if epithet.endswith("-"):
-        return False
-    return bool(_EPITHET_ENDING.search(epithet.casefold()))
-
-
-def extract_taxa(
-    question: str,
-    *,
-    resolver: object | None = None,
-) -> list[str]:
-    """Scientific names a question is about, in the order they appear.
-
-    Generalised deliberately. The planner previously matched a twelve-genus
-    list, so a question about any orchid outside it produced no taxon and
-    therefore no scientific query at all — the search ran, found nothing to ask
-    about, and returned empty as though the corpus were bare.
-
-    ``resolver``, when supplied, is consulted first: canonical taxonomy is a
-    better authority on whether a string is a name than any regular expression.
-    It must expose ``resolve(text) -> str | None``. Without one, the lexical
-    rules below stand in, and they are the reason ``_NOT_A_TAXON_WORD`` exists.
-    """
-    found: list[str] = []
+    pattern = r"\*?([A-Z][a-z]{2,})\s+[a-z]{5,}\*?"
     seen: set[str] = set()
-
-    def _remember(value: str) -> None:
-        key = value.casefold()
+    result: list[str] = []
+    for match in re.finditer(pattern, question):
+        candidate = match.group(1)
+        key = candidate.casefold()
         if key not in seen:
             seen.add(key)
-            found.append(value)
+            result.append(candidate)
+    return result
 
-    for match in _BINOMIAL.finditer(question):
-        genus, epithet = match.group(1), match.group(2)
-        if resolver is not None:
-            resolved = resolver.resolve(f"{genus} {epithet}")  # type: ignore[attr-defined]
-            if resolved:
-                _remember(resolved)
-                continue
-        if _looks_like_binomial(genus, epithet):
-            _remember(f"{genus} {epithet}")
 
-    # A bare genus still counts when it is one the Continuum already knows, so
-    # existing single-genus questions keep working exactly as before. A genus
-    # already named by a binomial is not added again: it is the same organism,
-    # and reading it twice would search for it twice and count it twice.
-    named_genera = {value.split()[0].casefold() for value in found}
+def _mentioned_genera(question: str) -> list[str]:
+    """Return all orchid genera mentioned in the question.
+
+    Checks the canonical known-genera list by word boundary, then appends
+    any additional genera extracted from scientific binomial patterns (e.g.
+    ``*Calypso bulbosa*`` → ``Calypso``).  The union is returned in
+    encounter order, with known genera first.
+    """
     normalized = question.casefold()
-    for genus in _ORCHID_GENERA:
-        if genus.casefold() in named_genera:
-            continue
-        if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized):
-            _remember(genus)
-
-    return found
-
-
-def _extract_potential_genera(text: str) -> list[str]:
-    """Return genus subjects from conservatively validated scientific names."""
-    genera: list[str] = []
-    seen: set[str] = set()
-    for taxon in extract_taxa(text):
-        genus = taxon.split()[0]
-        key = genus.casefold()
-        if key not in seen:
-            seen.add(key)
-            genera.append(genus)
-    return genera
-
-
-def _mentioned_genera(
-    question: str, extra_taxa: list[str] | None = None
-) -> list[str]:
-    """Genus-level subjects from validated names and explicit caller taxa."""
-    genera: list[str] = []
-    seen: set[str] = set()
-    for taxon in [*extract_taxa(question), *(extra_taxa or [])]:
-        parts = str(taxon or "").strip().split()
-        if not parts or not parts[0][0].isupper():
-            continue
-        genus = parts[0]
-        if genus.casefold() not in seen:
-            seen.add(genus.casefold())
-            genera.append(genus)
-    return genera
+    known_hits = [
+        genus
+        for genus in _ORCHID_GENERA
+        if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized)
+    ]
+    seen = {g.casefold() for g in known_hits}
+    for g in _extract_genera_from_query(question):
+        if g.casefold() not in seen:
+            known_hits.append(g)
+            seen.add(g.casefold())
+    return known_hits
 
 
 def _wet_winter_intent(question: str) -> bool:
@@ -343,15 +238,10 @@ def _epmc_or(terms: tuple[str, ...], *, limit: int = 5) -> str:
     return " OR ".join(values)
 
 
-def _query_plan(
-    question: str,
-    *,
-    taxa: list[str] | None = None,
-    max_queries: int = 8,
-) -> list[str]:
+def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
     """Build focused Europe PMC searches from a natural-language Calyx question."""
 
-    genera = _mentioned_genera(question, taxa)
+    genera = _mentioned_genera(question)
     clusters = _active_clusters(question)
     wet_winter = _wet_winter_intent(question)
     ordered_genera = sorted(
@@ -362,10 +252,6 @@ def _query_plan(
         ),
     )
     queries: list[str] = []
-
-    if not clusters:
-        for genus in ordered_genera[:max_queries]:
-            queries.append(f'"{genus}" AND (orchid OR Orchidaceae)')
 
     genus_budget = 5 if wet_winter else 4
     cluster_budget = 2 if wet_winter else 3
@@ -597,6 +483,16 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
     ]
     results = (strong if strong else candidates)[:result_limit]
 
+    all_queries_failed = bool(diagnostics) and len(diagnostics) >= len(query_plan) > 0
+    if all_queries_failed:
+        availability_state = "UNAVAILABLE"
+    elif not results and not candidates:
+        availability_state = "EMPTY"
+    elif results and len(results) < 2 and len(candidates) > 0:
+        availability_state = "INSUFFICIENT_EVIDENCE"
+    else:
+        availability_state = "AVAILABLE"
+
     return {
         "provider": "Europe PMC",
         "query": query[:500],
@@ -609,6 +505,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         "review_required": True,
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
+        "availability_state": availability_state,
     }
 
 
