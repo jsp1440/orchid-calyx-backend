@@ -7,14 +7,12 @@ Schema separation from SQLAlchemy models is intentional:
 """
 from __future__ import annotations
 
-import uuid
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from .models import EpistemicCertaintyLabel, ObservationCurationState
-
 
 # ---------------------------------------------------------------------------
 # Request schemas
@@ -25,20 +23,20 @@ class FieldObservationCreate(BaseModel):
     observer_id: str = Field(..., min_length=1, max_length=500,
                              description="Opaque auth subject — never an email address.")
     observed_at: datetime
-    latitude: Optional[float] = Field(
+    latitude: float | None = Field(
         default=None,
         description="Nullable — requires DataPolicy consent before storage.",
     )
-    longitude: Optional[float] = Field(
+    longitude: float | None = Field(
         default=None,
         description="Nullable — requires DataPolicy consent before storage.",
     )
-    location_name: Optional[str] = Field(default=None, max_length=1000)
-    taxon_hint: Optional[str] = Field(
+    location_name: str | None = Field(default=None, max_length=1000)
+    taxon_hint: str | None = Field(
         default=None, max_length=500,
         description="Observer's proposed taxon — not a scientific determination.",
     )
-    observation_text: Optional[str] = Field(default=None, max_length=10000)
+    observation_text: str | None = Field(default=None, max_length=10000)
     epistemic_certainty: EpistemicCertaintyLabel = EpistemicCertaintyLabel.POSSIBLE
 
 
@@ -53,13 +51,13 @@ class PhotoAttachRequest(BaseModel):
     storage_key: str = Field(..., min_length=1, max_length=2000)
     content_hash: str = Field(..., min_length=64, max_length=64,
                               description="SHA-256 hex digest of the photo bytes.")
-    photographer_id: Optional[str] = Field(
+    photographer_id: str | None = Field(
         default=None,
         description="Opaque identity token — never an email address.",
     )
-    captured_at: Optional[datetime] = None
-    license: Optional[str] = Field(default=None, max_length=200)
-    provenance: Optional[Dict[str, Any]] = None
+    captured_at: datetime | None = None
+    license: str | None = Field(default=None, max_length=200)
+    provenance: dict[str, Any] | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -71,12 +69,12 @@ class FieldObservationOut(BaseModel):
     id: str
     observer_id: str
     observed_at: datetime
-    taxon_hint: Optional[str]
-    observation_text: Optional[str]
+    taxon_hint: str | None
+    observation_text: str | None
     epistemic_certainty: EpistemicCertaintyLabel
     curation_state: ObservationCurationState
-    ai_taxon_suggestion: Optional[str]
-    ai_suggestion_confidence: Optional[float]
+    ai_taxon_suggestion: str | None
+    ai_suggestion_confidence: float | None
     created_at: datetime
     photo_count: int = 0
 
@@ -94,7 +92,7 @@ class PhotoAttachResponse(BaseModel):
 class TaxonSuggestionResponse(BaseModel):
     """AI taxon suggestion result (NO_API_MODE stub or live engine result)."""
     observation_id: str
-    ai_taxon_suggestion: Optional[str]
-    ai_suggestion_confidence: Optional[float]
+    ai_taxon_suggestion: str | None
+    ai_suggestion_confidence: float | None
     suggestion_model: str
     requested_at: datetime

@@ -3,8 +3,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Optional
-from uuid import UUID
 
 from pydantic import BaseModel, Field
 
@@ -27,8 +25,8 @@ class ShareRequest(BaseModel):
     artifact_kind: ArtifactKind
     audience: AudienceScope
     sharer_auth_subject: str
-    expires_at: Optional[datetime] = None
-    note: Optional[str] = None
+    expires_at: datetime | None = None
+    note: str | None = None
 
 
 class ShareRecord(BaseModel):
@@ -39,12 +37,12 @@ class ShareRecord(BaseModel):
     sharer_auth_subject: str
     share_token: str
     created_at: datetime
-    expires_at: Optional[datetime] = None
+    expires_at: datetime | None = None
     is_active: bool = True
 
 
 class ShareLookupResponse(BaseModel):
-    share_record: Optional[ShareRecord] = None
+    share_record: ShareRecord | None = None
     artifact_preview: dict = Field(default_factory=dict)
 
 

@@ -12,8 +12,8 @@ Moderation lifecycle:
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
-from typing import Dict, Optional
+from datetime import datetime, timezone
+from typing import Annotated
 
 from fastapi import APIRouter, Header, HTTPException, Query
 
@@ -34,7 +34,7 @@ router = APIRouter(
 # ---------------------------------------------------------------------------
 # In-memory store (MVP stub — replace with DB session in follow-up)
 # ---------------------------------------------------------------------------
-_store: Dict[uuid.UUID, CommunityObservation] = {}
+_store: dict[uuid.UUID, CommunityObservation] = {}
 
 # Moderation states that may NOT be set as the initial state via the moderate
 # endpoint — only valid transition targets.
@@ -56,7 +56,7 @@ _INVALID_MODERATION_TARGETS = {ModerationState.SUBMITTED}
 @router.post("/observations", response_model=ObservationSubmitResponse, status_code=200)
 def submit_observation(
     payload: ObservationSubmitRequest,
-    x_auth_subject: Optional[str] = Header(default="anonymous"),
+    x_auth_subject: str | None = Header(default="anonymous"),
 ) -> ObservationSubmitResponse:
     """
     Submit a new human field observation.
@@ -85,9 +85,9 @@ def submit_observation(
 
 @router.get("/observations", response_model=ObservationListResponse)
 def list_observations(
-    moderation_state: Optional[ModerationState] = Query(default=None),
-    offset: int = Query(default=0, ge=0),
-    limit: int = Query(default=50, ge=1, le=200),
+    moderation_state: Annotated[ModerationState | None, Query()] = None,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
 ) -> ObservationListResponse:
     """
     List observations, optionally filtered by moderation_state.
@@ -155,7 +155,7 @@ def moderate_observation(
         raise HTTPException(status_code=404, detail="Observation not found")
 
     obs.moderation_state = decision.new_state
-    obs.moderated_at = datetime.utcnow()
+    obs.moderated_at = datetime.now(tz=timezone.utc)
     obs.moderation_reason = decision.reason
 
     # Integration hook: approved observations eligible for intake.propose_task()

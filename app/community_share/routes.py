@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
 
 from fastapi import APIRouter, Header, HTTPException
 
@@ -63,8 +62,8 @@ def create_share(payload: ShareRequest) -> ShareRecord:
 @router.get("/shares/{share_token}", response_model=ShareLookupResponse)
 def get_share(
     share_token: str,
-    x_member: Optional[str] = Header(default=None, alias="X-Member"),
-    x_requester_id: Optional[str] = Header(default=None, alias="X-Requester-Id"),
+    x_member: str | None = Header(default=None, alias="X-Member"),
+    x_requester_id: str | None = Header(default=None, alias="X-Requester-Id"),
 ) -> ShareLookupResponse:
     """Retrieve a share record by token, respecting audience-scoped visibility."""
     record = _store.get(share_token)
@@ -85,12 +84,13 @@ def get_share(
                 detail="MEMBERS_ONLY content requires membership. Set X-Member: true.",
             )
 
-    elif audience == AudienceScope.PRIVATE:
-        if not x_requester_id or x_requester_id.strip() != record.sharer_auth_subject:
-            raise HTTPException(
-                status_code=403,
-                detail="PRIVATE content is only visible to the original sharer.",
-            )
+    elif audience == AudienceScope.PRIVATE and (
+        not x_requester_id or x_requester_id.strip() != record.sharer_auth_subject
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail="PRIVATE content is only visible to the original sharer.",
+        )
 
     artifact_preview = {
         "artifact_id": record.artifact_id,
@@ -102,7 +102,7 @@ def get_share(
 
 @router.get("/shares", response_model=ShareListResponse)
 def list_shares(
-    x_requester_id: Optional[str] = Header(default=None, alias="X-Requester-Id"),
+    x_requester_id: str | None = Header(default=None, alias="X-Requester-Id"),
 ) -> ShareListResponse:
     """List all active share records belonging to the requester."""
     if not x_requester_id:
@@ -122,7 +122,7 @@ def list_shares(
 @router.delete("/shares/{share_token}", response_model=ShareRecord)
 def delete_share(
     share_token: str,
-    x_requester_id: Optional[str] = Header(default=None, alias="X-Requester-Id"),
+    x_requester_id: str | None = Header(default=None, alias="X-Requester-Id"),
 ) -> ShareRecord:
     """Deactivate a share (set is_active=False). Owner only."""
     record = _store.get(share_token)

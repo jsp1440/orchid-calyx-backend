@@ -17,7 +17,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.community_share.routes import router, _store
+from app.community_share.routes import _store, router
 
 
 @pytest.fixture(autouse=True)
