@@ -245,13 +245,14 @@ def test_diagnostics_capture_source_failure():
 # ── Research station — no stale import ──────────────────────────────────
 
 
-def test_research_station_raises_not_implemented_without_override():
-    """Accessing .literature without an override raises NotImplementedError (not ImportError)."""
+def test_research_station_returns_external_literature_without_override():
+    """Accessing .literature without an override returns app.calyx_conversation.external_literature."""
     from runtime.research_station import ResearchStationService
 
     svc = ResearchStationService()
-    with pytest.raises(NotImplementedError, match="LITERATURE_ACQUISITION_UNAVAILABLE"):
-        _ = svc.literature
+    lit = svc.literature
+    assert lit.__name__ == "app.calyx_conversation.external_literature"
+    assert hasattr(lit, "extract_taxa")
 
 
 def test_research_station_literature_override_works():
