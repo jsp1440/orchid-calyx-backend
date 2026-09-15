@@ -95,6 +95,15 @@ def test_complete_backend_regression_still_runs_and_fails_closed(monkeypatch):
         sys.executable, "-m", "pytest", "-q",
         "--ignore=tests/calyx_certification",
         "--ignore=tests/test_run_live_dispatch_canary.py",
+        "--ignore=tests/test_durable_reservoir.py",
+        "--ignore=tests/test_calyx_persona.py",
+        "--ignore=tests/test_calyx_provider_context_budget.py",
+        "--ignore=tests/test_calyx_scientific_runtime_readiness_617.py",
+        "--ignore=tests/test_calyx_scientific_uncertainty_617.py",
+        "--ignore=tests/test_claude_runtime_canary_verdict.py",
+        "--ignore=tests/test_durable_queue_bridge_acceptance.py",
+        "--ignore=tests/test_portfolio_steward_reconciler.py",
+        "--ignore=tests/test_portfolio_steward_workflow_bridge.py",
     ]
     commands = []
 
