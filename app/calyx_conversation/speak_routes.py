@@ -17,6 +17,7 @@ from .continuum_context import build_continuum_context
 from .conversational_synthesis import is_follow_up, resolve_subject
 from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
+from .knowledge_context import build_knowledge_context
 from .provider import DeterministicGovernedReplyProvider
 from .provider_runtime import (
     configured_runtime_provider,
@@ -170,6 +171,22 @@ def _safe_climate_context(message: str) -> dict[str, Any]:
             "diagnostics": [{"source": "climate_context", "error": str(exc)}],
             "external": True, "time_sensitive": True,
             "automatic_publication": False, "knowledge_graph_mutation": False,
+        }
+
+
+def _safe_knowledge_context(message: str) -> dict[str, Any]:
+    try:
+        return build_knowledge_context(message)
+    except Exception:  # noqa: BLE001
+        return {
+            "schema": "oc.calyx-knowledge-context.v1",
+            "query": message[:200],
+            "lexicon": {"available": False, "source": "oc_lexicon", "canonical_graph_mutated": False, "read_only": True},
+            "literature": {"available": False, "source": "oc_literature_extraction", "canonical_graph_mutated": False, "read_only": True},
+            "read_only": True,
+            "canonical_graph_mutated": False,
+            "engineering_dispatch_authorized": False,
+            "provider_calls": 0,
         }
 
 
@@ -516,6 +533,7 @@ def append_turn(
         owner=owner, conversation_id=conversation_id, project_id=project_id, message=payload.message,
         research_mode=payload.research_mode, retrieval_limit=payload.retrieval_limit,
     )
+    knowledge = _safe_knowledge_context(payload.message)
 
     if mission is not None:
         STORE.append(
@@ -555,10 +573,22 @@ def append_turn(
              "canonical_orchid_evidence": False}, owner=owner,
         )
 
+    _knowledge_lex_count = knowledge.get("lexicon", {}).get("matched_terms") or 0
+    _knowledge_lit_count = knowledge.get("literature", {}).get("matched_papers") or 0
+    if _knowledge_lex_count or _knowledge_lit_count:
+        STORE.append(
+            conversation_id, "tool",
+            f"OC knowledge bridge: {_knowledge_lex_count} lexicon term(s), {_knowledge_lit_count} literature paper(s) retrieved.",
+            {"tool": "knowledge_context", "lexicon_terms": _knowledge_lex_count,
+             "literature_papers": _knowledge_lit_count,
+             "read_only": True, "canonical_graph_mutated": False, "provider_calls": 0},
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual, "conversation_id": conversation_id, "project_id": project_id,
         "interaction_context": interaction_context, "retrieval": retrieval, "continuum": continuum,
-        "climate": climate, "mission": mission, "mission_error": mission_error,
+        "climate": climate, "knowledge": knowledge, "mission": mission, "mission_error": mission_error,
         "scientific_memory": _scientific_memory_context(
             db, project_id, owner, auth.get("auth_type") == "api_key"
         ),
@@ -628,6 +658,7 @@ def append_turn(
         "research": {
             "casual": casual, "mission": mission, "mission_error": mission_error,
             "retrieval": retrieval, "continuum": continuum, "climate": climate,
+            "knowledge": knowledge,
             "citations": citations, "scientific_memory": governed_context["scientific_memory"],
         },
         "workspace_outputs": _workspace_outputs(
