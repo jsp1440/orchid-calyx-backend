@@ -109,6 +109,25 @@ def test_lexicon_context_schema_field_present() -> None:
     assert ctx["source"] == "oc_lexicon"
 
 
+
+
+def test_default_lexicon_loader_uses_public_search_interface(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    calls: list[tuple[str, int]] = []
+
+    def public_search(*, q: str, limit: int) -> list[dict[str, Any]]:
+        calls.append((q, limit))
+        return [ORCHID_ENTRY]
+
+    monkeypatch.setattr("app.lexicon.routes.search_concepts", public_search)
+    ctx = build_lexicon_context("Dendrobium culture")
+
+    assert ctx["available"] is True
+    assert calls
+    assert calls[0][0] == "Dendrobium culture"
+
+
 def test_lexicon_context_included_in_knowledge_context() -> None:
     loader = _mock_loader([ORCHID_ENTRY])
     ctx = build_knowledge_context(
