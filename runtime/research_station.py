@@ -12,12 +12,9 @@ import os
 import tempfile
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
-
-if TYPE_CHECKING:
-    from runtime.literature_acquisition import LiteratureAcquisitionService
 
 RESEARCH_SCHEMA_VERSION = "calyx-research-station/v1"
 PROJECT_STATES = {"planned", "active", "blocked", "completed", "archived"}
@@ -147,7 +144,7 @@ class ResearchStationService:
         self,
         workspace: Path | None = None,
         *,
-        literature: LiteratureAcquisitionService | None = None,
+        literature: Any | None = None,
         artifact_registry: ImmutableArtifactRegistry | None = None,
     ) -> None:
         self.workspace = workspace or research_root()
@@ -155,15 +152,15 @@ class ResearchStationService:
         self.artifact_registry = artifact_registry or ImmutableArtifactRegistry()
 
     @property
-    def literature(self) -> LiteratureAcquisitionService:
+    def literature(self) -> Any:
         if self._literature_override is not None:
             return self._literature_override
-        if not hasattr(self, "_literature_instance"):
-            from runtime.literature_acquisition import (
-                LiteratureAcquisitionService,
-            )
-            self._literature_instance = LiteratureAcquisitionService(literature_root())
-        return self._literature_instance
+        raise NotImplementedError(
+            "LITERATURE_ACQUISITION_UNAVAILABLE: runtime.literature_acquisition is not "
+            "present on this branch. Pass a literature= override to ResearchStationService "
+            "or use augment_retrieval_with_external_literature() from "
+            "app.calyx_conversation.external_literature instead."
+        )
 
     @staticmethod
     def _owner_key(owner_id: str) -> str:

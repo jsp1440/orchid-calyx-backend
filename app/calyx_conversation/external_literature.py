@@ -143,13 +143,45 @@ _FLOWERING_TERMS = (
 )
 
 
+def _extract_genera_from_query(question: str) -> list[str]:
+    """Extract scientific genera from binomial name patterns in a question.
+
+    Matches patterns such as ``*Calypso bulbosa*``, ``Calypso bulbosa``, or
+    any Title-case word followed by a lowercase species epithet (≥4 chars),
+    which is the standard signature of a scientific binomial.
+    """
+    pattern = r"\*?([A-Z][a-z]{2,})\s+[a-z]{5,}\*?"
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in re.finditer(pattern, question):
+        candidate = match.group(1)
+        key = candidate.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(candidate)
+    return result
+
+
 def _mentioned_genera(question: str) -> list[str]:
+    """Return all orchid genera mentioned in the question.
+
+    Checks the canonical known-genera list by word boundary, then appends
+    any additional genera extracted from scientific binomial patterns (e.g.
+    ``*Calypso bulbosa*`` → ``Calypso``).  The union is returned in
+    encounter order, with known genera first.
+    """
     normalized = question.casefold()
-    return [
+    known_hits = [
         genus
         for genus in _ORCHID_GENERA
         if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized)
     ]
+    seen = {g.casefold() for g in known_hits}
+    for g in _extract_genera_from_query(question):
+        if g.casefold() not in seen:
+            known_hits.append(g)
+            seen.add(g.casefold())
+    return known_hits
 
 
 def _wet_winter_intent(question: str) -> bool:
@@ -451,6 +483,16 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
     ]
     results = (strong if strong else candidates)[:result_limit]
 
+    all_queries_failed = bool(diagnostics) and len(diagnostics) >= len(query_plan) > 0
+    if all_queries_failed:
+        availability_state = "UNAVAILABLE"
+    elif not results and not candidates:
+        availability_state = "EMPTY"
+    elif results and len(results) < 2 and len(candidates) > 0:
+        availability_state = "INSUFFICIENT_EVIDENCE"
+    else:
+        availability_state = "AVAILABLE"
+
     return {
         "provider": "Europe PMC",
         "query": query[:500],
@@ -463,6 +505,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         "review_required": True,
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
+        "availability_state": availability_state,
     }
 
 
