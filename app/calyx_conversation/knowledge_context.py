@@ -2,7 +2,7 @@
 
 Retrieves query-relevant botanical terminology from the OC Lexicon and
 evidence-attributed claims from locally stored literature, for injection into
-Calyx/Kalix conversation context. Neither store is written to; failures in
+Calyx conversation context. Neither store is written to; failures in
 either source are contained so Calyx continues functioning.
 
 Governance

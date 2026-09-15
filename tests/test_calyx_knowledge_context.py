@@ -1,4 +1,4 @@
-"""Tests for app.calyx_conversation.knowledge_context — KALIX-CONTEXT-001.
+"""Tests for app.calyx_conversation.knowledge_context — Calyx knowledge grounding.
 
 Six required behavioral axes:
   1. Lexicon context reaches Calyx (mock loader)
