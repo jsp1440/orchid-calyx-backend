@@ -41,6 +41,18 @@ from app.calyx_orchestrator.durable_reservoir_models import (
 )
 from app.database import Base
 
+
+def _sqlite_create_all(engine) -> None:
+    """Create only non-schema-qualified tables so SQLite in-memory engines work.
+
+    Schema-qualified models (e.g. research_station.projects) require ATTACH DATABASE
+    in SQLite, which is unavailable here. The durable reservoir tests only need the
+    non-schema tables (calyx_reservoir_runs, calyx_reservoir_tasks).
+    """
+    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
+    Base.metadata.create_all(engine, tables=tables)
+
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -55,7 +67,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    _sqlite_create_all(e)
     yield e
     e.dispose()
 

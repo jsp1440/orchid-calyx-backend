@@ -43,6 +43,11 @@ from app.database import Base
 # ---------------------------------------------------------------------------
 
 
+def _sqlite_create_all(engine) -> None:
+    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
+    Base.metadata.create_all(engine, tables=tables)
+
+
 @pytest.fixture(scope="module")
 def engine():
     """Shared in-memory engine — represents a durable Postgres DB.
@@ -52,7 +57,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    _sqlite_create_all(e)
     yield e
     e.dispose()
 

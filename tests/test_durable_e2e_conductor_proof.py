@@ -70,6 +70,11 @@ from app.scientific_synthesis.run_manifest import build_run_evidence_manifest
 _PAID_PROVIDER_CALLS = 0  # incremented if any worker reports provider_api_called=True
 
 
+def _sqlite_create_all(engine) -> None:
+    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
+    Base.metadata.create_all(engine, tables=tables)
+
+
 @pytest.fixture(scope="module")
 def engine():
     """Shared SQLite in-memory engine — simulates a durable PostgreSQL instance."""
@@ -78,7 +83,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    _sqlite_create_all(e)
     yield e
     e.dispose()
 
