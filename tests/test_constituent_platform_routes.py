@@ -109,6 +109,23 @@ def test_subscribe_rejects_bad_topics_frequency_and_extra_fields(public):
     assert public.post("/api/constituent/subscribe", json={**base, "latitude": 1.0}).status_code == 422
 
 
+def test_subscribe_accepts_the_public_newsletter_page_vocabulary(public):
+    """The /newsletter page sends these exact topic slugs and cadences (frontend #685)."""
+    resp = public.post(
+        "/api/constituent/subscribe",
+        json={
+            "email": "reader@example.com",
+            "topics": ["conservation", "taxonomy", "field_research", "cultivation", "events"],
+            "frequency": "quarterly",
+            "format": "html",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    record = constituent_service.ConstituentService(constituent_service.get_store()).get_subscription("reader@example.com")
+    assert record["topics"] == ["conservation", "cultivation", "events", "field_research", "taxonomy"]
+    assert record["frequency"] == "quarterly"
+
+
 def test_unsubscribe_is_idempotent_and_does_not_reveal_whether_an_address_was_known(public):
     known = public.post("/api/constituent/subscribe", json={"email": "member@example.com"}).json()
     assert known["state"] == PreferenceState.SUBSCRIBED

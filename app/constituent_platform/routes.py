@@ -60,8 +60,9 @@ owner_router = APIRouter(
     dependencies=[Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)],
 )
 
-TOPIC_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-Frequency = Literal["immediate", "daily", "weekly", "monthly"]
+# Slugs as the public Newsletter page sends them (e.g. "field_research", "orchid-news").
+TOPIC_SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
+Frequency = Literal["immediate", "daily", "weekly", "monthly", "quarterly"]
 Format = Literal["html", "plain"]
 ContactCategory = Literal["general", "bug", "suggestion"]
 
@@ -78,7 +79,7 @@ def _topics(values: list[str]) -> list[str]:
     for value in values:
         slug = value.strip().lower()
         if not TOPIC_SLUG.match(slug):
-            raise ValueError(f"topic slugs are lowercase letters, digits and hyphens; got {value!r}")
+            raise ValueError(f"topic slugs are lowercase letters, digits, hyphens and underscores; got {value!r}")
         cleaned.append(slug)
     return cleaned
 
