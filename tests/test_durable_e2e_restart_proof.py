@@ -34,7 +34,7 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
-from app.calyx_orchestrator.durable_reservoir_models import DurableReservoirTask
+from app.calyx_orchestrator.durable_reservoir_models import DurableReservoirRun, DurableReservoirTask
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.database import Base
 
@@ -52,7 +52,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     yield e
     e.dispose()
 
