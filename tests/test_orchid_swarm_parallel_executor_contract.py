@@ -86,6 +86,10 @@ def test_refill_follows_completion_for_provider_free_waves_and_stays_on_the_same
     assert "needs.plan.outputs.provider_free_launch_count != '0'" in condition
     assert "needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'" in condition
     assert "needs.plan.outputs.launch_count != '0'" in condition
+    # Hosted wave 35067378022: one simulated-failure lane made the matrix job
+    # result 'failure' and the old condition suppressed refill of unrelated work.
+    assert "needs.provider_free_workers.result != 'failure'" not in condition
+    assert "needs.provider_free_workers.result != 'cancelled'" in condition
     run = refill["steps"][0]["run"]
     assert 'refill_ref="$INTEGRATION_BRANCH"' in run
     assert 'refill_ref="$GITHUB_REF_NAME"' in run

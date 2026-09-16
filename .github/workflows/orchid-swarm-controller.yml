@@ -344,7 +344,10 @@ jobs:
     # Completion triggers refill. A wave that launched provider-free lanes refills
     # immediately (zero paid spend, bounded by max_waves); a wave that only ran
     # under NO-API mode keeps the governor's explicit auto-refill authorization.
-    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'failure' && needs.plan.outputs.launch_count != '0' && (needs.plan.outputs.provider_free_launch_count != '0' || (needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'))
+    # One failed provider-free lane has already released its lease and parked
+    # its issue with evidence, so it must not stop unrelated work from being
+    # refilled; only a cancelled wave (no settlement ran) suppresses refill.
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'cancelled' && needs.plan.outputs.launch_count != '0' && (needs.plan.outputs.provider_free_launch_count != '0' || (needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
