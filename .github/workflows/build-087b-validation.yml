@@ -133,6 +133,117 @@ jobs:
           SQL
         env:
           BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      - name: Apply oc_missions schema to broad-suite database
+        run: psql "$BROAD_DATABASE_URL" -f migrations/079_controlled_mission_orchestration.sql
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
+      - name: Provision broad-suite oc_concepts and oc_graph schemas
+        run: |
+          psql "$BROAD_DATABASE_URL" <<'SQL'
+          CREATE SCHEMA IF NOT EXISTS oc_concepts;
+          CREATE TABLE IF NOT EXISTS oc_concepts.concept_schemes (
+              scheme_id UUID PRIMARY KEY,
+              scheme_key TEXT NOT NULL UNIQUE,
+              name TEXT NOT NULL,
+              authority TEXT NOT NULL,
+              steward TEXT NOT NULL,
+              review_state TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (review_state IN ('PENDING','IN_REVIEW','APPROVED','CHANGES_REQUESTED')),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS oc_concepts.concept_releases (
+              release_id UUID PRIMARY KEY,
+              scheme_id UUID NOT NULL REFERENCES oc_concepts.concept_schemes(scheme_id),
+              version TEXT NOT NULL,
+              status TEXT NOT NULL DEFAULT 'DRAFT'
+                CHECK (status IN ('DRAFT','ACTIVE','DEPRECATED')),
+              metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (scheme_id, version)
+          );
+          CREATE TABLE IF NOT EXISTS oc_concepts.concepts (
+              concept_id UUID PRIMARY KEY,
+              concept_uri TEXT NOT NULL UNIQUE,
+              scheme_id UUID NOT NULL REFERENCES oc_concepts.concept_schemes(scheme_id),
+              release_id UUID REFERENCES oc_concepts.concept_releases(release_id),
+              status TEXT NOT NULL DEFAULT 'DRAFT'
+                CHECK (status IN ('DRAFT','ACTIVE','DEPRECATED','SUPERSEDED')),
+              review_state TEXT NOT NULL DEFAULT 'PENDING'
+                CHECK (review_state IN ('PENDING','IN_REVIEW','APPROVED','CHANGES_REQUESTED')),
+              steward TEXT NOT NULL,
+              superseded_by_id UUID REFERENCES oc_concepts.concepts(concept_id),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS oc_concepts.concept_labels (
+              label_id UUID PRIMARY KEY,
+              concept_id UUID NOT NULL REFERENCES oc_concepts.concepts(concept_id),
+              label_type TEXT NOT NULL CHECK (label_type IN (
+                  'PREFERRED','ALTERNATE','HIDDEN','HISTORICAL','ABBREVIATION',
+                  'SCIENTIFIC_NAME','COMMON_NAME','MISSPELLING'
+              )),
+              label TEXT NOT NULL CHECK (btrim(label) <> ''),
+              normalized_label TEXT NOT NULL CHECK (btrim(normalized_label) <> ''),
+              language TEXT NOT NULL DEFAULT 'und',
+              script TEXT,
+              editorial_context TEXT NOT NULL DEFAULT 'default',
+              provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+              review_state TEXT NOT NULL DEFAULT 'PENDING',
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE TABLE IF NOT EXISTS oc_concepts.concept_definitions (
+              definition_id UUID PRIMARY KEY,
+              concept_id UUID NOT NULL REFERENCES oc_concepts.concepts(concept_id),
+              definition_type TEXT NOT NULL CHECK (definition_type IN (
+                  'NORMATIVE_SCIENTIFIC','GLOSSARY','GROWER','LEARNER',
+                  'PLAIN_LANGUAGE','HISTORICAL'
+              )),
+              text TEXT NOT NULL CHECK (btrim(text) <> ''),
+              language TEXT NOT NULL DEFAULT 'und',
+              script TEXT,
+              provenance JSONB NOT NULL DEFAULT '{}'::jsonb,
+              review_state TEXT NOT NULL DEFAULT 'PENDING',
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              revised_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          CREATE SCHEMA IF NOT EXISTS oc_graph;
+          CREATE TABLE IF NOT EXISTS oc_graph.kg_nodes (
+              kg_node_id BIGSERIAL PRIMARY KEY,
+              node_type TEXT NOT NULL,
+              canonical_key TEXT NOT NULL,
+              display_label TEXT,
+              source_table TEXT,
+              source_pk TEXT,
+              evidence_class TEXT,
+              confidence_score DOUBLE PRECISION,
+              confidence_label TEXT,
+              payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              UNIQUE (node_type, canonical_key)
+          );
+          CREATE TABLE IF NOT EXISTS oc_graph.kg_edges (
+              kg_edge_id BIGSERIAL PRIMARY KEY,
+              edge_type TEXT NOT NULL,
+              from_node_id BIGINT NOT NULL REFERENCES oc_graph.kg_nodes(kg_node_id),
+              to_node_id BIGINT NOT NULL REFERENCES oc_graph.kg_nodes(kg_node_id),
+              source_table TEXT,
+              source_pk TEXT,
+              evidence_class TEXT,
+              confidence_score DOUBLE PRECISION,
+              confidence_label TEXT,
+              rule_name TEXT,
+              payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+              is_active BOOLEAN NOT NULL DEFAULT TRUE,
+              updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+          );
+          SQL
+        env:
+          BROAD_DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable
       - name: Apply BUILD-051 owner-console schema to broad-suite database
         run: psql "$BROAD_DATABASE_URL" -f migrations/BUILD-051-owner-operations-console.sql
         env:
