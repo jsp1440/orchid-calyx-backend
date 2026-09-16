@@ -164,6 +164,7 @@ def classify_lease(
         "run_id": None, "run_status": None, "lease_age_seconds": None,
         "recoveries_before": _recovery_count(comments),
         "durable_pr": None if durable_pr is None else durable_pr["number"],
+        "labels": sorted(labels),
     }
     if str(issue.get("state") or "OPEN").upper() != "OPEN" or RUNNING not in labels:
         decision["reason"] = "not_running"
@@ -296,16 +297,17 @@ class GitHubTransport:
 def apply_recovery(transport: GitHubTransport, decision: dict, *, controller_run_url: str) -> dict:
     """Release one stale lease and write its durable recovery receipt."""
     number = decision["issue_number"]
+    present = set(decision.get("labels") or [RUNNING])
     remove = [RUNNING]
     add = []
     if decision["target"] == QUEUED:
         add = [QUEUED]
-    elif decision["target"] == VALIDATING:
+    elif decision["target"] in (VALIDATING, BLOCKED):
         remove.append(QUEUED)
-        add = [VALIDATING]
-    elif decision["target"] == BLOCKED:
-        remove.append(QUEUED)
-        add = [BLOCKED]
+        add = [decision["target"]]
+    # Only touch labels that are actually present; never edit unrelated labels.
+    remove = [label for label in remove if label in present]
+    add = [label for label in add if label not in present]
     transport.edit_labels(number, remove=remove, add=add)
     current = transport.issue(number)
     if RUNNING in _labels(current):
