@@ -176,3 +176,15 @@ def test_newsletter_web_version_unknown_id_returns_404(client: TestClient) -> No
     unknown_id = "ffffffff-ffff-ffff-ffff-ffffffffffff"
     resp = client.get(f"/api/constituent/newsletter/archive/{unknown_id}/web")
     assert resp.status_code == 404
+
+
+def test_main_app_registers_constituent_platform_routes() -> None:
+    pytest.importorskip("psycopg", reason="app.main imports the full router set")
+    from app.main import app as main_app
+
+    paths = {route.path for route in main_app.routes}
+    assert "/api/constituent/subscribe" in paths
+    assert "/api/constituent/unsubscribe" in paths
+    assert "/api/constituent/preferences" in paths
+    assert "/api/constituent/newsletter/archive" in paths
+    assert "/api/constituent/newsletter/archive/{newsletter_id}/web" in paths

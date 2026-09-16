@@ -115,8 +115,17 @@ def list_observations(
 
 
 @router.get("/observations/{observation_id}", response_model=CommunityObservation)
-def get_observation(observation_id: uuid.UUID) -> CommunityObservation:
-    """Retrieve a single observation by UUID."""
+def get_observation(
+    observation_id: uuid.UUID,
+    _reviewer: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
+) -> CommunityObservation:
+    """Retrieve the full record of a single observation by UUID.
+
+    The full record carries the submitter's verbatim locality text and opaque
+    identity, so it is a moderation view: only the owner session or the
+    backend API key may read it.  Anonymous callers see observations only
+    through the list endpoint, which returns id, state, and timestamp.
+    """
     obs = _store.get(observation_id)
     if obs is None:
         raise HTTPException(status_code=404, detail="Observation not found")
