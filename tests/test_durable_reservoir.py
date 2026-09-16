@@ -54,9 +54,13 @@ def engine():
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
-        # SQLite does not support schema-qualified DDL; translate research_station.*
-        # tables to the default schema so create_all succeeds cross-dialect.
-        execution_options={"schema_translate_map": {"research_station": None}},
+        # SQLite does not support schema-qualified DDL; translate all ORM schemas
+        # to the default schema so create_all succeeds cross-dialect.
+        execution_options={"schema_translate_map": {
+            "research_station": None,
+            "reasoning_ledger": None,
+            "reasoning_publication": None,
+        }},
     )
     Base.metadata.create_all(e)
     yield e
