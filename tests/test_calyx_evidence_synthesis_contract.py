@@ -300,12 +300,12 @@ def test_realistic_question_traces_through_full_calyx_turn(monkeypatch, capsys):
 
     created = speak_routes.create_conversation(
         speak_routes.ConversationCreateRequest(title="CAM trace", project_id="calyx-e2e"),
-        {"subject": "trace-owner"},
+        {"subject": "trace-owner", "auth_type": "owner_session"},
     )
     result = speak_routes.append_turn(
         created["conversation_id"],
         speak_routes.ConversationTurnRequest(message=question, research_mode="always", retrieval_limit=12),
-        {"subject": "trace-owner"},
+        {"subject": "trace-owner", "auth_type": "owner_session"},
     )
 
     compact = trace["model_context"]
