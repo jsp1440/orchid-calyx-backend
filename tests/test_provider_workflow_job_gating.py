@@ -21,6 +21,7 @@ def provider_workflows() -> list[Path]:
 def test_every_provider_capable_job_is_gated_before_initialization():
     expected = {
         "claude-code-governed.yml",
+        "oc-convergence-supervisor.yml",
         "orchid-claude-runtime-canary.yml",
         "orchid-completion-lane.yml",
         "orchid-gemini-runtime-canary.yml",
