@@ -10,6 +10,9 @@ from app.brain.routes import router as brain_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
 from app.community_observation.routes import router as community_observation_router
 from app.concepts.routers import router as concepts_router
+from app.constituent_platform.routes import (
+    owner_router as constituent_platform_owner_router,
+)
 from app.constituent_platform.routes import router as constituent_platform_router
 from app.design_intelligence.routes import router as design_intelligence_router
 from app.design_planning.routes import router as design_planning_router
@@ -601,6 +604,7 @@ app.include_router(field_hypothesis_router)
 app.include_router(field_observation_router)
 app.include_router(community_observation_router)
 app.include_router(constituent_platform_router)
+app.include_router(constituent_platform_owner_router)
 app.include_router(reasoning_ledger_router)
 app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
