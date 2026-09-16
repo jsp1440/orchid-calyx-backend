@@ -54,15 +54,12 @@ def engine():
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
-        # SQLite does not support schema-qualified DDL; translate all ORM schemas
-        # to the default schema so create_all succeeds cross-dialect.
-        execution_options={"schema_translate_map": {
-            "research_station": None,
-            "reasoning_ledger": None,
-            "reasoning_publication": None,
-        }},
-    )
-    Base.metadata.create_all(e)
+        )
+    # Create only the two tables this test file uses. Base.metadata.create_all
+    # would attempt to create ALL registered ORM tables; when the full test suite
+    # runs, both research_station.audit_events and reasoning_ledger.audit_events
+    # are registered and would collide on the SQLite default schema.
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     yield e
     e.dispose()
 
