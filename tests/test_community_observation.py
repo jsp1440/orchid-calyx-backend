@@ -202,3 +202,38 @@ def test_moderate_rejects_invalid_api_key(client, anonymous_client, monkeypatch)
     )
     assert resp.status_code == 401
     assert client.get(f"/api/community/observations/{obs_id}").json()["moderation_state"] == "SUBMITTED"
+
+
+# ---------------------------------------------------------------------------
+# Test: the full record (verbatim locality, submitter identity) is a moderation
+# view and must not be readable anonymously; the public list stays minimal
+# ---------------------------------------------------------------------------
+
+
+def test_get_observation_requires_owner_session_or_api_key(client, anonymous_client):
+    submitted = _submit(anonymous_client)
+    obs_id = submitted["id"]
+    resp = anonymous_client.get(f"/api/community/observations/{obs_id}")
+    assert resp.status_code == 401
+    assert "Serra do Mar" not in resp.text
+
+
+def test_anonymous_list_never_exposes_locality_or_submitter(anonymous_client):
+    _submit(anonymous_client)
+    resp = anonymous_client.get("/api/community/observations")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 1
+    assert set(body["items"][0]) == {"id", "moderation_state", "created_at"}
+    assert "location_verbatim" not in resp.text
+    assert "Serra do Mar" not in resp.text
+
+
+def test_main_app_registers_community_observation_routes():
+    pytest.importorskip("psycopg", reason="app.main imports the full router set")
+    from app.main import app as main_app
+
+    paths = {route.path for route in main_app.routes}
+    assert "/api/community/observations" in paths
+    assert "/api/community/observations/{observation_id}" in paths
+    assert "/api/community/observations/{observation_id}/moderate" in paths
