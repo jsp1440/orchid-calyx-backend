@@ -166,3 +166,23 @@ def test_query_plan_explicit_taxa_without_question_context():
     assert any("Pleione" in q for q in queries), (
         f"Expected 'Pleione' in queries, got {queries}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Regression: a bare taxon question with no physiology cluster must still plan
+# at least one genus-scoped search. Without the genus-only fallback,
+# "Tell me about Calypso bulbosa" planned zero queries and the search returned
+# EMPTY as though the literature corpus were bare.
+# ---------------------------------------------------------------------------
+@pytest.mark.parametrize(
+    "question",
+    [
+        "Tell me about Calypso bulbosa",
+        "Could this be Dendrobium?",
+        "Ophrys apifera mycorrhiza",
+    ],
+)
+def test_query_plan_bare_taxon_question_plans_a_genus_search(question: str):
+    queries = _query_plan(question)
+    assert queries, f"no query planned for {question!r}"
+    assert any("(orchid OR Orchidaceae)" in q for q in queries)
