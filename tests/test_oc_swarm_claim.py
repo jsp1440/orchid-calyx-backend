@@ -205,3 +205,29 @@ def test_workflow_dispatches_confirmed_matrix_and_retains_partial_failure_eviden
     lane = (Path(__file__).parents[1] / ".github/workflows/orchid-completion-lane.yml").read_text()
     assert "LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}" in lane
     assert "--verify-issue" in lane and "--lease-comment-id" in lane
+
+
+def test_confirmed_claims_keep_lane_classification_and_split_matrices():
+    rows = [issue(), issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")]
+    plan = {"workers": [
+        {"issue_number": 1, "reads": [], "writes": ["control-plane"], "dependencies": [], "provider_free": False},
+        {"issue_number": 2, "reads": [], "writes": ["literature"], "dependencies": [], "provider_free": True},
+    ]}
+    api = GitHub(rows)
+    result = claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
+                           run_attempt=1, call=api)
+    assert result["launch_count"] == 2
+    assert result["provider_free_launch_count"] == 1
+    assert result["provider_launch_count"] == 1
+    assert [w["issue_number"] for w in result["provider_free_matrix"]["include"]] == [2]
+    assert [w["issue_number"] for w in result["provider_matrix"]["include"]] == [1]
+    # Every confirmed worker still carries its durable lease receipt.
+    assert all("lease_comment_id" in w for w in result["matrix"]["include"])
+
+
+def test_zero_plan_emits_empty_split_matrices():
+    result, _ = execute([])
+    assert result["provider_free_matrix"] == {"include": []}
+    assert result["provider_matrix"] == {"include": []}
+    assert result["provider_free_launch_count"] == 0
+    assert result["provider_launch_count"] == 0

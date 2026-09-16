@@ -222,8 +222,7 @@ class ConcurrentBoundedDispatcher(BoundedDispatcher):
             run.iterations += 1
 
             # Recover any expired leases before scanning for new work.
-            expired = self.reservoir.recover_expired_leases(cfg.max_lease_age_seconds)
-            run.expired_recovered += len(expired)
+            self._recover_expired(cfg, run)
 
             self.reservoir.refill()
 

@@ -12,6 +12,8 @@ from app.database import get_db
 from app.scientific_memory.service import ScientificMemoryError, ScientificMemoryService
 from app.security import verify_owner_or_api_key
 
+from .access_economics import ACCESS_POLICY as _DEFAULT_ACCESS_POLICY
+from .access_economics import CalyxAccessPolicy
 from .climate_context import build_seasonal_climate_context
 from .continuum_context import build_continuum_context
 from .conversational_synthesis import is_follow_up, resolve_subject
@@ -26,6 +28,9 @@ from .provider_runtime import (
 from .routes import STORE, _retrieval
 
 configured_reply_provider = configured_runtime_provider
+#: Generative (paid) provider access policy for Speak turns. Module attribute so
+#: tests and operators can substitute a policy without touching the routes.
+ACCESS_POLICY: CalyxAccessPolicy = _DEFAULT_ACCESS_POLICY
 
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
 Db = Annotated[Session, Depends(get_db)]
@@ -47,6 +52,10 @@ class ConversationTurnRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     research_mode: Literal["auto", "always", "never"] = "auto"
     retrieval_limit: int = Field(default=12, ge=1, le=50)
+    # "never" asks for the deterministic governed composer even when a
+    # generative provider is configured and the caller is entitled to it. The
+    # AI and non-AI paths stay visibly distinguishable in the response.
+    generative_mode: Literal["auto", "never"] = "auto"
 
 
 def _subject(auth: dict[str, Any]) -> str:
@@ -467,7 +476,21 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
         },
         "deliverables": _deliverable_capabilities(),
         "interaction_context": {"supported": True, "evidence": False, "max_session_trail": 8},
+        "access_policy": ACCESS_POLICY.describe(),
         "automatic_publication": False, "knowledge_graph_mutation": False,
+    }
+
+
+@router.get("/entitlement")
+def speak_entitlement(auth: AuthDependency) -> dict[str, Any]:
+    """The generative-access decision this caller would receive, without spending a turn."""
+    subject = _subject(auth)
+    decision = ACCESS_POLICY.preview(auth=auth, subject=subject, candidate=configured_reply_provider())
+    return {
+        "subject": subject,
+        "decision": decision.as_dict(),
+        "policy": ACCESS_POLICY.describe(),
+        "deterministic_path_always_available": True,
     }
 
 
@@ -611,14 +634,27 @@ def append_turn(
         },
     }
     messages = STORE.provider_messages(conversation_id, owner=owner, turns=8)
-    provider = configured_reply_provider()
+    # Access economics: the configured provider is only a candidate. Whether a
+    # generative (paid) turn may be spent is decided per subject and tier, and
+    # the deterministic governed composer answers whenever it may not.
+    candidate = configured_reply_provider()
+    access = ACCESS_POLICY.decide(
+        auth=auth, subject=owner, generative_mode=payload.generative_mode, candidate=candidate,
+    )
+    provider = candidate if access.generative_allowed else DeterministicGovernedReplyProvider()
     provider_error: str | None = None
+    provider_outcome = "generative" if access.generative_allowed else "deterministic"
     try:
         reply = provider.generate(messages=messages, governed_context=governed_context)
     except Exception as exc:  # noqa: BLE001
         provider_error = str(exc)
+        if access.generative_allowed:
+            # The reserved turn produced nothing; give it back before falling back.
+            ACCESS_POLICY.release(access)
+            provider_outcome = "deterministic_fallback_after_provider_error"
         fallback = DeterministicGovernedReplyProvider()
         reply = fallback.generate(messages=messages, governed_context=governed_context)
+    access_policy = {**access.as_dict(), "provider_outcome": provider_outcome}
 
     calyx_message = STORE.append(
         conversation_id, "calyx", reply.text,
@@ -627,6 +663,7 @@ def append_turn(
             "synthesis_structure": reply.synthesis_structure,
             "provider_response_id": reply.provider_response_id, "request_hash": reply.request_hash,
             "provider_error": provider_error, "provider_configuration": runtime_provider_configuration(),
+            "access_policy": access_policy,
             "mission_id": mission.get("mission_id") if mission else None,
             "mission_state": mission.get("state") if mission else None,
             "review_status": mission.get("review_status") if mission else None,
@@ -652,7 +689,9 @@ def append_turn(
             "name": reply.provider, "model": reply.model, "request_hash": reply.request_hash,
             "provider_response_id": reply.provider_response_id, "fallback_error": provider_error,
             "configuration": runtime_provider_configuration(),
+            "generative": provider_outcome == "generative",
         },
+        "access_policy": access_policy,
         "interaction_context": interaction_context,
         "synthesis_structure": reply.synthesis_structure,
         "research": {

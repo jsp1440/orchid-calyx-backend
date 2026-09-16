@@ -41,18 +41,6 @@ from app.calyx_orchestrator.durable_reservoir_models import (
 )
 from app.database import Base
 
-
-def _sqlite_create_all(engine) -> None:
-    """Create only non-schema-qualified tables so SQLite in-memory engines work.
-
-    Schema-qualified models (e.g. research_station.projects) require ATTACH DATABASE
-    in SQLite, which is unavailable here. The durable reservoir tests only need the
-    non-schema tables (calyx_reservoir_runs, calyx_reservoir_tasks).
-    """
-    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
-    Base.metadata.create_all(engine, tables=tables)
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -66,8 +54,12 @@ def engine():
         "sqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
-    )
-    _sqlite_create_all(e)
+        )
+    # Create only the two tables this test file uses. Base.metadata.create_all
+    # would attempt to create ALL registered ORM tables; when the full test suite
+    # runs, both research_station.audit_events and reasoning_ledger.audit_events
+    # are registered and would collide on the SQLite default schema.
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     yield e
     e.dispose()
 
@@ -85,6 +77,31 @@ def session(engine):
 def SessionFactory(engine):
     """Session factory for tests that need multiple sessions (restart simulation)."""
     return sessionmaker(bind=engine, autocommit=False, autoflush=False)
+
+
+@pytest.fixture()
+def file_engine(tmp_path):
+    """File-backed SQLite engine for tests that race real threads.
+
+    The in-memory ``engine`` fixture relies on ``StaticPool`` so that one shared
+    connection can see the tables; that is fine for single-threaded tests, but a
+    sqlite3 connection must never be used by two threads at once. When two
+    threads race through the same connection, sqlite3 raises
+    ``InterfaceError: bad parameter or other API misuse`` and the loser's
+    rollback can discard the winner's commit. A file-backed database gives every
+    session its own connection, so SQLite's file lock — not Python — serialises
+    the writers, which is the property the concurrency test exists to check.
+    """
+    e = create_engine(f"sqlite:///{tmp_path / 'reservoir.db'}")
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
+    yield e
+    e.dispose()
+
+
+@pytest.fixture()
+def FileSessionFactory(file_engine):
+    """Session factory over the file-backed engine; each session has its own connection."""
+    return sessionmaker(bind=file_engine, autocommit=False, autoflush=False)
 
 
 def _leaf(
@@ -396,7 +413,7 @@ def test_from_db_recovers_active_leases_on_restart(SessionFactory):
 # ---------------------------------------------------------------------------
 
 
-def test_concurrent_lease_only_one_succeeds(SessionFactory, engine):
+def test_concurrent_lease_only_one_succeeds(FileSessionFactory):
     """Two threads racing to lease the same task — DB must end with exactly one LEASED row.
 
     On PostgreSQL, SELECT FOR UPDATE SKIP LOCKED ensures at most one winner at the
@@ -406,7 +423,11 @@ def test_concurrent_lease_only_one_succeeds(SessionFactory, engine):
     be consistent: exactly one LEASED holder (SQLite serializes commits). We verify
     the DB invariant rather than the per-thread outcome, since the DB state is what
     matters for correctness.
+
+    This test uses the file-backed engine so each thread owns its connection; a
+    single shared sqlite3 connection cannot be driven from two threads at once.
     """
+    SessionFactory = FileSessionFactory
     run_id = "concurrency-test-001"
     s_setup = SessionFactory()
     res_setup = DurableOrchestrate.create_run(s_setup, run_id, configured_width=4)

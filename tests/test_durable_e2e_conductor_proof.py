@@ -48,7 +48,10 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
-from app.calyx_orchestrator.durable_reservoir_models import DurableReservoirTask
+from app.calyx_orchestrator.durable_reservoir_models import (
+    DurableReservoirRun,
+    DurableReservoirTask,
+)
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.calyx_orchestrator.owner_authorization_gate import (
     AuthorizationDecision,
@@ -70,11 +73,6 @@ from app.scientific_synthesis.run_manifest import build_run_evidence_manifest
 _PAID_PROVIDER_CALLS = 0  # incremented if any worker reports provider_api_called=True
 
 
-def _sqlite_create_all(engine) -> None:
-    tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
-    Base.metadata.create_all(engine, tables=tables)
-
-
 @pytest.fixture(scope="module")
 def engine():
     """Shared SQLite in-memory engine — simulates a durable PostgreSQL instance."""
@@ -83,7 +81,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    _sqlite_create_all(e)
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     yield e
     e.dispose()
 
