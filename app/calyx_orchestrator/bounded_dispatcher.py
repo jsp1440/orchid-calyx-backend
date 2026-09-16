@@ -15,7 +15,12 @@ Hard boundaries enforced here:
 - OWNER_GATED-state tasks are never leased — skipped without error
   (tasks authorized via reservoir.authorize() are READY and ARE dispatched)
 - Completed tasks are never re-executed (idempotent)
-- Expired leases are recovered before each iteration
+- Expired leases are recovered before each iteration and requeued a bounded
+  number of times (``max_lease_recoveries``) before staying parked in
+  REPAIR_BACKOFF with the exact reason recorded
+- A worker that raises never strands its lease or stops sibling lanes: the
+  task is blocked with ``WORKER_EXCEPTION:<type>:<message>`` evidence and the
+  loop continues
 
 No infinite loops. No paid provider calls. Fully deterministic.
 """
@@ -25,6 +30,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any
 
 from .deep_orchestrate import DeepOrchestrate, TaskLeaf, TaskState
@@ -35,6 +41,8 @@ log = logging.getLogger(__name__)
 _DEFAULT_MAX_TASKS = 20
 _DEFAULT_MAX_ITERATIONS = 10
 _DEFAULT_MAX_LEASE_AGE_SECONDS = 300.0  # 5 minutes
+_DEFAULT_MAX_LEASE_RECOVERIES = 2  # bounded automatic requeues per task
+_MAX_REASON_LENGTH = 500
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +54,10 @@ class DispatchConfig:
     lease_holder: str = "bounded-dispatcher-v1"
     max_lease_age_seconds: float = _DEFAULT_MAX_LEASE_AGE_SECONDS
     width: int | None = None  # None → use reservoir.configured_width
+    # Expired leases are requeued automatically at most this many times per
+    # task; afterwards the task stays in REPAIR_BACKOFF for a human/recovery
+    # process. 0 disables automatic requeue (legacy park-only behaviour).
+    max_lease_recoveries: int = _DEFAULT_MAX_LEASE_RECOVERIES
 
 
 @dataclass
@@ -57,6 +69,13 @@ class DispatchRun:
     tasks_executed: int = 0
     tasks_skipped: int = 0
     expired_recovered: int = 0
+    leases_requeued: int = 0
+    leases_parked: int = 0
+
+    @property
+    def worker_exceptions(self) -> int:
+        """Lanes whose worker raised; each is blocked with WORKER_EXCEPTION evidence."""
+        return sum(1 for r in self.results if r.provenance.get("worker_exception"))
 
     def summary(self) -> dict[str, Any]:
         return {
@@ -64,6 +83,9 @@ class DispatchRun:
             "tasks_executed": self.tasks_executed,
             "tasks_skipped": self.tasks_skipped,
             "expired_recovered": self.expired_recovered,
+            "leases_requeued": self.leases_requeued,
+            "leases_parked": self.leases_parked,
+            "worker_exceptions": self.worker_exceptions,
             "completed": sum(1 for r in self.results if r.status == "completed"),
             "blocked": sum(1 for r in self.results if r.status == "blocked"),
             "results": [r.as_evidence() for r in self.results],
@@ -107,8 +129,7 @@ class BoundedDispatcher:
             run.iterations += 1
 
             # Recover any expired leases before scanning for new work.
-            expired = self.reservoir.recover_expired_leases(cfg.max_lease_age_seconds)
-            run.expired_recovered += len(expired)
+            self._recover_expired(cfg, run)
 
             self.reservoir.refill()
             remaining = cfg.max_tasks - run.tasks_executed
@@ -124,6 +145,42 @@ class BoundedDispatcher:
         return run
 
     # ── Internals ─────────────────────────────────────────────────────────────
+
+    def _recover_expired(self, cfg: DispatchConfig, run: DispatchRun) -> None:
+        """Expire dead leases, then requeue each a bounded number of times.
+
+        ``recover_expired_leases`` parks stale ACTIVE tasks in REPAIR_BACKOFF.
+        Each parked task carries ``lease_recoveries`` in its evidence; while that
+        count is below ``cfg.max_lease_recoveries`` the task is restored to READY
+        in the same iteration so freed capacity is used immediately. Once the
+        budget is spent the task stays parked with its LEASE_EXPIRED reason.
+        """
+        expired = self.reservoir.recover_expired_leases(cfg.max_lease_age_seconds)
+        run.expired_recovered += len(expired)
+        for leaf in expired:
+            prior = int((leaf.evidence or {}).get("lease_recoveries", 0) or 0)
+            if prior >= cfg.max_lease_recoveries:
+                run.leases_parked += 1
+                log.warning(
+                    "lease recovery budget exhausted for %s (%d/%d); parked",
+                    leaf.key, prior, cfg.max_lease_recoveries,
+                )
+                continue
+            try:
+                self.reservoir.recover_from_backoff(
+                    leaf.key,
+                    evidence={
+                        "lease_recoveries": prior + 1,
+                        "last_lease_recovery": {
+                            "reason": leaf.blocked_reason,
+                            "recovered_at": datetime.now(timezone.utc).isoformat(),
+                            "recovered_by": cfg.lease_holder,
+                        },
+                    },
+                )
+                run.leases_requeued += 1
+            except (LookupError, ValueError):
+                log.exception("lease recovery failed for %s", leaf.key)
 
     def _collect_ready_keys(self, slots: int) -> list[str]:
         """Return up to `slots` READY, dispatchable task keys.
@@ -160,7 +217,11 @@ class BoundedDispatcher:
                     for k in keys
                 }
                 for future in concurrent.futures.as_completed(futures):
-                    result = future.result()
+                    try:
+                        result = future.result()
+                    except Exception:  # noqa: BLE001 — one lane must never stop the batch
+                        log.exception("lane failed for %s", futures[future])
+                        continue
                     if result is not None:
                         results.append(result)
         return results
@@ -175,7 +236,11 @@ class BoundedDispatcher:
             log.debug("lease failed for %s: %s", key, exc)
             return None
 
-        result = self.worker.execute(leaf)
+        try:
+            result = self.worker.execute(leaf)
+        except Exception as exc:  # noqa: BLE001 — record, block, keep other lanes alive
+            log.exception("worker raised for %s", key)
+            result = _exception_result(leaf, self.worker, exc)
 
         if result.status == "completed":
             try:
@@ -194,6 +259,30 @@ class BoundedDispatcher:
                 log.exception("block() failed for %s", key)
 
         return result
+
+
+def _exception_result(leaf: TaskLeaf, worker: Any, exc: BaseException) -> TaskExecutionResult:
+    """Typed blocked result carrying the exact failure evidence of a crashed worker."""
+    now = datetime.now(timezone.utc).isoformat()
+    reason = f"WORKER_EXCEPTION:{type(exc).__name__}:{exc}"[:_MAX_REASON_LENGTH]
+    return TaskExecutionResult(
+        task_key=leaf.key,
+        worker_id=str(getattr(worker, "worker_id", type(worker).__name__)),
+        status="blocked",
+        started_at=now,
+        completed_at=now,
+        duration_seconds=0.0,
+        output={},
+        blueprint_id=(leaf.evidence or {}).get("blueprint_id"),
+        run_fingerprint=(leaf.evidence or {}).get("run_fingerprint"),
+        error_reason=reason,
+        provenance={
+            "authority_class": leaf.authority_class,
+            "consequence_risk": leaf.consequence_risk,
+            "task_state_at_execution": leaf.state,
+            "worker_exception": type(exc).__name__,
+        },
+    )
 
 
 def _active_count(reservoir) -> int:

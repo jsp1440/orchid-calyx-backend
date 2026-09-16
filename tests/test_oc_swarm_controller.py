@@ -203,3 +203,50 @@ def test_provider_free_mode_hides_unmarked_queue_without_losing_dependencies(mon
     assert dependency["state"] == "CLOSED"
     assert plan["selected_numbers"] == [101]
     assert plan["safety"]["provider_free_only"] is True
+
+
+def _split_snapshot():
+    snapshot = _snapshot()
+    snapshot["issues"][1]["body"] = "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+    return snapshot
+
+
+def test_swarm_plan_routes_provider_free_work_to_its_own_matrix(monkeypatch):
+    """Provider-free issues never enter the paid matrix, even with providers enabled."""
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_split_snapshot(), worker_slots=8)
+    assert plan["launch_count"] == 3
+    assert plan["provider_free_launch_count"] == 1
+    assert plan["provider_launch_count"] == 2
+    assert [w["issue_number"] for w in plan["provider_free_matrix"]["include"]] == [100]
+    assert [w["issue_number"] for w in plan["provider_matrix"]["include"]] == [101, 102]
+    assert all(w["provider_free"] is True for w in plan["provider_free_workers"])
+    assert all(w["provider_free"] is False for w in plan["provider_workers"])
+    assert plan["safety"]["provider_free_lane_split"] is True
+    # The aggregate matrix is the union, preserving the existing contract.
+    assert len(plan["matrix"]["include"]) == 3
+    assert {w["issue_number"] for w in plan["matrix"]["include"]} == {100, 101, 102}
+
+
+def test_provider_free_only_snapshot_hides_provider_dependent_queue_entries():
+    """Under NO-API mode only marked issues stay queued, so no paid worker can be planned."""
+    filtered = swarm._provider_free_snapshot(_split_snapshot())
+    by_number = {issue["number"]: issue for issue in filtered["issues"]}
+    assert "oc-queued" in by_number[100]["labels"]
+    assert "oc-queued" not in by_number[101]["labels"]
+    assert "oc-queued" not in by_number[102]["labels"]
+    assert swarm.is_provider_free(by_number[100]) is True
+    assert swarm.is_provider_free(by_number[101]) is False
+
+
+def test_github_output_carries_split_matrices(monkeypatch, tmp_path):
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_split_snapshot(), worker_slots=8)
+    output = tmp_path / "output"
+    swarm._write_github_output(str(output), plan)
+    text = output.read_text(encoding="utf-8")
+    assert "provider_free_launch_count=1\n" in text
+    assert "provider_launch_count=2\n" in text
+    assert 'provider_free_matrix={"include":[{' in text
+    assert 'provider_matrix={"include":[{' in text
+    assert "launch_count=3\n" in text

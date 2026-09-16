@@ -412,13 +412,40 @@ class DurableOrchestrate:
                         f"RESOURCE_CONFLICT:{key}:resources={sorted(conflict)!r}"
                     )
 
+            # Compare-and-swap: the transition is only applied to a row that is
+            # still READY at write time. This is what makes the reservation
+            # atomic across sessions/processes on every backend — FOR UPDATE
+            # SKIP LOCKED above only reduces contention on PostgreSQL, while the
+            # conditional UPDATE is the correctness guarantee on both PostgreSQL
+            # and SQLite (whose default deferred transactions do not lock reads).
             now = _utcnow()
-            row.state = TaskState.LEASED
-            row.leased_at = now
-            row.lease_holder = holder
-            row.updated_at = now
-            self._session.flush()
-            self._commit()
+            try:
+                claimed = (
+                    self._session.query(DurableReservoirTask)
+                    .filter(
+                        DurableReservoirTask.id == row.id,
+                        DurableReservoirTask.state == TaskState.READY,
+                    )
+                    .update(
+                        {
+                            DurableReservoirTask.state: TaskState.LEASED,
+                            DurableReservoirTask.leased_at: now,
+                            DurableReservoirTask.lease_holder: holder,
+                            DurableReservoirTask.updated_at: now,
+                        },
+                        synchronize_session=False,
+                    )
+                )
+                if claimed != 1:
+                    self._session.rollback()
+                    raise ValueError(f"TASK_NOT_READY:{key}:state=claimed_by_other_worker")
+                self._commit()
+            except sa_exc.OperationalError as exc:
+                # Writer contention (e.g. SQLite "database is locked") means another
+                # worker holds the write lock on this row set; the lease is not ours.
+                self._session.rollback()
+                raise ValueError(f"LEASE_CONTENTION:{key}") from exc
+            self._session.expire(row)
             return _row_to_leaf(row)
 
     def advance(self, key: str, *, state: str) -> TaskLeaf:
@@ -507,8 +534,14 @@ class DurableOrchestrate:
             self._commit()
             return _row_to_leaf(row)
 
-    def recover_from_backoff(self, key: str) -> TaskLeaf:
-        """Restore a repair-backoff task to READY after a real recovery event."""
+    def recover_from_backoff(
+        self, key: str, *, evidence: dict[str, Any] | None = None
+    ) -> TaskLeaf:
+        """Restore a repair-backoff task to READY after a real recovery event.
+
+        ``evidence`` (optional) is merged into the persisted task row so bounded
+        retry accounting survives process restart.
+        """
         with self._lock:
             row = self._get_row(key)
             if row is None:
@@ -521,6 +554,10 @@ class DurableOrchestrate:
             )
             row.state = target
             row.blocked_reason = None
+            if evidence:
+                merged = dict(row.evidence or {})
+                merged.update(evidence)
+                row.evidence = merged
             row.updated_at = _utcnow()
             self._session.flush()
             self._commit()
