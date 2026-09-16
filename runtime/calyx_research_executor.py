@@ -80,36 +80,6 @@ def _db_url() -> str | None:
     return os.environ.get("DATABASE_URL")
 
 
-def _ensure_projects_table(cur) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS oc_admin.calyx_research_projects (
-            id          TEXT PRIMARY KEY,
-            request_id  TEXT NOT NULL,
-            payload     JSONB NOT NULL,
-            created_at  TIMESTAMPTZ DEFAULT NOW(),
-            updated_at  TIMESTAMPTZ DEFAULT NOW()
-        )
-        """
-    )
-
-
-def _ensure_history_table(cur) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS oc_admin.calyx_research_state_history (
-            id          BIGSERIAL PRIMARY KEY,
-            request_id  TEXT NOT NULL,
-            from_state  TEXT NOT NULL,
-            to_state    TEXT NOT NULL,
-            actor       TEXT,
-            detail      JSONB,
-            transitioned_at TIMESTAMPTZ DEFAULT NOW()
-        )
-        """
-    )
-
-
 # ── Core executor ─────────────────────────────────────────────────
 
 
@@ -152,11 +122,25 @@ class CalyxResearchExecutorService:
         )
         self._registry = artifact_registry or ImmutableArtifactRegistry()
         self._feedback_fn = github_feedback_fn
+        #: Set when a durable database write or a station write could not be
+        #: completed. The in-memory/cache copy still exists, but it is no longer
+        #: authoritative and a caller must be able to see that instead of
+        #: assuming durability. Never silently cleared.
+        self.durability_degraded: str | None = None
         self._station = ResearchStationService(
             workspace=station_workspace or Path(
                 os.getenv("CALYX_RESEARCH_STATION_DIR", "/tmp/calyx/research-station")
             )
         )
+
+    def _mark_degraded(self, exc: BaseException) -> None:
+        """Record a failed durable write instead of swallowing it.
+
+        Runtime DDL was removed from this module (the tables are created by
+        migrations/CALYX-RECOVERY-001-research-executor-tables.sql), so a
+        missing table now surfaces here rather than being masked.
+        """
+        self.durability_degraded = f"{type(exc).__name__}: {exc}"
 
     # ── Public API ──────────────────────────────────────────────────
 
@@ -456,8 +440,8 @@ class CalyxResearchExecutorService:
                     (Jsonb(payload), request_id),
                 )
                 conn.commit()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._mark_degraded(exc)
 
     def _patch_request_field(
         self, request_id: str, field: str, value: Any
@@ -505,8 +489,8 @@ class CalyxResearchExecutorService:
                     ),
                 )
                 conn.commit()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._mark_degraded(exc)
 
     def _persist_history_entry(
         self, request_id: str, transition: dict[str, Any]
@@ -522,7 +506,6 @@ class CalyxResearchExecutorService:
             from psycopg.types.json import Jsonb
 
             with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
-                _ensure_history_table(cur)
                 cur.execute(
                     """
                     INSERT INTO oc_admin.calyx_research_state_history
@@ -538,8 +521,8 @@ class CalyxResearchExecutorService:
                     ),
                 )
                 conn.commit()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._mark_degraded(exc)
 
     # ── Research Station project binding ─────────────────────────────
 
@@ -601,8 +584,8 @@ class CalyxResearchExecutorService:
                     "rationale": f"Calyx Gate 2 research request {request_id}",
                 },
             )
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._mark_degraded(exc)
 
     def _persist_project(
         self, project_id: str, request_id: str, payload: dict[str, Any]
@@ -636,7 +619,6 @@ class CalyxResearchExecutorService:
             if not url:
                 return
             with psycopg.connect(url, row_factory=dict_row, connect_timeout=5) as conn, conn.cursor() as cur:
-                _ensure_projects_table(cur)
                 cur.execute(
                     """
                     INSERT INTO oc_admin.calyx_research_projects
@@ -647,8 +629,8 @@ class CalyxResearchExecutorService:
                     (project_id, request_id, Jsonb(payload)),
                 )
                 conn.commit()
-        except Exception:  # noqa: BLE001, S110
-            pass
+        except Exception as exc:  # noqa: BLE001
+            self._mark_degraded(exc)
 
     # ── GitHub feedback ───────────────────────────────────────────────
 

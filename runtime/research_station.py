@@ -15,6 +15,11 @@ from pathlib import Path
 from typing import Any
 
 from app.calyx_orchestrator.artifact_registry import ImmutableArtifactRegistry
+from runtime.research_station_store import (
+    DURABLE_KINDS,
+    ProjectRecordStore,
+    build_record_store,
+)
 
 RESEARCH_SCHEMA_VERSION = "calyx-research-station/v1"
 PROJECT_STATES = {"planned", "active", "blocked", "completed", "archived"}
@@ -146,20 +151,103 @@ class ResearchStationService:
         *,
         literature: Any | None = None,
         artifact_registry: ImmutableArtifactRegistry | None = None,
-        record_store: Any | None = None,
+        record_store: ProjectRecordStore | None = None,
     ) -> None:
         self.workspace = workspace or research_root()
         self._literature_override = literature
         self.artifact_registry = artifact_registry or ImmutableArtifactRegistry()
-        self._record_store = record_store
+        # The database is authoritative; the workspace directory is a cache.
+        # Before this, authoritative project state lived only under
+        # CALYX_RESEARCH_STATION_DIR — /tmp by default — and vanished on any
+        # restart that recycled it, with nothing reporting the loss.
+        self._record_store_override = record_store
+        self._record_store_instance: ProjectRecordStore | None = None
+        #: Set when a durable write could not reach the database. The cache
+        #: still holds the record, but it is no longer authoritative, and a
+        #: caller must be able to tell that rather than assume durability.
         self.durability_degraded: str | None = None
 
     @property
+    def record_store(self) -> ProjectRecordStore:
+        """Built on first use, never in __init__.
+
+        Constructing a Research Station must not open a database connection.
+        Building the store eagerly made every construction attempt one, so a
+        service that only ever touches its workspace failed on a machine whose
+        DATABASE_URL points somewhere unreachable.
+        """
+        if self._record_store_override is not None:
+            return self._record_store_override
+        if self._record_store_instance is None:
+            self._record_store_instance = build_record_store()
+        return self._record_store_instance
+
+    def _persist(
+        self, *, owner_key: str, project_id: str, kind: str, record_id: str, record: dict[str, Any]
+    ) -> None:
+        """Write the authoritative copy, or record that it could not be written.
+
+        A durable write that fails must not destroy a workspace operation that
+        already succeeded locally — but it must not pass for durability
+        either. The failure is kept on the service so a caller can see that
+        this record is cache-only.
+        """
+        try:
+            self.record_store.put(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=kind,
+                record_id=record_id,
+                record=record,
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+
+    def _recover_all(self, *, owner_key: str, project_id: str, kind: str) -> list[dict[str, Any]]:
+        """Every durable record of one kind, for a workspace that is cold."""
+        singular = kind.rstrip("s") if kind.endswith("s") else kind
+        if singular not in DURABLE_KINDS:
+            return []
+        try:
+            return list(
+                self.record_store.list(
+                    owner_key=owner_key, project_id=project_id, kind=singular
+                )
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+            return []
+
+    def _recover(
+        self, *, owner_key: str, project_id: str, kind: str, record_id: str
+    ) -> dict[str, Any] | None:
+        """Read the authoritative copy when the cache is cold, if reachable."""
+        try:
+            return self.record_store.get(
+                owner_key=owner_key, project_id=project_id, kind=kind, record_id=record_id
+            )
+        except Exception as exc:  # noqa: BLE001
+            self.durability_degraded = f"{type(exc).__name__}: {exc}"
+            return None
+
+    @property
     def literature(self) -> Any:
+        """The canonical literature/evidence retrieval path.
+
+        This used to construct ``runtime.literature_acquisition.
+        LiteratureAcquisitionService``, a module that is not present on this
+        branch, so every access raised ModuleNotFoundError. Rather than
+        recreate a second literature platform to satisfy the import, it binds
+        the retrieval path the repository already ships in
+        ``app.calyx_conversation.external_literature``.
+        """
         if self._literature_override is not None:
             return self._literature_override
-        import app.calyx_conversation.external_literature as _ext_lit
-        return _ext_lit
+        if not hasattr(self, "_literature_instance"):
+            from app.calyx_conversation import external_literature
+
+            self._literature_instance = external_literature
+        return self._literature_instance
 
     @staticmethod
     def _owner_key(owner_id: str) -> str:
@@ -184,21 +272,27 @@ class ResearchStationService:
         return json.loads(path.read_text(encoding="utf-8"))
 
     def _project(self, owner_id: str, project_id: str) -> tuple[Path, dict[str, Any]]:
+        """Load a project, from the cache or from durable storage behind it.
+
+        Every read path funnels through here, so recovering the project here
+        is what makes a restarted workspace usable rather than merely
+        recoverable by whoever remembers to call create_project again.
+        """
         root = self._root(owner_id, project_id)
         path = root / "project.json"
-        if not path.exists() and self._record_store is not None:
-            try:
-                stored = self._record_store.get(
-                    owner_key=self._owner_key(owner_id),
-                    project_id=project_id,
-                    kind="project",
-                    record_id=project_id,
-                )
-            except Exception:  # noqa: BLE001
-                stored = None
-            if stored is not None:
-                _atomic(path, stored)
-        return root, self._read(path)
+        if path.exists():
+            return root, self._read(path)
+
+        recovered = self._recover(
+            owner_key=self._owner_key(owner_id),
+            project_id=project_id,
+            kind="project",
+            record_id=project_id,
+        )
+        if recovered is None:
+            raise FileNotFoundError("project")
+        _atomic(path, recovered)
+        return root, recovered
 
     def create_project(self, owner_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         owner_key = self._owner_key(owner_id)
@@ -224,32 +318,33 @@ class ResearchStationService:
         }
         root = self._root(owner_id, project_id)
         path = root / "project.json"
+
+        existing: dict[str, Any] | None = None
         if path.exists():
             existing = self._read(path)
+        else:
+            # The workspace may be cold while the project still exists. Without
+            # this read a restart would recreate the project as new, and one
+            # research history would quietly become two.
+            existing = self._recover(
+                owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id
+            )
+            if existing is not None:
+                _atomic(path, existing)
+
+        if existing is not None:
             if existing != record:
                 raise ValueError("RESEARCH_PROJECT_IMMUTABLE_CONFLICT")
             return {"created": False, "project": existing}
-        if self._record_store is not None:
-            try:
-                stored = self._record_store.get(
-                    owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id
-                )
-            except Exception as exc:  # noqa: BLE001
-                stored = None
-                self.durability_degraded = type(exc).__name__
-            if stored is not None:
-                if stored != record:
-                    raise ValueError("RESEARCH_PROJECT_IMMUTABLE_CONFLICT")
-                _atomic(path, stored)
-                return {"created": False, "project": stored}
+
         _atomic(path, record)
-        if self._record_store is not None:
-            try:
-                self._record_store.put(
-                    owner_key=owner_key, project_id=project_id, kind="project", record_id=project_id, record=record
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.durability_degraded = type(exc).__name__
+        self._persist(
+            owner_key=owner_key,
+            project_id=project_id,
+            kind="project",
+            record_id=project_id,
+            record=record,
+        )
         return {"created": True, "project": record}
 
     def add_question(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -259,8 +354,7 @@ class ResearchStationService:
             raise ValueError("RESEARCH_QUESTION_REQUIRED")
         question_id = _text(payload.get("question_id")) or f"q-{_sha(project_id + ':' + text)[:20]}"
         record = asdict(ResearchQuestion(question_id, project_id, text, _text(payload.get("rationale")) or None))
-        return self._immutable_record(root, "questions", question_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "questions", question_id, record)
 
     def add_protocol(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -269,8 +363,7 @@ class ResearchStationService:
             raise ValueError("RESEARCH_PROTOCOL_FIELDS_REQUIRED")
         protocol_id = _text(payload.get("protocol_id")) or f"protocol-{_sha(project_id + ':' + title + ':' + version)[:20]}"
         record = asdict(Protocol(protocol_id, project_id, title, version, methods, _text(payload.get("safety_notes")) or None))
-        return self._immutable_record(root, "protocols", protocol_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "protocols", protocol_id, record)
 
     def revise_notebook(self, owner_id: str, project_id: str, entry_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -330,8 +423,7 @@ class ResearchStationService:
             raise ValueError("RESEARCH_SAMPLE_FIELDS_REQUIRED")
         sample_id = _text(payload.get("sample_id")) or f"sample-{_sha(project_id + ':' + label)[:20]}"
         record = asdict(Sample(sample_id, project_id, sample_type, label, _text(payload.get("collected_at")) or None, provenance))
-        return self._immutable_record(root, "samples", sample_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "samples", sample_id, record)
 
     def add_dataset(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -342,8 +434,7 @@ class ResearchStationService:
             raise ValueError("RESEARCH_DATASET_FIELDS_INVALID")
         dataset_id = _text(payload.get("dataset_id")) or f"dataset-{checksum[:20]}"
         record = asdict(Dataset(dataset_id, project_id, title, checksum, _text(payload.get("schema_ref")) or None, provenance))
-        return self._immutable_record(root, "datasets", dataset_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "datasets", dataset_id, record)
 
     def attach(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -398,8 +489,7 @@ class ResearchStationService:
             "note": _text(payload.get("note")) or None,
             "private": True,
         }
-        return self._immutable_record(root, "attachments", attachment_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "attachments", attachment_id, record)
 
     def add_claim(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -413,8 +503,7 @@ class ResearchStationService:
             raise ValueError("RESEARCH_CLAIM_CONFIDENCE_INVALID")
         claim_id = _text(payload.get("claim_id")) or f"claim-{_sha(project_id + ':' + statement)[:20]}"
         record = asdict(Claim(claim_id, project_id, statement, float(confidence) if confidence is not None else None, state, provenance))
-        return self._immutable_record(root, "claims", claim_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "claims", claim_id, record)
 
     def add_evidence(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -429,8 +518,7 @@ class ResearchStationService:
         material = _stable({"attachment_id": attachment_id, "claim_id": claim_id, "relation": relation})
         evidence_id = f"evidence-{_sha(material)[:20]}"
         record = asdict(Evidence(evidence_id, project_id, claim_id, attachment_id, relation, _text(payload.get("note")) or None))
-        return self._immutable_record(root, "evidence", evidence_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "evidence", evidence_id, record)
 
     def add_decision(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -444,8 +532,7 @@ class ResearchStationService:
         material = _stable({"subject_id": subject_id, "decision": decision, "decided_by": decided_by, "decided_at": decided_at})
         decision_id = f"decision-{_sha(material)[:20]}"
         record = asdict(Decision(decision_id, project_id, subject_id, decision, rationale, decided_by, decided_at))
-        return self._immutable_record(root, "decisions", decision_id, record,
-                                      owner_key=self._owner_key(owner_id), project_id=project_id)
+        return self._immutable_record(root, "decisions", decision_id, record)
 
     def upsert_task(self, owner_id: str, project_id: str, payload: dict[str, Any]) -> dict[str, Any]:
         root, _ = self._project(owner_id, project_id)
@@ -473,53 +560,68 @@ class ResearchStationService:
         _atomic(root / "tasks" / f"{task_id}.json", record)
         return record
 
+    def _durable_key(self, root: Path, kind: str) -> tuple[str, str, str] | None:
+        """(owner_key, project_id, durable_kind) for a workspace path, or None."""
+        singular = kind.rstrip("s") if kind.endswith("s") else kind
+        if singular not in DURABLE_KINDS:
+            return None
+        # workspace/owners/<owner_key>/projects/<project_id>
+        #                  ^ parent.parent          ^ name
+        # This walked one level further and returned the literal "owners" as
+        # the owner key. Writes and reads agreed only because both were wrong;
+        # manifest, which derives the key properly, then found nothing.
+        try:
+            return root.parent.parent.name, root.name, singular
+        except (AttributeError, IndexError):  # pragma: no cover - defensive
+            return None
+
     def _immutable_record(
-        self,
-        root: Path,
-        kind: str,
-        record_id: str,
-        record: dict[str, Any],
-        *,
-        owner_key: str | None = None,
-        project_id: str | None = None,
+        self, root: Path, kind: str, record_id: str, record: dict[str, Any]
     ) -> dict[str, Any]:
         record = {"schema_version": RESEARCH_SCHEMA_VERSION, **record}
-        singular = kind.rstrip("s")
         path = root / kind / f"{record_id}.json"
+        durable = self._durable_key(root, kind)
+
+        existing = None
         if path.exists():
             existing = json.loads(path.read_text(encoding="utf-8"))
+        elif durable is not None:
+            # A cold workspace. The record may still exist in the database,
+            # and re-creating it as new would silently fork one project's
+            # history into two.
+            owner_key, project_id, singular = durable
+            existing = self._recover(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=singular,
+                record_id=record_id,
+            )
+            if existing is not None:
+                _atomic(path, existing)
+
+        if existing is not None:
             if existing != record:
                 raise ValueError(f"RESEARCH_{kind.upper()}_IMMUTABLE_CONFLICT")
-            return {"created": False, singular: existing}
-        if self._record_store is not None and owner_key and project_id:
-            try:
-                stored = self._record_store.get(
-                    owner_key=owner_key, project_id=project_id, kind=singular, record_id=record_id
-                )
-            except Exception as exc:  # noqa: BLE001
-                stored = None
-                self.durability_degraded = type(exc).__name__
-            if stored is not None:
-                if stored != record:
-                    raise ValueError(f"RESEARCH_{kind.upper()}_IMMUTABLE_CONFLICT")
-                _atomic(path, stored)
-                return {"created": False, singular: stored}
+            return {"created": False, kind.rstrip("s"): existing}
+
         _atomic(path, record)
-        if self._record_store is not None and owner_key and project_id:
-            try:
-                self._record_store.put(
-                    owner_key=owner_key, project_id=project_id, kind=singular, record_id=record_id, record=record
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.durability_degraded = type(exc).__name__
-        return {"created": True, singular: record}
+        if durable is not None:
+            owner_key, project_id, singular = durable
+            self._persist(
+                owner_key=owner_key,
+                project_id=project_id,
+                kind=singular,
+                record_id=record_id,
+                record=record,
+            )
+        return {"created": True, kind.rstrip("s"): record}
 
     def manifest(self, owner_id: str, project_id: str) -> dict[str, Any]:
         root, project = self._project(owner_id, project_id)
-        owner_key = self._owner_key(owner_id)
         categories = ["questions", "protocols", "samples", "datasets", "attachments", "claims", "evidence", "decisions", "tasks"]
         records: dict[str, list[dict[str, Any]]] = {}
         checksums: dict[str, str] = {}
+        owner_key = self._owner_key(owner_id)
         for category in categories:
             directory = root / category
             items = []
@@ -528,21 +630,14 @@ class ResearchStationService:
                     item = self._read(path)
                     items.append(item)
                     checksums[str(path.relative_to(root))] = _sha(_stable(item))
-            elif self._record_store is not None:
-                singular = category.rstrip("s")
-                try:
-                    stored_list = self._record_store.list(
-                        owner_key=owner_key, project_id=project_id, kind=singular
-                    )
-                except Exception:  # noqa: BLE001
-                    stored_list = []
-                for stored_record in stored_list:
-                    record_id = stored_record.get(f"{singular}_id", "")
-                    if record_id:
-                        p = root / category / f"{record_id}.json"
-                        _atomic(p, stored_record)
-                        items.append(stored_record)
-                        checksums[str(p.relative_to(root))] = _sha(_stable(stored_record))
+            if not items:
+                # A cold workspace. The records may still be in the database,
+                # and a manifest built only from the cache would report a
+                # restarted project as empty — durable, but invisible, which
+                # for a reader is the same thing as lost.
+                items = self._recover_all(
+                    owner_key=owner_key, project_id=project_id, kind=category
+                )
             records[category] = items
         notebook = []
         notebook_root = root / "notebook"

@@ -367,6 +367,13 @@ def _query_plan(
     )
     queries: list[str] = []
 
+    # A taxon question with no physiology cluster still deserves a search:
+    # without this, "Tell me about Calypso bulbosa" planned zero queries and
+    # returned EMPTY as though the corpus were bare.
+    if not clusters:
+        for genus in ordered_genera[:max_queries]:
+            queries.append(f'"{genus}" AND (orchid OR Orchidaceae)')
+
     genus_budget = 5 if wet_winter else 4
     cluster_budget = 2 if wet_winter else 3
     for genus in ordered_genera[:genus_budget]:
