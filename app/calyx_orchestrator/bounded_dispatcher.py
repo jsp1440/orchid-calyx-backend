@@ -219,7 +219,7 @@ class BoundedDispatcher:
                 for future in concurrent.futures.as_completed(futures):
                     try:
                         result = future.result()
-                    except Exception:  # noqa: BLE001 — one lane must never stop the batch
+                    except Exception:  # one lane must never stop the batch
                         log.exception("lane failed for %s", futures[future])
                         continue
                     if result is not None:
@@ -238,7 +238,7 @@ class BoundedDispatcher:
 
         try:
             result = self.worker.execute(leaf)
-        except Exception as exc:  # noqa: BLE001 — record, block, keep other lanes alive
+        except Exception as exc:  # record, block, keep other lanes alive
             log.exception("worker raised for %s", key)
             result = _exception_result(leaf, self.worker, exc)
 

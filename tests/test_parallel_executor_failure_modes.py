@@ -44,7 +44,10 @@ from app.calyx_orchestrator.durable_reservoir_models import (
     DurableReservoirRun,
     DurableReservoirTask,
 )
-from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker, TaskExecutionResult
+from app.calyx_orchestrator.leaf_worker import (
+    DeterministicResearchWorker,
+    TaskExecutionResult,
+)
 
 MAX_ACTIVE_LANES = 8
 
