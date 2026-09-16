@@ -23,6 +23,7 @@ from app.field_hypotheses.routes import (
 from app.field_hypotheses.routes import (
     observation_router as field_observation_hypothesis_router,
 )
+from app.field_observation.routes import router as field_observation_router
 from app.implementation_planning.routes import router as implementation_planning_router
 from app.intake.routes import router as intake_router
 from app.interaction_discovery.routes import router as interaction_discovery_router
@@ -595,6 +596,7 @@ app.include_router(publication_router)
 app.include_router(research_workspace_router)
 app.include_router(field_observation_hypothesis_router)
 app.include_router(field_hypothesis_router)
+app.include_router(field_observation_router)
 app.include_router(reasoning_ledger_router)
 app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
