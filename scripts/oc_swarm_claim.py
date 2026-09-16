@@ -139,10 +139,19 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             # timeout can mean the write succeeded: observe, never blindly retry.
             errors.append({"issue": number, "phase": phase, "reason": "claim_unconfirmed"})
 
+    # The confirmed claims keep the planner's lane classification so the
+    # workflow can hand provider-free work to the deterministic worker job and
+    # provider-dependent work to the governed completion lane independently.
+    provider_free = [w for w in confirmed if w.get("provider_free")]
+    provider = [w for w in confirmed if not w.get("provider_free")]
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),
             "matrix": {"include": confirmed}, "confirmed": confirmed,
+            "provider_free_matrix": {"include": provider_free},
+            "provider_matrix": {"include": provider},
+            "provider_free_launch_count": len(provider_free),
+            "provider_launch_count": len(provider),
             "skipped": skipped, "errors": errors}
 
 
@@ -227,6 +236,12 @@ def main():
     with open(args.github_output, "a", encoding="utf-8") as handle:
         handle.write(f"launch_count={result['launch_count']}\n")
         handle.write("matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n")
+        handle.write(f"provider_free_launch_count={result['provider_free_launch_count']}\n")
+        handle.write(f"provider_launch_count={result['provider_launch_count']}\n")
+        handle.write("provider_free_matrix="
+                     + json.dumps(result["provider_free_matrix"], separators=(",", ":")) + "\n")
+        handle.write("provider_matrix="
+                     + json.dumps(result["provider_matrix"], separators=(",", ":")) + "\n")
     print(json.dumps(result, sort_keys=True))
     # Confirmed claims may proceed even when a different candidate was skipped
     # or failed. The artifact reports those failures independently of job status.

@@ -15,7 +15,11 @@ def test_swarm_workflow_uses_bounded_parallel_matrix():
 def test_swarm_workflow_targets_integration_not_main():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "INTEGRATION_BRANCH: oc-autonomous-integration" in text
-    assert "ref: oc-autonomous-integration" in text
+    # Trusted controls are pinned to the controller event revision. The canonical
+    # dispatch runs on oc-autonomous-integration, so that revision is the
+    # integration head; a mixed checkout of a mutable branch is never used.
+    assert "ref: ${{ github.sha }}" in text
+    assert "ref: main" not in text
     assert "gh pr merge" not in text
     assert "production deploy: disabled" in text.lower()
 
@@ -42,6 +46,9 @@ def test_no_api_mode_dispatches_only_provider_free_workers():
     assert "--provider-free-only" in text
     assert "provider_free_workers:" in text
     assert "oc_swarm_provider_free_worker.py" in text
+    # The paid lane is gated on providers being enabled AND a provider-dependent
+    # claim existing; provider-free claims never reach it.
+    assert "needs.plan.outputs.provider_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'" in text
     assert "needs.plan.outputs.provider_blocked == 'true'" in text
     assert "--files-json '[]'" in text
 
@@ -50,4 +57,7 @@ def test_every_launched_wave_gets_one_bounded_refill_attempt():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "needs.plan.outputs.launch_count != '0'" in text
     assert "current >= maximum" in text
-    assert "--ref oc-autonomous-integration" in text
+    # The refill wave targets the revision that launched the wave and falls
+    # back to the canonical integration branch for event-driven runs.
+    assert '--ref "$refill_ref"' in text
+    assert 'refill_ref="$INTEGRATION_BRANCH"' in text
