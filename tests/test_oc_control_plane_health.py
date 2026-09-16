@@ -43,6 +43,46 @@ def test_unknown_values_are_not_fabricated_as_zero():
     assert health["last_successful_exact_head_validation"] == UNKNOWN
 
 
+def test_contradictory_success_failed_job_is_not_healthy():
+    # OBS-001 regression: a "success" run with a failed job/step must NOT be HEALTHY.
+    result = classify_ci([{
+        "id": 1371,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [{"runner_id": 1, "conclusion": "failure", "steps": [{"conclusion": "failure"}]}],
+    }])
+    assert result["state"] == "NOT_HEALTHY"
+    assert result["run_id"] == 1371
+    assert "contradictory" in result["reason"]
+
+
+def test_success_run_with_only_skipped_steps_is_unknown():
+    # OBS-001 regression: positive step evidence is required; skipped-only is UNKNOWN.
+    result = classify_ci([{
+        "id": 1372,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [{"runner_id": 5, "conclusion": "success", "steps": [{"conclusion": "skipped"}]}],
+    }])
+    assert result["state"] == UNKNOWN
+    assert result["run_id"] == 1372
+
+
+def test_valid_plan_with_skipped_optional_jobs_stays_healthy():
+    # OBS-001 regression: a valid plan with skipped optional worker/refill jobs is HEALTHY.
+    result = classify_ci([{
+        "id": 1373,
+        "status": "completed",
+        "conclusion": "success",
+        "jobs": [
+            {"runner_id": 5, "conclusion": "success", "steps": [{"conclusion": "success"}]},
+            {"runner_id": None, "conclusion": "skipped", "steps": []},
+        ],
+    }])
+    assert result["state"] == "HEALTHY"
+    assert result["run_id"] == 1373
+
+
 def test_zero_running_reason_uses_runner_evidence():
     health = build_health({
         "issues": [{"number": 1193, "labels": ["oc-queued", "oc-p0"]}],
