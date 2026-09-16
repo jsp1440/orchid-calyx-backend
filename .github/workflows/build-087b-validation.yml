@@ -267,6 +267,21 @@ jobs:
             UNIQUE(logical_key, version),
             UNIQUE(revision_id, extraction_run_id, content_hash)
           );
+          -- document_provenance: external FKs to oc_import/oc_document_intelligence removed.
+          CREATE TABLE IF NOT EXISTS oc_design_intelligence.document_provenance (
+            provenance_id BIGSERIAL PRIMARY KEY,
+            document_id BIGINT NOT NULL REFERENCES oc_design_intelligence.documents(document_id),
+            source_system TEXT NOT NULL,
+            source_id TEXT NOT NULL,
+            revision_id BIGINT NOT NULL,
+            extraction_run_id BIGINT NOT NULL,
+            anchor_id BIGINT NOT NULL,
+            evidence_link_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+            exact_locator JSONB NOT NULL DEFAULT '{}'::jsonb,
+            fingerprint CHAR(64) NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(document_id, anchor_id)
+          );
           CREATE TABLE IF NOT EXISTS oc_design_intelligence.classifications (
             classification_id BIGSERIAL PRIMARY KEY,
             document_id BIGINT NOT NULL REFERENCES oc_design_intelligence.documents(document_id),
@@ -310,6 +325,19 @@ jobs:
             rationale TEXT NOT NULL,
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
           );
+          -- retrieval_documents: external FK to oc_document_intelligence.source_anchors removed.
+          CREATE TABLE IF NOT EXISTS oc_design_intelligence.retrieval_documents (
+            retrieval_document_id BIGSERIAL PRIMARY KEY,
+            document_id BIGINT NOT NULL REFERENCES oc_design_intelligence.documents(document_id),
+            anchor_id BIGINT NOT NULL,
+            authorized_text TEXT NOT NULL,
+            search_vector TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', authorized_text)) STORED,
+            display_policy TEXT NOT NULL,
+            confidence NUMERIC NOT NULL CHECK(confidence BETWEEN 0 AND 1),
+            fingerprint CHAR(64) NOT NULL UNIQUE,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            UNIQUE(document_id, anchor_id)
+          );
           CREATE TABLE IF NOT EXISTS oc_design_intelligence.audit_events (
             audit_event_id BIGSERIAL PRIMARY KEY,
             document_id BIGINT REFERENCES oc_design_intelligence.documents(document_id),
@@ -323,10 +351,11 @@ jobs:
           CREATE INDEX IF NOT EXISTS design_topic_idx ON oc_design_intelligence.topics(topic, confidence DESC);
           CREATE INDEX IF NOT EXISTS design_review_idx ON oc_design_intelligence.review_events(document_id, review_event_id DESC);
           CREATE INDEX IF NOT EXISTS design_publication_idx ON oc_design_intelligence.publication_events(document_id, publication_event_id DESC);
+          CREATE INDEX IF NOT EXISTS design_retrieval_fts_idx ON oc_design_intelligence.retrieval_documents USING GIN(search_vector);
           CREATE OR REPLACE FUNCTION oc_design_intelligence.reject_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
           BEGIN RAISE EXCEPTION 'DESIGN_INTELLIGENCE_RECORDS_ARE_APPEND_ONLY'; END $$;
           DO $$ DECLARE tbl TEXT; BEGIN
-            FOREACH tbl IN ARRAY ARRAY['documents','classifications','topics','review_events','publication_events','audit_events'] LOOP
+            FOREACH tbl IN ARRAY ARRAY['documents','document_provenance','classifications','topics','review_events','publication_events','retrieval_documents','audit_events'] LOOP
               IF NOT EXISTS(SELECT 1 FROM pg_trigger WHERE tgname='protect_089a_'||tbl) THEN
                 EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON oc_design_intelligence.%I FOR EACH ROW EXECUTE FUNCTION oc_design_intelligence.reject_mutation()','protect_089a_'||tbl,tbl);
               END IF;
