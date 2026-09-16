@@ -39,6 +39,16 @@ def _load_sibling(module_name: str, filename: str):
     return module
 
 
+def is_provider_free(issue: dict) -> bool:
+    """True when the issue opted into the deterministic provider-free lane.
+
+    The marker is the only routing signal: provider-free work never reaches a
+    paid provider lane, and provider-dependent work never reaches the
+    provider-free worker, regardless of the repository-wide NO-API mode.
+    """
+    return bool(PROVIDER_FREE_MARKER.search(str(issue.get("body") or "")))
+
+
 def _bounded_slots(value: Any) -> int:
     try:
         slots = int(value)
@@ -151,8 +161,15 @@ def build_swarm_plan(
                 "reads": list(item.get("reads") or []),
                 "writes": list(item.get("writes") or []),
                 "dependencies": list(dep_status.get("dependencies") or []),
+                "provider_free": is_provider_free(issues[issue_number]),
             }
         )
+
+    # One plan, two execution lanes. Provider-free reconciliation runs in the
+    # deterministic worker job whether or not paid providers are enabled; only
+    # provider-dependent work is handed to the governed completion lane.
+    provider_free_workers = [worker for worker in workers if worker["provider_free"]]
+    provider_workers = [worker for worker in workers if not worker["provider_free"]]
 
     # A later wave can make progress when queued work exists but is blocked only
     # by active workers or unresolved dependencies. The workflow uses this as an
@@ -172,6 +189,12 @@ def build_swarm_plan(
         "launch_count": len(workers),
         "workers": workers,
         "matrix": {"include": workers},
+        "provider_free_workers": provider_free_workers,
+        "provider_workers": provider_workers,
+        "provider_free_matrix": {"include": provider_free_workers},
+        "provider_matrix": {"include": provider_workers},
+        "provider_free_launch_count": len(provider_free_workers),
+        "provider_launch_count": len(provider_workers),
         "selected_numbers": [worker["issue_number"] for worker in workers],
         "dependency_graph": {
             "edge_count": int(graph.get("edge_count") or 0),
@@ -198,6 +221,7 @@ def build_swarm_plan(
             "read_read_parallelism": True,
             "write_conflicts_fail_closed": True,
             "provider_free_only": provider_free_only,
+            "provider_free_lane_split": True,
         },
     }
 
@@ -208,6 +232,18 @@ def _write_github_output(path: str, plan: dict) -> None:
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(f"matrix={matrix}\n")
         handle.write(f"launch_count={plan['launch_count']}\n")
+        handle.write(
+            "provider_free_matrix="
+            + json.dumps(plan["provider_free_matrix"], separators=(",", ":"))
+            + "\n"
+        )
+        handle.write(
+            "provider_matrix="
+            + json.dumps(plan["provider_matrix"], separators=(",", ":"))
+            + "\n"
+        )
+        handle.write(f"provider_free_launch_count={plan['provider_free_launch_count']}\n")
+        handle.write(f"provider_launch_count={plan['provider_launch_count']}\n")
         handle.write(f"selected_numbers={json.dumps(plan['selected_numbers'], separators=(',', ':'))}\n")
         handle.write(f"refill_recommended={str(plan['refill_recommended']).lower()}\n")
         handle.write(f"summary={summary}\n")
