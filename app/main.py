@@ -17,6 +17,12 @@ from app.engineering_memory.routes import router as engineering_memory_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
+from app.field_hypotheses.routes import (
+    hypothesis_router as field_hypothesis_router,
+)
+from app.field_hypotheses.routes import (
+    observation_router as field_observation_hypothesis_router,
+)
 from app.implementation_planning.routes import router as implementation_planning_router
 from app.intake.routes import router as intake_router
 from app.interaction_discovery.routes import router as interaction_discovery_router
@@ -587,6 +593,8 @@ app.include_router(brain_router)
 app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
+app.include_router(field_observation_hypothesis_router)
+app.include_router(field_hypothesis_router)
 app.include_router(reasoning_ledger_router)
 app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
