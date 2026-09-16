@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 
 from app.community_observation.models import ModerationState
 from app.community_observation.routes import _store, router
+from app.security import verify_owner_or_api_key
 
 
 @pytest.fixture(autouse=True)
@@ -32,6 +33,20 @@ def clear_store():
 
 @pytest.fixture()
 def client():
+    """Client acting as an authenticated moderator (auth dependency overridden)."""
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {
+        "actor": "test-moderator",
+        "auth_type": "owner_session",
+    }
+    return TestClient(app)
+
+
+@pytest.fixture()
+def anonymous_client(monkeypatch):
+    """Client with the real auth dependency and no API key configured."""
+    monkeypatch.delenv("CALYX_API_KEY", raising=False)
     app = FastAPI()
     app.include_router(router)
     return TestClient(app)
@@ -158,3 +173,32 @@ def test_moderate_submitted_state_returns_422(client):
     }
     resp = client.patch(f"/api/community/observations/{obs_id}/moderate", json=decision)
     assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
+# Test: moderation is a human-review boundary and must reject anonymous callers
+# ---------------------------------------------------------------------------
+
+
+def test_moderate_requires_owner_session_or_api_key(client, anonymous_client):
+    submitted = _submit(client)
+    obs_id = submitted["id"]
+    decision = {"new_state": "APPROVED", "reason": "anonymous attempt"}
+    resp = anonymous_client.patch(f"/api/community/observations/{obs_id}/moderate", json=decision)
+    assert resp.status_code == 401
+    # State is unchanged: the observation is still awaiting moderation.
+    assert client.get(f"/api/community/observations/{obs_id}").json()["moderation_state"] == "SUBMITTED"
+
+
+def test_moderate_rejects_invalid_api_key(client, anonymous_client, monkeypatch):
+    monkeypatch.setenv("CALYX_API_KEY", "expected-key")
+    submitted = _submit(client)
+    obs_id = submitted["id"]
+    decision = {"new_state": "REJECTED", "reason": "bad key attempt"}
+    resp = anonymous_client.patch(
+        f"/api/community/observations/{obs_id}/moderate",
+        json=decision,
+        headers={"X-API-Key": "wrong-key"},
+    )
+    assert resp.status_code == 401
+    assert client.get(f"/api/community/observations/{obs_id}").json()["moderation_state"] == "SUBMITTED"

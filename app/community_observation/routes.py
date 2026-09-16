@@ -15,7 +15,9 @@ import uuid
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
+
+from app.security import verify_owner_or_api_key
 
 from .models import (
     CommunityObservation,
@@ -128,11 +130,14 @@ def get_observation(observation_id: uuid.UUID) -> CommunityObservation:
 def moderate_observation(
     observation_id: uuid.UUID,
     decision: ObservationModerationDecision,
+    _moderator: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
 ) -> ObservationSubmitResponse:
     """
     Apply a moderation decision to an observation.
 
-    Moderator-only endpoint.  The new_state must be one of:
+    Moderator-only endpoint, guarded by the repository's owner-session /
+    backend API-key dependency so the human-review boundary cannot be crossed
+    by an anonymous caller.  The new_state must be one of:
       SCREENED, QUARANTINED, APPROVED, REJECTED.
 
     SUBMITTED is not a valid moderation target (it is set by the system).
