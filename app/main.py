@@ -1,12 +1,14 @@
 import os
 from typing import Any
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response as StarletteResponse
 
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
+from app.calyx_conversation.store import ConversationStoreUnavailable
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
 from app.community_observation.routes import router as community_observation_router
 from app.concepts.routers import router as concepts_router
@@ -110,6 +112,24 @@ from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
+
+
+@app.exception_handler(ConversationStoreUnavailable)
+async def conversation_store_unavailable(_request: Request, exc: ConversationStoreUnavailable) -> JSONResponse:
+    """An unreachable Calyx conversation database is a stated 503, never a 500 (journey 16)."""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": {
+                "code": exc.code,
+                "persistence_mode": "postgres",
+                "message": (
+                    "The Calyx conversation database is not reachable. "
+                    "Nothing was recorded and no answer was invented in its place."
+                ),
+            }
+        },
+    )
 
 
 @app.middleware("http")

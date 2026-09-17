@@ -3,6 +3,8 @@ from __future__ import annotations
 import hashlib
 import os
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from threading import RLock
 from typing import Any
@@ -12,6 +14,17 @@ from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
 LEGACY_OWNER = "legacy-owner"
+
+
+class ConversationStoreUnavailable(RuntimeError):
+    """The configured conversation database could not be reached.
+
+    Raised instead of letting ``psycopg.OperationalError`` escape as a 500, so
+    the application can answer with a structured 503 (journey 16): nothing was
+    recorded, and no answer is invented in place of the store.
+    """
+
+    code = "CONVERSATION_STORE_UNAVAILABLE"
 
 
 class ConversationStore:
@@ -41,10 +54,19 @@ class ConversationStore:
     def _hash(content: str) -> str:
         return hashlib.sha256(content.encode()).hexdigest()
 
+    @contextmanager
+    def _connection(self, **kwargs: Any) -> Iterator[psycopg.Connection]:
+        """Open a connection; a connectivity failure becomes :class:`ConversationStoreUnavailable`."""
+        try:
+            with psycopg.connect(self.dsn, **kwargs) as conn:
+                yield conn
+        except psycopg.OperationalError as exc:
+            raise ConversationStoreUnavailable(str(exc).strip()) from exc
+
     def ensure_schema(self) -> None:
         if not self.dsn:
             return
-        with psycopg.connect(self.dsn) as conn:
+        with self._connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -107,7 +129,7 @@ class ConversationStore:
         cid = conversation_id or str(uuid.uuid4())
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn) as conn:
+            with self._connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -169,7 +191,7 @@ class ConversationStore:
         content_hash = self._hash(content)
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn:
+            with self._connection(row_factory=dict_row) as conn:
                 with conn.cursor() as cur:
                     cur.execute(
                         """
@@ -217,7 +239,7 @@ class ConversationStore:
     ) -> dict[str, Any] | None:
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+            with self._connection(row_factory=dict_row) as conn, conn.cursor() as cur:
                 cur.execute(
                     "SELECT conversation_id::text, owner, project_id, title, created_at, updated_at, context, status FROM calyx_conversations WHERE conversation_id=%s::uuid AND owner=%s",
                     (conversation_id, owner),
@@ -259,7 +281,7 @@ class ConversationStore:
     ) -> list[dict[str, Any]]:
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+            with self._connection(row_factory=dict_row) as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT c.conversation_id::text, c.owner, c.project_id, c.title, c.created_at, c.updated_at, c.context, c.status,
@@ -323,7 +345,7 @@ class ConversationStore:
 
         if self.dsn:
             self.ensure_schema()
-            with psycopg.connect(self.dsn, row_factory=dict_row) as conn, conn.cursor() as cur:
+            with self._connection(row_factory=dict_row) as conn, conn.cursor() as cur:
                 cur.execute(
                     """
                     SELECT m.content
