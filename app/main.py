@@ -87,6 +87,7 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
+from app.web_collection.routes import router as web_collection_router
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
     execute_all_pending_jobs,
@@ -611,6 +612,7 @@ app.include_router(reasoning_publication_router)
 app.include_router(review_api_router)
 app.include_router(engineering_memory_router)
 app.include_router(vision_lexicon_router)
+app.include_router(web_collection_router)
 app.include_router(atlas_intelligence_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)
