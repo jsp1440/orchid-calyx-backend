@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import rate_limit
 from app.constituent_platform import service as constituent_service
 from app.constituent_platform.domain import CommunicationState, PreferenceState
 from app.constituent_platform.routes import owner_if_credentialed, owner_router, router
@@ -25,8 +26,10 @@ OWNER_AUTH = {"actor": "owner", "auth_type": "owner_session"}
 def isolated_store(monkeypatch):
     monkeypatch.delenv("CALYX_API_KEY", raising=False)
     monkeypatch.delenv("CONSTITUENT_MANAGE_SECRET", raising=False)
-    monkeypatch.delenv("OWNER_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET", raising=False)
+    monkeypatch.delenv("PUBLIC_WRITE_RATE_LIMIT", raising=False)
     constituent_service.configure_store(constituent_service.memory_store())
+    rate_limit.LIMITER.reset()
     yield
     constituent_service.configure_store(None)
 
