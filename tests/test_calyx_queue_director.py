@@ -6,15 +6,15 @@ from runtime.calyx_queue_director import (
 
 
 def intent(**kw):
-    base = dict(
-        source_key="frontend-660",
-        issue_number=660,
-        title="Research Station to Matrix",
-        repo="orchid-continuum-frontend",
-        objective="Preserve canonical project identity",
-        acceptance_criteria=("mounted journey proves exact project return",),
-        priority=5,
-    )
+    base = {
+        "source_key": "frontend-660",
+        "issue_number": 660,
+        "title": "Research Station to Matrix",
+        "repo": "orchid-continuum-frontend",
+        "objective": "Preserve canonical project identity",
+        "acceptance_criteria": ("mounted journey proves exact project return",),
+        "priority": 5,
+    }
     base.update(kw)
     return DevelopmentIntent(**base)
 
