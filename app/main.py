@@ -8,7 +8,12 @@ from starlette.responses import Response as StarletteResponse
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
+from app.community_observation.routes import router as community_observation_router
 from app.concepts.routers import router as concepts_router
+from app.constituent_platform.routes import (
+    owner_router as constituent_platform_owner_router,
+)
+from app.constituent_platform.routes import router as constituent_platform_router
 from app.design_intelligence.routes import router as design_intelligence_router
 from app.design_planning.routes import router as design_planning_router
 from app.document_import.routes import router as document_import_router
@@ -17,6 +22,13 @@ from app.engineering_memory.routes import router as engineering_memory_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
+from app.field_hypotheses.routes import (
+    hypothesis_router as field_hypothesis_router,
+)
+from app.field_hypotheses.routes import (
+    observation_router as field_observation_hypothesis_router,
+)
+from app.field_observation.routes import router as field_observation_router
 from app.implementation_planning.routes import router as implementation_planning_router
 from app.intake.routes import router as intake_router
 from app.interaction_discovery.routes import router as interaction_discovery_router
@@ -75,6 +87,7 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
+from app.web_collection.routes import router as web_collection_router
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
     execute_all_pending_jobs,
@@ -587,12 +600,19 @@ app.include_router(brain_router)
 app.include_router(literature_extraction_router)
 app.include_router(publication_router)
 app.include_router(research_workspace_router)
+app.include_router(field_observation_hypothesis_router)
+app.include_router(field_hypothesis_router)
+app.include_router(field_observation_router)
+app.include_router(community_observation_router)
+app.include_router(constituent_platform_router)
+app.include_router(constituent_platform_owner_router)
 app.include_router(reasoning_ledger_router)
 app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)
 app.include_router(review_api_router)
 app.include_router(engineering_memory_router)
 app.include_router(vision_lexicon_router)
+app.include_router(web_collection_router)
 app.include_router(atlas_intelligence_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)

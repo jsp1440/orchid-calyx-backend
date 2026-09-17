@@ -14,9 +14,13 @@ class TaxonomicRank(str, Enum):
 
 
 class CollectionEntryStatus(str, Enum):
-    ACTIVE = "ACTIVE"
-    HISTORICAL = "HISTORICAL"
-    PROVISIONAL = "PROVISIONAL"
+    CANONICAL_RECORD = "CANONICAL_RECORD"
+
+
+class CollectionEntryProvenance(BaseModel):
+    source_table: str
+    source_record_id: str
+    identity_state: str
 
 
 class CollectionEntry(BaseModel):
@@ -31,6 +35,7 @@ class CollectionEntry(BaseModel):
     habitat_notes: str | None = None
     distribution_notes: str | None = None
     image_count: int = Field(default=0, ge=0)
+    provenance: CollectionEntryProvenance
 
 
 class SearchResult(BaseModel):
