@@ -18,17 +18,18 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.community_observation import service as observation_service
 from app.community_observation.models import ModerationState
-from app.community_observation.routes import _store, router
+from app.community_observation.routes import router
 from app.security import verify_owner_or_api_key
 
 
 @pytest.fixture(autouse=True)
-def clear_store():
-    """Ensure in-memory store is empty before each test."""
-    _store.clear()
+def isolated_store():
+    """Each test gets its own in-process record store; the real store is never touched."""
+    observation_service.configure_store(observation_service.memory_store())
     yield
-    _store.clear()
+    observation_service.configure_store(None)
 
 
 @pytest.fixture()
