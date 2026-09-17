@@ -30,17 +30,65 @@ def _state(value: Any, *, limitation: str | None = None) -> dict[str, Any]:
     }
 
 
+INFRASPECIFIC_RANKS: dict[str, str] = {
+    "subsp.": "subspecies",
+    "ssp.": "subspecies",
+    "var.": "variety",
+    "subvar.": "subvariety",
+    "f.": "form",
+    "fo.": "form",
+    "forma": "form",
+    "subf.": "subform",
+    "nothosubsp.": "nothosubspecies",
+    "nothovar.": "nothovariety",
+    "cv.": "cultivar",
+}
+HYBRID_SIGNS = {"×", "x"}
+
+
 def _split_scientific_name(value: str) -> tuple[str, str | None]:
-    """Separate the normalized binomial from any retained authorship text."""
+    """Separate the name from any retained authorship text.
+
+    The name is the genus and epithet, plus a hybrid sign between them
+    (``Phalaenopsis × intermedia``) and one infraspecific rank marker with its
+    epithet wherever the row placed it (``Calypso bulbosa (L.) Oakes var.
+    americana (R.Br.) Luer`` -> ``Calypso bulbosa var. americana``). Rank text is
+    never presented as authorship, and an infraspecific taxon is never collapsed
+    onto its species. The authorship returned is the text that follows the last
+    name token; the row itself stays verbatim in ``full_scientific_name``.
+    """
     normalized = " ".join((value or "").strip().split())
     if not normalized:
         return "", None
     parts = normalized.split(" ")
     if len(parts) < 2:
         return normalized, None
-    display_name = " ".join(parts[:2])
-    authorship = " ".join(parts[2:]).strip() or None
+    end = 3 if parts[1] in HYBRID_SIGNS and len(parts) > 2 else 2
+    name_parts = parts[:end]
+    rest = parts[end:]
+    for index, token in enumerate(rest):
+        follower = rest[index + 1] if index + 1 < len(rest) else ""
+        if token.lower() in INFRASPECIFIC_RANKS and follower[:1].islower():
+            name_parts.extend([token, follower])
+            rest = rest[index + 2 :]
+            break
+    display_name = " ".join(name_parts)
+    authorship = " ".join(rest).strip() or None
     return display_name, authorship
+
+
+def taxon_rank(display_name: str) -> str:
+    """Rank implied by a display name produced by :func:`_split_scientific_name`."""
+    parts = " ".join((display_name or "").split()).split(" ")
+    if len(parts) < 2 or not parts[0]:
+        return "genus" if parts and parts[0] else "unknown"
+    for token in parts[2:]:
+        rank = INFRASPECIFIC_RANKS.get(token.lower())
+        if rank:
+            return rank
+    if parts[1] in HYBRID_SIGNS:
+        return "hybrid"
+    return "species"
 
 
 def _normalized_name(value: str) -> str:

@@ -6,9 +6,11 @@ from app.species_exhibit.service import (
     _confidence,
     _evidence_receipt,
     _graph_fact,
+    _normalized_name,
     _representative_media,
     _split_scientific_name,
     _state,
+    taxon_rank,
 )
 
 
@@ -39,6 +41,38 @@ def test_scientific_name_separates_binomial_and_authorship():
     display_name, authorship = _split_scientific_name("Cattleya labiata Lindl.")
     assert display_name == "Cattleya labiata"
     assert authorship == "Lindl."
+
+
+def test_infraspecific_rank_and_epithet_stay_in_the_name_and_are_never_called_authorship():
+    assert _split_scientific_name("Dendrobium nobile var. alba") == ("Dendrobium nobile var. alba", None)
+    assert _split_scientific_name("Ophrys apifera subsp. jurana Ruppert") == (
+        "Ophrys apifera subsp. jurana",
+        "Ruppert",
+    )
+    # The species author placed before the rank marker is not the variety's authorship.
+    assert _split_scientific_name("Calypso bulbosa (L.) Oakes var. americana (R.Br.) Luer") == (
+        "Calypso bulbosa var. americana",
+        "(R.Br.) Luer",
+    )
+    assert _split_scientific_name("Phalaenopsis × intermedia Lindl.") == ("Phalaenopsis × intermedia", "Lindl.")
+    assert _split_scientific_name("Cattleya") == ("Cattleya", None)
+    # A rank marker with nothing lowercase after it is authorship-side text, not a name.
+    assert _split_scientific_name("Cattleya labiata var.") == ("Cattleya labiata", "var.")
+
+
+def test_a_variety_is_a_distinct_card_from_its_species_not_a_duplicate():
+    species, _ = _split_scientific_name("Dendrobium nobile Lindl.")
+    variety, _ = _split_scientific_name("Dendrobium nobile var. alba")
+    assert _normalized_name(species) != _normalized_name(variety)
+
+
+def test_taxon_rank_follows_the_name_shape():
+    assert taxon_rank("Cattleya labiata") == "species"
+    assert taxon_rank("Dendrobium nobile var. alba") == "variety"
+    assert taxon_rank("Ophrys apifera subsp. jurana") == "subspecies"
+    assert taxon_rank("Phalaenopsis × intermedia") == "hybrid"
+    assert taxon_rank("Cattleya") == "genus"
+    assert taxon_rank("") == "unknown"
 
 
 def test_representative_media_rejects_duplicate_url_across_cards():

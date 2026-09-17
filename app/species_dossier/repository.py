@@ -25,6 +25,7 @@ from typing import Any
 from app.species_exhibit.service import (
     _split_scientific_name as split_display_name_and_authorship,
 )
+from app.species_exhibit.service import taxon_rank
 
 from .models import (
     DossierEvidenceState,
@@ -171,7 +172,7 @@ class PostgresSpeciesRepository:
             )
             # Only accepted names are stored in this table; synonym resolution
             # needs a synonymy source that is not yet available here.
-            return [
+            hits = [
                 (
                     str(row["id"]),
                     split_display_name_and_authorship(str(row["scientific_name"]))[0] or str(row["scientific_name"]),
@@ -179,6 +180,13 @@ class PostgresSpeciesRepository:
                 )
                 for row in cur.fetchall()
             ]
+            # The SQL also matches rows whose first two words equal the query, which lets a
+            # species query reach its own infraspecific rows. When the query names a row
+            # exactly, that row is the answer; otherwise every match is returned and the
+            # service reports the ambiguity rather than guessing.
+            wanted = " ".join(normalized_name.split()).lower()
+            exact = [hit for hit in hits if hit[1].lower() == wanted]
+            return exact or hits
 
         return self._db_execute(_work) or []
 
@@ -212,7 +220,7 @@ class PostgresSpeciesRepository:
             full_scientific_name=scientific_name,
             accepted_name=display_name or scientific_name,
             authorship=authorship,
-            rank="species" if epithet else "genus",
+            rank=taxon_rank(display_name) if display_name else ("species" if epithet else "genus"),
             genus=genus,
             specific_epithet=epithet,
             taxonomic_status="recorded_in_orchid_taxonomy_table",
