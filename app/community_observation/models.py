@@ -9,7 +9,7 @@ submitter_auth_subject is an opaque auth token — never an email address.
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from enum import Enum
 
 from pydantic import BaseModel, Field
@@ -65,9 +65,13 @@ class CommunityObservation(BaseModel):
     moderation_state: ModerationState = ModerationState.SUBMITTED
     notes: str | None = None
     evidence_media_ids: list[str] = Field(default_factory=list)
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(tz=timezone.utc))
     moderated_at: datetime | None = None
     moderation_reason: str | None = None
+    moderated_by: str | None = Field(
+        default=None,
+        description="Opaque actor label of the human moderator who applied the last decision.",
+    )
 
     model_config = {"use_enum_values": False}
 

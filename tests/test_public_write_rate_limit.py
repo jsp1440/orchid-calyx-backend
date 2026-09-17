@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import rate_limit
 from app.community_observation import routes as community_routes
+from app.community_observation import service as community_service
 from app.constituent_platform import service as constituent_service
 from app.constituent_platform.routes import router as constituent_router
 from app.rate_limit import SlidingWindowLimiter, public_write_rate_limit
@@ -54,7 +55,7 @@ def app(monkeypatch):
     monkeypatch.setenv("PUBLIC_WRITE_RATE_WINDOW_SECONDS", "600")
     rate_limit.LIMITER.reset()
     constituent_service.configure_store(constituent_service.memory_store())
-    community_routes._store.clear()
+    community_service.configure_store(community_service.memory_store())
     application = FastAPI()
     application.include_router(constituent_router)
     application.include_router(community_routes.router)
@@ -62,7 +63,7 @@ def app(monkeypatch):
     yield application
     rate_limit.LIMITER.reset()
     constituent_service.configure_store(None)
-    community_routes._store.clear()
+    community_service.configure_store(None)
 
 
 def test_public_constituent_writes_share_one_allowance_per_client(app):
@@ -99,7 +100,7 @@ def test_community_submissions_have_their_own_allowance_and_clients_are_separate
         "/api/community/observations", json=payload, headers={"X-Forwarded-For": "203.0.113.9, 10.0.0.1"}
     )
     assert other.status_code == 200
-    assert len(community_routes._store) == 3
+    assert len(community_service.CommunityObservationRepository(community_service.get_store()).list()) == 3
 
 
 def test_brake_can_be_disabled_by_configuration(app, monkeypatch):
