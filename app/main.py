@@ -86,6 +86,7 @@ from app.security import (
 from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
+from app.species_dossier.routes import router as species_dossier_router
 from app.vision_lexicon.routes import router as vision_lexicon_router
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
@@ -602,6 +603,7 @@ app.include_router(research_workspace_router)
 app.include_router(field_observation_hypothesis_router)
 app.include_router(field_hypothesis_router)
 app.include_router(field_observation_router)
+app.include_router(species_dossier_router)
 app.include_router(community_observation_router)
 app.include_router(constituent_platform_router)
 app.include_router(constituent_platform_owner_router)
