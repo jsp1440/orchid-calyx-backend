@@ -110,9 +110,12 @@ def test_dossier_identity_media_and_graph_come_from_stored_rows_and_every_gap_is
     dossier = repository().get_dossier("101")
     assert dossier is not None
     assert dossier.identity.taxon_id == "101"
-    assert dossier.identity.accepted_name == "Phalaenopsis amabilis (L.) Blume"
+    assert dossier.identity.full_scientific_name == "Phalaenopsis amabilis (L.) Blume"
+    assert dossier.identity.accepted_name == "Phalaenopsis amabilis"  # the same split the exhibit applies
+    assert dossier.identity.display_name == "Phalaenopsis amabilis"
+    assert dossier.identity.authorship == "(L.) Blume"
     assert (dossier.identity.genus, dossier.identity.specific_epithet, dossier.identity.rank) == ("Phalaenopsis", "amabilis", "species")
-    assert dossier.identity.authorship is None and dossier.identity.synonyms == []
+    assert dossier.identity.synonyms == []
 
     assert dossier.living_media.state == "provisional"
     assert [item["url"] for item in dossier.living_media.items] == ["https://images.example/1.jpg", "https://images.example/2.jpg"]
@@ -168,7 +171,7 @@ def test_unknown_taxon_and_missing_database_return_none():
 
 def test_resolve_name_matches_accepted_binomial_only_and_never_claims_synonymy():
     hits = repository().resolve_name("Phalaenopsis amabilis")
-    assert hits == [("101", "Phalaenopsis amabilis (L.) Blume", "accepted_name")]
+    assert hits == [("101", "Phalaenopsis amabilis", "accepted_name")]
     assert repository().resolve_name("Masdevallia vampira") == []
     assert repository().resolve_partner_slug("iospe", "dracvampira") == []
 
@@ -181,7 +184,8 @@ def test_dossier_route_serves_the_contract_the_species_page_consumes(client):
     assert resp.status_code == 200, resp.text
     body = resp.json()
     assert body["contract_version"] == "oc-species-dossier-v1"
-    assert body["identity"]["display_name"] == "Phalaenopsis amabilis (L.) Blume"
+    assert body["identity"]["display_name"] == "Phalaenopsis amabilis"
+    assert body["identity"]["full_scientific_name"] == "Phalaenopsis amabilis (L.) Blume"
     assert body["atlas"]["contract_version"] == "oc-species-atlas-v1"
     assert body["living_media"]["state"] == "provisional"
     assert body["pollinators"]["state"] == "unavailable"
@@ -206,7 +210,7 @@ def test_resolve_route_resolves_id_and_accepted_name_and_reports_unresolved_hone
     assert by_id["canonical_dossier_url"] == "https://oc.test/species/101"
 
     by_name = client.get("/api/platform/federation/resolve-species", params={"name": "Phalaenopsis amabilis Blume"}).json()
-    assert (by_name["status"], by_name["match_state"], by_name["matched_name"]) == ("resolved", "accepted_name", "Phalaenopsis amabilis (L.) Blume")
+    assert (by_name["status"], by_name["match_state"], by_name["matched_name"]) == ("resolved", "accepted_name", "Phalaenopsis amabilis")
 
     unresolved = client.get("/api/platform/federation/resolve-species", params={"name": "Masdevallia vampira"}).json()
     assert unresolved["status"] == "unresolved"

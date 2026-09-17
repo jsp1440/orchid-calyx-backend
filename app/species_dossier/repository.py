@@ -22,6 +22,10 @@ from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any
 
+from app.species_exhibit.service import (
+    _split_scientific_name as split_display_name_and_authorship,
+)
+
 from .models import (
     DossierEvidenceState,
     DossierSection,
@@ -167,7 +171,14 @@ class PostgresSpeciesRepository:
             )
             # Only accepted names are stored in this table; synonym resolution
             # needs a synonymy source that is not yet available here.
-            return [(str(row["id"]), str(row["scientific_name"]), "accepted_name") for row in cur.fetchall()]
+            return [
+                (
+                    str(row["id"]),
+                    split_display_name_and_authorship(str(row["scientific_name"]))[0] or str(row["scientific_name"]),
+                    "accepted_name",
+                )
+                for row in cur.fetchall()
+            ]
 
         return self._db_execute(_work) or []
 
@@ -191,12 +202,16 @@ class PostgresSpeciesRepository:
         scientific_name = str(taxon.get("scientific_name") or "").strip()
         genus_from_name, epithet = split_scientific_name(scientific_name)
         genus = str(taxon.get("genus") or genus_from_name or "").strip()
+        # The same split the homepage species exhibit applies to the same row, so the
+        # binomial a reader sees on the exhibit, the dossier and every continuation link
+        # is one string, and authorship is stated separately rather than folded into it.
+        display_name, authorship = split_display_name_and_authorship(scientific_name)
         return SpeciesIdentity(
             taxon_id=str(taxon["id"]),
-            display_name=scientific_name,
+            display_name=display_name or scientific_name,
             full_scientific_name=scientific_name,
-            accepted_name=scientific_name,
-            authorship=None,
+            accepted_name=display_name or scientific_name,
+            authorship=authorship,
             rank="species" if epithet else "genus",
             genus=genus,
             specific_epithet=epithet,
