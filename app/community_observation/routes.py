@@ -17,6 +17,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 
+from app.rate_limit import public_write_rate_limit
 from app.security import verify_owner_or_api_key
 
 from .models import (
@@ -55,7 +56,12 @@ _INVALID_MODERATION_TARGETS = {ModerationState.SUBMITTED}
 # Routes
 # ---------------------------------------------------------------------------
 
-@router.post("/observations", response_model=ObservationSubmitResponse, status_code=200)
+@router.post(
+    "/observations",
+    response_model=ObservationSubmitResponse,
+    status_code=200,
+    dependencies=[Depends(public_write_rate_limit("community"))],
+)
 def submit_observation(
     payload: ObservationSubmitRequest,
     x_auth_subject: str | None = Header(default="anonymous"),

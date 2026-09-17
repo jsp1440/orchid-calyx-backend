@@ -29,6 +29,7 @@ from typing import Annotated, Any, Literal
 from fastapi import APIRouter, Depends, HTTPException, Path, Query, Request, Security
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.rate_limit import public_write_rate_limit
 from app.routers.health import add_mission_control_cors_headers
 from app.security import OWNER_SESSION_COOKIE, api_key_header, verify_owner_or_api_key
 
@@ -336,7 +337,7 @@ def _issue_entry(record: dict[str, Any]) -> NewsletterArchiveEntry:
 # ---------------------------------------------------------------------------
 
 
-@router.post("/subscribe", response_model=SubscribeResponse)
+@router.post("/subscribe", response_model=SubscribeResponse, dependencies=[Depends(public_write_rate_limit("constituent"))])
 def subscribe(payload: SubscribeRequest, service: Service) -> SubscribeResponse:
     """Subscribe (or re-subscribe) an address. The welcome message waits at the human-approval gate."""
     normalized = _normalized(payload.email)
@@ -361,7 +362,7 @@ def subscribe(payload: SubscribeRequest, service: Service) -> SubscribeResponse:
     )
 
 
-@router.post("/unsubscribe", response_model=UnsubscribeResponse)
+@router.post("/unsubscribe", response_model=UnsubscribeResponse, dependencies=[Depends(public_write_rate_limit("constituent"))])
 def unsubscribe(payload: UnsubscribeRequest, service: Service) -> UnsubscribeResponse:
     """Unsubscribe an address. Idempotent, and answers identically for known and unknown addresses."""
     normalized = _normalized(payload.email)
@@ -409,7 +410,7 @@ def get_newsletter_web_version(
     )
 
 
-@router.post("/contact", response_model=ContactReceipt)
+@router.post("/contact", response_model=ContactReceipt, dependencies=[Depends(public_write_rate_limit("constituent"))])
 def receive_contact(payload: ContactRequest, service: Service) -> ContactReceipt:
     """Public contact intake. Stored for human review; never forwarded to an automated agent."""
     normalized = _normalized(payload.email)
