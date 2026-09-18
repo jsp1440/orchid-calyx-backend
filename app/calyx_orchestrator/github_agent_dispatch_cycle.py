@@ -40,7 +40,7 @@ class GitHubCodingRuntimePolicy:
     owner_allowlist: frozenset[str] = frozenset()
     repository_allowlist: frozenset[str] = frozenset()
     max_budget_class: BudgetClass = BudgetClass.NORMAL
-    no_api_mode: bool = True
+    no_api_mode: bool = False
     provider_free_executors: frozenset[str] = frozenset()
 
     def validate_owner(self, owner: str) -> None:
