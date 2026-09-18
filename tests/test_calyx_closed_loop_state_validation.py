@@ -1,6 +1,6 @@
 import pytest
 
-from app.runtime.calyx_closed_loop import run_closed_loop_cycle
+from runtime.calyx_closed_loop import run_closed_loop_cycle
 
 
 def test_closed_loop_rejects_wrong_persisted_schema():
