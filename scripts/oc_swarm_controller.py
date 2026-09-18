@@ -17,15 +17,27 @@ import argparse
 import importlib.util
 import json
 import os
-import re
 import sys
 from typing import Any
 
+
+def _load_routing():
+    """Import the capability router without requiring the app package on sys.path."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    root = os.path.dirname(here)
+    if root not in sys.path:
+        sys.path.insert(0, root)
+    from app.provider_reservoir import routing
+
+    return routing
+
+
 DEFAULT_WORKER_SLOTS = 8
 MAX_WORKER_SLOTS = 12
-PROVIDER_FREE_MARKER = re.compile(
-    r"^OC-SWARM-PROVIDER-FREE:\s*reconcile\s*$", re.IGNORECASE | re.MULTILINE
-)
+# Routing is capability-based; see app/provider_reservoir/routing.py. This module
+# keeps a local import path so the controller runs from a bare checkout.
+_ROUTING = _load_routing()
+PROVIDER_FREE_MARKER = _ROUTING.PROVIDER_FREE_MARKER
 
 
 def _load_sibling(module_name: str, filename: str):
@@ -40,13 +52,24 @@ def _load_sibling(module_name: str, filename: str):
 
 
 def is_provider_free(issue: dict) -> bool:
-    """True when the issue opted into the deterministic provider-free lane.
+    """True when the issue has deterministic work that can run now.
 
-    The marker is the only routing signal: provider-free work never reaches a
-    paid provider lane, and provider-dependent work never reaches the
-    provider-free worker, regardless of the repository-wide NO-API mode.
+    Routing is by declared capability, not by difficulty and not by one
+    hard-coded task name. The predicate this replaced matched only the literal
+    ``OC-SWARM-PROVIDER-FREE: reconcile``, so every other provider-free task fell
+    through to the paid lane — which is how #1502 reached `claude-opus-5` with
+    `reason=deep-complexity-signal` while its own acceptance criteria required a
+    fixture that "must run without external AI credentials".
+
+    A task carrying optional provider enrichment is still provider-free: the
+    enrichment parks by itself and the deterministic work proceeds.
     """
-    return bool(PROVIDER_FREE_MARKER.search(str(issue.get("body") or "")))
+    return _ROUTING.is_provider_free(issue)
+
+
+def route_task(issue: dict):
+    """Full routing decision for an issue, including what parks and why."""
+    return _ROUTING.route_task(issue)
 
 
 def _bounded_slots(value: Any) -> int:
