@@ -63,7 +63,7 @@ def test_repeated_unchanged_observation_is_idempotent():
 def test_green_restart_advances_to_owner_review_without_merge():
     decision = reconcile_agent_lifecycle(
         dispatch(),
-        observation(draft=False),
+        observation(draft=True),
     )
     assert decision.record.state == AgentLifecycleState.READY_FOR_OWNER_REVIEW
     assert decision.action.value == "owner_review"
