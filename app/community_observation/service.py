@@ -208,8 +208,10 @@ def build_candidate(
         provenance_chain=[
             f"community_observation:{observation.id}",
             f"submitted_at:{observation.created_at.isoformat()}",
-            f"moderation_decision:{ModerationState.APPROVED.value}"
-            f"@{(observation.moderated_at or _utcnow()).isoformat()}",
+            (
+                f"moderation_decision:{ModerationState.APPROVED.value}"
+                f"@{(observation.moderated_at or _utcnow()).isoformat()}"
+            ),
             f"moderated_by:{observation.moderated_by or 'unattributed'}",
         ],
         approved_by=observation.moderated_by,

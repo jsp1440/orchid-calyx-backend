@@ -146,7 +146,7 @@ class CommunityObservationCandidate(BaseModel):
     model_config = {"use_enum_values": False, "populate_by_name": True}
 
     @model_validator(mode="after")
-    def _enforce_invariants(self) -> "CommunityObservationCandidate":
+    def _enforce_invariants(self) -> CommunityObservationCandidate:
         if self.schema_name != CANDIDATE_SCHEMA:
             raise ValueError(f"CANDIDATE_SCHEMA_INVARIANT: schema must be {CANDIDATE_SCHEMA}")
         if self.evidence_state != EVIDENCE_STATE_HUMAN_REPORTED:
