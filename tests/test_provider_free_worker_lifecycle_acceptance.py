@@ -77,7 +77,7 @@ def test_provider_free_worker_executes_once_with_draft_pr_and_exact_head_evidenc
     receipt = executor.execute(assignment())
 
     assert len(calls) == 1
-    assert receipt.output["status"] == "dispatched"
+    assert receipt.output["status"] == "agent_assigned"
     assert receipt.output["provider"] == "provider-free"
     assert receipt.output["executor_class"] == "deterministic-local"
     assert receipt.output["draft"] is True
