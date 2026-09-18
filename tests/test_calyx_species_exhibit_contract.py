@@ -112,7 +112,7 @@ def test_a_hyphenated_infraspecific_epithet_survives_the_author_guard():
 def test_a_hyphen_alone_is_not_an_epithet():
     # Widening the guard for hyphens must not admit punctuation as a name.
     for token in ("-", "--", "-x-", "x-", "al-"):
-        display_name, author = _split_scientific_name(f"Genus species var. {token} Author")
+        display_name, _ = _split_scientific_name(f"Genus species var. {token} Author")
         assert display_name == "Genus species", token
 
 
