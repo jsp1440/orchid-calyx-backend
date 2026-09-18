@@ -100,13 +100,16 @@ def normalize_intents(intents: Iterable[DevelopmentIntent]) -> dict[str, Any]:
                 {"source_key": intent.source_key, "reason": "invalid_or_unbounded_intent"}
             )
             continue
-        protected = sorted(set(intent.protected_boundaries) & _PROTECTED)
-        if protected:
+        declared_boundaries = set(intent.protected_boundaries)
+        protected = sorted(declared_boundaries & _PROTECTED)
+        unknown_boundaries = sorted(declared_boundaries - _PROTECTED)
+        if protected or unknown_boundaries:
             parked.append(
                 {
                     "source_key": intent.source_key,
                     "reason": "owner_gate",
                     "protected_boundaries": protected,
+                    "unknown_boundaries": unknown_boundaries,
                 }
             )
             continue
