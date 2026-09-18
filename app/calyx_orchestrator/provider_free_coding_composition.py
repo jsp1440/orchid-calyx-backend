@@ -47,12 +47,15 @@ def build_provider_free_durable_coding_cycle(
     inspector = GitHubRepositoryConvergenceInspector(
         transport=transport,
         repository_allowlist=repository_allowlist,
+        base_ref="oc-autonomous-integration",
     )
     provider = ProviderFreeCodingAdapter(runner)
     executor = GitHubCodingAgentExecutor(inspector=inspector, provider=provider)
     observer = GitHubIssueLinkedPullRequestObserver(
         transport=transport,
         required_checks=required_checks,
+        bot_login=None,
+        require_bound_pr=True,
     )
     repairer = GitHubCommentRepairGateway(transport=transport)
 

@@ -71,3 +71,10 @@ def test_composition_uses_existing_durable_lease_and_dispatch_store(db):
     assert PROVIDER_FREE_EXECUTOR in cycle.policy.provider_free_executors
     assert cycle.leases.__class__.__name__ == "SqlAlchemyCodingJobLeaseGateway"
     assert cycle.store.__class__.__name__ == "DurableGitHubAgentDispatchStore"
+
+
+def test_composition_is_pinned_to_integration_and_bound_pr_identity(db):
+    cycle = build(db, policy())
+    assert cycle.executor.inspector._base_ref == "oc-autonomous-integration"
+    assert cycle.observer._bot_login is None
+    assert cycle.observer._require_bound_pr is True
