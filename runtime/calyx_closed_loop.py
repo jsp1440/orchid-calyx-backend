@@ -30,8 +30,18 @@ def run_closed_loop_cycle(
 ) -> dict[str, Any]:
     """Run one deterministic control cycle without granting action authority."""
     state = persisted_state or {}
-    seen_feedback = set(state.get("seen_feedback_fingerprints", []))
-    completed_semantic_keys = set(state.get("completed_semantic_keys", []))
+    if state and state.get("schema") != _STATE_SCHEMA:
+        raise ValueError("CALYX_CLOSED_LOOP_STATE_SCHEMA_INVALID")
+    seen_raw = state.get("seen_feedback_fingerprints", [])
+    completed_raw = state.get("completed_semantic_keys", [])
+    if not isinstance(seen_raw, list) or not all(isinstance(item, str) for item in seen_raw):
+        raise TypeError("CALYX_CLOSED_LOOP_SEEN_FEEDBACK_INVALID")
+    if not isinstance(completed_raw, list) or not all(
+        isinstance(item, str) for item in completed_raw
+    ):
+        raise TypeError("CALYX_CLOSED_LOOP_COMPLETED_KEYS_INVALID")
+    seen_feedback = set(seen_raw)
+    completed_semantic_keys = set(completed_raw)
 
     feedback = [
         classify_execution_evidence(packet)
