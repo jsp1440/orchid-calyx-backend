@@ -29,6 +29,7 @@ from app.security import verify_owner_or_api_key
 
 from .models import (
     CandidateListResponse,
+    CandidateReconcileResponse,
     CandidateState,
     CommunityObservation,
     ModerationState,
@@ -42,6 +43,7 @@ from .service import (
     CommunityObservationRepository,
     ObservationNotFound,
     get_store,
+    reconcile_all,
     reconcile_candidate,
 )
 
@@ -218,7 +220,7 @@ def moderate_observation(
 def list_observation_candidates(
     candidates: Candidates,
     _reviewer: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
-    candidate_state: Annotated[CandidateState | None, Query()] = None,
+    candidate_state: Annotated[CandidateState, Query()] = CandidateState.PENDING_REVIEW,
 ) -> CandidateListResponse:
     """The scientific-review queue of approved observations.
 
@@ -226,6 +228,31 @@ def list_observation_candidates(
     reported human observation, that its taxon name is the submitter's wording
     and unresolved, that its locality is withheld, and that it may not be
     promoted without review.
+
+    Defaults to ``PENDING_REVIEW``, because this is a queue of work waiting for a
+    reviewer: a sighting whose approval was retracted has left it. Withdrawn
+    candidates are still on file and are read with
+    ``?candidate_state=WITHDRAWN``.
     """
     items = candidates.list(candidate_state=candidate_state)
     return CandidateListResponse(items=items, total=len(items))
+
+
+@router.post("/observation-candidates/reconcile", response_model=CandidateReconcileResponse)
+def reconcile_observation_candidates(
+    repository: Repository,
+    candidates: Candidates,
+    _reviewer: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
+) -> CandidateReconcileResponse:
+    """Bring the review queue in line with every moderation decision on file.
+
+    The moderation route files a candidate as each decision is made, so it only
+    ever sees decisions made after it shipped. An observation already approved
+    before then, or one whose candidate write failed after its decision was
+    committed, would otherwise be invisible to a reviewer with nothing to say so.
+
+    Owner-gated and idempotent. It promotes nothing: it files or withdraws
+    candidates according to decisions a human has already made.
+    """
+    counts = reconcile_all(repository, candidates)
+    return CandidateReconcileResponse(**counts)

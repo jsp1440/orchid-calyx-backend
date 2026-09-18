@@ -187,6 +187,13 @@ class CandidateListResponse(BaseModel):
     total: int
 
 
+class CandidateReconcileResponse(BaseModel):
+    """How many candidates a reconciliation pass filed or withdrew."""
+
+    filed: int
+    withdrawn: int
+
+
 # ---------------------------------------------------------------------------
 # Pydantic request / response models
 # ---------------------------------------------------------------------------

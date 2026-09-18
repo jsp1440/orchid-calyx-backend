@@ -38,6 +38,7 @@ from app.community_observation.service import (
     CandidateRepository,
     CommunityObservationRepository,
     build_candidate,
+    reconcile_all,
     reconcile_candidate,
 )
 from app.security import verify_owner_or_api_key
@@ -403,3 +404,106 @@ def test_the_main_app_serves_the_review_queue():
 
     paths = {route.path for route in main_app.routes}
     assert "/api/community/observation-candidates" in paths
+
+
+# --------------------------------------------------------------------------
+# Decisions made before this shipped, and a candidate write that failed
+# --------------------------------------------------------------------------
+
+
+def test_the_queue_shows_work_waiting_for_a_reviewer_not_retracted_sightings(client):
+    """The unfiltered endpoint is a queue of work, so a retraction leaves it."""
+    observation_id = _submit(client)
+    for state in ("APPROVED", "REJECTED"):
+        client.patch(
+            f"/api/community/observations/{observation_id}/moderate",
+            json={"observation_id": observation_id, "new_state": state, "reason": None},
+        )
+
+    assert client.get("/api/community/observation-candidates").json()["total"] == 0
+    withdrawn = client.get(
+        "/api/community/observation-candidates", params={"candidate_state": "WITHDRAWN"}
+    ).json()
+    assert withdrawn["total"] == 1, "withdrawn candidates are still on file"
+
+
+def test_an_observation_approved_before_this_shipped_is_not_invisible(repos):
+    """Reconciliation is what makes the queue trustworthy rather than merely recent.
+
+    The moderation route files a candidate as each decision is made, so it only
+    ever sees decisions made after it shipped. Without a reconciliation pass an
+    already-approved observation would sit in the store with nothing in front of
+    a reviewer and nothing saying so.
+    """
+    observations, candidates = repos
+    observations.save(_approved())
+    observations.save(_observation())  # SUBMITTED, must stay out of the queue
+
+    assert candidates.list() == []
+
+    counts = reconcile_all(observations, candidates)
+
+    assert counts == {"filed": 1, "withdrawn": 0}
+    assert len(candidates.list(candidate_state=CandidateState.PENDING_REVIEW)) == 1
+
+
+def test_reconciliation_is_idempotent_and_withdraws_what_a_human_retracted(repos):
+    observations, candidates = repos
+    approved = observations.save(_approved())
+    reconcile_all(observations, candidates)
+
+    assert reconcile_all(observations, candidates) == {"filed": 0, "withdrawn": 0}
+
+    observations.save(
+        approved.model_copy(update={"moderation_state": ModerationState.REJECTED})
+    )
+    assert reconcile_all(observations, candidates) == {"filed": 0, "withdrawn": 1}
+    assert reconcile_all(observations, candidates) == {"filed": 0, "withdrawn": 0}
+
+
+def test_reconciliation_promotes_nothing_and_is_owner_gated(client, anonymous_client):
+    assert anonymous_client.post("/api/community/observation-candidates/reconcile").status_code in (
+        401,
+        403,
+    )
+
+    observation_id = _submit(client)
+    client.patch(
+        f"/api/community/observations/{observation_id}/moderate",
+        json={"observation_id": observation_id, "new_state": "APPROVED", "reason": None},
+    )
+    resp = client.post("/api/community/observation-candidates/reconcile")
+    assert resp.status_code == 200, resp.text
+    # The moderation route already filed it, so a reconciliation pass is a no-op.
+    assert resp.json() == {"filed": 0, "withdrawn": 0}
+
+    item = client.get("/api/community/observation-candidates").json()["items"][0]
+    assert item["auto_promotion_blocked"] is True
+    assert item["candidate_state"] == "PENDING_REVIEW"
+
+
+def test_a_failed_candidate_write_leaves_the_decision_recoverable(repos, monkeypatch):
+    """The decision and the candidate are two writes with no transaction between.
+
+    If the candidate write fails after the decision is committed, the observation
+    is approved with nothing in front of a reviewer. That fails safe — nothing is
+    promoted and nothing leaks — and reconciliation is what recovers it, so this
+    pins that the window is recoverable rather than silent data loss.
+    """
+    observations, candidates = repos
+    observation = observations.save(_observation())
+    approved = observations.moderate(
+        observation.id, new_state=ModerationState.APPROVED, reason=None, moderated_by="owner:jeff"
+    )
+
+    def explode(*_args, **_kwargs):
+        raise RuntimeError("record store unavailable")
+
+    monkeypatch.setattr(candidates, "save", explode)
+    with pytest.raises(RuntimeError):
+        reconcile_candidate(approved, candidates=candidates)
+
+    monkeypatch.undo()
+    assert candidates.list() == [], "the decision is committed, the candidate is not"
+
+    assert reconcile_all(observations, candidates) == {"filed": 1, "withdrawn": 0}

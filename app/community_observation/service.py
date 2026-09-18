@@ -248,3 +248,36 @@ def reconcile_candidate(
         }
     )
     return candidates.save(withdrawn)
+
+
+def reconcile_all(
+    observations: CommunityObservationRepository,
+    candidates: CandidateRepository,
+) -> dict[str, int]:
+    """Bring the whole review queue in line with the observations on file.
+
+    :func:`reconcile_candidate` runs from the moderation route, so it only ever
+    sees decisions made after it shipped. An observation already sitting at
+    APPROVED in the durable store would otherwise never produce a candidate and
+    would be invisible to a reviewer — silently, which is the worst way for a
+    review queue to be wrong.
+
+    Idempotent: running it twice changes nothing the second time. Bounded by the
+    number of observations on file, and it promotes nothing — it only files or
+    withdraws candidates according to decisions a human already made.
+    """
+    filed = 0
+    withdrawn = 0
+    for observation in observations.list():
+        before = candidates.get(observation.id)
+        after = reconcile_candidate(observation, candidates=candidates)
+        if after is None:
+            continue
+        if before is None:
+            filed += 1
+        elif (
+            before.candidate_state is not CandidateState.WITHDRAWN
+            and after.candidate_state is CandidateState.WITHDRAWN
+        ):
+            withdrawn += 1
+    return {"filed": filed, "withdrawn": withdrawn}
