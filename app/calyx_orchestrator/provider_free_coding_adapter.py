@@ -59,6 +59,6 @@ class ProviderFreeCodingAdapter:
             pull_request_url=receipt.pull_request_url,
             draft=True,
             head_sha=receipt.head_sha,
-            state="dispatched",
+            state="agent_assigned",
             validation_evidence=receipt.validation_evidence,
         )
