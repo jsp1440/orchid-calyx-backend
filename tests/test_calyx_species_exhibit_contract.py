@@ -89,6 +89,33 @@ def test_a_genuine_form_is_still_recognised_after_that_guard():
     assert taxon_rank("Liparis nervosa f. kappleri") == "form"
 
 
+def test_a_hyphenated_infraspecific_epithet_survives_the_author_guard():
+    """Hyphens belong to the epithet; the guard must not mistake them for authorship.
+
+    These six names are the repository's own registry, not invented examples.
+    Rejecting a hyphen would collapse each onto its species *and* present the
+    rank text as authorship — both of the failures this module removes.
+    """
+    for name, expected, rank in (
+        ("Ophrys vernixia ssp. regis-ferdinandii", "Ophrys vernixia ssp. regis-ferdinandii", "subspecies"),
+        ("Ophrys ciliata ssp. regis-ferdinandii", "Ophrys ciliata ssp. regis-ferdinandii", "subspecies"),
+        ("Cypripedium chamberlainianum f. victoria-mariae Sander ex Rolfe", "Cypripedium chamberlainianum f. victoria-mariae", "form"),
+        ("Anacamptis picta f. picta-rosea (Barla) Biagioli", "Anacamptis picta f. picta-rosea", "form"),
+        ("Liparis bicallosa f. aureo-variegata (Nakaj.) Nakaj.", "Liparis bicallosa f. aureo-variegata", "form"),
+        ("Paphiopedilum victoria-regina ssp. victoria-regina (Sander) M. W. Wood", "Paphiopedilum victoria-regina ssp. victoria-regina", "subspecies"),
+    ):
+        display_name, _ = _split_scientific_name(name)
+        assert display_name == expected, name
+        assert taxon_rank(display_name) == rank, name
+
+
+def test_a_hyphen_alone_is_not_an_epithet():
+    # Widening the guard for hyphens must not admit punctuation as a name.
+    for token in ("-", "--", "-x-", "x-", "al-"):
+        display_name, author = _split_scientific_name(f"Genus species var. {token} Author")
+        assert display_name == "Genus species", token
+
+
 def test_a_citation_connective_can_never_become_an_infraspecific_epithet():
     for connective in AUTHOR_CONNECTIVES:
         display_name, _ = _split_scientific_name(f"Genus species var. {connective} Author")
