@@ -103,3 +103,12 @@ def test_planner_failure_does_not_authorize_provider():
     assert result["status"] == "queue_empty_planner_failed"
     assert result["provider_launch_authorized"] is False
     assert result["no_api_mode"] is True
+
+
+def test_unknown_protected_boundary_fails_closed_to_owner_gate():
+    result = normalize_intents(
+        [intent(protected_boundaries=("future-sensitive-boundary",))]
+    )
+    assert result["candidates"] == []
+    assert result["parked"][0]["reason"] == "owner_gate"
+    assert result["parked"][0]["unknown_boundaries"] == ["future-sensitive-boundary"]
