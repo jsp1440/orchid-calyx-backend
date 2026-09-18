@@ -45,6 +45,22 @@ INFRASPECIFIC_RANKS: dict[str, str] = {
 }
 HYBRID_SIGNS = {"×", "x"}
 
+#: Latin connectives that join two authorities in a citation ("Wall. ex Lindl.",
+#: "Rchb. f. et Warsz."). They are lowercase and can follow a token that looks
+#: like a rank marker, so they must never be read as an infraspecific epithet.
+AUTHOR_CONNECTIVES = {"ex", "et", "in", "and", "nec", "non", "emend", "sensu"}
+
+
+def _is_epithet(token: str) -> bool:
+    """A plausible infraspecific epithet: lowercase, alphabetic, not a connective.
+
+    ``f.`` is both a form marker and the ``filius`` of a spaced author
+    abbreviation such as ``Rchb. f.``. Requiring a real epithet after the marker
+    keeps ``Dendrochilum cootesii Rchb. f. ex Lindl.`` a species whose author is
+    ``Rchb. f. ex Lindl.``, instead of inventing the form ``... f. ex``.
+    """
+    return bool(token) and token[:1].islower() and token.isalpha() and token not in AUTHOR_CONNECTIVES
+
 
 def _split_scientific_name(value: str) -> tuple[str, str | None]:
     """Separate the name from any retained authorship text.
@@ -68,7 +84,7 @@ def _split_scientific_name(value: str) -> tuple[str, str | None]:
     rest = parts[end:]
     for index, token in enumerate(rest):
         follower = rest[index + 1] if index + 1 < len(rest) else ""
-        if token.lower() in INFRASPECIFIC_RANKS and follower[:1].islower():
+        if token.lower() in INFRASPECIFIC_RANKS and _is_epithet(follower):
             name_parts.extend([token, follower])
             rest = rest[index + 2 :]
             break

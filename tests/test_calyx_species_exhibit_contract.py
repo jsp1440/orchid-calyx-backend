@@ -1,6 +1,7 @@
 from decimal import Decimal
 
 from app.species_exhibit.service import (
+    AUTHOR_CONNECTIVES,
     CONTRACT,
     _build_card,
     _confidence,
@@ -58,6 +59,40 @@ def test_infraspecific_rank_and_epithet_stay_in_the_name_and_are_never_called_au
     assert _split_scientific_name("Cattleya") == ("Cattleya", None)
     # A rank marker with nothing lowercase after it is authorship-side text, not a name.
     assert _split_scientific_name("Cattleya labiata var.") == ("Cattleya labiata", "var.")
+
+
+def test_a_spaced_author_abbreviation_is_never_read_as_a_rank_marker():
+    """`f.` is both a form marker and the `filius` of a spaced author abbreviation.
+
+    `Rchb. f. ex Lindl.` is Reichenbach filius citing Lindley, not a form named
+    `ex`. Requiring a real epithet after the marker keeps the species a species
+    and keeps its authority whole.
+    """
+    for name, authorship in (
+        ("Dendrochilum cootesii Rchb. f. ex Lindl.", "Rchb. f. ex Lindl."),
+        ("Bulbophyllum lobbii Rchb. f. et Warsz.", "Rchb. f. et Warsz."),
+        ("Orchis militaris Rchb. f. in Fl.", "Rchb. f. in Fl."),
+    ):
+        display_name, author = _split_scientific_name(name)
+        assert display_name == " ".join(name.split()[:2]), name
+        assert author == authorship, name
+        assert taxon_rank(display_name) == "species", name
+
+
+def test_a_genuine_form_is_still_recognised_after_that_guard():
+    assert _split_scientific_name("Liparis nervosa f. kappleri Rchb.f.") == (
+        "Liparis nervosa f. kappleri", "Rchb.f.",
+    )
+    assert _split_scientific_name("Paphiopedilum robinsonii f. viride Braem") == (
+        "Paphiopedilum robinsonii f. viride", "Braem",
+    )
+    assert taxon_rank("Liparis nervosa f. kappleri") == "form"
+
+
+def test_a_citation_connective_can_never_become_an_infraspecific_epithet():
+    for connective in AUTHOR_CONNECTIVES:
+        display_name, _ = _split_scientific_name(f"Genus species var. {connective} Author")
+        assert display_name == "Genus species", connective
 
 
 def test_a_variety_is_a_distinct_card_from_its_species_not_a_duplicate():
