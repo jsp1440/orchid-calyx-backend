@@ -16,6 +16,7 @@ from runtime.calyx_execution_feedback import (
 from runtime.calyx_queue_director import DevelopmentIntent, plan_calyx_refill
 
 _SCHEMA = "oc.calyx-closed-loop.v1"
+_STATE_SCHEMA = "oc.calyx-closed-loop-state.v1"
 
 
 def run_closed_loop_cycle(
@@ -25,8 +26,13 @@ def run_closed_loop_cycle(
     execution_evidence: list[ExecutionEvidencePacket] | None = None,
     reserve_depth: int = 1,
     planner_ok: bool = True,
+    persisted_state: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Run one deterministic control cycle without granting action authority."""
+    state = persisted_state or {}
+    seen_feedback = set(state.get("seen_feedback_fingerprints", []))
+    completed_semantic_keys = set(state.get("completed_semantic_keys", []))
+
     feedback = [
         classify_execution_evidence(packet)
         for packet in (execution_evidence or [])
@@ -35,8 +41,13 @@ def run_closed_loop_cycle(
     completed_source_keys = {
         item["source_key"] for item in feedback if item["disposition"] == "COMPLETE"
     }
+    completed_semantic_keys.update(
+        f'calyx-director:{source_key}' for source_key in completed_source_keys
+    )
     active_intents = [
-        intent for intent in intents if intent.source_key not in completed_source_keys
+        intent
+        for intent in intents
+        if f"calyx-director:{intent.source_key}" not in completed_semantic_keys
     ]
 
     refill = plan_calyx_refill(
@@ -47,8 +58,11 @@ def run_closed_loop_cycle(
     )
 
     revisions = [
-        item for item in feedback if item["disposition"] == "REVISE"
+        item
+        for item in feedback
+        if item["disposition"] == "REVISE" and item["fingerprint"] not in seen_feedback
     ]
+    seen_feedback.update(item["fingerprint"] for item in feedback)
     blocked = [
         item for item in feedback if item["disposition"] == "BLOCKED"
     ]
@@ -68,4 +82,9 @@ def run_closed_loop_cycle(
         "no_api_mode": True,
         "authority": "queue-bridge",
         "action_authorized": False,
+        "persisted_state": {
+            "schema": _STATE_SCHEMA,
+            "seen_feedback_fingerprints": sorted(seen_feedback),
+            "completed_semantic_keys": sorted(completed_semantic_keys),
+        },
     }
