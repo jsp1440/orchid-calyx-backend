@@ -66,11 +66,11 @@ class VerifiedResult:
     checker verified -- in practice ``mode type id``, so a mode or type change
     is a divergence. A path the change deletes maps to ``None``.
 
-    Two ``None`` values on the same path are agreement *here*, because this
-    module is told which paths were genuinely deleted. Establishing that a
-    declared deletion really was one is the caller's job, and not doing it is
-    how a caller manufactures a vacuous pass: an argument that was never a file
-    is absent on both sides and reads as a deletion that landed.
+    Two ``None`` values on the same path are agreement about that path, but they
+    are never evidence that this merge produced it: absence is symmetric and says
+    nothing about where it came from. A record made only of deletions is
+    therefore incomplete by construction, whatever the caller did to establish
+    that each deletion was real.
     """
 
     head_sha: str
@@ -162,6 +162,22 @@ def inspect_merge(
             continue
         if found != expected:
             divergent.append((path, expected, found))
+
+    # Absence cannot evidence provenance. Two lineages that both lack a file
+    # their common ancestor had agree on its absence for reasons that have
+    # nothing to do with this merge, so a record made only of deletions proves
+    # the merge landed exactly as well as an empty record does -- which is to
+    # say not at all, while reading none of the integration side's content.
+    #
+    # Four rounds of review each narrowed where a deletion's evidence could come
+    # from and left this premise standing. It is the premise that was wrong.
+    if all(expected is None for expected in verified.blobs.values()):
+        return MergeInspection(
+            verdict=MergeVerdict.EVIDENCE_INCOMPLETE,
+            reason="ONLY_DELETIONS_RECORDED_SO_NOTHING_WAS_COMPARED",
+            unresolved_paths=tuple(sorted(verified.blobs)),
+            identical_tree=identical_tree,
+        )
 
     if divergent:
         return MergeInspection(
