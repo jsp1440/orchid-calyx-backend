@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Decide which blocked issues are still blocked, and say why for the rest.
 
 ``oc-blocked`` is a one-way door. ``oc_portfolio_scheduler`` lists it in
