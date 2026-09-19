@@ -9,9 +9,13 @@ is written to the canonical graph.
 
 The scenario is *Ophrys apifera*, chosen because the published record genuinely
 disagrees with itself: the same taxon is reported as pollinated by sexual
-deception and as habitually self-pollinating, from different parts of its range.
-A fixture that resolved that disagreement would be teaching the system to
-fabricate. This one carries it.
+deception and as habitually self-pollinating. A fixture that resolved that
+disagreement would be teaching the system to fabricate. This one carries it.
+
+Every citation here supports the claim it is attached to, and only that claim.
+That is not a detail in a fixture whose purpose is to demonstrate provenance
+integrity — a fabricated attribution here would discredit everything the path
+asserts about its own sources.
 """
 
 from __future__ import annotations
@@ -25,10 +29,29 @@ SUPPORTED = "SUPPORTED"
 CONTESTED = "CONTESTED"
 REPORTED_UNVERIFIED = "REPORTED_UNVERIFIED"
 
+#: Darwin observed *O. apifera* habitually self-fertilising and remarked on never
+#: having seen an insect visit it. That is what this citation supports, and the
+#: only claim it is attached to.
 DARWIN_1862 = (
     "Darwin, C. (1862). On the Various Contrivances by which British and Foreign "
     "Orchids are Fertilised by Insects. John Murray, London."
 )
+
+#: Pseudocopulation in *Ophrys* was proposed by Pouyanne and Correvon in
+#: 1916-1923 and established systematically by Kullenberg. Attributing it to
+#: Darwin would credit him with a mechanism described more than fifty years
+#: after his book, and would invert what he actually wrote about this species.
+KULLENBERG_1961 = (
+    "Kullenberg, B. (1961). Studies in Ophrys pollination. "
+    "Zoologiska Bidrag fran Uppsala 34: 1-340."
+)
+
+#: Provenance types. A 19th-century single-author monograph is not a
+#: peer-reviewed journal article, and a system that distinguishes evidence
+#: classes should not record it as one.
+MONOGRAPH = "scholarly_monograph"
+PEER_REVIEWED = "peer_reviewed_literature"
+OCCURRENCE = "occurrence_dataset"
 
 SUBJECT_KEY = "taxon:ophrys-apifera"
 
@@ -83,31 +106,38 @@ def build_pollination_repository() -> InMemoryGraphRepository:
 
     edges = [
         # The two reports that disagree. Both are carried; neither is preferred.
+        #
+        # The scopes are deliberately asymmetric, because the record is. Autogamy
+        # is the predominant mode throughout the range, including the
+        # Mediterranean; insect pollination is a sporadic local exception rather
+        # than a regional alternative. Framing it as "Mediterranean versus
+        # north-west" would be tidier and would overstate what is reported.
         _edge(1, "reported_pollinated_by", 1, 2,
-              evidence_class=CONTESTED, citation=DARWIN_1862,
-              source_type="peer_reviewed_literature",
-              geographic_scope="Mediterranean range"),
+              evidence_class=CONTESTED, citation=KULLENBERG_1961,
+              source_type=PEER_REVIEWED,
+              geographic_scope="sporadically reported, chiefly in the Mediterranean"),
         _edge(2, "reported_reproductive_strategy", 1, 4,
               evidence_class=SUPPORTED, citation=DARWIN_1862,
-              source_type="peer_reviewed_literature",
-              geographic_scope="North-western range"),
-        # Mechanism attachment.
+              source_type=MONOGRAPH,
+              geographic_scope="predominant throughout the range"),
+        # Mechanism attachment. Cited to the work that established it, not to
+        # Darwin, who had no concept of sexual deception.
         _edge(3, "mechanism_of", 2, 3,
-              evidence_class=SUPPORTED, citation=DARWIN_1862,
-              source_type="peer_reviewed_literature"),
+              evidence_class=SUPPORTED, citation=KULLENBERG_1961,
+              source_type=PEER_REVIEWED),
         # Habitat and range, from occurrence records only.
         _edge(4, "co_occurs_with", 1, 5,
               evidence_class=REPORTED_UNVERIFIED,
               citation="Aggregated occurrence records held in the Continuum, habitat field only.",
-              source_type="occurrence_dataset"),
+              source_type=OCCURRENCE),
         _edge(5, "reported_from", 1, 6,
               evidence_class=REPORTED_UNVERIFIED,
               citation="Aggregated occurrence records, country resolution only.",
-              source_type="occurrence_dataset"),
+              source_type=OCCURRENCE),
         _edge(6, "reported_from", 1, 7,
               evidence_class=REPORTED_UNVERIFIED,
               citation="Aggregated occurrence records, country resolution only.",
-              source_type="occurrence_dataset"),
+              source_type=OCCURRENCE),
     ]
     return InMemoryGraphRepository(nodes=nodes, edges=edges)
 

@@ -23,7 +23,7 @@ from app.cognitive_integration.executor import (
 from app.cognitive_integration.fixture import build_pollination_repository
 from app.main import app
 from app.provider_reservoir.capabilities import is_provider_capability
-from runtime.knowledge_graph import Edge
+from runtime.knowledge_graph import Edge, Node
 from runtime.knowledge_graph.repository import InMemoryGraphRepository
 
 
@@ -126,7 +126,10 @@ def test_the_contradiction_is_found_in_the_data_not_recited(reasoning_map):
     contradictions = reasoning_map["contradictions"]
     assert len(contradictions) == 1
     assert contradictions[0]["resolution"] == "unresolved_presented_as_contested"
-    assert set(contradictions[0]["scopes"]) == {"Mediterranean range", "North-western range"}
+    assert set(contradictions[0]["scopes"]) == {
+        "predominant throughout the range",
+        "sporadically reported, chiefly in the Mediterranean",
+    }
 
     repo = build_pollination_repository()
     remaining = [e for e in repo.all_edges() if e.edge_type != "reported_pollinated_by"]
@@ -142,7 +145,7 @@ def test_a_contradiction_within_one_scope_is_resolved_by_scope_instead():
     for edge in repo.all_edges():
         if edge.edge_type == "reported_reproductive_strategy":
             payload = dict(edge.payload)
-            payload["geographic_scope"] = "Mediterranean range"
+            payload["geographic_scope"] = "sporadically reported, chiefly in the Mediterranean"
             edge = Edge(
                 kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
                 from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
@@ -185,9 +188,87 @@ def test_a_competing_mechanism_and_a_null_explanation_are_both_offered(reasoning
 def test_confidence_is_qualitative_with_a_basis_and_no_invented_number(reasoning_map):
     confidence = reasoning_map["confidence"]
     assert confidence["numeric_precision_claimed"] is False
-    assert confidence["qualitative"] == "moderate"
+    assert confidence["qualitative"] in ("low", "moderate", "high")
     assert confidence["basis"].strip()
     assert not any(ch.isdigit() for ch in confidence["qualitative"])
+
+
+def test_the_confidence_basis_cannot_contradict_the_confidence_value():
+    """A fixed basis string said "held below high because the reports conflict"
+    while reporting high, as soon as the contradiction resolved. Value and reasons
+    are now derived together."""
+    contested = execute()
+    assert "Reports conflict" in contested["confidence"]["basis"]
+
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        if edge.edge_type == "reported_reproductive_strategy":
+            payload = dict(edge.payload)
+            payload["geographic_scope"] = "sporadically reported, chiefly in the Mediterranean"
+            edge = Edge(
+                kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+                from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+                evidence_class=edge.evidence_class, payload=payload,
+            )
+        edges.append(edge)
+    resolved = execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges))
+
+    assert resolved["confidence"]["qualitative"] != contested["confidence"]["qualitative"]
+    assert "Reports conflict" not in resolved["confidence"]["basis"]
+    assert "No retrieved report contradicts another" in resolved["confidence"]["basis"]
+
+
+@pytest.mark.parametrize(
+    "leak",
+    [
+        "Population located at 51.7520 -1.2577 near the reserve",
+        "Population at 51.75, -1.25",
+        "lat 51.7520 lon -1.2577",
+        "Recorded at 43\u00b0 17\u2019 N",
+        "51.7520, -1.2577",
+    ],
+)
+def test_every_coordinate_shape_a_checker_found_is_now_caught(leak):
+    """Each of these was served verbatim by the first version of the redactor.
+
+    Space-separated pairs are ~10 m precision; two decimal places are ~1 km.
+    Both are enough to locate a protected population.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = leak
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    served = json.dumps(execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges)))
+    assert "51.75" not in served
+    assert "-1.25" not in served
+    assert "locality withheld" in served
+
+
+def test_ordinary_scientific_text_is_not_redacted():
+    from app.cognitive_integration.executor import _redact
+
+    text = "Pollinated by Eulaema meriana; 3 of 7 records confirm the association."
+    assert _redact(text) == text
+
+
+def test_the_fail_closed_check_is_broader_than_the_redactor():
+    """A check sharing the redactor's pattern can only confirm what it already did."""
+    from app.cognitive_integration.executor import _COORDINATE, _COORDINATE_SUSPICION
+
+    # A bare mention the redactor does not remove, which the suspicion net catches.
+    probe = "gps reading withheld"
+    assert _COORDINATE.search(probe) is None
+    assert _COORDINATE_SUSPICION.search(probe) is not None
 
 
 def test_known_unknowns_and_next_evidence_are_both_stated(reasoning_map):
@@ -314,3 +395,73 @@ def test_the_backend_map_satisfies_the_brain_scientific_contract(reasoning_map):
     # that single key. Anything else is a real divergence in the contract.
     assert undeclared in ([], ["fixture carries undeclared key 'execution'"]), structural
     assert [f for f in structural if "undeclared key" not in f] == [], structural
+
+
+# ---------------------------------------------------------------------------
+# Every citation supports the claim it is attached to
+# ---------------------------------------------------------------------------
+
+
+def test_sexual_deception_is_not_attributed_to_darwin(reasoning_map):
+    """Darwin had no concept of sexual deception.
+
+    Pseudocopulation in *Ophrys* was proposed by Pouyanne and Correvon in
+    1916-1923 and established by Kullenberg in 1961. Citing Darwin 1862 for it
+    credits him with a mechanism described more than fifty years after his book,
+    and inverts what he actually wrote about this species — he recorded it as
+    habitually self-fertilised and said he had never seen an insect visit it.
+    """
+    for relationship in reasoning_map["relationships"]:
+        if relationship["predicate"] == "reported_pollinated_by":
+            citation = relationship["provenance"][0]["citation"]
+            assert "Darwin" not in citation
+            assert "Kullenberg" in citation
+
+
+def test_darwin_is_cited_for_the_claim_he_actually_made(reasoning_map):
+    for relationship in reasoning_map["relationships"]:
+        if relationship["predicate"] == "reported_reproductive_strategy":
+            assert "Darwin" in relationship["provenance"][0]["citation"]
+
+
+def test_a_nineteenth_century_monograph_is_not_recorded_as_a_journal_article(reasoning_map):
+    for relationship in reasoning_map["relationships"]:
+        citation = relationship["provenance"][0]["citation"]
+        if "Darwin" in citation:
+            assert relationship["provenance"][0]["source_type"] == "scholarly_monograph"
+
+
+def test_the_scopes_do_not_overstate_a_clean_regional_split(reasoning_map):
+    """Autogamy is predominant throughout the range, not a north-western mode.
+
+    Framing the disagreement as "Mediterranean versus north-west" would be tidier
+    than the record supports: insect pollination is a sporadic local exception.
+    """
+    scopes = {
+        r["predicate"]: r.get("geographic_scope")
+        for r in reasoning_map["relationships"]
+        if r["predicate"] in ("reported_pollinated_by", "reported_reproductive_strategy")
+    }
+    assert "throughout the range" in scopes["reported_reproductive_strategy"]
+    assert "sporadic" in scopes["reported_pollinated_by"]
+
+
+def test_mechanism_prose_describes_the_edge_rather_than_this_fixture():
+    """The wording asserted "reproduces without any insect" for any strategy edge."""
+    repo = build_pollination_repository()
+    nodes = []
+    for node in repo.all_nodes():
+        if node.canonical_key == "process:autogamy":
+            node = Node(
+                kg_node_id=node.kg_node_id, node_type=node.node_type,
+                canonical_key=node.canonical_key,
+                display_label="Insect-mediated outcrossing", payload=node.payload,
+            )
+        nodes.append(node)
+    relabelled = execute(repository=InMemoryGraphRepository(
+        nodes=nodes, edges=list(repo.all_edges())))
+    competing = [m for m in relabelled["mechanisms"] if m["kind"] == "competing_mechanism"]
+    assert competing
+    for mechanism in competing:
+        assert "without any insect" not in mechanism["statement"]
+        assert "Insect-mediated outcrossing" in mechanism["statement"]
