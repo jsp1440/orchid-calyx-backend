@@ -12,7 +12,6 @@ from app.intake.journal_club import (
 )
 from app.security import verify_owner_or_api_key
 
-
 TRANSCRIPT = """
 This episode compares query-adaptive hybrid search with Graph RAG for dataset discovery.
 The authors report a benchmark and ablation study, then discuss agent orchestration,
