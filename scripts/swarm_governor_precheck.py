@@ -157,10 +157,10 @@ def main() -> None:
             required=True,
         )
         daily_spend = _decimal_strict(
-            "DAILY_SPEND_USD", _env("OC_GOVERNOR_DAILY_SPEND_USD")
+            "DAILY_SPEND_USD", _env("OC_GOVERNOR_DAILY_SPEND_USD"), required=True
         )
         monthly_spend = _decimal_strict(
-            "MONTHLY_SPEND_USD", _env("OC_GOVERNOR_MONTHLY_SPEND_USD")
+            "MONTHLY_SPEND_USD", _env("OC_GOVERNOR_MONTHLY_SPEND_USD"), required=True
         )
     except ValueError as exc:
         block(f"BLOCKED_{exc}")
