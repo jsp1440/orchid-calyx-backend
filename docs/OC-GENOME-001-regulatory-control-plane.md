@@ -58,3 +58,27 @@ remain unchanged.
 Feed the regulator from executive telemetry, completion state, provider intent,
 repair/backoff state, and mission acceptance criteria so activation/repression
 is driven by durable system state rather than a caller-supplied callback.
+
+
+## Mission-aligned queue admission
+
+The runtime planner now performs a second admission check in addition to normal
+technical executability. A module must be both executable and explicitly mapped
+to one or more canonical OC mission objectives before it can enter the queue.
+
+The mapping is deterministic and provider-free:
+
+- Engineering -> continuous improvement with scientific integrity
+- Mission Control -> provenance/uncertainty + continuous improvement
+- Cognitive -> relationship/gap discovery + understandable experiences
+- Scientific -> connected scientific knowledge + provenance/uncertainty
+- Exploration -> relationship/gap discovery + research/conservation
+- Narrative -> accurate, accessible, inspiring understanding
+
+Unknown domains, missing domains, and work without a concrete next action are
+not admitted. They remain visible as skipped work with a machine-readable
+mission-alignment reason.
+
+This intentionally avoids using an LLM to decide whether work "sounds aligned."
+New categories must be deliberately mapped to the mission before autonomous
+execution can select them.
