@@ -9,6 +9,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 RuntimeCallable = Callable[[], Any]
+RegulatoryCallable = Callable[[Any], Any]
+
+from runtime.regulatory_control import default_regulatory_decision, normalize_regulatory_decision
 
 
 def utc_now() -> str:
@@ -46,6 +49,8 @@ class RuntimeEngineState:
     last_cycle_started_at: str | None = None
     last_cycle_finished_at: str | None = None
     last_heartbeat_status: str | None = None
+    last_regulatory_action: str | None = None
+    last_regulatory_reasons: list[str] = field(default_factory=list)
     last_enqueue_status: str | None = None
     last_execute_status: str | None = None
     last_execute_completed: int | None = None
@@ -69,6 +74,8 @@ class RuntimeEngineState:
             "last_cycle_started_at": self.last_cycle_started_at,
             "last_cycle_finished_at": self.last_cycle_finished_at,
             "last_heartbeat_status": self.last_heartbeat_status,
+            "last_regulatory_action": self.last_regulatory_action,
+            "last_regulatory_reasons": list(self.last_regulatory_reasons),
             "last_enqueue_status": self.last_enqueue_status,
             "last_execute_status": self.last_execute_status,
             "last_execute_completed": self.last_execute_completed,
@@ -100,12 +107,14 @@ class RuntimeEngine:
         heartbeat: RuntimeCallable | None = None,
         enqueue_jobs: RuntimeCallable | None = None,
         execute_jobs: RuntimeCallable | None = None,
+        regulator: RegulatoryCallable | None = None,
         interval_seconds: int = 30,
         enabled: bool = True,
     ) -> None:
         self.heartbeat = heartbeat or _default_heartbeat
         self.enqueue_jobs = enqueue_jobs or _default_enqueue_jobs
         self.execute_jobs = execute_jobs or _default_execute_jobs
+        self.regulator = regulator or default_regulatory_decision
         self.state = RuntimeEngineState(
             enabled=enabled,
             interval_seconds=max(5, int(interval_seconds)),
@@ -169,13 +178,33 @@ class RuntimeEngine:
 
         try:
             heartbeat_result = self.heartbeat()
-            enqueue_result = self.enqueue_jobs()
-            execute_result = self.execute_jobs()
+            regulatory = normalize_regulatory_decision(self.regulator(heartbeat_result))
+
+            if regulatory.action == "activate":
+                enqueue_result = self.enqueue_jobs()
+                execute_result = self.execute_jobs()
+            else:
+                enqueue_result = {
+                    "status": "repressed",
+                    "regulatory_action": regulatory.action,
+                    "reasons": list(regulatory.reasons),
+                    "queue_depth": self.state.queue_depth,
+                }
+                execute_result = {
+                    "status": "repressed",
+                    "regulatory_action": regulatory.action,
+                    "reasons": list(regulatory.reasons),
+                    "completed": 0,
+                    "failed": 0,
+                    "queue_depth": self.state.queue_depth,
+                }
 
             with self._lock:
                 self.state.cycle_count += 1
                 self.state.last_cycle_finished_at = utc_now()
                 self.state.last_heartbeat_status = self._status_from(heartbeat_result)
+                self.state.last_regulatory_action = regulatory.action
+                self.state.last_regulatory_reasons = list(regulatory.reasons)
                 self.state.last_enqueue_status = self._status_from(enqueue_result)
                 self.state.last_execute_status = self._status_from(execute_result)
                 if isinstance(execute_result, dict):
@@ -215,6 +244,8 @@ class RuntimeEngine:
                     "runtime_cycle_completed",
                     {
                         "heartbeat_status": self.state.last_heartbeat_status,
+                        "regulatory_action": self.state.last_regulatory_action,
+                        "regulatory_reasons": self.state.last_regulatory_reasons,
                         "enqueue_status": self.state.last_enqueue_status,
                         "execute_status": self.state.last_execute_status,
                         "completed": self.state.last_execute_completed,
@@ -228,6 +259,7 @@ class RuntimeEngine:
                 "started_at": started,
                 "finished_at": self.state.last_cycle_finished_at,
                 "heartbeat": heartbeat_result,
+                "regulation": regulatory.to_dict(),
                 "enqueue": enqueue_result,
                 "execute": execute_result,
             }
