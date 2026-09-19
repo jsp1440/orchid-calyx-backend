@@ -751,3 +751,198 @@ def test_routing_fields_never_reach_the_client():
     for relationship in served["relationships"]:
         assert "scope_region" not in relationship
         assert "support_scope" not in relationship
+
+
+#: Shapes a third checker carried past both nets, each served verbatim while
+#: the response asserted `coordinates_present: False`.
+_THIRD_ROUND_LEAKS = [
+    ("Ordnance Survey grid", "SP 5106 0634"),
+    ("OS grid, unspaced", "SP51060634"),
+    ("OS grid, ten figure", "TL 12345 67890"),
+    ("geohash", "gcpvj0duq"),
+    ("full-width digits", "５１．７５２０, －１．２５７７"),
+    ("Arabic-Indic digits", "٥١٫٧٥٢٠ ١٫٢٥٧٧"),
+    ("degrees-minutes-seconds, no units", "51 45 07 N 001 15 27 W"),
+    ("scientific notation", "5.17520e1, -1.2577e0"),
+    ("digits spaced apart", "5 1 . 7 5 2 0 , - 1 . 2 5 7 7"),
+    ("bare what3words", "filled.count.soap"),
+]
+
+
+@pytest.mark.parametrize("label,leak", _THIRD_ROUND_LEAKS)
+def test_the_national_grid_and_its_relatives_are_withheld(label, leak):
+    """Ordnance Survey is the one that matters most here.
+
+    UTM and MGRS — the international and military grids — were covered while
+    the national grid of the country this fixture is about was not. A British
+    recorder writes an OS reference; the worked position throughout this module
+    is Oxford. It was the likeliest real input and the one shape missing.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = f"Recorded at {leak}."
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    # `ensure_ascii=False`, or the comparison is vacuous: json.dumps escapes
+    # non-ASCII by default, so a full-width or Arabic-Indic position would
+    # never appear in the haystack and the assertion could not fail. Caught by
+    # mutation testing — the digit-folding mutation left this green.
+    served = json.dumps(
+        execute(repository=InMemoryGraphRepository(
+            nodes=list(repo.all_nodes()), edges=edges)),
+        ensure_ascii=False,
+    )
+    assert leak not in served, f"{label} reached the client"
+
+
+def test_a_position_carried_as_numbers_is_examined_like_any_other():
+    """The redactor returned every non-string unexamined.
+
+    Two edges carrying `51.7520` and `-1.2577` as floats were served intact,
+    and the fail-closed check missed them too because the halves sat further
+    apart than its window. That is the shape a real occurrence record is most
+    likely to arrive in, and checking only strings is a bug class rather than a
+    missing pattern.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.kg_edge_id == 4:
+            payload["identifier"] = 51.7520
+        if edge.kg_edge_id == 5:
+            payload["identifier"] = -1.2577
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    result = execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges))
+    served = json.dumps(result)
+    assert "51.752" not in served
+    assert "-1.2577" not in served
+    assert result["geographic_context"]["coordinates_present"] is True
+
+
+def test_the_map_reports_what_redaction_did_instead_of_asserting_it():
+    """`coordinates_present` was a literal `False`.
+
+    So every shape the pattern missed was served with a positive assertion that
+    the map was clean — worse than the miss, because a consumer cannot defend
+    itself against a field that lies. It is derived now, which also lets the
+    layers compose: a rendering surface that finds a position in a map
+    declaring `False` has caught a real upstream miss.
+    """
+    clean = execute()
+    assert clean["geographic_context"]["coordinates_present"] is False
+
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = "Recorded at 51.7520, -1.2577."
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    poisoned = execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges))
+    assert poisoned["geographic_context"]["coordinates_present"] is True
+    assert "51.7520" not in json.dumps(poisoned)
+
+
+def test_redaction_applied_still_records_that_the_policy_ran():
+    """Not derived from the substitution count, and that is deliberate.
+
+    The Brain's scientific contract reads this as "the redaction policy is in
+    force for a protected taxon", not "a substitution occurred". For a
+    protected taxon whose sources carry no coordinates the policy did run and
+    found nothing, so deriving this one would break that contract and would
+    say something false.
+    """
+    assert execute()["locality_policy"]["redaction_applied"] is True
+
+
+def test_ordinary_quantitative_prose_does_not_take_the_whole_map_down():
+    """The fail-closed net raised on "12.5 percent over 3.5 seasons".
+
+    `quantified_seed_set` is one of this module's own EXPECTED_BUT_ABSENT
+    predicates, so the evidence it says it most wants was the shape that broke
+    it. Every real coordinate form carries two decimal places or more.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = "Seed set fell by 12.5 percent over 3.5 seasons."
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    served = execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges))
+    assert "12.5 percent over 3.5 seasons" in json.dumps(served)
+
+
+def test_the_next_evidence_no_longer_promises_the_rule_this_module_removed():
+    """It said such a source "would resolve the contradiction by scope".
+
+    Under the rule now implemented, two incompatible claims about one
+    population is the definition of a live conflict. The sentence was the
+    inverted rule written in prose: the map recommended evidence and stated the
+    opposite of what the code does with it.
+    """
+    served = execute()
+    text = " ".join(served["recommended_next_evidence"])
+    assert "resolve the contradiction by scope" not in text
+    assert "assessed within a single place" in text
+
+
+def test_known_unknowns_count_what_the_graph_holds():
+    """They asserted "the two reproductive strategies" as a fixed sentence."""
+    import dataclasses
+
+    repo = build_pollination_repository()
+    nodes = [
+        dataclasses.replace(node, display_label="Beetle-mediated outcrossing")
+        if node.kg_node_id == 4
+        else node
+        for node in repo.all_nodes()
+    ]
+    served = execute(repository=InMemoryGraphRepository(
+        nodes=nodes, edges=list(repo.all_edges())))
+    text = " ".join(served["known_unknowns"])
+    assert "Beetle-mediated outcrossing" in text
+    assert "the insect-mediated mechanism is currently active" not in text
+
+
+def test_a_scope_resolution_says_what_declared_the_places_separate():
+    """The one inference here that deletes a disagreement was unauditable.
+
+    The served contradiction reported `resolved_by_scope` with no indication
+    that a `disjoint_from` edge existed or what stood behind it.
+    """
+    repo = build_pollination_repository()
+    resolved = execute(
+        repository=_with_scope_regions(
+            repo, "region:mediterranean", "region:north-western-europe"
+        )
+    )
+    contradiction = resolved["contradictions"][0]
+    assert contradiction["resolution"] == "resolved_by_scope"
+    assert contradiction["resolved_by"], "a deleted disagreement must cite what deleted it"
+    assert "occurrence records" in contradiction["resolved_by"]
+
+    # And nothing is claimed when nothing resolved.
+    assert execute()["contradictions"][0]["resolved_by"] is None

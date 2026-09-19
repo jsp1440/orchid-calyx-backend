@@ -20,6 +20,8 @@ nothing else, so the reasoning still reaches Calyx as structured fields.
 from __future__ import annotations
 
 import re
+import unicodedata
+from dataclasses import dataclass
 from typing import Any
 
 from app.brain.reasoning_map import (
@@ -97,9 +99,57 @@ _COORDINATE = re.compile(
     r"|\bUTM\b[^\n]{0,24}?\d{5,7}\s+\d{5,8}"
     r"|\b\d{1,2}[C-HJ-NP-X]\s+\d{5,7}\s+\d{5,8}\b"
     # Open Location Code (plus code): eight of the code alphabet, then "+".
-    r"|\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,7}\b",
+    r"|\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,7}\b"
+    # Ordnance Survey national grid, spaced or not. This is the grid a British
+    # recorder actually writes, and it was missing while UTM and MGRS — the
+    # international and military grids — were covered. The worked example
+    # throughout this module is Oxford.
+    r"|\b[HNOST][A-Z]\s?\d{2,5}\s?\d{2,5}\b"
+    # Geohash: base-32 without a, i, l or o, carrying at least one digit. The
+    # excluded letters are what keep this off ordinary words. The word
+    # "geohash" was already in the suspicion vocabulary while the code itself
+    # was not.
+    r"|\b(?=[0-9bcdefghjkmnpqrstuvwxyz]*\d)[0-9bcdefghjkmnpqrstuvwxyz]{7,12}\b"
+    # A pair in scientific notation.
+    r"|[-+]?\d(?:\.\d+)?[eE][-+]?\d+\s*[,;]\s*[-+]?\d(?:\.\d+)?[eE][-+]?\d+"
+    # Degrees, minutes and seconds with no unit words at all.
+    r"|\b\d{1,3}\s+\d{1,2}\s+\d{1,2}\s*[NSEW]\b"
+    # A bare what3words address. Bounded so it cannot take a bite out of a
+    # longer dotted chain: `app.brain.reasoning_map` is a module path, not a
+    # position, and it escaped only because an underscore happened to follow.
+    r"|(?<![\w.])[a-z]{3,12}\.[a-z]{3,12}\.[a-z]{3,12}(?!\w|\.\w)"
+    # Digits spaced out to defeat a pattern that assumes they are adjacent.
+    r"|\d(?:\s+\d)+\s*\.\s*\d(?:\s+\d)+",
     re.IGNORECASE,
 )
+
+def _fold_digits(text: str) -> str:
+    r"""Fold every Unicode decimal digit to ASCII before matching.
+
+    Full-width, Arabic-Indic and Devanagari digits are digits to a reader and
+    invisible to ``\d``. ``51.7520`` written in any of them is the same
+    position.
+    """
+    # NFKC first, which folds full-width digits *and* the full-width period and
+    # minus that go with them: "５１．７５２０" is not a number until its
+    # decimal point is one too.
+    folded = unicodedata.normalize("NFKC", text)
+    return "".join(
+        "."
+        if ch == "\u066b"  # Arabic decimal separator
+        else ","
+        if ch == "\u066c"  # Arabic thousands separator
+        else str(unicodedata.digit(ch))
+        if ch.isdigit() and not ch.isascii()
+        else ch
+        for ch in folded
+    )
+
+
+#: A bare number that is a position. Two decimal places is ~1 km, which still
+#: locates a population; one is ~11 km and is indistinguishable from an ordinary
+#: measurement, so it is left alone rather than making every quantity a leak.
+_NUMERIC_COORDINATE = re.compile(r"^-?(?:1[0-7]\d|\d{1,2})\.\d{2,}$")
 
 #: A deliberately broader net for the final check.
 #:
@@ -114,7 +164,12 @@ _COORDINATE = re.compile(
 _COORDINATE_SUSPICION = re.compile(
     _COORDINATE.pattern
     # Any two decimal numbers in plausible degree range, however separated.
-    + r"|[-+]?(?:1[0-7]\d|\d{1,2})\.\d+\D{0,24}[-+]?(?:1[0-7]\d|\d{1,2})\.\d+"
+    # Two decimal places, not one. "Seed set fell by 12.5 percent over 3.5
+    # seasons" raised and took the whole map down — and `quantified_seed_set`
+    # is one of this module's own EXPECTED_BUT_ABSENT predicates, so the
+    # evidence it most wants was the shape that broke it. Every real coordinate
+    # form carries two or more.
+    + r"|[-+]?(?:1[0-7]\d|\d{1,2})\.\d{2,}\D{0,24}[-+]?(?:1[0-7]\d|\d{1,2})\.\d{2,}"
     # Vocabulary that accompanies a position even when the digits are elsewhere.
     + r"|\b(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|gps|utm|mgrs"
     + r"|grid\s*ref(?:erence)?|plus\s*code|what3words|easting|northing|geohash)\b"
@@ -234,6 +289,9 @@ def _geographic_context(
     return {
         "scope": "; ".join(regions) if regions else "unspecified",
         "environmental_notes": notes,
+        # Filled in by execute() from what redaction actually did. A literal
+        # here certified every shape the pattern missed as safe, which is worse
+        # than missing it: a consumer has been told the field is clean.
         "coordinates_present": False,
     }
 
@@ -288,6 +346,27 @@ def _mechanisms(repository: GraphRepository, relationships: list[dict[str, Any]]
             "evidence_state": "REPORTED_UNVERIFIED",
         }
     )
+    return out
+
+
+def _disjointness_provenance(repository: GraphRepository) -> dict[frozenset[str], str]:
+    """What cited each declared disjointness, so a reader can check it.
+
+    ``resolved_by_scope`` is the only inference in this module that removes a
+    disagreement, and it was the only one a reader could not audit: the served
+    contradiction reported the resolution with no indication that a
+    ``disjoint_from`` edge existed or what stood behind it.
+    """
+    keys = {node.kg_node_id: node.canonical_key for node in repository.all_nodes()}
+    out: dict[frozenset[str], str] = {}
+    for edge in repository.all_edges():
+        if edge.edge_type != "disjoint_from":
+            continue
+        first, second = keys.get(edge.from_node_id), keys.get(edge.to_node_id)
+        if not first or not second or first == second:
+            continue
+        payload = edge.payload or {}
+        out[frozenset({first, second})] = str(payload.get("citation") or "no citation recorded")
     return out
 
 
@@ -360,7 +439,9 @@ def _describe_conflict(first: dict[str, Any], second: dict[str, Any]) -> str:
 
 
 def _contradictions(
-    relationships: list[dict[str, Any]], disjoint: set[frozenset[str]]
+    relationships: list[dict[str, Any]],
+    disjoint: set[frozenset[str]],
+    provenance: dict[frozenset[str], str] | None = None,
 ) -> list[dict[str, Any]]:
     """Find claims that disagree, and keep both rather than choosing."""
     reproductive = [r for r in relationships if r["predicate"] in _REPRODUCTIVE_PREDICATES]
@@ -369,6 +450,7 @@ def _contradictions(
         for second in reproductive[index + 1 :]:
             if first["predicate"] == second["predicate"]:
                 continue
+            resolution = _scope_resolution(first, second, disjoint)
             found.append(
                 {
                     "between": [
@@ -376,8 +458,21 @@ def _contradictions(
                         f"{second['predicate']} {second['object']}",
                     ],
                     "description": _describe_conflict(first, second),
-                    "resolution": _scope_resolution(first, second, disjoint),
+                    "resolution": resolution,
                     "scopes": [first.get("geographic_scope"), second.get("geographic_scope")],
+                    # When scope removes a disagreement, say what declared the
+                    # two places separate. Without it the reader is asked to
+                    # accept the one inference here that deletes a conflict.
+                    "resolved_by": (
+                        (provenance or {}).get(
+                            frozenset(
+                                {first.get("scope_region") or "", second.get("scope_region") or ""}
+                            ),
+                            "no citation recorded",
+                        )
+                        if resolution == "resolved_by_scope"
+                        else None
+                    ),
                 }
             )
     return found
@@ -419,14 +514,131 @@ def _evidence_gaps(repository: GraphRepository, relationships: list[dict[str, An
     return gaps
 
 
-def _redact(value: Any) -> Any:
+@dataclass
+class RedactionOutcome:
+    """What redaction actually did, so the map can report it instead of asserting it."""
+
+    fields_redacted: int = 0
+
+    @property
+    def applied(self) -> bool:
+        return self.fields_redacted > 0
+
+
+def _redact(value: Any, outcome: RedactionOutcome | None = None) -> Any:
+    """Withhold coordinate-shaped content, whatever type it arrives as.
+
+    The earlier version returned every non-string unexamined, so a position
+    carried as JSON numbers went straight to the client: two edges with
+    ``identifier`` set to ``51.7520`` and ``-1.2577`` were served intact under
+    ``redaction_applied: True``. That is the shape a real occurrence record is
+    most likely to arrive in, and checking only strings is a bug class rather
+    than a missing pattern.
+    """
+    record = outcome if outcome is not None else RedactionOutcome()
     if isinstance(value, str):
-        return _COORDINATE.sub("[locality withheld]", value)
+        # Folded first, so a position written in non-ASCII digits is seen. The
+        # folded text is what gets served when it matches, which is the safe
+        # direction: the alternative is serving the original because the
+        # pattern could not read it.
+        folded = _fold_digits(value)
+        cleaned = _COORDINATE.sub("[locality withheld]", folded)
+        if cleaned != folded:
+            record.fields_redacted += 1
+            return cleaned
+        return value
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        # A bare number is only a position in company, so it is judged against
+        # the fail-closed net rather than the redactor: a plausible degree value
+        # carried to locating precision.
+        if _NUMERIC_COORDINATE.match(f"{value}"):
+            record.fields_redacted += 1
+            return "[locality withheld]"
+        return value
     if isinstance(value, list):
-        return [_redact(item) for item in value]
+        return [_redact(item, record) for item in value]
     if isinstance(value, dict):
-        return {key: _redact(item) for key, item in value.items()}
+        # Keys are checked too. A key is rendered wherever the payload is.
+        return {
+            _redact(key, record) if isinstance(key, str) else key: _redact(item, record)
+            for key, item in value.items()
+        }
     return value
+
+
+def _strategy_objects(relationships: list[dict[str, Any]]) -> list[str]:
+    """The reproductive accounts actually retrieved, in the graph's own words."""
+    return sorted(
+        {r["object"] for r in relationships if r["predicate"] in _REPRODUCTIVE_PREDICATES}
+    )
+
+
+def _known_unknowns(
+    relationships: list[dict[str, Any]], mechanisms: list[dict[str, Any]]
+) -> list[str]:
+    """Open questions, counted and named from the graph.
+
+    These were fixed sentences asserting "the two reproductive strategies" and
+    "the insect-mediated mechanism". With four reports in the graph the first
+    still said two, and the second survived unchanged when every ``mechanism_of``
+    edge was deleted. Same defect as the recited mechanism prose, in the region
+    that fix did not reach.
+    """
+    strategies = _strategy_objects(relationships)
+    out: list[str] = []
+    if len(strategies) > 1:
+        out.append(
+            f"Whether the {len(strategies)} retrieved accounts "
+            f"({', '.join(strategies)}) co-occur in one population or partition "
+            "by geography."
+        )
+    proposed = [m["name"] for m in mechanisms if m["kind"] != "null_explanation"]
+    for name in proposed:
+        out.append(f"Whether {name} is currently active throughout the range.")
+    if strategies:
+        out.append("What conditions, if any, shift a population between the retrieved accounts.")
+    return out
+
+
+def _next_evidence(
+    relationships: list[dict[str, Any]],
+    mechanisms: list[dict[str, Any]],
+    unresolved: list[dict[str, Any]],
+) -> list[str]:
+    """What would move this forward, derived rather than promised.
+
+    The third entry used to say that a source reporting both strategies in one
+    population "would resolve the contradiction by scope rather than leaving it
+    contested". Under the rule this module now implements, two incompatible
+    claims about one population is the *definition* of a live conflict — the
+    sentence was the inverted rule written in prose, recommending evidence and
+    stating the opposite of what the code does with it.
+    """
+    out: list[str] = []
+    genus_level = [
+        r for r in relationships if r.get("support_scope") == "genus"
+    ]
+    if genus_level or any(m["kind"] == "proposed_mechanism" for m in mechanisms):
+        out.append("Pollinator observation records with the insect identified to species.")
+    strategies = _strategy_objects(relationships)
+    if len(strategies) > 1:
+        out.append(
+            "Exclusion experiments separating the contribution of "
+            f"{' and '.join(strategies)} to seed set."
+        )
+    if unresolved:
+        out.append(
+            "A source reporting the competing accounts in one population, which would let "
+            "the disagreement be assessed within a single place rather than across "
+            "reports that may not describe the same ground."
+        )
+        out.append(
+            "Evidence that the scopes of the competing reports are separate places, which "
+            "is what it would take to resolve this by scope."
+        )
+    return out
 
 
 def _confidence(unresolved: list[dict[str, Any]], gaps: list[str]) -> dict[str, Any]:
@@ -466,7 +678,9 @@ def execute(
     relationships = _relationships(repo, identity["kg_node_id"])
     geography = _geographic_context(relationships, _disjoint_regions(repo))
     mechanisms = _mechanisms(repo, relationships)
-    contradictions = _contradictions(relationships, _disjoint_regions(repo))
+    contradictions = _contradictions(
+        relationships, _disjoint_regions(repo), _disjointness_provenance(repo)
+    )
     gaps = _evidence_gaps(repo, relationships)
 
     traversal = ReasoningMapEngine(repo).build(
@@ -494,14 +708,7 @@ def execute(
         "mechanisms": mechanisms,
         "contradictions": contradictions,
         "evidence_gaps": gaps,
-        "known_unknowns": [
-            (
-                "Whether the two reproductive strategies co-occur in one population or "
-                "partition by geography."
-            ),
-            "Whether the insect-mediated mechanism is currently active throughout the range.",
-            "What conditions, if any, shift a population between strategies.",
-        ],
+        "known_unknowns": _known_unknowns(relationships, mechanisms),
         # Derived together with its reasons, so the two cannot disagree. A fixed
         # basis string contradicted itself the moment the contradiction resolved:
         # it went on saying "held below high because the reports conflict" while
@@ -512,14 +719,7 @@ def execute(
             "disclosure": "WITHHELD_PENDING_REVIEW",
             "redaction_applied": True,
         },
-        "recommended_next_evidence": [
-            "Pollinator observation records with the insect identified to species.",
-            "Exclusion experiments separating self-pollinated from insect-mediated seed set.",
-            (
-                "Any source reporting both strategies in one population, which would resolve "
-                "the contradiction by scope rather than leaving it contested."
-            ),
-        ],
+        "recommended_next_evidence": _next_evidence(relationships, mechanisms, unresolved),
         "handoffs": {
             "research_station": {"available": True, "carries_evidence_states": True},
             "education": {"available": True, "audience_adaptation_may_change_meaning": False},
@@ -549,10 +749,42 @@ def execute(
         },
     }
 
-    redacted = _redact(result)
+    outcome = RedactionOutcome()
+    redacted = _redact(result, outcome)
+
+    # The safety fields say what redaction did, not what it hoped. They were
+    # literals — `coordinates_present: False` and `redaction_applied: True`
+    # regardless — so every shape the pattern missed was served with a positive
+    # assertion that the map was clean. That is worse than the miss: a consumer
+    # cannot defend itself against a field that lies, and the module's own
+    # docstring is candid that the pattern "is a list of shapes someone thought
+    # of, not a proof". The served map now carries that candour.
+    # `coordinates_present` now means what its name says: coordinate-shaped
+    # content was found in this reasoning. It was a literal `False`, so every
+    # shape the pattern missed was served with a positive assertion that the
+    # map was clean — worse than the miss, because a consumer cannot defend
+    # itself against a field that lies.
+    #
+    # Deriving it also makes the two layers compose. A rendering surface that
+    # finds a position in a map declaring `False` has caught a real upstream
+    # miss, rather than contradicting a constant that was never a claim.
+    redacted["geographic_context"]["coordinates_present"] = outcome.applied
+
+    # `redaction_applied` stays true, and that is not an oversight. The Brain's
+    # scientific contract reads it as "the redaction policy is in force for a
+    # protected taxon" (validator line 203), not "a substitution occurred" —
+    # and for a protected taxon whose sources happen to carry no coordinates,
+    # the policy did run and found nothing. Deriving it from the substitution
+    # count would break that contract and would say something false.
+    #
+    # What neither field can express is the thing most worth saying: absence
+    # was never *verified*, only unmatched. `locality_policy` is
+    # `additionalProperties: false` in the Brain schema, so carrying that
+    # honesty to a client needs a field there rather than an extra key here.
+
     # Fail closed rather than serving a map that leaked. The suspicion pattern is
     # broader than the redactor on purpose.
-    leaked = _COORDINATE_SUSPICION.search(str(redacted))
+    leaked = _COORDINATE_SUSPICION.search(_fold_digits(str(redacted)))
     if leaked:
         raise CognitiveIntegrationError(
             f"coordinate-shaped content survived redaction: {leaked.group(0)!r}"
