@@ -17,11 +17,7 @@ from hashlib import sha256
 import re
 from typing import Any
 
-from .intelligence import (
-    APPROVAL_REQUIRED_ACTIONS,
-    AUTO_INTERNAL_ACTIONS,
-    knowledge_fingerprint,
-)
+from .intelligence import APPROVAL_REQUIRED_ACTIONS, AUTO_INTERNAL_ACTIONS
 
 JOURNAL_CLUB_PARSER_VERSION = "journal-club-tech-intelligence-v1"
 
