@@ -72,6 +72,43 @@ def route_task(issue: dict):
     return _ROUTING.route_task(issue)
 
 
+def is_lane_executable(issue: dict) -> bool:
+    """True when the deterministic worker job has an executor for this task.
+
+    Admission to the provider-free lane asks this, not ``is_provider_free``.
+    The two were conflated, and #1502 is what that costs: it declares eight
+    deterministic capabilities, so it is genuinely provider-free, and it was
+    handed to a worker whose only mode reconciles GitHub state. The worker
+    refused a marker the issue had no reason to carry and the issue was marked
+    ``oc-blocked`` — a label that removes work from the portfolio for good.
+
+    A capability list says what to build. It does not name anyone who can
+    build it.
+    """
+    return _ROUTING.is_lane_executable(issue)
+
+
+def lane_refusal(issue: dict) -> dict:
+    """A durable record of deterministic work this lane cannot staff.
+
+    Kept distinct from a blocker on purpose. Nothing is stopping this task; the
+    lane simply has no executor for it, which is a gap in the factory rather
+    than a gap in the work, and it belongs in Improvement Discovery as
+    ``missing_capability`` rather than in the blocked pile.
+    """
+    routing = route_task(issue)
+    return {
+        "schema": "oc.lane-refusal.v1",
+        "issue_number": routing.issue_number,
+        "provider_free": routing.provider_free,
+        "lane_executable": False,
+        "reason": routing.unexecutable_reason,
+        "declared_deterministic_capabilities": list(routing.deterministic_capabilities),
+        "parked_capabilities": routing.parked_capabilities,
+        "blocked": False,
+    }
+
+
 def _bounded_slots(value: Any) -> int:
     try:
         slots = int(value)
@@ -90,15 +127,68 @@ def _issue_index(snapshot: dict) -> dict[int, dict]:
     return result
 
 
+def _strip_queue_label(issue: dict) -> dict:
+    """Return the issue without ``oc-queued``, leaving every other field alone.
+
+    Removing the queue label keeps the issue out of candidacy for this pass
+    without touching its durable state: dependency edges, resource claims and
+    priority all still read correctly for everything else in the plan.
+    """
+    stripped = dict(issue)
+    labels = []
+    for label in issue.get("labels") or []:
+        name = label if isinstance(label, str) else label.get("name")
+        if name != "oc-queued":
+            labels.append(label)
+    stripped["labels"] = labels
+    return stripped
+
+
+def unstaffed_numbers(snapshot: dict) -> list[int]:
+    """Open queued issues that need no provider and that no executor implements.
+
+    These are the ones that belong to neither lane. Leaving them in candidacy
+    is not harmless: they sort by priority like anything else, and a resource
+    claim they can never use is still exclusive. A P0 task nothing can run will
+    take the lane and the ``control-plane`` lock and hold both against a P4 task
+    that was ready to execute — which is the work-conservation rule failing, not
+    merely a label being wrong.
+    """
+    numbers: list[int] = []
+    for issue in snapshot.get("issues") or []:
+        if str(issue.get("state") or "").upper() != "OPEN":
+            continue
+        names = {
+            label if isinstance(label, str) else label.get("name")
+            for label in issue.get("labels") or []
+        }
+        if "oc-queued" not in names:
+            continue
+        if is_lane_executable(issue):
+            continue
+        if not is_provider_free(issue):
+            # Genuinely needs a provider: the governed completion lane owns it.
+            continue
+        if issue.get("number") is not None:
+            numbers.append(int(issue["number"]))
+    return numbers
+
+
 def _provider_free_snapshot(snapshot: dict) -> dict:
-    """Hide provider-dependent queue entries without losing dependency state."""
+    """Hide entries this lane cannot execute, without losing dependency state.
+
+    This used to match ``PROVIDER_FREE_MARKER`` directly while the plan builder
+    below asked the capability router — two notions of "provider-free" in one
+    file, disagreeing about the same issue. The router is the single answer now,
+    and the question it is asked here is executability, not provider-freedom.
+    """
     filtered = dict(snapshot)
     issues = []
     for original in snapshot.get("issues") or []:
         issue = dict(original)
         if (
             str(issue.get("state") or "").upper() == "OPEN"
-            and not PROVIDER_FREE_MARKER.search(str(issue.get("body") or ""))
+            and not is_lane_executable(issue)
         ):
             labels = []
             for label in issue.get("labels") or []:
@@ -124,6 +214,19 @@ def build_swarm_plan(
     deps = _load_sibling("oc_swarm_dependency_graph", "oc_swarm_dependency_graph.py")
 
     planning_snapshot = _provider_free_snapshot(snapshot) if provider_free_only else snapshot
+
+    # Work nothing can execute is withdrawn from candidacy before selection, so
+    # it cannot take a lane or hold a resource lock away from work that can run.
+    unstaffed = set(unstaffed_numbers(planning_snapshot))
+    if unstaffed:
+        planning_snapshot = dict(planning_snapshot)
+        planning_snapshot["issues"] = [
+            _strip_queue_label(issue)
+            if int(issue.get("number") or 0) in unstaffed
+            else issue
+            for issue in planning_snapshot.get("issues") or []
+        ]
+
     canonical_input = dict(planning_snapshot)
     canonical_input["max_active_lanes"] = slots
     canonical_input.pop("stabilization_issue", None)
@@ -185,14 +288,26 @@ def build_swarm_plan(
                 "writes": list(item.get("writes") or []),
                 "dependencies": list(dep_status.get("dependencies") or []),
                 "provider_free": is_provider_free(issues[issue_number]),
+                "lane_executable": is_lane_executable(issues[issue_number]),
             }
         )
 
-    # One plan, two execution lanes. Provider-free reconciliation runs in the
-    # deterministic worker job whether or not paid providers are enabled; only
-    # provider-dependent work is handed to the governed completion lane.
-    provider_free_workers = [worker for worker in workers if worker["provider_free"]]
-    provider_workers = [worker for worker in workers if not worker["provider_free"]]
+    # One plan, two execution lanes, and a third outcome that is neither.
+    #
+    # The deterministic job takes what it has an executor for. The governed
+    # completion lane takes what genuinely needs a provider. Work that needs no
+    # provider but that no executor implements goes to neither: sending it to
+    # the deterministic worker gets it marked blocked for a missing marker, and
+    # sending it to the paid lane is the misrouting the router was repaired to
+    # stop. It is recorded instead, so it stays visible as a missing capability.
+    provider_free_workers = [worker for worker in workers if worker["lane_executable"]]
+    provider_workers = [worker for worker in workers if not worker["lane_executable"]]
+    # Recorded from the withdrawn set rather than from the selected workers:
+    # they are withdrawn precisely so they never become workers, and a refusal
+    # nobody writes down is how the 01:04 diagnosis got lost the first time.
+    lane_refusals = [
+        lane_refusal(issues[number]) for number in sorted(unstaffed) if number in issues
+    ]
 
     # A later wave can make progress when queued work exists but is blocked only
     # by active workers or unresolved dependencies. The workflow uses this as an
@@ -218,6 +333,9 @@ def build_swarm_plan(
         "provider_matrix": {"include": provider_workers},
         "provider_free_launch_count": len(provider_free_workers),
         "provider_launch_count": len(provider_workers),
+        "unstaffed_numbers": sorted(unstaffed),
+        "lane_refusals": lane_refusals,
+        "unstaffed_count": len(unstaffed),
         "selected_numbers": [worker["issue_number"] for worker in workers],
         "dependency_graph": {
             "edge_count": int(graph.get("edge_count") or 0),
