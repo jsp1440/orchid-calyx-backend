@@ -1,13 +1,15 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.intake.journal_club import (
     JOURNAL_CLUB_PARSER_VERSION,
+    JournalClubIntakeRequest,
     canonical_journal_club_text,
     journal_club_summary,
     parse_journal_club_transcript,
 )
-from app.intake.schemas import JournalClubIntakeRequest
 from app.security import verify_owner_or_api_key
 
 
@@ -148,9 +150,5 @@ def test_authenticated_route_uses_existing_source_and_intelligence_ledgers(monke
 
 
 def test_request_rejects_missing_transcript():
-    try:
+    with pytest.raises(ValidationError):
         JournalClubIntakeRequest(title="x", transcript="")
-    except Exception:
-        pass
-    else:
-        raise AssertionError("empty transcript must fail validation")
