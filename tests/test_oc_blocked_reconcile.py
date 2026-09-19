@@ -38,6 +38,8 @@ WorldState = reconcile_module.WorldState
 reconcile = reconcile_module.reconcile
 reconcile_issue = reconcile_module.reconcile_issue
 to_report = reconcile_module.to_report
+observation_requests = reconcile_module.observation_requests
+release_plan = reconcile_module.release_plan
 
 
 def issue(number: int, *, body: str = "", labels=("oc-blocked",), comments=()) -> dict:
@@ -216,3 +218,67 @@ class TestTheReport:
         assert records[1]["release_authorized"] is True
         assert records[2]["release_authorized"] is False
         assert all(r["reason"] for r in records.values())
+
+
+class TestDurableHandoff:
+    def test_it_requests_only_the_missing_facts_needed_for_replay(self) -> None:
+        issues = [
+            {
+                "number": 1,
+                "state": "OPEN",
+                "body": "",
+                "labels": ["oc-blocked"],
+                "comments": 2,
+            },
+            issue(2, comments=["OC-BLOCKED-ON: #20"]),
+            issue(3, comments=["OC-BLOCKED-ON: pr#30"]),
+            issue(4, comments=["OC-BLOCKED-ON: credential"]),
+        ]
+        world = WorldState()
+        results = reconcile(issues, world)
+
+        assert observation_requests(issues, results, world) == [
+            {"kind": "issue_comments", "number": 1},
+            {"kind": "issue_state", "number": 20},
+            {"kind": "pull_request_state", "number": 30},
+        ]
+
+    def test_known_state_and_fetched_comments_need_no_more_observations(self) -> None:
+        issues = [
+            issue(1, comments=["prose only"]),
+            issue(2, comments=["OC-BLOCKED-ON: #20"]),
+            issue(3, comments=["OC-BLOCKED-ON: pr#30"]),
+        ]
+        world = WorldState(open_issues={20}, merged_prs={30})
+        results = reconcile(issues, world)
+
+        assert observation_requests(issues, results, world) == []
+
+    def test_release_plan_is_stable_bounded_and_carries_a_replay_guard(self) -> None:
+        results = reconcile(
+            [
+                issue(2, comments=["OC-BLOCKED-ON: #20"]),
+                issue(1, comments=["OC-BLOCKED-ON: pr#30"]),
+                issue(3, comments=["OC-BLOCKED-ON: credential"]),
+            ],
+            WorldState(closed_issues={20}, merged_prs={30}),
+        )
+
+        first = release_plan(results)
+        second = release_plan(results)
+
+        assert first == second
+        assert first["mutates"] is False
+        assert first["action_count"] == 2
+        assert [action["issue_number"] for action in first["actions"]] == [1, 2]
+        assert all(action["requires_labels"] == ["oc-blocked"] for action in first["actions"])
+        assert all(action["add_labels"] == ["oc-queued"] for action in first["actions"])
+        assert all(action["release_authorized"] is True for action in first["actions"])
+
+    def test_post_release_snapshot_cannot_repeat_the_action(self) -> None:
+        before = [issue(1, comments=["OC-BLOCKED-ON: #20"])]
+        world = WorldState(closed_issues={20})
+        assert release_plan(reconcile(before, world))["action_count"] == 1
+
+        after = [issue(1, labels=("oc-queued",), comments=["OC-BLOCKED-ON: #20"])]
+        assert release_plan(reconcile(after, world))["action_count"] == 0
