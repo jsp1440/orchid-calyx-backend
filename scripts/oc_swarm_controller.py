@@ -47,8 +47,15 @@ def _load_sibling(module_name: str, filename: str):
     if spec is None or spec.loader is None:
         raise RuntimeError(f"required swarm module unavailable: {filename}")
     module = importlib.util.module_from_spec(spec)
+    # Dataclasses using postponed annotations resolve their module through
+    # sys.modules while the file is executing. Register sibling modules before
+    # exec so the controller can compose those modules from a bare checkout.
+    sys.modules[module_name] = module
     spec.loader.exec_module(module)
     return module
+
+
+_BLOCKED_RECONCILER = _load_sibling("oc_blocked_reconcile", "oc_blocked_reconcile.py")
 
 
 def is_provider_free(issue: dict) -> bool:
@@ -125,6 +132,62 @@ def _issue_index(snapshot: dict) -> dict[int, dict]:
         if issue.get("number") is not None:
             result[int(issue["number"])] = issue
     return result
+
+
+def blocked_reconciliation_report(snapshot: dict) -> dict:
+    """Return a fail-closed, mutation-free view of parked blocked work.
+
+    The hosted snapshot currently contains open issues and open pull requests.
+    Callers that persist closed issues, merged pull requests, or per-issue
+    comments may include them in the same snapshot; otherwise absent state is
+    deliberately treated as unknown and never authorizes release.
+
+    ``issue_comments`` is an optional mapping keyed by issue number. It lets a
+    durable caller reconstruct the exact same decision after restart without
+    changing the issue-list shape used by the portfolio scheduler.
+    """
+    raw_issues = list(snapshot.get("issues") or [])
+    comments_by_issue = snapshot.get("issue_comments") or {}
+    issues: list[dict] = []
+    for original in raw_issues:
+        issue = dict(original)
+        number = issue.get("number")
+        supplied = comments_by_issue.get(str(number))
+        if supplied is None and number in comments_by_issue:
+            supplied = comments_by_issue[number]
+        if supplied is not None:
+            issue["comments"] = supplied
+        issues.append(issue)
+
+    open_issues: set[int] = set()
+    closed_issues: set[int] = set()
+    for issue in issues:
+        if issue.get("number") is None:
+            continue
+        number = int(issue["number"])
+        if str(issue.get("state") or "OPEN").upper() == "CLOSED":
+            closed_issues.add(number)
+        else:
+            open_issues.add(number)
+
+    merged_prs: set[int] = set()
+    unmerged_prs: set[int] = set()
+    for pull_request in snapshot.get("pull_requests") or []:
+        if pull_request.get("number") is None:
+            continue
+        number = int(pull_request["number"])
+        merged = bool(pull_request.get("merged") or pull_request.get("merged_at"))
+        if str(pull_request.get("state") or "").upper() == "MERGED":
+            merged = True
+        (merged_prs if merged else unmerged_prs).add(number)
+
+    world = _BLOCKED_RECONCILER.WorldState(
+        closed_issues=closed_issues,
+        open_issues=open_issues,
+        merged_prs=merged_prs,
+        unmerged_prs=unmerged_prs,
+    )
+    return _BLOCKED_RECONCILER.to_report(_BLOCKED_RECONCILER.reconcile(issues, world))
 
 
 def _strip_queue_label(issue: dict) -> dict:
@@ -212,6 +275,7 @@ def build_swarm_plan(
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
     deps = _load_sibling("oc_swarm_dependency_graph", "oc_swarm_dependency_graph.py")
+    blocked_report = blocked_reconciliation_report(snapshot)
 
     planning_snapshot = _provider_free_snapshot(snapshot) if provider_free_only else snapshot
 
@@ -345,6 +409,7 @@ def build_swarm_plan(
         "active_resource_locks": active_locks,
         "resource_lock_suppressed": lock_suppressed,
         "canonical_suppressed": list(plan.get("suppressed") or []),
+        "blocked_reconciliation": blocked_report,
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
@@ -363,6 +428,8 @@ def build_swarm_plan(
             "write_conflicts_fail_closed": True,
             "provider_free_only": provider_free_only,
             "provider_free_lane_split": True,
+            "blocked_work_fail_closed": True,
+            "blocked_reconciliation_mutates": False,
         },
     }
 
