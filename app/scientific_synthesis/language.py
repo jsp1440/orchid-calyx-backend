@@ -86,6 +86,42 @@ def _tokenize(value: str) -> list[str]:
     return re.findall(r"[a-z]+", _normalize(value))
 
 
+def _candidate_resolution(concept_matches: dict[str, Any] | None) -> dict[str, Any]:
+    """Translate concept search into a review-gated glossary candidate state."""
+    resolution = str((concept_matches or {}).get("resolution") or "UNAVAILABLE")
+    exact_ids = tuple(
+        sorted(str(value) for value in (concept_matches or {}).get("exact_concept_ids", ()))
+    )
+    if resolution == "RESOLVED" and len(exact_ids) == 1:
+        state = "MATCHED_PENDING_REVIEW"
+        matched_concept_id: str | None = exact_ids[0]
+        reason = "one exact canonical label match requires human review"
+    elif resolution == "AMBIGUOUS" or len(exact_ids) > 1:
+        state = "AMBIGUOUS"
+        matched_concept_id = None
+        reason = "multiple exact canonical matches require disambiguation"
+    elif resolution == "CANDIDATES":
+        state = "CANDIDATES"
+        matched_concept_id = None
+        reason = "non-exact canonical candidates require human resolution"
+    else:
+        state = "UNRESOLVED"
+        matched_concept_id = None
+        reason = (
+            "canonical concept registry is unavailable"
+            if resolution == "UNAVAILABLE"
+            else "no canonical concept match"
+        )
+    return {
+        "state": state,
+        "matched_concept_id": matched_concept_id,
+        "exact_concept_ids": list(exact_ids),
+        "reason": reason,
+        "review_required": True,
+        "canonical_promotion_authorized": False,
+    }
+
+
 class BotanicalLanguageService:
     """Connect extracted glossary candidates with canonical concepts and lexical aids."""
 
@@ -132,6 +168,9 @@ class BotanicalLanguageService:
         concept_matches: dict[str, Any] | None = None
         if self.concept_search is not None:
             concept_matches = self.concept_search(term)
+        candidate_resolution = (
+            _candidate_resolution(concept_matches) if glossary_term is not None else None
+        )
         return {
             "term": term,
             "normalized_term": normalized,
@@ -147,6 +186,7 @@ class BotanicalLanguageService:
                 else None
             ),
             "concept_registry": concept_matches,
+            "candidate_resolution": candidate_resolution,
             "word_elements": self.roots_for(term),
             "botanical_latin": BOTANICAL_LATIN_BACKGROUND,
             "etymology_review_required": True,
