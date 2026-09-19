@@ -30,17 +30,93 @@ def _state(value: Any, *, limitation: str | None = None) -> dict[str, Any]:
     }
 
 
+INFRASPECIFIC_RANKS: dict[str, str] = {
+    "subsp.": "subspecies",
+    "ssp.": "subspecies",
+    "var.": "variety",
+    "subvar.": "subvariety",
+    "f.": "form",
+    "fo.": "form",
+    "forma": "form",
+    "subf.": "subform",
+    "nothosubsp.": "nothosubspecies",
+    "nothovar.": "nothovariety",
+    "cv.": "cultivar",
+}
+HYBRID_SIGNS = {"×", "x"}
+
+#: Latin connectives that join two authorities in a citation ("Wall. ex Lindl.",
+#: "Rchb. f. et Warsz."). They are lowercase and can follow a token that looks
+#: like a rank marker, so they must never be read as an infraspecific epithet.
+AUTHOR_CONNECTIVES = {"ex", "et", "in", "and", "nec", "non", "emend", "sensu"}
+
+
+def _is_epithet(token: str) -> bool:
+    """A plausible infraspecific epithet: lowercase, letters and internal hyphens.
+
+    ``f.`` is both a form marker and the ``filius`` of a spaced author
+    abbreviation such as ``Rchb. f.``. Requiring a real epithet after the marker
+    keeps ``Dendrochilum cootesii Rchb. f. ex Lindl.`` a species whose author is
+    ``Rchb. f. ex Lindl.``, instead of inventing the form ``... f. ex``.
+
+    Hyphens are part of the epithet, not a reason to reject it. Hyphenated
+    infraspecific epithets are ordinary botanical names — this repository's own
+    registry carries ``Ophrys vernixia ssp. regis-ferdinandii``, ``Cypripedium
+    chamberlainianum f. victoria-mariae`` and four more. Demanding
+    ``str.isalpha`` would collapse every one of them onto its species and
+    present the rank text as authorship, which is the pair of failures this
+    module exists to remove.
+    """
+    if not token or not token[:1].islower() or token in AUTHOR_CONNECTIVES:
+        return False
+    if not token[-1:].isalpha():
+        return False
+    return token.replace("-", "").isalpha()
+
+
 def _split_scientific_name(value: str) -> tuple[str, str | None]:
-    """Separate the normalized binomial from any retained authorship text."""
+    """Separate the name from any retained authorship text.
+
+    The name is the genus and epithet, plus a hybrid sign between them
+    (``Phalaenopsis × intermedia``) and one infraspecific rank marker with its
+    epithet wherever the row placed it (``Calypso bulbosa (L.) Oakes var.
+    americana (R.Br.) Luer`` -> ``Calypso bulbosa var. americana``). Rank text is
+    never presented as authorship, and an infraspecific taxon is never collapsed
+    onto its species. The authorship returned is the text that follows the last
+    name token; the row itself stays verbatim in ``full_scientific_name``.
+    """
     normalized = " ".join((value or "").strip().split())
     if not normalized:
         return "", None
     parts = normalized.split(" ")
     if len(parts) < 2:
         return normalized, None
-    display_name = " ".join(parts[:2])
-    authorship = " ".join(parts[2:]).strip() or None
+    end = 3 if parts[1] in HYBRID_SIGNS and len(parts) > 2 else 2
+    name_parts = parts[:end]
+    rest = parts[end:]
+    for index, token in enumerate(rest):
+        follower = rest[index + 1] if index + 1 < len(rest) else ""
+        if token.lower() in INFRASPECIFIC_RANKS and _is_epithet(follower):
+            name_parts.extend([token, follower])
+            rest = rest[index + 2 :]
+            break
+    display_name = " ".join(name_parts)
+    authorship = " ".join(rest).strip() or None
     return display_name, authorship
+
+
+def taxon_rank(display_name: str) -> str:
+    """Rank implied by a display name produced by :func:`_split_scientific_name`."""
+    parts = " ".join((display_name or "").split()).split(" ")
+    if len(parts) < 2 or not parts[0]:
+        return "genus" if parts and parts[0] else "unknown"
+    for token in parts[2:]:
+        rank = INFRASPECIFIC_RANKS.get(token.lower())
+        if rank:
+            return rank
+    if parts[1] in HYBRID_SIGNS:
+        return "hybrid"
+    return "species"
 
 
 def _normalized_name(value: str) -> str:
