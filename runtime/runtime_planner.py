@@ -14,7 +14,6 @@ from typing import Any
 from .cds_loader import get_cds_loader
 from .mission_alignment import evaluate_work_alignment
 
-
 STATUS_WEIGHT = {
     "live-ready": 100,
     "framework": 70,
