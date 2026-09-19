@@ -27,9 +27,10 @@ absence is not evidence and comparing "not there" with "not there" is how a
 vacuous pass is manufactured. So:
 
 * `--path P` must resolve at the verified head.
-* `--deleted-path P` must resolve at every `git merge-base <verified-head>
+* `--deleted-path P` must resolve at every `git merge-base --all <verified-head>
   <integration-ref>`, which is what makes it a deletion rather than a name nobody
-  ever used. That base is derived from the two refs being compared, never
+  ever used. `--all`, because a criss-cross history has more than one base and a
+  gate whose answer turns on which one git's tie-break prints is not a gate. That base is derived from the two refs being compared, never
   supplied by the caller.
 
 **Only a path this change could have altered is evidence.** Two ways to fail that
@@ -42,9 +43,16 @@ and both have been live in this tool:
   the change is identical at the merge base and on both sides, so declaring it
   satisfies any "declare a surviving path" rule while witnessing nothing.
 
-So at least one `--path` must differ from every merge base. A change that only
-removes files cannot be verified here at all, and this says so rather than
+So at least one `--path` must resolve unambiguously at every merge base and
+differ from it there -- an unresolved lookup is not a difference. A change that
+only removes files cannot be verified here at all, and this says so rather than
 sending you to find a path that makes the check pass.
+
+That requirement is dropped in the one case where it would be impossible and is
+not needed: when the verified head is itself a merge base, it is an ancestor of
+the integration ref, the commit is in that history, and containment is stronger
+evidence than any comparison. The declared paths are still compared, because a
+later commit can revert content that genuinely merged.
 
 Paths are compared as `mode type id`, not blob id alone, so a file that becomes
 a symlink or gains the executable bit without changing a byte is a divergence
@@ -263,21 +271,43 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"  {path}")
             return 2
 
-    # At least one declared path must be one this change could have altered.
-    # A file identical at the ancestor, the verified head and the integration ref
-    # satisfies "declare a surviving path" and proves nothing: comparing identity
-    # with identity, where the identity predates the change, is the same vacuous
-    # pass as comparing absence with absence.
-    touched = [path for path in args.paths
-               if all(_entry(base, path) != verified_entries[path] for base in bases)]
-    if not touched:
+    # When the verified head is itself a merge base, it is an ancestor of the
+    # integration ref: the commit is in that history, which is stronger evidence
+    # than any path comparison can be. Requiring a path to differ from the base
+    # would then be requiring it to differ from the verified head, which is
+    # impossible -- so an ordinary merge or fast-forward could never be verified
+    # at all. The path comparison still runs, because a later commit can revert
+    # content that was genuinely merged.
+    contained = verified_ids[0] in bases
+
+    # Otherwise at least one declared path must be one this change could have
+    # altered. A file identical at the ancestor, the verified head and the
+    # integration ref proves nothing: comparing identity with identity, where the
+    # identity predates the change, is the same vacuous pass as comparing absence
+    # with absence.
+    #
+    # An unresolved lookup at a base is not a difference. `_entry` returns
+    # UNKNOWN for one, and `UNKNOWN != <entry>` is true, so an ambiguous pathspec
+    # -- a trailing slash matching several children, say -- would otherwise be
+    # read as evidence that the change touched the path. Every other gate here
+    # refuses UNKNOWN; this one was counting it as proof.
+    def _differs_from_every_base(path: str) -> bool:
+        entries = [_entry(base, path) for base in bases]
+        if any(entry == UNKNOWN for entry in entries):
+            return False
+        return all(entry != verified_entries[path] for entry in entries)
+
+    touched = [path for path in args.paths if _differs_from_every_base(path)]
+    if not contained and not touched:
         named = ", ".join(base[:12] for base in bases)
-        print(f"REFUSED: none of the declared --path arguments differs from the merge base ({named}),")
-        print("so the change cannot have altered any of them and comparing them proves nothing.")
-        print("Declare the paths this change actually modified or added.")
         if args.deleted_paths and not args.paths:
-            print("A change that only removes files cannot be verified by this tool:")
-            print("  absence is symmetric, so there is nothing whose content can witness the merge.")
+            print("REFUSED: a change that only removes files cannot be verified by this tool.")
+            print("Absence is symmetric, so there is nothing whose content can witness the merge.")
+            return 2
+        print(f"REFUSED: no declared --path resolves unambiguously at the merge base ({named})")
+        print("and differs from it there, so none of them can witness what this merge did.")
+        print("Declare the paths this change modified or added, spelled exactly as git")
+        print("reports them -- a trailing slash matches several entries and resolves to nothing.")
         return 2
 
     verified = VerifiedResult(

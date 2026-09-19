@@ -348,26 +348,49 @@ class TestThePathspecIsLiteral:
 class TestHowTheTreeIsRead:
     """What is pinned here, and what is not.
 
-    `--full-tree` is pinned below. EIGHT guards are not, and this says so
-    rather than letting a coverage claim overstate the suite -- an earlier
-    version of this docstring said three, then five, each time wrong:
+    `--full-tree` is pinned below. SIX mutants survive this suite, each one
+    confirmed by running it with the guard removed rather than by reading the
+    code. An earlier version of this docstring said three, then five, then
+    eight, each time from inspection and each time wrong; two of the eight --
+    the multi-record guard and the touched-path quantifier -- were not
+    survivors but unwritten tests, and one of them was a live defect.
 
-      * `-z` (git C-quotes an odd path onto one line anyway)
-      * `--end-of-options` on ls-tree, and on rev-parse when `--verify --quiet`
-        is kept (two distinct call sites; the refs are already validated)
-      * the multi-record guard (`:(literal)` makes a multi-match unreachable)
+      * `-z` on ls-tree (git C-quotes an odd path onto one line anyway)
+      * `--end-of-options` on ls-tree
+      * `--end-of-options` on rev-parse (`--verify` already rejects a dash ref,
+        so the flag is belt-and-braces while `--verify --quiet` is kept)
       * `_entry`'s empty-field guard
-      * `_resolve_ref`'s tree-resolution check (a validated commit has one)
+      * `_resolve_ref`'s tree-resolution check (a validated commit has a tree)
       * `may_report_integrated`'s `and inspection.landed` conjunct (redundant)
-      * the `all(... for base in bases)` quantifier in the touched-path rule:
-        pinning it needs a path that differs from one merge base and not
-        another, and which base git names first is exactly the tie-break the
-        quantifier exists to remove, so a test cannot rely on getting the
-        ordering it needs. The same quantifier on the deletion gate IS pinned,
-        by `TestTheMergeBaseIsNotATieBreak`, where one base simply lacks the
-        path and ordering does not matter.
 
     They stay because they are correct, not because they are covered.
+
+    Two guards that earlier versions listed here are now pinned, and the note
+    that listed them was itself the defect:
+
+      * the multi-record guard. "`:(literal)` makes a multi-match unreachable"
+        is false -- `:(literal)` suppresses glob magic, it does not make a
+        pathspec match one entry, and `src/lib/` matches every child. Believing
+        it left the UNKNOWN that a multi-match returns unhandled at the merge
+        base, where `UNKNOWN != <entry>` read as a difference and certified a
+        squash that had dropped a locality fix. Pinned by
+        `TestAnUnresolvedBaseLookupIsNotADifference`.
+      * the `all(... for base in bases)` quantifier in the touched-path rule.
+        The claim that it could not be pinned because a test cannot control
+        which base git names first was wrong: a path that matches one base and
+        differs from the other is refused under `all` and accepted under `any`
+        whichever order git reports them in.
+        `test_a_path_matching_any_merge_base_is_not_treated_as_touched` now
+        builds that case, and the earlier test of that name did not -- it made
+        the path identical at both bases, where the two quantifiers agree.
+
+    `merge-base --all` sits between the two lists. Both criss-cross tests go red
+    without it on this git, so it is not a survivor here; the kill runs through
+    git's tie-break between equally good bases, which is unspecified. No
+    order-independent test can exist for it: reading one base and reading all of
+    them can only disagree when the bases themselves disagree, and then the
+    answer turns on which one a bare `merge-base` prints. The quantifiers those
+    tests also cover are pinned unconditionally.
     """
 
     def test_a_path_resolves_the_same_from_a_subdirectory(self, history):
@@ -590,14 +613,17 @@ class TestAnUnresolvedLookup:
         shim.chmod(0o755)
 
     def test_an_unresolved_integration_lookup_is_never_a_pass(self, history, tmp_path):
+        # Blind only the integration ref, so the merge base still resolves and
+        # the declared path is genuinely touched. The unresolved lookup is then
+        # the one thing standing between this and a verdict.
         bin_dir = tmp_path / "bin"
-        self._git_that_cannot_read_one_ref(bin_dir, str(history["verified"]))
+        self._git_that_cannot_read_one_ref(bin_dir, str(history["diverged"]))
         env = dict(os.environ, PATH=f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
         done = subprocess.run(
             [
                 sys.executable, str(SCRIPT),
-                "--verified-head", str(history["deletion"]),
-                "--integration-ref", str(history["verified"]),
+                "--verified-head", str(history["verified"]),
+                "--integration-ref", str(history["diverged"]),
                 "--path", EDITED,
             ],
             cwd=str(history["repo"]), capture_output=True, text=True, check=False, env=env,
@@ -651,7 +677,7 @@ class TestADeletionCannotEvidenceAMerge:
         # is not verifiable here -- rather than sent to find a path that passes.
         assert done.returncode == 2
         assert "cannot be verified by this tool" in done.stdout
-        assert "absence is symmetric" in done.stdout
+        assert "Absence is symmetric" in done.stdout
 
     def test_the_same_refs_reveal_the_regression_once_a_kept_path_is_declared(self, tmp_path):
         history = self._forked(tmp_path / "forked2")
@@ -710,44 +736,52 @@ class TestTheMergeBaseIsNotATieBreak:
         assert "do not exist at every merge base" in done.stdout
 
     def test_a_path_matching_any_merge_base_is_not_treated_as_touched(self, tmp_path):
-        """`touched` must differ from EVERY base, not from whichever git names.
+        """`touched` must differ from EVERY base, not from one of them.
 
-        With two bases and a path that matches one of them, comparing against a
-        single base makes the verdict depend on the tie-break again.
+        The earlier version of this test made the path identical at both bases,
+        so it was refused under `all` and under `any` alike and killed neither.
+        The distinction needs a path that MATCHES one base and DIFFERS from the
+        other -- which is order-independent, so nothing here depends on which
+        base git names first.
         """
         repo = tmp_path / "criss-touched"
         repo.mkdir(parents=True, exist_ok=True)
         _git(repo, "init", "-q", "-b", "main")
         _git(repo, "config", "user.email", "checker@example.invalid")
         _git(repo, "config", "user.name", "checker")
-        (repo / "P.txt").write_text("shared\n")
+        (repo / "P.txt").write_text("v0\n")
         root = _commit(repo, "root")
 
+        # left carries v1; right keeps v0. Both become merge bases.
         _git(repo, "checkout", "-q", "-b", "left")
-        (repo / "left.txt").write_text("left\n")
-        left = _commit(repo, "left")
+        (repo / "P.txt").write_text("v1\n")
+        left = _commit(repo, "left sets v1")
 
         _git(repo, "checkout", "-q", "--force", "-b", "right", root)
-        (repo / "right.txt").write_text("right\n")
-        right = _commit(repo, "right")
+        (repo / "other.txt").write_text("other\n")
+        right = _commit(repo, "right leaves P alone")
 
         _git(repo, "checkout", "-q", "--force", "-b", "x", left)
         _git(repo, "merge", "-q", "--no-edit", right)
         verified = _git(repo, "rev-parse", "HEAD")
 
         _git(repo, "checkout", "-q", "--force", "-b", "y", right)
-        _git(repo, "merge", "-q", "--no-edit", left)
+        _git(repo, "merge", "-q", "--no-edit", "-X", "theirs", left)
         integration = _git(repo, "rev-parse", "HEAD")
 
         bases = _git(repo, "merge-base", "--all", verified, integration).split()
         if len(bases) < 2:
             pytest.skip("this git produced a single merge base")
+        values = {_git(repo, "ls-tree", base, "--", "P.txt") for base in bases}
+        if len(values) < 2:
+            pytest.skip("both bases hold the same P.txt; the distinction is not exercised")
 
-        # P.txt is identical at both bases and both heads: untouched by anything.
+        # P.txt matches `left` and differs from `right`, so `any` would call it
+        # touched and `all` correctly does not.
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration, "--path", "P.txt")
 
         assert done.returncode == 2
-        assert "differs from the merge base" in done.stdout
+        assert "differs from it there" in done.stdout
 
 
 class TestOnlyAPathTheChangeTouchedIsEvidence:
@@ -771,7 +805,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         )
 
         assert done.returncode == 2
-        assert "differs from the merge base" in done.stdout
+        assert "differs from it there" in done.stdout
         assert "verdict" not in done.stdout
 
     def test_the_same_refs_are_caught_once_a_touched_path_is_declared(self, history):
@@ -835,3 +869,101 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         assert "Derive the set mechanically" in done.stdout
         assert "an untouched path is identical on both sides and proves nothing" in done.stdout
         assert "the change kept as well" not in done.stdout
+
+
+class TestAnUnresolvedBaseLookupIsNotADifference:
+    """Instance seven: `UNKNOWN != <entry>` is true, so an unresolved base
+    lookup was read as evidence that the change touched the path.
+
+    Every other gate in this tool refuses UNKNOWN. This one counted it as proof,
+    and the docstring that listed the multi-record guard as unreachable is why
+    it went unguarded: `:(literal)` suppresses glob magic, it does not make a
+    pathspec match exactly one entry.
+    """
+
+    @staticmethod
+    def _lab(repo: Path) -> dict[str, str]:
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "src" / "lib" / "core").mkdir(parents=True)
+        (repo / "src" / "lib" / "legacy").mkdir(parents=True)
+        (repo / "src" / "lib" / "core" / "index.ts").write_text("export const core = 1;\n")
+        (repo / "src" / "lib" / "legacy" / "index.ts").write_text("export const legacy = 1;\n")
+        (repo / "src" / "locality.ts").write_text("const w3w = null; // no locality\n")
+        base = _commit(repo, "base")
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        _git(repo, "rm", "-qr", "src/lib/legacy")
+        (repo / "src" / "locality.ts").write_text("const w3w = REDACTED; // the verified fix\n")
+        verified = _commit(repo, "verified: drop legacy and suppress the locality leak")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        (repo / "other.txt").write_text("another lane\n")
+        _commit(repo, "other lane")
+        _git(repo, "rm", "-qr", "src/lib/legacy")
+        bad = _commit(repo, "bad squash: legacy dropped, locality fix lost")
+
+        return {"repo": repo, "verified": verified, "bad": bad}
+
+    def test_a_trailing_slash_path_cannot_certify_a_squash_that_lost_the_fix(self, tmp_path):
+        lab = self._lab(tmp_path / "slash")
+        # `src/lib/` matches two children at the base and one at the verified
+        # head, so the base lookup is UNKNOWN. That was read as a difference,
+        # and the only object compared -- `src/lib/core` -- is byte-identical
+        # everywhere, while the integration side reverted the locality fix.
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--path", "src/lib/")
+
+        assert done.returncode == 2
+        assert "resolves unambiguously" in done.stdout
+        assert "trailing slash" in done.stdout
+
+    def test_the_same_squash_is_caught_when_the_path_is_spelled_as_git_reports_it(self, tmp_path):
+        lab = self._lab(tmp_path / "slash2")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--path", "src/locality.ts")
+
+        assert done.returncode == 1
+        assert "DIVERGED src/locality.ts" in done.stdout
+
+
+class TestAnOrdinaryMergeCanBeVerified:
+    """The touched-path rule made the commonest merge shape unverifiable.
+
+    When the integration ref keeps the verified head as an ancestor, the merge
+    base IS the verified head, so no path can differ from it and every
+    declaration was refused -- with a message saying the change "cannot have
+    altered any of them", which is false.
+    """
+
+    @staticmethod
+    def _lab(repo: Path, revert: bool) -> dict[str, str]:
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "keep.ts").write_text("before\n")
+        _commit(repo, "base")
+        (repo / "keep.ts").write_text("the verified content\n")
+        verified = _commit(repo, "the change")
+        (repo / "other.ts").write_text("another lane\n")
+        if revert:
+            (repo / "keep.ts").write_text("reverted after the merge\n")
+        integration = _commit(repo, "work on top of the merge")
+        return {"repo": repo, "verified": verified, "integration": integration}
+
+    def test_a_merge_that_kept_the_verified_head_passes(self, tmp_path):
+        lab = self._lab(tmp_path / "ff", revert=False)
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--path", "keep.ts")
+
+        assert done.returncode == 0
+        assert "landed" in done.stdout
+
+    def test_containment_does_not_excuse_a_later_revert(self, tmp_path):
+        # The commit is in the history and the content is gone anyway, which is
+        # exactly why the path comparison still has to run.
+        lab = self._lab(tmp_path / "ff-reverted", revert=True)
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--path", "keep.ts")
+
+        assert done.returncode == 1
+        assert "DIVERGED keep.ts" in done.stdout
