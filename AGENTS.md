@@ -55,7 +55,28 @@ Every session must end in exactly one of these states:
 - make no fabricated progress claims;
 - add a `BLOCKED` issue comment naming the exact missing credential, file, service, approval, dependency, or failing contract;
 - include the next executable action and who or what can perform it;
-- preserve any useful branch or commit and identify it.
+- preserve any useful branch or commit and identify it;
+- include one machine-readable line, `OC-BLOCKED-ON: <ref>`, so the blocker can
+  be re-checked without a person re-reading the prose.
+
+`oc-blocked` holds an issue outside the execution portfolio, and the only code
+that removes it runs after a lane executes the issue — which a blocked issue is
+never selected for. Without a checkable record, nothing ever revisits the block:
+#1502 sat blocked on `BLOCKED_MONTHLY_BUDGET_EXCEEDED` for a day after the
+routing defect behind that denial was repaired and merged.
+
+Accepted refs, checked by `scripts/oc_blocked_reconcile.py`:
+
+| ref | released when |
+| --- | --- |
+| `#123` | that issue is closed |
+| `pr#123` | that pull request is merged |
+| `owner-decision`, `credential`, `spend`, `budget-increase`, `deployment` | never — a person's decision, held deliberately |
+
+Any other ref, or none, is reported as unverifiable and **held**. The reconciler
+never releases on age and never guesses: re-admitting work that is genuinely
+stopped is worse than leaving it parked, and a blocker nobody can check is a
+thing to fix rather than a thing to assume away.
 
 ### C. NO-OP
 - only when the acceptance criterion is already satisfied on current `main` or by an existing authoritative PR;
