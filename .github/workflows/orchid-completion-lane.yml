@@ -236,7 +236,8 @@ jobs:
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         run: |
           python3 -m pip install -r requirements.txt
-          python3 -m pip install pytest ruff
+          # Pinned so a local lint result means what CI will say (#1501).
+          python3 -m pip install -r requirements-dev.txt
           python3 -m pytest --version
           python3 -m ruff --version
 

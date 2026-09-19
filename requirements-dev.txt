@@ -1,0 +1,20 @@
+# Validation tooling, pinned.
+#
+# CI installed these unpinned, so the hosted runner always took the newest
+# release and a contributor with an older ruff saw a clean local run on a commit
+# CI then failed -- and a commit green today could turn red tomorrow with no
+# change to the code. Issue #1501 records two such cycles in one session:
+# PR #1483 (RUF059) and PR #1500 (UP037, ISC004), both clean on local ruff
+# 0.15.8 and both red on CI's 0.16.8.
+#
+# Install these the same way CI does, and a local lint result means what CI will
+# say:
+#
+#     pip install -r requirements-dev.txt
+#
+# Bump deliberately, as its own pull request, fixing the findings the new
+# version reports in that same change -- so a new rule arrives somewhere it can
+# be reviewed, rather than landing on whichever pull request happens to be open
+# that morning.
+ruff==0.16.8
+pytest==9.1.1

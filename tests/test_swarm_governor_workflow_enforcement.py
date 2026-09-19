@@ -91,7 +91,16 @@ def test_completion_worker_validation_dependencies_precede_paid_execution() -> N
         assert step["if"] == steps[execution]["if"]
         assert "ANTHROPIC_API_KEY" not in str(step)
     assert "-r requirements.txt" in steps[install]["run"]
-    assert "pip install pytest ruff" in steps[install]["run"]
+    # The linter and test runner are installed here, before paid execution, at
+    # the versions pinned in requirements-dev.txt (#1501). Asserting the pinned
+    # file rather than a literal `pip install pytest ruff` keeps the point of
+    # this test -- validation tooling is present before the provider runs -- and
+    # stops it from re-requiring the unpinned install it used to spell out.
+    assert "-r requirements-dev.txt" in steps[install]["run"]
+    for tool in ("pytest", "ruff"):
+        assert f"-m {tool} --version" in steps[install]["run"], (
+            f"the lane must prove which {tool} it got before paid execution"
+        )
 
 
 # ─── concurrency group ───────────────────────────────────────────────────────
