@@ -16,6 +16,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 
 from .executor import CognitiveIntegrationError, execute
+from .improvement_discovery import to_report
 
 router = APIRouter(prefix="/api/cognitive-integration", tags=["cognitive-integration"])
 
@@ -71,3 +72,25 @@ def capabilities() -> dict[str, Any]:
             "render it as prose, and its absence changes nothing else."
         ),
     }
+
+
+@router.get("/improvement-candidates")
+def improvement_candidates(
+    question: str = Query(default=SUPPORTED_QUESTIONS[0], max_length=500),
+) -> dict[str, Any]:
+    """What the system could not settle, classified so it can be routed.
+
+    Every entry is a proposal to a human. Nothing here modifies governance,
+    promotes a hypothesis, or activates a scientific conclusion, and the response
+    states those limits rather than leaving them implied.
+    """
+    if question not in SUPPORTED_QUESTIONS:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "question_not_in_deterministic_set",
+                    "supported_questions": list(SUPPORTED_QUESTIONS)},
+        )
+    try:
+        return to_report(execute(question))
+    except CognitiveIntegrationError as exc:
+        raise HTTPException(status_code=503, detail={"reason": str(exc)}) from exc
