@@ -263,7 +263,91 @@ def reconcile(issues: list[dict[str, Any]], world: WorldState) -> list[Reconcili
     return sorted(out, key=lambda r: r.issue_number)
 
 
-def to_report(results: list[Reconciliation]) -> dict[str, Any]:
+def observation_requests(
+    issues: list[dict[str, Any]],
+    results: list[Reconciliation],
+    world: WorldState,
+) -> list[dict[str, Any]]:
+    """Name the missing observations that keep a decision fail-closed.
+
+    This is deliberately a pure shopping list. A durable caller may fetch the
+    requested GitHub facts, persist them in its next snapshot, and replay the
+    reconciliation after a restart. The reconciler itself still has no network
+    or mutation authority.
+    """
+    by_number = {result.issue_number: result for result in results}
+    requests: set[tuple[str, int]] = set()
+
+    for issue in issues:
+        number = int(issue.get("number") or 0)
+        result = by_number.get(number)
+        if result is None:
+            continue
+
+        comments = issue.get("comments")
+        if (
+            result.disposition is Disposition.UNVERIFIABLE
+            and not BLOCKED_ON.search(str(issue.get("body") or ""))
+            and not isinstance(comments, (list, tuple))
+        ):
+            requests.add(("issue_comments", number))
+
+        blocker = result.blocker or ""
+        issue_match = ISSUE_REF.match(blocker)
+        if issue_match:
+            target = int(issue_match.group("number"))
+            if target not in world.open_issues and target not in world.closed_issues:
+                requests.add(("issue_state", target))
+
+        pr_match = PR_REF.match(blocker)
+        if pr_match:
+            target = int(pr_match.group("number"))
+            if target not in world.merged_prs and target not in world.unmerged_prs:
+                requests.add(("pull_request_state", target))
+
+    return [
+        {"kind": kind, "number": number}
+        for kind, number in sorted(requests, key=lambda item: (item[0], item[1]))
+    ]
+
+
+def release_plan(results: list[Reconciliation]) -> dict[str, Any]:
+    """Return deterministic, idempotent actions for demonstrably cleared work.
+
+    The plan is data, not execution. Each action carries a precondition so a
+    future authorized applier can no-op after the first successful cycle rather
+    than duplicate a release after restart.
+    """
+    actions = []
+    for result in sorted(results, key=lambda row: row.issue_number):
+        if not result.releases:
+            continue
+        blocker = result.blocker or "unknown"
+        actions.append(
+            {
+                "action": "replace_queue_labels",
+                "issue_number": result.issue_number,
+                "idempotency_key": f"blocked-release:{result.issue_number}:{blocker.lower()}",
+                "requires_labels": [BLOCKED],
+                "remove_labels": [BLOCKED],
+                "add_labels": ["oc-queued"],
+                "reason": result.reason,
+                "release_authorized": True,
+            }
+        )
+    return {
+        "schema": "oc.blocked-release-plan.v1",
+        "mutates": False,
+        "action_count": len(actions),
+        "actions": actions,
+    }
+
+
+def to_report(
+    results: list[Reconciliation],
+    *,
+    observations: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """A report a person can read and a workflow can act on."""
     counts: dict[str, int] = {str(d): 0 for d in Disposition}
     for result in results:
@@ -273,6 +357,8 @@ def to_report(results: list[Reconciliation]) -> dict[str, Any]:
         "examined": len(results),
         "counts": counts,
         "release_numbers": [r.issue_number for r in results if r.releases],
+        "observation_requests": list(observations or []),
+        "release_plan": release_plan(results),
         "results": [r.to_record() for r in results],
         # Said out loud because the number is the point: every one of these is
         # work the portfolio cannot see and no mechanism will ever look at again.
