@@ -90,7 +90,10 @@ _COORDINATE = re.compile(
     # thousands separator ("1,234 records") and is deliberately not matched.
     r"|\d{1,3},(?:\d{1,2}|\d{4,})\s*(?:[; ]\s*)[-+]?\d{1,3},(?:\d{1,2}|\d{4,})"
     # UTM and MGRS grid references, which locate a site with no degrees at all.
-    r"|\b\d{1,2}\s*[C-HJ-NP-X]\s*[A-Z]{2}\s*\d{4,10}\b"
+    # The digit run is a pair: an easting and a northing of equal length. A
+    # single run leaves the second number sitting in the output next to the
+    # marker, which is most of a position and reads as though it were redacted.
+    r"|\b\d{1,2}\s*[C-HJ-NP-X]\s*[A-Z]{2}\s*\d{4,10}(?:\s+\d{4,10})?\b"
     r"|\bUTM\b[^\n]{0,24}?\d{5,7}\s+\d{5,8}"
     r"|\b\d{1,2}[C-HJ-NP-X]\s+\d{5,7}\s+\d{5,8}\b"
     # Open Location Code (plus code): eight of the code alphabet, then "+".
