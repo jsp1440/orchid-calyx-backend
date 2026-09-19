@@ -13,13 +13,24 @@ verification/review.
 
 from __future__ import annotations
 
-from hashlib import sha256
 import re
+from hashlib import sha256
 from typing import Any
+
+from pydantic import BaseModel, Field, HttpUrl
 
 from .intelligence import APPROVAL_REQUIRED_ACTIONS, AUTO_INTERNAL_ACTIONS
 
 JOURNAL_CLUB_PARSER_VERSION = "journal-club-tech-intelligence-v1"
+
+
+class JournalClubIntakeRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    transcript: str = Field(min_length=1)
+    source_url: HttpUrl | None = None
+    episode_id: str | None = Field(default=None, max_length=500)
+    doi: str | None = Field(default=None, max_length=500)
+    imported_by: str | None = Field(default=None, max_length=200)
 
 
 TECHNIQUES: tuple[dict[str, Any], ...] = (
