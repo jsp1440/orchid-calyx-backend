@@ -22,6 +22,12 @@ from .intelligence_repository import (
     list_intelligence_items,
     record_intelligence_items,
 )
+from .journal_club import (
+    JournalClubIntakeRequest,
+    canonical_journal_club_text,
+    journal_club_summary,
+    parse_journal_club_transcript,
+)
 from .knowledge_delta import assess_item
 from .knowledge_delta_repository import record_comparison
 from .repository import (
@@ -124,6 +130,52 @@ def ingest_email(payload: EmailIntakeRequest):
         "external_contacted": False,
         "canonical_graph_mutated": False,
         "publication_performed": False,
+    }
+
+
+@router.post("/journal-club", status_code=201)
+def ingest_journal_club(payload: JournalClubIntakeRequest):
+    """Ingest owner-authorized JournalClub.io transcript text as review-bound technology intelligence."""
+    source_url = str(payload.source_url) if payload.source_url else None
+    items = parse_journal_club_transcript(
+        title=payload.title,
+        transcript=payload.transcript,
+        source_url=source_url,
+        episode_id=payload.episode_id,
+        doi=payload.doi,
+    )
+    canonical_content = canonical_journal_club_text(
+        title=payload.title,
+        transcript=payload.transcript,
+        source_url=source_url,
+        episode_id=payload.episode_id,
+        doi=payload.doi,
+    )
+    result = extract(canonical_content)
+    result.tasks.extend(intelligence_tasks(items))
+    source = create_source(
+        source_type="text",
+        title=payload.title,
+        content=canonical_content,
+        content_hash=content_hash(canonical_content),
+        source_url=source_url,
+        imported_by=payload.imported_by or "journal-club-transcript",
+        extraction=result,
+    )
+    persisted = record_intelligence_items(
+        source_id=source["id"],
+        items=items,
+        sender="journalclub.io",
+        message_id=payload.episode_id,
+    )
+    return {
+        **source,
+        "journal_club": journal_club_summary(items),
+        "intelligence_items": persisted,
+        "external_contacted": False,
+        "canonical_graph_mutated": False,
+        "publication_performed": False,
+        "automatic_implementation_performed": False,
     }
 
 
