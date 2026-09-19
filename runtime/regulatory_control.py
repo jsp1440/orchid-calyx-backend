@@ -9,6 +9,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from runtime.mission_genome import mission_context
+
 RegulatoryAction = Literal["activate", "repress", "escalate"]
 
 
@@ -23,6 +25,7 @@ class RegulatoryDecision:
             "action": self.action,
             "reasons": list(self.reasons),
             "policy": self.policy,
+            "mission": mission_context(),
         }
 
 
@@ -30,7 +33,10 @@ def default_regulatory_decision(heartbeat_result: Any) -> dict[str, Any]:
     """Backward-compatible default: allow the existing runtime cycle to proceed."""
     return RegulatoryDecision(
         action="activate",
-        reasons=("no explicit regulator configured",),
+        reasons=(
+            "no explicit regulator configured; preserve existing execution behavior",
+            "autonomous work remains subordinate to the Orchid Continuum mission",
+        ),
     ).to_dict()
 
 
