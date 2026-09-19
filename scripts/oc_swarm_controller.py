@@ -187,7 +187,9 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
         merged_prs=merged_prs,
         unmerged_prs=unmerged_prs,
     )
-    return _BLOCKED_RECONCILER.to_report(_BLOCKED_RECONCILER.reconcile(issues, world))
+    results = _BLOCKED_RECONCILER.reconcile(issues, world)
+    observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)
+    return _BLOCKED_RECONCILER.to_report(results, observations=observations)
 
 
 def _strip_queue_label(issue: dict) -> dict:
