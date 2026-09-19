@@ -48,12 +48,24 @@ class CapabilityRegistry:
             raise ValueError("duplicate capability_id")
 
     def eligibility(self, capability_id: str) -> dict[str, object]:
+        return self._eligibility(capability_id, path=())
+
+    def _eligibility(
+        self, capability_id: str, *, path: tuple[str, ...]
+    ) -> dict[str, object]:
         item = self._items.get(capability_id)
         if item is None:
             return {
                 "capability_id": capability_id,
                 "eligible": False,
                 "reasons": ["capability is absent from the verified registry"],
+            }
+        if capability_id in path:
+            cycle = " -> ".join((*path, capability_id))
+            return {
+                "capability_id": capability_id,
+                "eligible": False,
+                "reasons": [f"dependency cycle: {cycle}"],
             }
         reasons: list[str] = []
         if item.status != EXECUTABLE_STATUS:
@@ -63,10 +75,13 @@ class CapabilityRegistry:
             dependency = self._items.get(dependency_id)
             if dependency is None:
                 reasons.append(f"unknown dependency: {dependency_id}")
-            elif dependency.status != EXECUTABLE_STATUS or dependency.blockers:
-                reasons.append(
-                    f"dependency not operational: {dependency_id} ({dependency.status})"
-                )
+                continue
+            dependency_result = self._eligibility(
+                dependency_id, path=(*path, capability_id)
+            )
+            if not dependency_result["eligible"]:
+                detail = "; ".join(str(reason) for reason in dependency_result["reasons"])
+                reasons.append(f"dependency ineligible: {dependency_id} ({detail})")
         return {
             "capability_id": capability_id,
             "eligible": not reasons,
