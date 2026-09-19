@@ -25,6 +25,30 @@ Do not create one memory file per trivial edit. Persist only rules that material
 - Conversely, once a runner is assigned and repository steps execute, treat a deterministic failing step as a real validation failure until reproduced or explained.
 - Never claim hosted green evidence when no hosted steps ran.
 
+## Merge integrity
+
+A merge API returning success is not evidence that the merged tree is what an independent checker verified. `expectedHeadSha` constrains which commit is merged, not what a squash produces from it.
+
+In PR #706 the merge succeeded against the verified head and the squash produced a tree three commits behind it. Six regressions landed on the integration branch, one of them a real locality leak, and the lane reported the PR as integrated.
+
+So, for every integration merge:
+
+1. Record the exact independently verified head, before merging. Derive the paths mechanically -- `git diff --name-status <base>..<verified-head>` -- and use all of them. A hand-picked subset yields a `landed` verdict that says nothing about the paths you left out.
+2. Merge.
+3. Immediately inspect the resulting integration tree, from a real checkout, before reporting anything.
+4. Prove the verified content is present at every declared path:
+   `python3 scripts/oc_verify_merge_landed.py --verified-head <sha> --integration-ref <ref> --path <p> [--path ...]`
+   Pass a path the change removed as `--deleted-path`. The tool proves it existed at `git merge-base <verified-head> <integration-ref>`, because a deletion is only a deletion if the file was there to delete. That base is derived from the two refs being compared and is not yours to name: a caller-supplied base is a fact asserted rather than checked, and any commit that happens to contain the path would satisfy it.
+5. On a mismatch, stop that merge lane, restore the verified result from the verified head, and report the mismatch. Do not proceed to the next item first.
+
+Exit 0 is the only pass. Exit 2 is an argument or ref the tool refused before comparing anything. Exit 1 is everything else, and it covers three verdicts -- `tree_mismatch`, `evidence_incomplete` and `merge_not_reported` -- so read the printed verdict rather than branching on the code alone.
+
+Never report a pull request as successfully integrated on the strength of the merge API's response alone. The invariant is `app/calyx_orchestrator/merge_integrity.py`; it is pure, deterministic and provider-free, and calling an external model to perform or confirm this check is not permitted.
+
+What it proves, and only this: the integration side holds what was verified, at the paths you declared, including each path's file mode and object type. It says nothing about content the merge added at paths nobody declared.
+
+Three of this tool's four known false passes were one shape: a path absent on both sides, read as an agreed deletion. Each fix closed a case and the next round found the same shape somewhere else -- a mistyped `--path`, then a `--deleted-path` that required only absence, then a caller-named base that could prove a deletion from anywhere in history. Absence is not evidence, and a fact the caller supplies is not a check. Assume the shape is still reachable somewhere and look for it; if you find yourself declaring a path, or naming a ref, to make a check go green, you are manufacturing the failure this rule exists to prevent.
+
 ## Stuck-repair protection
 
 After three unsuccessful attempts on the same deterministic failure class, stop speculative repair commits. Read the exact failing output, run the exact formatter/linter/test command locally where possible, compare it with workflow behavior, and make one deliberate correction. If accumulated branch churn obscures intent, reconstruct cleanly from current integration and preserve only intentional changes.
