@@ -26,6 +26,7 @@ REMOVED = "removed.txt"
 UNTOUCHED = "untouched.txt"
 SYMLINKABLE = "pointer.txt"
 COLON_PREFIXED = ":odd.txt"
+LATER = "added-then-removed.txt"
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -59,6 +60,9 @@ def history(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     (repo / SYMLINKABLE).write_text(UNTOUCHED)
     # A legal filename that git would otherwise read as pathspec magic.
     (repo / COLON_PREFIXED).write_text("colon\n")
+    base = _commit(repo, "the base both sides branch from")
+
+    (repo / LATER).write_text("added by the change, removed by it too\n")
     verified = _commit(repo, "verified result")
 
     (repo / EDITED).write_text("something else entirely\n")
@@ -66,6 +70,7 @@ def history(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
 
     _git(repo, "checkout", "-q", "--force", verified)
     (repo / REMOVED).unlink()
+    (repo / LATER).unlink()
     deletion = _commit(repo, "remove a file")
 
     _git(repo, "checkout", "-q", "--force", verified)
@@ -77,8 +82,30 @@ def history(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     (repo / SYMLINKABLE).symlink_to(UNTOUCHED)
     symlinked = _commit(repo, "regular file becomes a symlink, same blob id")
 
-    return {"repo": repo, "verified": verified, "diverged": diverged, "deletion": deletion,
-            "chmodded": chmodded, "symlinked": symlinked}
+    # What a good merge actually looks like: a different commit, on a branch
+    # carrying somebody else's work, holding the verified content and applying
+    # the deletion. Comparing a ref against itself is a tautology, not a land.
+    _git(repo, "checkout", "-q", "--force", verified)
+    (repo / "someone-elses-work.txt").write_text("landed alongside\n")
+    (repo / REMOVED).unlink()
+    (repo / LATER).unlink()
+    integrated = _commit(repo, "integration branch after the merge")
+
+    # The same, minus the deletions: the merge dropped them.
+    _git(repo, "checkout", "-q", "--force", verified)
+    (repo / "someone-elses-work.txt").write_text("landed alongside\n")
+    kept_the_removed_file = _commit(repo, "integration branch that kept the removed files")
+
+    # A sibling branched from the base, so it never saw LATER at all. Its merge
+    # base with `deletion` is `base`, where LATER does not exist.
+    _git(repo, "checkout", "-q", "--force", base)
+    (repo / "sibling.txt").write_text("unrelated lane\n")
+    from_the_base = _commit(repo, "a branch that predates the change")
+
+    return {"repo": repo, "base": base, "verified": verified, "diverged": diverged,
+            "deletion": deletion, "chmodded": chmodded, "symlinked": symlinked,
+            "integrated": integrated, "kept_the_removed_file": kept_the_removed_file,
+            "from_the_base": from_the_base}
 
 
 def run(history: dict[str, object], *args: str) -> subprocess.CompletedProcess[str]:
@@ -180,45 +207,78 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["deletion"]),
+            "--integration-ref", str(history["integrated"]),
             "--deleted-path", REMOVED,
         )
         assert done.returncode == 0
         assert "landed" in done.stdout
+        # A real land, not a self-comparison: the trees genuinely differ.
+        assert "identical tree: False" in done.stdout
 
-    def test_deleted_at_can_be_named_when_the_default_parent_is_wrong(self, history):
+    def test_the_base_is_derived_from_the_two_refs_not_supplied_by_the_caller(self, history):
+        # The hole this replaced: the base was a caller argument, so any commit
+        # in the object database that happened to contain the path satisfied it,
+        # including one with no relationship to the merge -- and a declared set
+        # of only deletions then returned `landed` without reading a byte of the
+        # integration ref. The base is now merge-base(verified, integration).
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["deletion"]),
+            "--integration-ref", str(history["integrated"]),
             "--deleted-path", REMOVED,
             "--deleted-at", str(history["verified"]),
         )
-        assert done.returncode == 0
-
-    def test_a_root_commit_says_how_to_name_the_ref_instead_of_guessing(self, history):
-        # `verified` is the root commit, so the `<verified-head>^` default cannot
-        # resolve. Refusing with the remedy beats falling through to a message
-        # about a ref the caller never typed.
-        done = run(
-            history,
-            "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified"]),
-            "--deleted-path", "gone.txt",
-        )
         assert done.returncode == 2
-        assert "pass --deleted-at explicitly for a root commit" in done.stdout
+        assert "unrecognized arguments" in done.stderr
 
-    def test_an_unresolvable_deleted_at_is_refused(self, history):
+    def test_the_same_deletion_is_provable_or_not_depending_on_what_it_is_merged_into(self, history):
+        # One declaration, one verified head, two integration refs. LATER was
+        # added and removed by the change, so it exists at merge-base(deletion,
+        # integrated) = `verified` and is provable there -- and does not exist at
+        # merge-base(deletion, from_the_base) = `base`, so against that ref there
+        # is no deletion to verify. A base chosen from history at large could
+        # always find the first and never notice the second.
+        provable = run(
+            history,
+            "--verified-head", str(history["deletion"]),
+            "--integration-ref", str(history["integrated"]),
+            "--deleted-path", LATER,
+        )
+        assert provable.returncode == 0, provable.stdout
+
+        unprovable = run(
+            history,
+            "--verified-head", str(history["deletion"]),
+            "--integration-ref", str(history["from_the_base"]),
+            "--deleted-path", LATER,
+        )
+        assert unprovable.returncode == 2
+        assert "no deletion to verify" in unprovable.stdout
+
+    def test_refs_with_no_common_ancestor_are_refused(self, history):
+        tree = _git(history["repo"], "rev-parse", f'{history["verified"]}^{{tree}}')
+        orphan = _git(history["repo"], "commit-tree", tree, "-m", "unrelated history")
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["deletion"]),
+            "--integration-ref", orphan,
             "--deleted-path", REMOVED,
-            "--deleted-at", "0" * 40,
         )
         assert done.returncode == 2
-        assert "does not resolve to a commit" in done.stdout
+        assert "share no common ancestor" in done.stdout
+
+    def test_a_root_commit_needs_no_special_handling(self, history):
+        # The old base was `<verified-head>^`, which a root commit does not have,
+        # and the code carried a special case saying so. A merge base always
+        # exists between two related refs, so the special case is gone.
+        done = run(
+            history,
+            "--verified-head", str(history["verified"]),
+            "--integration-ref", str(history["diverged"]),
+            "--deleted-path", "gone.txt",
+        )
+        assert done.returncode == 2
+        assert "no deletion to verify" in done.stdout
 
 
 class TestThePathspecIsLiteral:
@@ -246,6 +306,45 @@ class TestThePathspecIsLiteral:
         )
         assert done.returncode == 2
         assert "do not exist at the verified head" in done.stdout
+
+
+class TestHowTheTreeIsRead:
+    """One of `_entry`'s flags is load-bearing; three are defensive.
+
+    `--full-tree` is pinned below. `-z`, `--end-of-options` and the multi-record
+    guard are not, and no test here claims otherwise: once `_resolve_ref` has
+    validated the ref and `:(literal)` has fixed the pathspec, removing any of
+    the three changes no outcome this parser can reach. They stay because they
+    are correct, not because they are covered.
+    """
+
+    def test_a_path_resolves_the_same_from_a_subdirectory(self, history):
+        # Without `--full-tree`, ls-tree is relative to the cwd, so the same
+        # root-relative path would silently stop resolving in a nested checkout.
+        nested = Path(str(history["repo"])) / "nested"
+        nested.mkdir(exist_ok=True)
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", str(history["verified"]),
+             "--integration-ref", str(history["diverged"]),
+             "--path", EDITED],
+            cwd=str(nested), capture_output=True, text=True, check=False,
+        )
+        assert done.returncode == 1
+        assert f"DIVERGED {EDITED}" in done.stdout
+
+    def test_a_path_containing_a_newline_still_resolves(self, history):
+        # Not a `-z` test: git C-quotes such a path onto one line anyway, so
+        # dropping `-z` reddens nothing. This pins that an odd filename is
+        # verifiable at all, which the `\t` split could otherwise break.
+        odd = "two\nlines.txt"
+        (Path(str(history["repo"])) / odd).write_text("newline in the name\n")
+        _git(history["repo"], "add", "-A")
+        _git(history["repo"], "commit", "-q", "-m", "a path with a newline")
+        head = _git(history["repo"], "rev-parse", "HEAD")
+        done = run(history, "--verified-head", head, "--integration-ref", head, "--path", odd)
+        assert done.returncode == 0
+        assert "landed" in done.stdout
 
 
 class TestModeAndType:
@@ -343,7 +442,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["deletion"]),
+            "--integration-ref", str(history["integrated"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -353,7 +452,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["verified"]),
+            "--integration-ref", str(history["kept_the_removed_file"]),
             "--deleted-path", REMOVED,
         )
         assert done.returncode == 1

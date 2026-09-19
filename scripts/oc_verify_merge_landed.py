@@ -26,10 +26,18 @@ absence is not evidence and comparing "not there" with "not there" is how a
 vacuous pass is manufactured. So:
 
 * `--path P` must resolve at the verified head.
-* `--deleted-path P` must resolve at `--deleted-at` -- the head the change was
-  made from, `<verified-head>^` unless given -- which is what makes it a
-  deletion rather than a name nobody ever used. A path that resolves at neither
-  is a mistyped or stale argument and is refused.
+* `--deleted-path P` must resolve at `git merge-base <verified-head>
+  <integration-ref>`, which is what makes it a deletion rather than a name
+  nobody ever used. A path that resolves at neither is a mistyped or stale
+  argument and is refused.
+
+That base is derived from the two refs already being compared, never supplied by
+the caller. A caller-named ref is a fact asserted rather than checked: any commit
+in the object database that happens to contain the path satisfies it, including
+one with no relationship to the merge, and a declared set consisting only of
+deletions then yields `landed` without a byte of the integration ref being read.
+Ancestry of `--verified-head` is not enough either -- such a ref can be a genuine
+ancestor and still be the wrong base.
 
 Paths are compared as `mode type id`, not blob id alone, so a file that becomes
 a symlink or gains the executable bit without changing a byte is a divergence
@@ -87,6 +95,18 @@ def _rev_parse(rev: str) -> tuple[int, str]:
         capture_output=True,
         text=True,
         check=False,
+    )
+    return done.returncode, done.stdout.strip()
+
+
+def _merge_base(left: str, right: str) -> tuple[int, str]:
+    """The common ancestor of two commits.
+
+    Both arguments are 40-hex ids `_resolve_ref` has already produced, so neither
+    can be read as an option and no `--end-of-options` is needed to say so.
+    """
+    done = subprocess.run(
+        ["git", "merge-base", left, right], capture_output=True, text=True, check=False
     )
     return done.returncode, done.stdout.strip()
 
@@ -154,11 +174,6 @@ def main(argv: list[str] | None = None) -> int:
         help="a path the change removed; it must exist at --deleted-at and be absent after the merge",
     )
     parser.add_argument(
-        "--deleted-at",
-        default=None,
-        help="the ref a --deleted-path existed at before the change (default: <verified-head>^)",
-    )
-    parser.add_argument(
         "--merge-reported-success",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -207,15 +222,14 @@ def main(argv: list[str] | None = None) -> int:
     # this the flag is a way to declare any string, including a typo, and have
     # its absence on both sides read as agreement.
     if args.deleted_paths:
-        before = args.deleted_at or f"{args.verified_head}^"
-        before_ids = _resolve_ref("--deleted-at", before)
-        if before_ids is None:
-            if args.deleted_at is None:
-                print("The default is <verified-head>^; pass --deleted-at explicitly for a root commit.")
+        code, before = _merge_base(verified_ids[0], integration_ids[0])
+        if code != 0 or not before:
+            print("REFUSED: --verified-head and --integration-ref share no common ancestor,")
+            print("so there is no base against which a deletion could be established.")
             return 2
         never_there = [path for path in args.deleted_paths if _entry(before, path) in (ABSENT, UNKNOWN)]
         if never_there:
-            print(f"REFUSED: these --deleted-path arguments do not exist at {before!r} either,")
+            print(f"REFUSED: these --deleted-path arguments do not exist at the merge base {before[:12]} either,")
             print("so there is no deletion to verify and their absence proves nothing:")
             for path in never_there:
                 print(f"  {path}")
