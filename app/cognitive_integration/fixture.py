@@ -112,9 +112,16 @@ def build_pollination_repository() -> InMemoryGraphRepository:
         # Mediterranean; insect pollination is a sporadic local exception rather
         # than a regional alternative. Framing it as "Mediterranean versus
         # north-west" would be tidier and would overstate what is reported.
+        # Kullenberg established pseudocopulation across *Ophrys*, which is the
+        # right source for the mechanism. It is weaker support for *this*
+        # species being insect-pollinated, because *O. apifera* is precisely the
+        # autogamous exception within the genus. The apifera-specific *Eucera*
+        # reports are scattered Mediterranean observations that are not
+        # Kullenberg's subject and that this fixture does not hold. Saying so is
+        # the honest move; inventing a species-level citation is not.
         _edge(1, "reported_pollinated_by", 1, 2,
               evidence_class=CONTESTED, citation=KULLENBERG_1961,
-              source_type=PEER_REVIEWED,
+              source_type=PEER_REVIEWED, support_scope="genus",
               geographic_scope="sporadically reported, chiefly in the Mediterranean"),
         _edge(2, "reported_reproductive_strategy", 1, 4,
               evidence_class=SUPPORTED, citation=DARWIN_1862,
@@ -137,6 +144,20 @@ def build_pollination_repository() -> InMemoryGraphRepository:
         _edge(6, "reported_from", 1, 7,
               evidence_class=REPORTED_UNVERIFIED,
               citation="Aggregated occurrence records, country resolution only.",
+              source_type=OCCURRENCE),
+        # Regions that do not overlap, declared rather than inferred from their
+        # names. Scope can only resolve a disagreement when the two claims are
+        # established to apply to separate ground, and no amount of string
+        # comparison over free-text scope labels establishes that.
+        #
+        # Note which edges do NOT carry a scope_region: the two reproductive
+        # reports. Their scopes are frequency statements over overlapping
+        # ground — autogamy is predominant throughout the range, the Mediterranean
+        # included — so the disagreement genuinely stands, and pinning either to
+        # a region here would resolve it by fiat.
+        _edge(7, "disjoint_from", 6, 7,
+              evidence_class=REPORTED_UNVERIFIED,
+              citation="Range descriptions in the aggregated occurrence records.",
               source_type=OCCURRENCE),
     ]
     return InMemoryGraphRepository(nodes=nodes, edges=edges)

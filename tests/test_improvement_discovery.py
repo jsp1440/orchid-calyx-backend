@@ -111,15 +111,83 @@ def test_an_absent_evidence_class_is_an_ingestion_problem_not_a_data_one(report)
     assert classify("literature and aggregated records only")[0] is Deficiency.MISSING_INGESTION
 
 
-def test_every_classifier_pattern_is_reachable():
-    """A pattern an earlier one always shadows is dead code pretending to be a rule."""
+def test_each_gap_the_executor_emits_classifies_as_the_kind_it_is():
+    """Reachability, asserted against sentences the system actually produces.
+
+    The test this replaced fed each pattern's own *source text* in as if it were
+    a gap statement, compared sets of kinds rather than per-sentence outcomes,
+    and fell back to ``MISSING_EVIDENCE`` — itself a declared kind — so a
+    shadowed rule could never show up as unreachable. It passed with the
+    ``MISSING_INGESTION`` bug fully restored: ``"literature and aggregated
+    records only"`` is not shadowed, while the real sentence containing it,
+    ``"No local observation supports any retrieved claim; the evidence is
+    literature and aggregated records only."``, is.
+
+    So the probes here are the executor's real output, and each is pinned to one
+    kind rather than to a set.
+    """
+    expected = {
+        "Eucera (solitary bees) is identified to genus, not species, in the "
+        "retrieved evidence.": Deficiency.MISSING_ONTOLOGY_TERM,
+        "no source quantifies the contribution of either strategy":
+            Deficiency.MISSING_EVIDENCE,
+        "No local observation supports any retrieved claim; the evidence is "
+        "literature and aggregated records only.": Deficiency.MISSING_INGESTION,
+        "no population-level pollination observation is held":
+            Deficiency.MISSING_EVIDENCE,
+    }
+    emitted = set(execute()["evidence_gaps"])
+    assert set(expected) <= emitted, (
+        "these probes must be sentences the executor emits, not invented ones; "
+        f"missing from output: {sorted(set(expected) - emitted)}"
+    )
+    for sentence, kind in expected.items():
+        assert classify(sentence)[0] is kind, (
+            f"{sentence!r} classified as {classify(sentence)[0]}, expected {kind}"
+        )
+
+
+def test_the_more_specific_rule_wins_where_two_rules_both_match():
+    """The ordering invariant, stated as the overlap it exists to settle.
+
+    Both the ingestion rule and the broader observation rule match this
+    sentence. Whichever is consulted first decides, and only one of the two
+    answers sends anyone to do useful work: an absent evidence class is a
+    pipeline question, while "find more sources" is advice to look harder for
+    records that were never ingested.
+    """
     from app.cognitive_integration.improvement_discovery import _CLASSIFIERS
 
-    reachable = {classify(pattern.pattern)[0] for pattern, _, _ in _CLASSIFIERS}
-    declared = {kind for _, kind, _ in _CLASSIFIERS}
-    unreachable = declared - {classify(p.pattern)[0] for p, _, _ in _CLASSIFIERS}
-    assert unreachable == set(), f"unreachable classifier kinds: {unreachable}"
-    assert reachable
+    sentence = (
+        "No local observation supports any retrieved claim; the evidence is "
+        "literature and aggregated records only."
+    )
+    matching = [kind for pattern, kind, _ in _CLASSIFIERS if pattern.search(sentence)]
+    assert len(matching) > 1, "this sentence must be genuinely ambiguous to be a test"
+    assert Deficiency.MISSING_INGESTION in matching
+    assert Deficiency.MISSING_EVIDENCE in matching
+    assert classify(sentence)[0] is Deficiency.MISSING_INGESTION
+
+
+def test_no_classifier_rule_is_shadowed_into_dead_code():
+    """Every rule must be the winner for at least one string it matches.
+
+    A rule an earlier one always beats is dead code wearing a rule's clothes,
+    and the docstring above ``_CLASSIFIERS`` promises most-specific-first.
+    """
+    from app.cognitive_integration.improvement_discovery import _CLASSIFIERS
+
+    emitted = list(execute()["evidence_gaps"])
+    for index, (pattern, kind, _) in enumerate(_CLASSIFIERS):
+        matched = [g for g in emitted if pattern.search(g)]
+        assert matched, (
+            f"rule {index} ({pattern.pattern!r}) matches nothing the executor emits, "
+            "so its reachability cannot be established from real output"
+        )
+        assert any(classify(g)[0] is kind for g in matched), (
+            f"rule {index} ({pattern.pattern!r} -> {kind}) never wins: every gap it "
+            "matches is claimed by an earlier rule"
+        )
 
 
 def test_classification_falls_back_to_the_least_actionable_kind():
