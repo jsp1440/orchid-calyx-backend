@@ -25,6 +25,8 @@ def test_runtime_engine_cycle_updates_status():
     assert status["last_execute_status"] == "completed"
     assert status["last_completed_job"] == "audit_pollinator_relationships"
     assert status["current_blocker"] is None
+    assert result["regulation"]["mission"]["mission_id"] == "oc-mission-v1"
+    assert "revealing relationships" in result["regulation"]["mission"]["guiding_principle"]
 
 
 def test_runtime_engine_does_not_start_when_disabled():
