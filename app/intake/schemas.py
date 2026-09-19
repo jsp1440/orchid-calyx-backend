@@ -43,6 +43,15 @@ class EmailIntakeRequest(BaseModel):
     imported_by: Optional[str] = Field(default=None, max_length=200)
 
 
+class JournalClubIntakeRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=500)
+    transcript: str = Field(min_length=1)
+    source_url: Optional[HttpUrl] = None
+    episode_id: Optional[str] = Field(default=None, max_length=500)
+    doi: Optional[str] = Field(default=None, max_length=500)
+    imported_by: Optional[str] = Field(default=None, max_length=200)
+
+
 class ReviewDecision(BaseModel):
     notes: Optional[str] = None
 
