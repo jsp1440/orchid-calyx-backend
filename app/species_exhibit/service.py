@@ -51,15 +51,17 @@ HYBRID_SIGNS = {"×", "x"}
 AUTHOR_CONNECTIVES = {"ex", "et", "in", "and", "nec", "non", "emend", "sensu"}
 
 
-def _is_epithet(token: str) -> bool:
-    """A plausible infraspecific epithet: lowercase, letters and internal hyphens.
+def _is_epithet(token: str, *, cultivar: bool = False) -> bool:
+    """A plausible infraspecific epithet with rank-scoped cultivar casing.
 
     ``f.`` is both a form marker and the ``filius`` of a spaced author
     abbreviation such as ``Rchb. f.``. Requiring a real epithet after the marker
     keeps ``Dendrochilum cootesii Rchb. f. ex Lindl.`` a species whose author is
     ``Rchb. f. ex Lindl.``, instead of inventing the form ``... f. ex``.
 
-    Hyphens are part of the epithet, not a reason to reject it. Hyphenated
+    Normal epithets are lowercase; a ``cv.`` epithet conventionally starts with
+    a capital and is accepted only when ``cultivar`` is true. Hyphens are part
+    of the epithet, not a reason to reject it. Hyphenated
     infraspecific epithets are ordinary botanical names — this repository's own
     registry carries ``Ophrys vernixia ssp. regis-ferdinandii``, ``Cypripedium
     chamberlainianum f. victoria-mariae`` and four more. Demanding
@@ -67,7 +69,12 @@ def _is_epithet(token: str) -> bool:
     present the rank text as authorship, which is the pair of failures this
     module exists to remove.
     """
-    if not token or not token[:1].islower() or token in AUTHOR_CONNECTIVES:
+    if not token or token.lower() in AUTHOR_CONNECTIVES:
+        return False
+    if cultivar:
+        if not token[:1].isupper():
+            return False
+    elif not token[:1].islower():
         return False
     if not token[-1:].isalpha():
         return False
@@ -96,7 +103,10 @@ def _split_scientific_name(value: str) -> tuple[str, str | None]:
     rest = parts[end:]
     for index, token in enumerate(rest):
         follower = rest[index + 1] if index + 1 < len(rest) else ""
-        if token.lower() in INFRASPECIFIC_RANKS and _is_epithet(follower):
+        marker = token.lower()
+        if marker in INFRASPECIFIC_RANKS and _is_epithet(
+            follower, cultivar=marker == "cv."
+        ):
             name_parts.extend([token, follower])
             rest = rest[index + 2 :]
             break
