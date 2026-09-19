@@ -7,13 +7,15 @@ from app.calyx_orchestrator.provider_intent_reservoir import (
 
 
 def intent(**kw):
-    base = dict(
-        objective="compare pollination mechanisms",
-        capability="mechanistic-synthesis",
-        deterministic_insufficiency="retrieved evidence conflicts and deterministic rules cannot discriminate",
-        expected_gain="identify discriminating observation",
-        affected_tasks=("COGINT-002",),
-    )
+    base = {
+        "objective": "compare pollination mechanisms",
+        "capability": "mechanistic-synthesis",
+        "deterministic_insufficiency": (
+            "retrieved evidence conflicts and deterministic rules cannot discriminate"
+        ),
+        "expected_gain": "identify discriminating observation",
+        "affected_tasks": ("COGINT-002",),
+    }
     base.update(kw)
     return ProviderIntent(**base)
 
