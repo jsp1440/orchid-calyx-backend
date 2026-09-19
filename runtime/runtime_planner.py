@@ -11,8 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from .mission_alignment import evaluate_work_alignment
 from .cds_loader import get_cds_loader
+from .mission_alignment import evaluate_work_alignment
 
 
 STATUS_WEIGHT = {
