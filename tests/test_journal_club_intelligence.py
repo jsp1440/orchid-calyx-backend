@@ -49,6 +49,20 @@ def test_journal_club_parser_maps_supported_techniques_with_exact_spans():
             assert TRANSCRIPT[span["start"] : span["end"]] == span["exact_text"]
 
 
+
+def test_one_paper_can_emit_multiple_distinct_technique_candidates():
+    items = parse_journal_club_transcript(
+        title="Graph RAG and hybrid retrieval",
+        transcript="Graph RAG is compared with hybrid retrieval in one paper.",
+        doi="10.1234/shared-paper",
+        episode_id="jc-shared",
+    )
+    fingerprints = [item["knowledge_fingerprint"] for item in items]
+    assert len(fingerprints) >= 2
+    assert len(fingerprints) == len(set(fingerprints))
+    assert all(item["dois"] == ["10.1234/shared-paper"] for item in items)
+
+
 def test_irrelevant_transcript_fails_closed_without_guessing():
     items = parse_journal_club_transcript(
         title="A botanical discussion",
