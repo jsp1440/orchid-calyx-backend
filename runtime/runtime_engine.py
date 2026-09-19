@@ -8,10 +8,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+from runtime.regulatory_control import (
+    default_regulatory_decision,
+    normalize_regulatory_decision,
+)
+
 RuntimeCallable = Callable[[], Any]
 RegulatoryCallable = Callable[[Any], Any]
-
-from runtime.regulatory_control import default_regulatory_decision, normalize_regulatory_decision
 
 
 def utc_now() -> str:
