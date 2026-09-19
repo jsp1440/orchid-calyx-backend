@@ -5,9 +5,9 @@ admission.  It performs no provider calls and grants no authority.
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from hashlib import sha256
-from typing import Iterable
 
 
 @dataclass(frozen=True)
