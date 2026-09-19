@@ -89,6 +89,23 @@ def test_a_genuine_form_is_still_recognised_after_that_guard():
     assert taxon_rank("Liparis nervosa f. kappleri") == "form"
 
 
+def test_a_cultivar_uses_its_conventional_capitalised_epithet_only():
+    assert _split_scientific_name("Cattleya labiata cv. Alba") == (
+        "Cattleya labiata cv. Alba",
+        None,
+    )
+    assert taxon_rank("Cattleya labiata cv. Alba") == "cultivar"
+    # Cultivar casing is scoped to cv.; other ranks retain lowercase epithets.
+    assert _split_scientific_name("Cattleya labiata cv. alba") == (
+        "Cattleya labiata",
+        "cv. alba",
+    )
+    assert _split_scientific_name("Cattleya labiata var. Alba") == (
+        "Cattleya labiata",
+        "var. Alba",
+    )
+
+
 def test_a_hyphenated_infraspecific_epithet_survives_the_author_guard():
     """Hyphens belong to the epithet; the guard must not mistake them for authorship.
 
