@@ -328,6 +328,7 @@ def release_plan(results: list[Reconciliation]) -> dict[str, Any]:
                 "action": "replace_queue_labels",
                 "issue_number": result.issue_number,
                 "idempotency_key": f"blocked-release:{result.issue_number}:{blocker.lower()}",
+                "blocker": result.blocker,
                 "requires_labels": [BLOCKED],
                 "remove_labels": [BLOCKED],
                 "add_labels": ["oc-queued"],
