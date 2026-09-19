@@ -12,8 +12,9 @@ Usage, run immediately after an integration merge:
 Exit status is the point:
 
     0  the integration ref holds the verified content at every declared path
-    1  it does not (`tree_mismatch`), or the comparison was inconclusive
-       (`evidence_incomplete`) -- either way, stop the merge lane
+    1  it does not (`tree_mismatch`), the comparison was inconclusive
+       (`evidence_incomplete`), or the merge was never reported
+       (`merge_not_reported`) -- in every case, stop the merge lane
     2  an argument or ref was refused before anything was compared
 
 so a lane that pipes this into `&&` stops on missing evidence rather than
@@ -31,12 +32,19 @@ vacuous pass is manufactured. So:
   ever used. That base is derived from the two refs being compared, never
   supplied by the caller.
 
-**A deletion can never evidence that a merge landed, however well established it
-is.** Absence is symmetric: two lineages that both lack a file agree about it for
-reasons that have nothing to do with this merge. So a declared set made only of
-deletions is `evidence_incomplete`, never `landed` -- declare at least one path
-the change kept. Four rounds of review each narrowed where a deletion's evidence
-could come from and left that premise standing; the premise was the defect.
+**Only a path this change could have altered is evidence.** Two ways to fail that
+and both have been live in this tool:
+
+* Absence is symmetric, so a declared set made only of deletions is
+  `evidence_incomplete`, never `landed`. Two lineages that both lack a file agree
+  about it for reasons that have nothing to do with this merge.
+* Identity is equally symmetric when it predates the change. A file untouched by
+  the change is identical at the merge base and on both sides, so declaring it
+  satisfies any "declare a surviving path" rule while witnessing nothing.
+
+So at least one `--path` must differ from every merge base. A change that only
+removes files cannot be verified here at all, and this says so rather than
+sending you to find a path that makes the check pass.
 
 Paths are compared as `mode type id`, not blob id alone, so a file that becomes
 a symlink or gains the executable bit without changing a byte is a divergence
@@ -54,7 +62,8 @@ derive the set mechanically with `git diff --name-status <base>..<verified-head>
 rather than by hand. It is built for the dropped-commit failure class of #706,
 not for injection.
 
-Collecting the evidence is a handful of `git rev-parse` calls. That is the whole
+Collecting the evidence is a handful of read-only `git rev-parse`, `merge-base`
+and `ls-tree` calls. That is the whole
 cost of the check that would have caught #706 in seconds. No provider, no
 network beyond whatever fetch the caller already did.
 """
@@ -215,10 +224,11 @@ def main(argv: list[str] | None = None) -> int:
         print("REFUSED: these --path arguments do not exist at the verified head:")
         for path in missing:
             print(f"  {path}")
-        print("Correct the spelling. A path the change removed is proven, not assumed:")
-        print("  derive the set with `git diff --name-status <base>..<verified-head>`,")
-        print("  and pass a removed path as --deleted-path. Declare at least one path")
-        print("  the change kept as well: a deletion cannot evidence that a merge landed.")
+        print("Correct the spelling. Derive the set mechanically:")
+        print("  git diff --name-status <merge-base>..<verified-head>")
+        print("Pass every modified or added path as --path and every removed one as")
+        print("--deleted-path. Do not substitute a path the change did not touch to get")
+        print("past this: an untouched path is identical on both sides and proves nothing.")
         return 2
     still_present = [path for path in args.deleted_paths if verified_entries[path] is not ABSENT]
     if still_present:
@@ -230,12 +240,17 @@ def main(argv: list[str] | None = None) -> int:
     # A deletion is only a deletion if the file was there to delete. Without
     # this the flag is a way to declare any string, including a typo, and have
     # its absence on both sides read as agreement.
+    # Unconditionally, not only when a deletion is declared: without it the tool
+    # never establishes any relationship between the two refs and will report
+    # `landed` for a pair with no common ancestor, between which no merge can
+    # have happened at all.
+    code, bases = _merge_bases(verified_ids[0], integration_ids[0])
+    if code != 0 or not bases:
+        print("REFUSED: --verified-head and --integration-ref share no common ancestor,")
+        print("so no merge between them can have happened and there is nothing to verify.")
+        return 2
+
     if args.deleted_paths:
-        code, bases = _merge_bases(verified_ids[0], integration_ids[0])
-        if code != 0 or not bases:
-            print("REFUSED: --verified-head and --integration-ref share no common ancestor,")
-            print("so there is no base against which a deletion could be established.")
-            return 2
         # A path must have existed at EVERY common ancestor. Accepting it at one
         # of several would make the verdict depend on which base git named.
         never_there = sorted({path for base in bases for path in args.deleted_paths
@@ -247,6 +262,23 @@ def main(argv: list[str] | None = None) -> int:
             for path in never_there:
                 print(f"  {path}")
             return 2
+
+    # At least one declared path must be one this change could have altered.
+    # A file identical at the ancestor, the verified head and the integration ref
+    # satisfies "declare a surviving path" and proves nothing: comparing identity
+    # with identity, where the identity predates the change, is the same vacuous
+    # pass as comparing absence with absence.
+    touched = [path for path in args.paths
+               if all(_entry(base, path) != verified_entries[path] for base in bases)]
+    if not touched:
+        named = ", ".join(base[:12] for base in bases)
+        print(f"REFUSED: none of the declared --path arguments differs from the merge base ({named}),")
+        print("so the change cannot have altered any of them and comparing them proves nothing.")
+        print("Declare the paths this change actually modified or added.")
+        if args.deleted_paths and not args.paths:
+            print("A change that only removes files cannot be verified by this tool:")
+            print("  absence is symmetric, so there is nothing whose content can witness the merge.")
+        return 2
 
     verified = VerifiedResult(
         head_sha=verified_ids[0], tree_sha=verified_ids[1], blobs=verified_entries

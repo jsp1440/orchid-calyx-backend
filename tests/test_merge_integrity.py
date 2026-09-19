@@ -113,6 +113,10 @@ class TestApiSuccessIsNotEvidence:
             landed_cleanly(),
         )
         assert result.verdict is MergeVerdict.EVIDENCE_INCOMPLETE
+        # The reason too: `all([])` is vacuously true, so without this gate the
+        # deletions-only check absorbs an empty record and reports a reason that
+        # is not what happened.
+        assert result.reason == "NO_VERIFIED_PATHS_RECORDED"
         assert may_report_integrated(result) is False
 
     def test_a_path_the_integration_side_never_resolved_is_not_agreement(self):

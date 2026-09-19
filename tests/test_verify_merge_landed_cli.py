@@ -47,67 +47,73 @@ def _commit(repo: Path, message: str, stage: bool = True) -> str:
 
 @pytest.fixture(scope="module")
 def history(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
-    """A real repository with a verified head, a divergent head and a deletion."""
+    """A base, a change, and integration refs that FORK from the base.
+
+    Every integration ref used to descend from the verified head, which makes
+    `merge-base(verified, integration)` the verified head itself -- so no
+    declared path could differ from the base, and the fixture modelled a
+    fast-forward rather than the squash this tool exists to check.
+    """
     repo = tmp_path_factory.mktemp("merge-landed")
     _git(repo, "init", "-q", "-b", "main")
     _git(repo, "config", "user.email", "checker@example.invalid")
     _git(repo, "config", "user.name", "checker")
 
-    (repo / EDITED).write_text("verified content\n")
+    (repo / EDITED).write_text("before the change\n")
     (repo / REMOVED).write_text("to be removed\n")
     (repo / UNTOUCHED).write_text("unrelated\n")
-    # Content that is also a valid path, so the symlink below keeps the blob id.
     (repo / SYMLINKABLE).write_text(UNTOUCHED)
-    # A legal filename that git would otherwise read as pathspec magic.
     (repo / COLON_PREFIXED).write_text("colon\n")
-    base = _commit(repo, "the base both sides branch from")
+    base = _commit(repo, "the base both sides fork from")
 
+    # THE CHANGE: edits one file, adds one, and (in `deletion`) removes two.
+    (repo / EDITED).write_text("verified content\n")
     (repo / LATER).write_text("added by the change, removed by it too\n")
     verified = _commit(repo, "verified result")
 
+    _git(repo, "checkout", "-q", "--force", "-b", "diverged-lane", base)
     (repo / EDITED).write_text("something else entirely\n")
     diverged = _commit(repo, "what the squash actually produced")
 
     _git(repo, "checkout", "-q", "--force", verified)
     (repo / REMOVED).unlink()
     (repo / LATER).unlink()
-    deletion = _commit(repo, "remove a file")
+    deletion = _commit(repo, "the change, also removing two files")
 
-    _git(repo, "checkout", "-q", "--force", verified)
+    def _from_base(name: str, message: str, build) -> str:
+        _git(repo, "checkout", "-q", "--force", "-B", name, base)
+        (repo / EDITED).write_text("verified content\n")
+        (repo / LATER).write_text("added by the change, removed by it too\n")
+        build()
+        return _commit(repo, message)
+
+    chmodded = _from_base("chmod-lane", "the verified content, executable", lambda: None)
+    _git(repo, "checkout", "-q", "--force", chmodded)
     _git(repo, "update-index", "--chmod=+x", EDITED)
     chmodded = _commit(repo, "executable bit only, not one byte changed", stage=False)
 
-    _git(repo, "checkout", "-q", "--force", verified)
-    (repo / SYMLINKABLE).unlink()
-    (repo / SYMLINKABLE).symlink_to(UNTOUCHED)
-    symlinked = _commit(repo, "regular file becomes a symlink, same blob id")
+    def _symlink() -> None:
+        (repo / SYMLINKABLE).unlink()
+        (repo / SYMLINKABLE).symlink_to(UNTOUCHED)
 
-    # What a good merge actually looks like: a different commit, on a branch
-    # carrying somebody else's work, holding the verified content and applying
-    # the deletion. Comparing a ref against itself is a tautology, not a land.
-    _git(repo, "checkout", "-q", "--force", verified)
-    (repo / "someone-elses-work.txt").write_text("landed alongside\n")
-    (repo / REMOVED).unlink()
-    (repo / LATER).unlink()
-    integrated = _commit(repo, "integration branch after the merge")
+    symlinked = _from_base("symlink-lane", "regular file becomes a symlink, same blob id", _symlink)
 
-    # The same, minus the deletions: the merge dropped them.
-    _git(repo, "checkout", "-q", "--force", verified)
-    (repo / "someone-elses-work.txt").write_text("landed alongside\n")
-    kept_the_removed_file = _commit(repo, "integration branch that kept the removed files")
+    def _others() -> None:
+        (repo / "someone-elses-work.txt").write_text("landed alongside\n")
 
-    # A sibling branched from the base, so it never saw LATER at all. Its merge
-    # base with `deletion` is `base`, where LATER does not exist.
-    _git(repo, "checkout", "-q", "--force", base)
+    verified_landed = _from_base("landed-lane", "integration branch holding the verified content", _others)
+
+    def _integrated() -> None:
+        _others()
+        (repo / REMOVED).unlink()
+        (repo / LATER).unlink()
+
+    integrated = _from_base("integration-lane", "integration branch after the merge", _integrated)
+    kept_the_removed_file = _from_base("kept-lane", "integration branch that kept the removed files", _others)
+
+    _git(repo, "checkout", "-q", "--force", "-B", "predates", base)
     (repo / "sibling.txt").write_text("unrelated lane\n")
     from_the_base = _commit(repo, "a branch that predates the change")
-
-    # Holds every byte of `verified`, and is not `verified`. Comparing a ref
-    # with itself is a tautology: it passes with the content comparison ripped
-    # out entirely, so it pins nothing about landing.
-    _git(repo, "checkout", "-q", "--force", verified)
-    (repo / "someone-elses-work.txt").write_text("landed alongside\n")
-    verified_landed = _commit(repo, "integration branch holding the verified content")
 
     return {"repo": repo, "base": base, "verified": verified, "diverged": diverged,
             "deletion": deletion, "chmodded": chmodded, "symlinked": symlinked,
@@ -270,7 +276,7 @@ class TestADeletionMustBeAnActualDeletion:
             history,
             "--verified-head", str(history["deletion"]),
             "--integration-ref", str(history["integrated"]),
-            "--deleted-path", LATER,
+            "--deleted-path", REMOVED,
             "--path", EDITED,
         )
         assert provable.returncode == 0, provable.stdout
@@ -320,6 +326,7 @@ class TestThePathspecIsLiteral:
             "--verified-head", str(history["verified"]),
             "--integration-ref", str(history["verified_landed"]),
             "--path", COLON_PREFIXED,
+            "--path", EDITED,
         )
         assert done.returncode == 0
         assert "landed" in done.stdout
@@ -339,23 +346,26 @@ class TestThePathspecIsLiteral:
 
 
 class TestHowTheTreeIsRead:
-    """One of `_entry`'s flags is load-bearing; the rest are defensive.
+    """What is pinned here, and what is not.
 
-    `--full-tree` is pinned below. FIVE guards are not pinned, and no test here
-    claims otherwise -- an earlier version of this docstring said three, which
-    was itself an accuracy defect in a file whose point is honest accounting:
+    `--full-tree` is pinned below. EIGHT guards are not, and this says so
+    rather than letting a coverage claim overstate the suite -- an earlier
+    version of this docstring said three, then five, each time wrong:
 
       * `-z` (git C-quotes an odd path onto one line anyway)
-      * `--end-of-options` on ls-tree (the ref is already validated)
+      * `--end-of-options` on ls-tree, and on rev-parse when `--verify --quiet`
+        is kept (two distinct call sites; the refs are already validated)
       * the multi-record guard (`:(literal)` makes a multi-match unreachable)
       * `_entry`'s empty-field guard
-      * `_resolve_ref`'s tree-resolution check (a validated commit always has one)
-
-    A sixth is partly pinned: `merge-base --all` itself is not, because which
-    base git names under criss-cross history is exactly the tie-break the flag
-    exists to remove, so a test cannot rely on getting the other one. The
-    substantive property -- that a deletion must hold at EVERY base, not one --
-    is pinned by `TestTheMergeBaseIsNotATieBreak`.
+      * `_resolve_ref`'s tree-resolution check (a validated commit has one)
+      * `may_report_integrated`'s `and inspection.landed` conjunct (redundant)
+      * the `all(... for base in bases)` quantifier in the touched-path rule:
+        pinning it needs a path that differs from one merge base and not
+        another, and which base git names first is exactly the tie-break the
+        quantifier exists to remove, so a test cannot rely on getting the
+        ordering it needs. The same quantifier on the deletion gate IS pinned,
+        by `TestTheMergeBaseIsNotATieBreak`, where one base simply lacks the
+        path and ordering does not matter.
 
     They stay because they are correct, not because they are covered.
     """
@@ -380,14 +390,22 @@ class TestHowTheTreeIsRead:
         # dropping `-z` reddens nothing. This pins that an odd filename is
         # verifiable at all, which the `\t` split could otherwise break.
         odd = "two\nlines.txt"
-        (Path(str(history["repo"])) / odd).write_text("newline in the name\n")
-        _git(history["repo"], "add", "-A")
-        _git(history["repo"], "commit", "-q", "-m", "a path with a newline")
-        head = _git(history["repo"], "rev-parse", "HEAD")
-        (Path(str(history["repo"])) / "beside.txt").write_text("unrelated\n")
-        _git(history["repo"], "add", "-A")
-        _git(history["repo"], "commit", "-q", "-m", "a commit that holds it without being it")
-        landed = _git(history["repo"], "rev-parse", "HEAD")
+        repo = Path(str(history["repo"]))
+        # Both sides fork from the base, so the merge base is the base and the
+        # odd path genuinely differs from it.
+        _git(repo, "checkout", "-q", "--force", "-B", "newline-lane", str(history["base"]))
+        (repo / odd).write_text("newline in the name\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a path with a newline")
+        head = _git(repo, "rev-parse", "HEAD")
+
+        _git(repo, "checkout", "-q", "--force", "-B", "newline-landed", str(history["base"]))
+        (repo / odd).write_text("newline in the name\n")
+        (repo / "beside.txt").write_text("unrelated\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "a commit that holds it without being it")
+        landed = _git(repo, "rev-parse", "HEAD")
+
         done = run(history, "--verified-head", head, "--integration-ref", landed, "--path", odd)
         assert done.returncode == 0
         assert "landed" in done.stdout
@@ -413,6 +431,7 @@ class TestModeAndType:
             "--verified-head", str(history["verified"]),
             "--integration-ref", str(history["symlinked"]),
             "--path", SYMLINKABLE,
+            "--path", EDITED,
         )
         assert done.returncode == 1
         assert "tree_mismatch" in done.stdout
@@ -610,7 +629,8 @@ class TestADeletionCannotEvidenceAMerge:
 
         _git(repo, "checkout", "-q", "-b", "pr")
         (repo / "leak.py").unlink()
-        verified = _commit(repo, "the PR removes the leak")
+        (repo / "core.py").write_text("v2, changed by the PR\n")
+        verified = _commit(repo, "the PR removes the leak and edits core")
 
         _git(repo, "checkout", "-q", "--force", "-b", "integration", base)
         (repo / "leak.py").unlink()
@@ -627,9 +647,11 @@ class TestADeletionCannotEvidenceAMerge:
         done = run(history, "--verified-head", str(history["verified"]),
                    "--integration-ref", str(history["integration"]), "--deleted-path", "leak.py")
 
-        assert done.returncode == 1
-        assert "evidence_incomplete" in done.stdout
-        assert "ONLY_DELETIONS_RECORDED_SO_NOTHING_WAS_COMPARED" in done.stdout
+        # Refused before anything is compared, and told plainly that this change
+        # is not verifiable here -- rather than sent to find a path that passes.
+        assert done.returncode == 2
+        assert "cannot be verified by this tool" in done.stdout
+        assert "absence is symmetric" in done.stdout
 
     def test_the_same_refs_reveal_the_regression_once_a_kept_path_is_declared(self, tmp_path):
         history = self._forked(tmp_path / "forked2")
@@ -686,3 +708,130 @@ class TestTheMergeBaseIsNotATieBreak:
 
         assert done.returncode == 2
         assert "do not exist at every merge base" in done.stdout
+
+    def test_a_path_matching_any_merge_base_is_not_treated_as_touched(self, tmp_path):
+        """`touched` must differ from EVERY base, not from whichever git names.
+
+        With two bases and a path that matches one of them, comparing against a
+        single base makes the verdict depend on the tie-break again.
+        """
+        repo = tmp_path / "criss-touched"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "P.txt").write_text("shared\n")
+        root = _commit(repo, "root")
+
+        _git(repo, "checkout", "-q", "-b", "left")
+        (repo / "left.txt").write_text("left\n")
+        left = _commit(repo, "left")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "right", root)
+        (repo / "right.txt").write_text("right\n")
+        right = _commit(repo, "right")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "x", left)
+        _git(repo, "merge", "-q", "--no-edit", right)
+        verified = _git(repo, "rev-parse", "HEAD")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "y", right)
+        _git(repo, "merge", "-q", "--no-edit", left)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        bases = _git(repo, "merge-base", "--all", verified, integration).split()
+        if len(bases) < 2:
+            pytest.skip("this git produced a single merge base")
+
+        # P.txt is identical at both bases and both heads: untouched by anything.
+        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration, "--path", "P.txt")
+
+        assert done.returncode == 2
+        assert "differs from the merge base" in done.stdout
+
+
+class TestOnlyAPathTheChangeTouchedIsEvidence:
+    """Instance six: identity compared with identity, where it predates the change.
+
+    Rounds 1-5 closed five ways of reaching `landed` without comparing anything
+    probative. This was the sixth, and the tool's own refusal message was the
+    delivery vector: it told the operator to "declare at least one path the
+    change kept", and any untouched path is identical on both sides.
+    """
+
+    def test_an_untouched_path_alone_cannot_evidence_a_merge(self, history):
+        # `diverged` is the commit the fixture builds to be the #706 failure --
+        # the squash that dropped the verified content. UNTOUCHED is identical
+        # at the base, the verified head and there.
+        done = run(
+            history,
+            "--verified-head", str(history["verified"]),
+            "--integration-ref", str(history["diverged"]),
+            "--path", UNTOUCHED,
+        )
+
+        assert done.returncode == 2
+        assert "differs from the merge base" in done.stdout
+        assert "verdict" not in done.stdout
+
+    def test_the_same_refs_are_caught_once_a_touched_path_is_declared(self, history):
+        done = run(
+            history,
+            "--verified-head", str(history["verified"]),
+            "--integration-ref", str(history["diverged"]),
+            "--path", EDITED,
+        )
+
+        assert done.returncode == 1
+        assert f"DIVERGED {EDITED}" in done.stdout
+
+    def test_an_untouched_path_does_not_dilute_a_touched_one(self, history):
+        done = run(
+            history,
+            "--verified-head", str(history["verified"]),
+            "--integration-ref", str(history["diverged"]),
+            "--path", UNTOUCHED,
+            "--path", EDITED,
+        )
+
+        assert done.returncode == 1
+        assert f"DIVERGED {EDITED}" in done.stdout
+
+    def test_refs_with_no_common_ancestor_are_refused_without_a_deletion(self, history, tmp_path):
+        # The ancestry gate ran only when `--deleted-path` was passed, so two
+        # commits between which no merge can have happened returned `landed`.
+        repo = tmp_path / "orphan"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "f.txt").write_text("same\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "main")
+        main = _git(repo, "rev-parse", "HEAD")
+        _git(repo, "checkout", "-q", "--orphan", "other")
+        (repo / "f.txt").write_text("same\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "unrelated history")
+        orphan = _git(repo, "rev-parse", "HEAD")
+
+        done = run({"repo": repo}, "--verified-head", orphan, "--integration-ref", main, "--path", "f.txt")
+
+        assert done.returncode == 2
+        assert "share no common ancestor" in done.stdout
+
+    def test_the_refusal_does_not_tell_the_operator_to_declare_a_path_to_pass(self, history):
+        # The old text said "Declare at least one path the change kept as well",
+        # which for a pure-deletion change means hand-picking an untouched one --
+        # the thing the operating memory calls manufacturing the failure.
+        done = run(
+            history,
+            "--verified-head", str(history["verified"]),
+            "--integration-ref", str(history["diverged"]),
+            "--path", "does/not/exist.txt",
+        )
+
+        assert done.returncode == 2
+        assert "Derive the set mechanically" in done.stdout
+        assert "an untouched path is identical on both sides and proves nothing" in done.stdout
+        assert "the change kept as well" not in done.stdout
