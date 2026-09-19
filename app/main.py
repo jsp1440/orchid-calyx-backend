@@ -10,6 +10,7 @@ from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.calyx_conversation.store import ConversationStoreUnavailable
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
+from app.cognitive_integration import routes as cognitive_integration_routes
 from app.community_observation.routes import router as community_observation_router
 from app.concepts.routers import router as concepts_router
 from app.constituent_platform.routes import (
@@ -659,3 +660,5 @@ app.include_router(knowledge_graph.router)
 from app.routers import calyx_evolve
 
 app.include_router(calyx_evolve.router)
+
+app.include_router(cognitive_integration_routes.router)
