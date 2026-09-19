@@ -58,10 +58,32 @@ _ALLOWED_EVIDENCE_STATES = frozenset(
 #: incompatible processes is what contradiction detection looks for.
 _REPRODUCTIVE_PREDICATES = ("reported_pollinated_by", "reported_reproductive_strategy")
 
+#: What gets removed. Widened after a checker demonstrated that
+#: "51.7520 -1.2577" (space-separated, ~10 m), "51.75, -1.25" (two decimals,
+#: ~1 km) and "lat 51.7520 lon -1.2577" (no separator character) all passed
+#: through the first version untouched.
 _COORDINATE = re.compile(
-    r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}"
-    r"|\b(?:lat|latitude|lng|lon|longitude)\s*[=:]\s*[-+]?\d+(?:\.\d+)?"
-    r"|\d{1,3}\s*°\s*\d{1,2}\s*['′]",
+    # A decimal pair separated by a comma, semicolon or whitespace. One decimal
+    # place is ~11 km and still worth withholding for a protected taxon.
+    r"[-+]?\d{1,3}\.\d+\s*(?:[,;]\s*|\s+)[-+]?\d{1,3}\.\d+"
+    # A named coordinate, with or without a separator character.
+    r"|\b(?:lat|latitude|lng|lon|long|longitude)\b\s*[=:]?\s*[-+]?\d+(?:\.\d+)?"
+    # Degrees-minutes, straight or typographic apostrophe.
+    r"|\d{1,3}\s*\u00b0\s*\d{1,2}\s*['\u2018\u2019\u2032]"
+    # Degrees with a hemisphere letter, which locates a site without minutes.
+    r"|\d{1,3}(?:\.\d+)?\s*\u00b0\s*[NSEW]\b",
+    re.IGNORECASE,
+)
+
+#: A deliberately broader net for the final check. If the redactor and the
+#: assertion share one pattern, the assertion can only confirm what the redactor
+#: already did — it cannot catch what the redactor missed. This over-triggers on
+#: purpose: a false positive costs one raise, a false negative publishes a wild
+#: orchid's position.
+_COORDINATE_SUSPICION = re.compile(
+    r"[-+]?(?:1[0-7]\d|\d{1,2})\.\d+\D{0,4}[-+]?(?:1[0-7]\d|\d{1,2})\.\d+"
+    r"|\b(?:lat|lon|lng|latitude|longitude|coordinate|gps)\b"
+    r"|\u00b0",
     re.IGNORECASE,
 )
 
@@ -171,14 +193,19 @@ def _mechanisms(repository: GraphRepository, relationships: list[dict[str, Any]]
         )
     for relationship in relationships:
         if relationship["predicate"] == "reported_reproductive_strategy":
+            # Describe what the edge says, not what this fixture's edge happens
+            # to say. The previous wording asserted "reproduces without any
+            # insect" for every reported strategy, so relabelling the node to an
+            # insect-mediated one would have emitted a false statement while the
+            # detection stayed correct.
+            scope = relationship.get("geographic_scope") or "the reported range"
             out.append(
                 {
                     "name": (relationship["object"] or "").lower(),
                     "kind": "competing_mechanism",
                     "statement": (
-                        f"In the {relationship.get('geographic_scope') or 'reported'} the subject "
-                        "reproduces without any insect, so the pollination relationship is not "
-                        "required to explain seed set there."
+                        f"{relationship['object']} is reported as the reproductive strategy "
+                        f"({scope}), which is a separate account of how seed set occurs."
                     ),
                     "evidence_state": relationship["evidence_state"],
                 }
@@ -260,6 +287,25 @@ def _redact(value: Any) -> Any:
     return value
 
 
+def _confidence(unresolved: list[dict[str, Any]], gaps: list[str]) -> dict[str, Any]:
+    """Confidence and the reasons for it, derived together so they cannot disagree."""
+    reasons = ["The taxonomic identity is resolved."]
+    if unresolved:
+        reasons.append("Reports conflict and nothing retrieved settles the disagreement.")
+        level = "low" if len(gaps) >= 4 else "moderate"
+    else:
+        reasons.append("No retrieved report contradicts another.")
+        level = "moderate" if gaps else "high"
+    if gaps:
+        reasons.append(f"{len(gaps)} gap(s) remain in the retrieved evidence.")
+    return {
+        "qualitative": level,
+        "basis": " ".join(reasons),
+        # A number here would be fabricated: nothing retrieved supports one.
+        "numeric_precision_claimed": False,
+    }
+
+
 def execute(
     question: str = "What pollinates the bee orchid, and is the answer the same everywhere it grows?",
     *,
@@ -309,17 +355,11 @@ def execute(
             "Whether the insect-mediated mechanism is currently active throughout the range.",
             "What conditions, if any, shift a population between strategies.",
         ],
-        "confidence": {
-            # Qualitative, with its basis written out. A number here would be
-            # fabricated: nothing retrieved supports one.
-            "qualitative": "moderate" if unresolved else "high",
-            "basis": (
-                "The identity is resolved and both strategies are reported in the primary "
-                "literature. Held below high because the reports conflict, no local "
-                "observation supports either, and no source quantifies their contribution."
-            ),
-            "numeric_precision_claimed": False,
-        },
+        # Derived together with its reasons, so the two cannot disagree. A fixed
+        # basis string contradicted itself the moment the contradiction resolved:
+        # it went on saying "held below high because the reports conflict" while
+        # reporting high.
+        "confidence": _confidence(unresolved, gaps),
         "locality_policy": {
             "protected_taxon_present": True,
             "disclosure": "WITHHELD_PENDING_REVIEW",
@@ -363,8 +403,11 @@ def execute(
     }
 
     redacted = _redact(result)
-    # Fail closed rather than serving a map that leaked. Redaction already ran;
-    # anything still matching means a shape redaction does not cover.
-    if _COORDINATE.search(str(redacted)):
-        raise CognitiveIntegrationError("coordinate-shaped content survived redaction")
+    # Fail closed rather than serving a map that leaked. The suspicion pattern is
+    # broader than the redactor on purpose.
+    leaked = _COORDINATE_SUSPICION.search(str(redacted))
+    if leaked:
+        raise CognitiveIntegrationError(
+            f"coordinate-shaped content survived redaction: {leaked.group(0)!r}"
+        )
     return redacted

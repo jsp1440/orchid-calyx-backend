@@ -55,15 +55,22 @@ _CLASSIFIERS: tuple[tuple[re.Pattern[str], Deficiency, str], ...] = (
         Deficiency.MISSING_EVIDENCE,
         "The relationship is reported but never measured.",
     ),
+    # Order matters and is asserted by test. This one must precede the broader
+    # observation pattern below, which would otherwise match the same string
+    # first and make MISSING_INGESTION unreachable — the docstring promised
+    # most-specific-first and the code did not deliver it.
+    (
+        re.compile(r"literature and aggregated records only", re.IGNORECASE),
+        Deficiency.MISSING_INGESTION,
+        (
+            "One evidence class is absent from the store entirely, which is a "
+            "pipeline question rather than a shortage of sources."
+        ),
+    ),
     (
         re.compile(r"no (?:local )?observation|observation is held", re.IGNORECASE),
         Deficiency.MISSING_EVIDENCE,
         "Nothing observed locally supports the retrieved claims.",
-    ),
-    (
-        re.compile(r"literature and aggregated records only", re.IGNORECASE),
-        Deficiency.MISSING_INGESTION,
-        "One evidence class is absent from the store entirely.",
     ),
 )
 

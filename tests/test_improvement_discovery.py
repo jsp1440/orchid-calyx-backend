@@ -99,6 +99,29 @@ def test_a_map_with_nothing_missing_produces_no_candidates():
     assert discover(empty) == []
 
 
+def test_an_absent_evidence_class_is_an_ingestion_problem_not_a_data_one(report):
+    """This kind was unreachable: the broader observation pattern matched first.
+
+    The docstring promised most-specific-first ordering and the code did not
+    deliver it, so a pipeline gap was reported as a shortage of sources.
+    """
+    ingestion = report["by_deficiency"]["missing_ingestion"]
+    assert len(ingestion) == 1
+    assert "pipeline question" in ingestion[0]["why_it_matters"]
+    assert classify("literature and aggregated records only")[0] is Deficiency.MISSING_INGESTION
+
+
+def test_every_classifier_pattern_is_reachable():
+    """A pattern an earlier one always shadows is dead code pretending to be a rule."""
+    from app.cognitive_integration.improvement_discovery import _CLASSIFIERS
+
+    reachable = {classify(pattern.pattern)[0] for pattern, _, _ in _CLASSIFIERS}
+    declared = {kind for _, kind, _ in _CLASSIFIERS}
+    unreachable = declared - {classify(p.pattern)[0] for p, _, _ in _CLASSIFIERS}
+    assert unreachable == set(), f"unreachable classifier kinds: {unreachable}"
+    assert reachable
+
+
 def test_classification_falls_back_to_the_least_actionable_kind():
     """A wrong specific kind routes work to the wrong person; a vague one asks someone to look."""
     kind, why = classify("something the system did not anticipate")
