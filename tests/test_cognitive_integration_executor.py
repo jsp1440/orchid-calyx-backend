@@ -23,7 +23,7 @@ from app.cognitive_integration.executor import (
 from app.cognitive_integration.fixture import build_pollination_repository
 from app.main import app
 from app.provider_reservoir.capabilities import is_provider_capability
-from runtime.knowledge_graph import Edge
+from runtime.knowledge_graph import Edge, Node
 from runtime.knowledge_graph.repository import InMemoryGraphRepository
 
 
@@ -126,7 +126,10 @@ def test_the_contradiction_is_found_in_the_data_not_recited(reasoning_map):
     contradictions = reasoning_map["contradictions"]
     assert len(contradictions) == 1
     assert contradictions[0]["resolution"] == "unresolved_presented_as_contested"
-    assert set(contradictions[0]["scopes"]) == {"Mediterranean range", "North-western range"}
+    assert set(contradictions[0]["scopes"]) == {
+        "predominant throughout the range",
+        "sporadically reported, chiefly in the Mediterranean",
+    }
 
     repo = build_pollination_repository()
     remaining = [e for e in repo.all_edges() if e.edge_type != "reported_pollinated_by"]
@@ -135,23 +138,98 @@ def test_the_contradiction_is_found_in_the_data_not_recited(reasoning_map):
     assert reduced["contradictions"] == [], "the contradiction was hardcoded, not derived"
 
 
-def test_a_contradiction_within_one_scope_is_resolved_by_scope_instead():
-    """Two claims about the same place are a different finding from two about different ones."""
-    repo = build_pollination_repository()
+def _with_scope_regions(repo, first_region, second_region):
+    """Return the fixture with each reproductive report pinned to a named region."""
+    regions = iter((first_region, second_region))
     edges = []
     for edge in repo.all_edges():
-        if edge.edge_type == "reported_reproductive_strategy":
+        if edge.edge_type in ("reported_pollinated_by", "reported_reproductive_strategy"):
             payload = dict(edge.payload)
-            payload["geographic_scope"] = "Mediterranean range"
+            payload["scope_region"] = next(regions)
             edge = Edge(
                 kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
                 from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
                 evidence_class=edge.evidence_class, payload=payload,
             )
         edges.append(edge)
-    same_scope = execute(repository=InMemoryGraphRepository(
-        nodes=list(repo.all_nodes()), edges=edges))
-    assert same_scope["contradictions"][0]["resolution"] == "resolved_by_scope"
+    return InMemoryGraphRepository(nodes=list(repo.all_nodes()), edges=edges)
+
+
+def test_two_claims_about_the_same_place_are_never_resolved_by_scope():
+    """The rule ran backwards: equal scope strings returned ``resolved_by_scope``.
+
+    Two incompatible claims about the *same* place is the definition of a live
+    conflict. The inverted rule dropped it from ``unresolved`` and raised the
+    confidence for it, so a graph with a standing contradiction was served at
+    ``high`` with the basis "No retrieved report contradicts another."
+    """
+    repo = build_pollination_repository()
+    same_place = execute(
+        repository=_with_scope_regions(repo, "region:mediterranean", "region:mediterranean")
+    )
+    assert same_place["contradictions"][0]["resolution"] == "unresolved_presented_as_contested"
+    assert same_place["confidence"]["qualitative"] != "high"
+    assert "Reports conflict" in same_place["confidence"]["basis"]
+
+
+def test_an_unscoped_contradiction_is_never_resolved_by_scope():
+    """Absent scope is unknown, not equal, and not disjoint.
+
+    Under string equality two missing scopes compared equal, so *any* pair of
+    contradicting claims that named no place — the common case — was reported
+    resolved.
+    """
+    result = execute()  # the shipped fixture carries no structured region
+    assert result["contradictions"][0]["resolution"] == "unresolved_presented_as_contested"
+
+
+def test_differing_free_text_scopes_alone_do_not_resolve_anything():
+    """Different wording is not disjointness.
+
+    The fixture's two scopes — "predominant throughout the range" and
+    "sporadically reported, chiefly in the Mediterranean" — describe overlapping
+    ground. Treating unequal strings as separate places would convert a real
+    disagreement into a resolved one.
+    """
+    result = execute()
+    scopes = result["contradictions"][0]["scopes"]
+    assert scopes[0] != scopes[1], "the fixture's scopes differ as strings"
+    assert result["contradictions"][0]["resolution"] == "unresolved_presented_as_contested"
+    notes = " ".join(result["geographic_context"]["environmental_notes"])
+    assert "does not divide the range" in notes
+
+
+def test_scope_resolves_only_when_the_graph_establishes_disjoint_regions():
+    """The one case that is genuinely resolved, and it has to be declared.
+
+    Both claims name a region and the graph carries a ``disjoint_from`` edge
+    between them, so they do not bear on the same ground.
+    """
+    repo = build_pollination_repository()
+    declared = {
+        frozenset({e.from_node_id, e.to_node_id})
+        for e in repo.all_edges()
+        if e.edge_type == "disjoint_from"
+    }
+    assert declared, "the fixture must declare at least one disjoint pair"
+
+    resolved = execute(
+        repository=_with_scope_regions(
+            repo, "region:mediterranean", "region:north-western-europe"
+        )
+    )
+    assert resolved["contradictions"][0]["resolution"] == "resolved_by_scope"
+    notes = " ".join(resolved["geographic_context"]["environmental_notes"])
+    assert "differs between parts of the range" in notes
+
+
+def test_undeclared_regions_do_not_resolve_even_when_they_differ():
+    """Two region names nothing declares disjoint stay contested."""
+    repo = build_pollination_repository()
+    result = execute(
+        repository=_with_scope_regions(repo, "region:mediterranean", "region:invented-elsewhere")
+    )
+    assert result["contradictions"][0]["resolution"] == "unresolved_presented_as_contested"
 
 
 def test_the_evidence_gaps_are_derived_from_what_the_graph_lacks(reasoning_map):
@@ -185,9 +263,113 @@ def test_a_competing_mechanism_and_a_null_explanation_are_both_offered(reasoning
 def test_confidence_is_qualitative_with_a_basis_and_no_invented_number(reasoning_map):
     confidence = reasoning_map["confidence"]
     assert confidence["numeric_precision_claimed"] is False
-    assert confidence["qualitative"] == "moderate"
+    assert confidence["qualitative"] in ("low", "moderate", "high")
     assert confidence["basis"].strip()
     assert not any(ch.isdigit() for ch in confidence["qualitative"])
+
+
+def test_the_confidence_basis_cannot_contradict_the_confidence_value():
+    """Value and reasons are derived together, and both follow the served map.
+
+    Computing them in one function stopped them disagreeing with *each other*.
+    They could still disagree with the map they were served in, because
+    ``unresolved`` was fed by the inverted scope rule: a graph whose
+    contradiction was wrongly called resolved reported "No retrieved report
+    contradicts another" directly above the contradiction it listed.
+    """
+    contested = execute()
+    assert "Reports conflict" in contested["confidence"]["basis"]
+    assert contested["contradictions"], "the basis must describe the served map"
+
+    repo = build_pollination_repository()
+    resolved = execute(
+        repository=_with_scope_regions(
+            repo, "region:mediterranean", "region:north-western-europe"
+        )
+    )
+    assert resolved["confidence"]["qualitative"] != contested["confidence"]["qualitative"]
+    assert "Reports conflict" not in resolved["confidence"]["basis"]
+    assert "No retrieved report contradicts another" in resolved["confidence"]["basis"]
+
+
+def test_no_map_claims_agreement_while_serving_a_standing_contradiction():
+    """The invariant behind D3, asserted over every scope arrangement.
+
+    Whatever the scopes, a basis saying nothing contradicts must not appear in a
+    map that carries an unresolved contradiction.
+    """
+    repo = build_pollination_repository()
+    arrangements = [
+        execute(),
+        execute(repository=_with_scope_regions(repo, "region:mediterranean", "region:mediterranean")),
+        execute(repository=_with_scope_regions(repo, "region:mediterranean", "region:invented")),
+        execute(
+            repository=_with_scope_regions(
+                repo, "region:mediterranean", "region:north-western-europe"
+            )
+        ),
+    ]
+    for result in arrangements:
+        standing = [
+            c
+            for c in result["contradictions"]
+            if c["resolution"] == "unresolved_presented_as_contested"
+        ]
+        agrees = "No retrieved report contradicts another" in result["confidence"]["basis"]
+        assert not (standing and agrees), result["confidence"]["basis"]
+        if standing:
+            assert result["confidence"]["qualitative"] != "high"
+
+
+@pytest.mark.parametrize(
+    "leak",
+    [
+        "Population located at 51.7520 -1.2577 near the reserve",
+        "Population at 51.75, -1.25",
+        "lat 51.7520 lon -1.2577",
+        "Recorded at 43\u00b0 17\u2019 N",
+        "51.7520, -1.2577",
+    ],
+)
+def test_every_coordinate_shape_a_checker_found_is_now_caught(leak):
+    """Each of these was served verbatim by the first version of the redactor.
+
+    Space-separated pairs are ~10 m precision; two decimal places are ~1 km.
+    Both are enough to locate a protected population.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = leak
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    served = json.dumps(execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges)))
+    assert "51.75" not in served
+    assert "-1.25" not in served
+    assert "locality withheld" in served
+
+
+def test_ordinary_scientific_text_is_not_redacted():
+    from app.cognitive_integration.executor import _redact
+
+    text = "Pollinated by Eulaema meriana; 3 of 7 records confirm the association."
+    assert _redact(text) == text
+
+
+def test_the_fail_closed_check_is_broader_than_the_redactor():
+    """A check sharing the redactor's pattern can only confirm what it already did."""
+    from app.cognitive_integration.executor import _COORDINATE, _COORDINATE_SUSPICION
+
+    # A bare mention the redactor does not remove, which the suspicion net catches.
+    probe = "gps reading withheld"
+    assert _COORDINATE.search(probe) is None
+    assert _COORDINATE_SUSPICION.search(probe) is not None
 
 
 def test_known_unknowns_and_next_evidence_are_both_stated(reasoning_map):
@@ -314,3 +496,258 @@ def test_the_backend_map_satisfies_the_brain_scientific_contract(reasoning_map):
     # that single key. Anything else is a real divergence in the contract.
     assert undeclared in ([], ["fixture carries undeclared key 'execution'"]), structural
     assert [f for f in structural if "undeclared key" not in f] == [], structural
+
+
+# ---------------------------------------------------------------------------
+# Every citation supports the claim it is attached to
+# ---------------------------------------------------------------------------
+
+
+def test_sexual_deception_is_not_attributed_to_darwin(reasoning_map):
+    """Darwin had no concept of sexual deception.
+
+    Pseudocopulation in *Ophrys* was proposed by Pouyanne and Correvon in
+    1916-1923 and established by Kullenberg in 1961. Citing Darwin 1862 for it
+    credits him with a mechanism described more than fifty years after his book,
+    and inverts what he actually wrote about this species — he recorded it as
+    habitually self-fertilised and said he had never seen an insect visit it.
+    """
+    for relationship in reasoning_map["relationships"]:
+        if relationship["predicate"] == "reported_pollinated_by":
+            citation = relationship["provenance"][0]["citation"]
+            assert "Darwin" not in citation
+            assert "Kullenberg" in citation
+
+
+def test_darwin_is_cited_for_the_claim_he_actually_made(reasoning_map):
+    for relationship in reasoning_map["relationships"]:
+        if relationship["predicate"] == "reported_reproductive_strategy":
+            assert "Darwin" in relationship["provenance"][0]["citation"]
+
+
+def test_a_nineteenth_century_monograph_is_not_recorded_as_a_journal_article(reasoning_map):
+    for relationship in reasoning_map["relationships"]:
+        citation = relationship["provenance"][0]["citation"]
+        if "Darwin" in citation:
+            assert relationship["provenance"][0]["source_type"] == "scholarly_monograph"
+
+
+def test_the_scopes_do_not_overstate_a_clean_regional_split(reasoning_map):
+    """Autogamy is predominant throughout the range, not a north-western mode.
+
+    Framing the disagreement as "Mediterranean versus north-west" would be tidier
+    than the record supports: insect pollination is a sporadic local exception.
+    """
+    scopes = {
+        r["predicate"]: r.get("geographic_scope")
+        for r in reasoning_map["relationships"]
+        if r["predicate"] in ("reported_pollinated_by", "reported_reproductive_strategy")
+    }
+    assert "throughout the range" in scopes["reported_reproductive_strategy"]
+    assert "sporadic" in scopes["reported_pollinated_by"]
+
+
+def test_mechanism_prose_describes_the_edge_rather_than_this_fixture():
+    """The wording asserted "reproduces without any insect" for any strategy edge."""
+    repo = build_pollination_repository()
+    nodes = []
+    for node in repo.all_nodes():
+        if node.canonical_key == "process:autogamy":
+            node = Node(
+                kg_node_id=node.kg_node_id, node_type=node.node_type,
+                canonical_key=node.canonical_key,
+                display_label="Insect-mediated outcrossing", payload=node.payload,
+            )
+        nodes.append(node)
+    relabelled = execute(repository=InMemoryGraphRepository(
+        nodes=nodes, edges=list(repo.all_edges())))
+    competing = [m for m in relabelled["mechanisms"] if m["kind"] == "competing_mechanism"]
+    assert competing
+    for mechanism in competing:
+        assert "without any insect" not in mechanism["statement"]
+        assert "Insect-mediated outcrossing" in mechanism["statement"]
+
+
+#: Shapes that carried a position past *both* nets in the second checker round.
+#: Four of the five never write a digits-and-dot pair at all, which is what the
+#: first widening had assumed a coordinate would look like.
+_SECOND_ROUND_LEAKS = [
+    ("51.7520 degrees north, 1.2577 degrees west", ["51.7520", "1.2577"]),
+    ("UTM 30U 620000 5735000", ["620000", "5735000"]),
+    ("51,7520 1,2577", ["51,7520", "1,2577"]),
+    ("9C3XGV24+RQ", ["9C3XGV24+RQ"]),
+    ("51 deg 45 min N, 1 deg 15 min W", ["51 deg 45", "1 deg 15"]),
+]
+
+
+@pytest.mark.parametrize("leak,fragments", _SECOND_ROUND_LEAKS)
+def test_a_position_written_without_a_decimal_pair_is_still_withheld(leak, fragments):
+    """The first is the same ~10 m Oxford position as the original reproduction.
+
+    It reached a client while the response asserted ``redaction_applied: True``,
+    ``WITHHELD_PENDING_REVIEW`` and ``coordinates_present: False``. Misreporting
+    the safety state is worse than leaking quietly: a consumer has been told the
+    field is safe.
+    """
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = dict(edge.payload)
+        if edge.edge_type == "co_occurs_with":
+            payload["citation"] = f"Field survey. Population at {leak}."
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    served = json.dumps(execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges)))
+    for fragment in fragments:
+        assert fragment not in served, f"{fragment!r} reached the client"
+
+
+def test_the_fail_closed_net_is_strictly_broader_than_the_redactor():
+    """Not merely a different pattern — a superset, by construction.
+
+    If the two share one pattern the assertion can only confirm what the
+    redactor already did. Asserting the property directly means a future
+    widening of the redactor cannot quietly leave the assertion behind.
+    """
+    from app.cognitive_integration.executor import _COORDINATE, _COORDINATE_SUSPICION
+
+    probes = [leak for leak, _ in _SECOND_ROUND_LEAKS] + [
+        "Population located at 51.7520 -1.2577 near the reserve",
+        "Population at 51.75, -1.25",
+        "lat 51.7520 lon -1.2577",
+        "Recorded at 43° 17’ N",
+        "51.7520, -1.2577",
+        "30U WV 20000 35000",
+    ]
+    for probe in probes:
+        if _COORDINATE.search(probe):
+            assert _COORDINATE_SUSPICION.search(probe), (
+                f"the redactor catches {probe!r} but the fail-closed net does not"
+            )
+
+    # And it is genuinely wider: this one the redactor misses and the net holds.
+    assert not _COORDINATE.search("N51.7520 W1.2577")
+    assert _COORDINATE_SUSPICION.search("N51.7520 W1.2577")
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        (
+            "Kullenberg, B. (1961). Studies in Ophrys pollination. "
+            "Zoologiska Bidrag fran Uppsala 34: 1-340."
+        ),
+        "Darwin, C. (1862). On the Various Contrivances. John Murray, London.",
+        "Aggregated occurrence records, country resolution only.",
+        "1,234 records were aggregated for this taxon.",
+    ],
+)
+def test_the_widened_net_does_not_eat_ordinary_citations(citation):
+    """Page ranges, years and thousands separators are not coordinates.
+
+    A redactor that mangles its own provenance would make the map unreadable to
+    defend it, which is its own kind of failure.
+    """
+    from app.cognitive_integration.executor import _COORDINATE
+
+    assert not _COORDINATE.search(citation)
+
+
+def test_no_prose_asserts_a_difference_the_graph_does_not_carry():
+    """The checker's mutation, applied to every remaining recited sentence.
+
+    Relabelling the reproductive process to something insect-mediated used to
+    leave three sentences asserting the opposite: the contradiction description
+    said one report "needs no insect", the null explanation invoked a
+    "non-insect strategy", and the geographic note announced a regional split
+    that nothing established. Detection was derived; the descriptions were not.
+    """
+    import dataclasses
+
+    repo = build_pollination_repository()
+    nodes = [
+        dataclasses.replace(node, display_label="Beetle-mediated outcrossing")
+        if node.kg_node_id == 4
+        else node
+        for node in repo.all_nodes()
+    ]
+    served = json.dumps(
+        execute(repository=InMemoryGraphRepository(nodes=nodes, edges=list(repo.all_edges())))
+    )
+    for false_claim in (
+        "needs no insect",
+        "without any insect",
+        "non-insect strategy",
+        "reproduces without",
+    ):
+        assert false_claim not in served, f"recited prose survived: {false_claim!r}"
+
+    # And it describes what is actually there.
+    assert "Beetle-mediated outcrossing" in served
+
+
+def test_the_regional_split_note_requires_an_established_split():
+    """D1b reworded the scopes to stop overstating a clean regional division.
+
+    The note that announces one was still firing on "more than one distinct
+    scope string", so the reworded scopes — a frequency statement and a
+    frequency-plus-place statement over overlapping ground — put the
+    overstatement straight back into the served map.
+    """
+    notes = " ".join(execute()["geographic_context"]["environmental_notes"])
+    assert "differs between parts of the range" not in notes
+    assert "does not divide the range" in notes
+
+
+def test_a_genus_level_source_cited_for_a_species_claim_says_so():
+    """Kullenberg 1961 established pseudocopulation across *Ophrys*.
+
+    That makes it the right citation for the mechanism and a stretched one for
+    *O. apifera* being insect-pollinated, since this species is the autogamous
+    exception within the genus. A checker was right that the fix for the Darwin
+    misattribution traded a categorical error for an over-reach.
+
+    The reasoning-map contract fixes the provenance keys, so the qualification
+    cannot ride on the citation. It is derived into the gap list instead —
+    which is where a reader looking for what the evidence does not cover will
+    actually look. Inventing a species-level citation nobody retrieved would be
+    the same failure as citing Darwin, one step subtler.
+    """
+    gaps = execute()["evidence_gaps"]
+    qualified = [g for g in gaps if "at genus level" in g]
+    assert qualified, "the genus-level limitation must be stated, not implied"
+    assert "reported_pollinated_by" in qualified[0]
+    assert "nothing retrieved reports it for this species specifically" in qualified[0]
+
+
+def test_the_genus_level_qualifier_is_derived_and_not_a_fixed_sentence():
+    """Remove the qualifier from the edge and the gap must disappear."""
+    repo = build_pollination_repository()
+    edges = []
+    for edge in repo.all_edges():
+        payload = {k: v for k, v in (edge.payload or {}).items() if k != "support_scope"}
+        edges.append(Edge(
+            kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
+            from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
+            evidence_class=edge.evidence_class, payload=payload,
+        ))
+    gaps = execute(repository=InMemoryGraphRepository(
+        nodes=list(repo.all_nodes()), edges=edges))["evidence_gaps"]
+    assert not [g for g in gaps if "at genus level" in g]
+
+
+def test_routing_fields_never_reach_the_client():
+    """``scope_region`` and ``support_scope`` decide things; they do not claim them.
+
+    The reasoning-map contract sets ``additionalProperties: false`` on a
+    relationship, so leaking either would break the Brain contract as well as
+    publishing an internal decision as though it were evidence.
+    """
+    served = execute()
+    for relationship in served["relationships"]:
+        assert "scope_region" not in relationship
+        assert "support_scope" not in relationship

@@ -58,10 +58,70 @@ _ALLOWED_EVIDENCE_STATES = frozenset(
 #: incompatible processes is what contradiction detection looks for.
 _REPRODUCTIVE_PREDICATES = ("reported_pollinated_by", "reported_reproductive_strategy")
 
+#: What gets removed.
+#:
+#: Widened twice, each time after a checker demonstrated a shape that walked
+#: through. The first round added space-separated pairs, one- and two-decimal
+#: pairs, bare ``lat``/``lon`` without a separator, and the typographic
+#: apostrophe. The second added the shapes that carry a position without ever
+#: writing a digits-and-dot pair: coordinates spelled out in words, UTM and
+#: MGRS grid references, Open Location Codes, and European comma decimals.
+#:
+#: The lesson each round taught is the same one: this pattern is a list of
+#: shapes someone thought of. It is not a proof, which is why the assertion at
+#: the end of :func:`execute` deliberately uses a wider net than this.
+_DEGREE_WORD = r"(?:\u00b0|deg\.?|degrees?)"
+_MINUTE_WORD = r"(?:['\u2018\u2019\u2032]|min\.?|minutes?)"
+_HEMISPHERE = r"(?:[NSEW]\b|north|south|east|west)"
+
 _COORDINATE = re.compile(
-    r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}"
-    r"|\b(?:lat|latitude|lng|lon|longitude)\s*[=:]\s*[-+]?\d+(?:\.\d+)?"
-    r"|\d{1,3}\s*°\s*\d{1,2}\s*['′]",
+    # A decimal pair separated by a comma, semicolon or whitespace. One decimal
+    # place is ~11 km and still worth withholding for a protected taxon.
+    r"[-+]?\d{1,3}\.\d+\s*(?:[,;]\s*|\s+)[-+]?\d{1,3}\.\d+"
+    # A named coordinate, with or without a separator character.
+    r"|\b(?:lat|latitude|lng|lon|long|longitude)\b\s*[=:]?\s*[-+]?\d+(?:\.\d+)?"
+    # Degrees and minutes, symbol or word, straight or typographic apostrophe.
+    rf"|\d{{1,3}}\s*{_DEGREE_WORD}\s*\d{{1,2}}\s*{_MINUTE_WORD}"
+    # Degrees with a hemisphere, symbol or spelled out. This is the arm that
+    # catches "51.7520 degrees north", which carried ~10 m of precision past
+    # both the redactor and the fail-closed check.
+    rf"|\d{{1,3}}(?:\.\d+)?\s*{_DEGREE_WORD}\s*{_HEMISPHERE}"
+    # European comma decimals, as a pair. Three digits after the comma is a
+    # thousands separator ("1,234 records") and is deliberately not matched.
+    r"|\d{1,3},(?:\d{1,2}|\d{4,})\s*(?:[; ]\s*)[-+]?\d{1,3},(?:\d{1,2}|\d{4,})"
+    # UTM and MGRS grid references, which locate a site with no degrees at all.
+    # The digit run is a pair: an easting and a northing of equal length. A
+    # single run leaves the second number sitting in the output next to the
+    # marker, which is most of a position and reads as though it were redacted.
+    r"|\b\d{1,2}\s*[C-HJ-NP-X]\s*[A-Z]{2}\s*\d{4,10}(?:\s+\d{4,10})?\b"
+    r"|\bUTM\b[^\n]{0,24}?\d{5,7}\s+\d{5,8}"
+    r"|\b\d{1,2}[C-HJ-NP-X]\s+\d{5,7}\s+\d{5,8}\b"
+    # Open Location Code (plus code): eight of the code alphabet, then "+".
+    r"|\b[23456789CFGHJMPQRVWX]{4,8}\+[23456789CFGHJMPQRVWX]{2,7}\b",
+    re.IGNORECASE,
+)
+
+#: A deliberately broader net for the final check.
+#:
+#: If the redactor and the assertion share one pattern, the assertion can only
+#: confirm what the redactor already did — it cannot catch what the redactor
+#: missed. So this one *contains* the redactor's pattern and adds to it, which
+#: makes "strictly broader" a structural property rather than a claim: there is
+#: no string the redactor matches that this does not.
+#:
+#: It over-triggers on purpose. A false positive costs one raise; a false
+#: negative publishes a wild orchid's position.
+_COORDINATE_SUSPICION = re.compile(
+    _COORDINATE.pattern
+    # Any two decimal numbers in plausible degree range, however separated.
+    + r"|[-+]?(?:1[0-7]\d|\d{1,2})\.\d+\D{0,24}[-+]?(?:1[0-7]\d|\d{1,2})\.\d+"
+    # Vocabulary that accompanies a position even when the digits are elsewhere.
+    + r"|\b(?:lat|lon|lng|latitude|longitude|coordinate|coordinates|gps|utm|mgrs"
+    + r"|grid\s*ref(?:erence)?|plus\s*code|what3words|easting|northing|geohash)\b"
+    + r"|\u00b0"
+    + r"|\b\d{1,3}\s*(?:deg\.?|degrees?)\b"
+    # Two long digit runs side by side: the shape of a projected coordinate.
+    + r"|\b\d{6,8}\s+\d{6,8}\b",
     re.IGNORECASE,
 )
 
@@ -123,6 +183,14 @@ def _relationships(repository: GraphRepository, subject_id: int) -> list[dict[st
                 "object": nodes[edge.to_node_id].display_label,
                 "evidence_state": state,
                 "geographic_scope": payload.get("geographic_scope"),
+                # Structured scope, used to decide whether a disagreement is
+                # resolved by the claims applying to different places. Stripped
+                # before serving: it is routing input, not a published claim.
+                "scope_region": payload.get("scope_region"),
+                # How far the cited source actually reaches. A genus-wide study
+                # cited for a species-level claim is real support, but not for
+                # the claim as stated. Routing input, stripped before serving.
+                "support_scope": payload.get("support_scope"),
                 "provenance": [
                     {
                         "source_type": payload.get("source_type") or "occurrence_dataset",
@@ -137,14 +205,31 @@ def _relationships(repository: GraphRepository, subject_id: int) -> list[dict[st
     return rows
 
 
-def _geographic_context(relationships: list[dict[str, Any]]) -> dict[str, Any]:
+def _geographic_context(
+    relationships: list[dict[str, Any]], disjoint: set[frozenset[str]]
+) -> dict[str, Any]:
     regions = sorted({r["object"] for r in relationships if r["predicate"] == "reported_from"})
     habitats = sorted({r["object"] for r in relationships if r["predicate"] == "co_occurs_with"})
     notes = [f"Most records associate the taxon with {h.lower()}." for h in habitats]
-    if len({r.get("geographic_scope") for r in relationships if r.get("geographic_scope")}) > 1:
+    # Only claim a regional division when the graph establishes one. Two
+    # different scope strings are not a division: "predominant throughout the
+    # range" and "chiefly in the Mediterranean" describe overlapping ground, and
+    # asserting a split for them is the overstatement the scopes were reworded
+    # to remove.
+    scoped = {
+        r["scope_region"]
+        for r in relationships
+        if r["predicate"] in _REPRODUCTIVE_PREDICATES and r.get("scope_region")
+    }
+    if any(pair <= scoped for pair in disjoint):
         notes.append(
             "The reported reproductive strategy differs between parts of the range, "
             "so scope is part of the claim rather than context for it."
+        )
+    elif len({r.get("geographic_scope") for r in relationships if r.get("geographic_scope")}) > 1:
+        notes.append(
+            "The reports carry different scopes, but nothing retrieved establishes that "
+            "those scopes are separate places, so the difference does not divide the range."
         )
     return {
         "scope": "; ".join(regions) if regions else "unspecified",
@@ -171,14 +256,19 @@ def _mechanisms(repository: GraphRepository, relationships: list[dict[str, Any]]
         )
     for relationship in relationships:
         if relationship["predicate"] == "reported_reproductive_strategy":
+            # Describe what the edge says, not what this fixture's edge happens
+            # to say. The previous wording asserted "reproduces without any
+            # insect" for every reported strategy, so relabelling the node to an
+            # insect-mediated one would have emitted a false statement while the
+            # detection stayed correct.
+            scope = relationship.get("geographic_scope") or "the reported range"
             out.append(
                 {
                     "name": (relationship["object"] or "").lower(),
                     "kind": "competing_mechanism",
                     "statement": (
-                        f"In the {relationship.get('geographic_scope') or 'reported'} the subject "
-                        "reproduces without any insect, so the pollination relationship is not "
-                        "required to explain seed set there."
+                        f"{relationship['object']} is reported as the reproductive strategy "
+                        f"({scope}), which is a separate account of how seed set occurs."
                     ),
                     "evidence_state": relationship["evidence_state"],
                 }
@@ -191,8 +281,8 @@ def _mechanisms(repository: GraphRepository, relationships: list[dict[str, Any]]
             "name": "no pollinator relationship in this population",
             "kind": "null_explanation",
             "statement": (
-                "An observed insect visit does not establish pollination. Where a "
-                "non-insect strategy already accounts for seed set, a visiting insect may "
+                "An observed insect visit does not establish pollination. Where another "
+                "retrieved strategy already accounts for seed set, a visiting insect may "
                 "be incidental."
             ),
             "evidence_state": "REPORTED_UNVERIFIED",
@@ -201,7 +291,77 @@ def _mechanisms(repository: GraphRepository, relationships: list[dict[str, Any]]
     return out
 
 
-def _contradictions(relationships: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _disjoint_regions(repository: GraphRepository) -> set[frozenset[str]]:
+    """Region pairs the graph declares non-overlapping.
+
+    Read from ``disjoint_from`` edges rather than assumed. Two place names being
+    different strings says nothing about whether the places overlap: "throughout
+    the range" and "chiefly in the Mediterranean" are different strings
+    describing ground that includes the same ground.
+    """
+    keys = {node.kg_node_id: node.canonical_key for node in repository.all_nodes()}
+    pairs: set[frozenset[str]] = set()
+    for edge in repository.all_edges():
+        if edge.edge_type != "disjoint_from":
+            continue
+        first, second = keys.get(edge.from_node_id), keys.get(edge.to_node_id)
+        if first and second and first != second:
+            pairs.add(frozenset({first, second}))
+    return pairs
+
+
+def _scope_resolution(
+    first: dict[str, Any], second: dict[str, Any], disjoint: set[frozenset[str]]
+) -> str:
+    """Whether a disagreement is resolved by the two claims applying elsewhere.
+
+    Resolution requires *established* disjointness: both claims naming a region,
+    and the graph declaring those two regions non-overlapping. Anything short of
+    that leaves the contradiction standing, which is the fail-closed direction —
+    a contradiction wrongly left open costs a reader some care, and one wrongly
+    closed deletes a real scientific disagreement.
+
+    Three things this deliberately does not treat as resolution:
+
+    * **Equal scopes.** Two incompatible claims about the *same* place is the
+      definition of a live conflict. The predicate this replaced returned
+      ``resolved_by_scope`` for exactly that case, and because absent scopes
+      compare equal, it did so for every claim that named no place at all —
+      then dropped the contradiction from ``unresolved`` and *raised* the
+      confidence for it.
+    * **Absent scopes.** Unknown is not the same as equal, and it is not the
+      same as disjoint.
+    * **Different free-text scopes.** Different wording is not disjointness.
+    """
+    first_region = first.get("scope_region")
+    second_region = second.get("scope_region")
+    if not first_region or not second_region:
+        return "unresolved_presented_as_contested"
+    if first_region == second_region:
+        return "unresolved_presented_as_contested"
+    if frozenset({first_region, second_region}) not in disjoint:
+        return "unresolved_presented_as_contested"
+    return "resolved_by_scope"
+
+
+def _describe_conflict(first: dict[str, Any], second: dict[str, Any]) -> str:
+    """Say what the two claims are, rather than what they were expected to be.
+
+    The sentence this replaced asserted that one report was insect-mediated and
+    the other needed no insect. That is true of the shipped fixture and false of
+    any graph where both reports are insect-mediated, where it would have gone
+    on describing a difference that was not there.
+    """
+    return (
+        f"One report gives {first['object']}; the other gives {second['object']}. "
+        "Both are carried. They are not reconciled by preferring the "
+        "better-supported one."
+    )
+
+
+def _contradictions(
+    relationships: list[dict[str, Any]], disjoint: set[frozenset[str]]
+) -> list[dict[str, Any]]:
     """Find claims that disagree, and keep both rather than choosing."""
     reproductive = [r for r in relationships if r["predicate"] in _REPRODUCTIVE_PREDICATES]
     found: list[dict[str, Any]] = []
@@ -209,20 +369,14 @@ def _contradictions(relationships: list[dict[str, Any]]) -> list[dict[str, Any]]
         for second in reproductive[index + 1 :]:
             if first["predicate"] == second["predicate"]:
                 continue
-            same_scope = first.get("geographic_scope") == second.get("geographic_scope")
             found.append(
                 {
                     "between": [
                         f"{first['predicate']} {first['object']}",
                         f"{second['predicate']} {second['object']}",
                     ],
-                    "description": (
-                        "One report describes an insect-mediated system; the other describes "
-                        "reproduction that needs no insect. They are not reconciled by "
-                        "preferring the better-supported one."
-                    ),
-                    "resolution": "resolved_by_scope" if same_scope
-                    else "unresolved_presented_as_contested",
+                    "description": _describe_conflict(first, second),
+                    "resolution": _scope_resolution(first, second, disjoint),
                     "scopes": [first.get("geographic_scope"), second.get("geographic_scope")],
                 }
             )
@@ -247,6 +401,21 @@ def _evidence_gaps(repository: GraphRepository, relationships: list[dict[str, An
             "No local observation supports any retrieved claim; the evidence is literature "
             "and aggregated records only."
         )
+    # A source establishing something across a genus is weak support for a claim
+    # about one species in it, and it is weakest precisely where the species is
+    # the genus's exception — which is this taxon's whole scientific interest.
+    # The citation field cannot say this (the reasoning-map contract fixes the
+    # provenance keys), so the limitation is stated here rather than left for a
+    # reader to notice. Substituting a species-level citation nobody retrieved
+    # would be the fabrication this whole path exists to avoid.
+    for relationship in relationships:
+        if relationship.get("support_scope") != "genus":
+            continue
+        gaps.append(
+            f"The source for {relationship['subject']} {relationship['predicate']} "
+            f"{relationship['object']} establishes this at genus level; nothing "
+            "retrieved reports it for this species specifically."
+        )
     return gaps
 
 
@@ -258,6 +427,25 @@ def _redact(value: Any) -> Any:
     if isinstance(value, dict):
         return {key: _redact(item) for key, item in value.items()}
     return value
+
+
+def _confidence(unresolved: list[dict[str, Any]], gaps: list[str]) -> dict[str, Any]:
+    """Confidence and the reasons for it, derived together so they cannot disagree."""
+    reasons = ["The taxonomic identity is resolved."]
+    if unresolved:
+        reasons.append("Reports conflict and nothing retrieved settles the disagreement.")
+        level = "low" if len(gaps) >= 4 else "moderate"
+    else:
+        reasons.append("No retrieved report contradicts another.")
+        level = "moderate" if gaps else "high"
+    if gaps:
+        reasons.append(f"{len(gaps)} gap(s) remain in the retrieved evidence.")
+    return {
+        "qualitative": level,
+        "basis": " ".join(reasons),
+        # A number here would be fabricated: nothing retrieved supports one.
+        "numeric_precision_claimed": False,
+    }
 
 
 def execute(
@@ -276,9 +464,9 @@ def execute(
 
     identity = _resolve_taxonomy(repo)
     relationships = _relationships(repo, identity["kg_node_id"])
-    geography = _geographic_context(relationships)
+    geography = _geographic_context(relationships, _disjoint_regions(repo))
     mechanisms = _mechanisms(repo, relationships)
-    contradictions = _contradictions(relationships)
+    contradictions = _contradictions(relationships, _disjoint_regions(repo))
     gaps = _evidence_gaps(repo, relationships)
 
     traversal = ReasoningMapEngine(repo).build(
@@ -290,13 +478,18 @@ def execute(
     )
 
     unresolved = [c for c in contradictions if c["resolution"] != "resolved_by_scope"]
+    # Internal routing input; never part of the published relationship.
+    served_relationships = [
+        {k: v for k, v in relationship.items() if k not in ("scope_region", "support_scope")}
+        for relationship in relationships
+    ]
     result = {
         "schema_version": CONTRACT_VERSION,
         "question": question,
         "intent": {"decomposition": _decompose(question), "deterministic": True},
         "capabilities_selected": list(DETERMINISTIC_CAPABILITIES),
         "taxonomic_identity": {k: v for k, v in identity.items() if k != "kg_node_id"},
-        "relationships": relationships,
+        "relationships": served_relationships,
         "geographic_context": geography,
         "mechanisms": mechanisms,
         "contradictions": contradictions,
@@ -309,17 +502,11 @@ def execute(
             "Whether the insect-mediated mechanism is currently active throughout the range.",
             "What conditions, if any, shift a population between strategies.",
         ],
-        "confidence": {
-            # Qualitative, with its basis written out. A number here would be
-            # fabricated: nothing retrieved supports one.
-            "qualitative": "moderate" if unresolved else "high",
-            "basis": (
-                "The identity is resolved and both strategies are reported in the primary "
-                "literature. Held below high because the reports conflict, no local "
-                "observation supports either, and no source quantifies their contribution."
-            ),
-            "numeric_precision_claimed": False,
-        },
+        # Derived together with its reasons, so the two cannot disagree. A fixed
+        # basis string contradicted itself the moment the contradiction resolved:
+        # it went on saying "held below high because the reports conflict" while
+        # reporting high.
+        "confidence": _confidence(unresolved, gaps),
         "locality_policy": {
             "protected_taxon_present": True,
             "disclosure": "WITHHELD_PENDING_REVIEW",
@@ -363,8 +550,11 @@ def execute(
     }
 
     redacted = _redact(result)
-    # Fail closed rather than serving a map that leaked. Redaction already ran;
-    # anything still matching means a shape redaction does not cover.
-    if _COORDINATE.search(str(redacted)):
-        raise CognitiveIntegrationError("coordinate-shaped content survived redaction")
+    # Fail closed rather than serving a map that leaked. The suspicion pattern is
+    # broader than the redactor on purpose.
+    leaked = _COORDINATE_SUSPICION.search(str(redacted))
+    if leaked:
+        raise CognitiveIntegrationError(
+            f"coordinate-shaped content survived redaction: {leaked.group(0)!r}"
+        )
     return redacted
