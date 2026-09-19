@@ -14,6 +14,8 @@ CapabilityStatus = Literal[
     "BLOCKED",
 ]
 EXECUTABLE_STATUS = "OPERATIONAL"
+LITERATURE_HANDOFF_REPOSITORY = "jsp1440/Orchid-Continuum-Brain"
+LITERATURE_HANDOFF_COMMIT = "db27f9283bc1a964a9d40e6ae3cedd34eee7b522"
 
 
 @dataclass(frozen=True)
@@ -96,8 +98,7 @@ def canonical_brain_registry() -> CapabilityRegistry:
                 canonical_issue="Orchid-Continuum-Brain#146",
                 status="OPERATIONAL",
                 repository_evidence=(
-                    "jsp1440/Orchid-Continuum-Brain"
-                    "@db27f9283bc1a964a9d40e6ae3cedd34eee7b522",
+                    f"{LITERATURE_HANDOFF_REPOSITORY}@{LITERATURE_HANDOFF_COMMIT}",
                 ),
                 public_entry_point="Literature Intelligence -> Candidate Knowledge handoff",
                 persistence="canonical candidate-knowledge handoff",
