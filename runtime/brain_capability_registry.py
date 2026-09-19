@@ -5,7 +5,14 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Literal
 
-CapabilityStatus = Literal["OPERATIONAL", "IMPLEMENTED_NOT_INTEGRATED", "PARTIAL", "DOCUMENTED_ONLY", "ABSENT", "BLOCKED"]
+CapabilityStatus = Literal[
+    "OPERATIONAL",
+    "IMPLEMENTED_NOT_INTEGRATED",
+    "PARTIAL",
+    "DOCUMENTED_ONLY",
+    "ABSENT",
+    "BLOCKED",
+]
 EXECUTABLE_STATUS = "OPERATIONAL"
 
 
@@ -88,7 +95,10 @@ def canonical_brain_registry() -> CapabilityRegistry:
                 capability_id="literature_candidate_handoff",
                 canonical_issue="Orchid-Continuum-Brain#146",
                 status="OPERATIONAL",
-                repository_evidence=("jsp1440/Orchid-Continuum-Brain@db27f9283bc1a964a9d40e6ae3cedd34eee7b522",),
+                repository_evidence=(
+                    "jsp1440/Orchid-Continuum-Brain"
+                    "@db27f9283bc1a964a9d40e6ae3cedd34eee7b522",
+                ),
                 public_entry_point="Literature Intelligence -> Candidate Knowledge handoff",
                 persistence="canonical candidate-knowledge handoff",
                 api=None,
