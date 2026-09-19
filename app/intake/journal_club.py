@@ -128,10 +128,9 @@ def _stable_hash(*parts: str) -> str:
 
 def _term_spans(text: str, terms: tuple[str, ...]) -> list[dict[str, object]]:
     spans: list[dict[str, object]] = []
-    lowered = text.casefold()
     for term in terms:
-        pattern = re.compile(re.escape(term.casefold()))
-        for match in pattern.finditer(lowered):
+        pattern = re.compile(re.escape(term), re.IGNORECASE)
+        for match in pattern.finditer(text):
             start, end = match.span()
             spans.append(
                 {
@@ -201,7 +200,11 @@ def parse_journal_club_transcript(
             str(technique["key"]),
             sha256(transcript.encode("utf-8")).hexdigest(),
         )
-        canonical_id = knowledge_fingerprint("technology", item_title, dois)
+        canonical_id = _stable_hash(
+            "technology",
+            str(identity),
+            str(technique["key"]),
+        )
 
         scout = {
             "source_system": "JournalClub.io",
