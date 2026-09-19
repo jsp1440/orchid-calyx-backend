@@ -317,3 +317,43 @@ def test_swarm_plan_carries_blocked_report_without_relabelling(monkeypatch):
     assert "oc-blocked" in snapshot["issues"][-1]["labels"]
     assert plan["safety"]["blocked_work_fail_closed"] is True
     assert plan["safety"]["blocked_reconciliation_mutates"] is False
+
+
+def test_blocked_report_drives_enrichment_then_one_idempotent_release():
+    incomplete = {
+        "issues": [
+            {
+                "number": 200,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": 1,
+            }
+        ]
+    }
+    first = swarm.blocked_reconciliation_report(incomplete)
+    assert first["release_plan"]["action_count"] == 0
+    assert first["observation_requests"] == [{"kind": "issue_comments", "number": 200}]
+
+    with_comment = {
+        **incomplete,
+        "issue_comments": {"200": [{"body": "OC-BLOCKED-ON: pr#300"}]},
+    }
+    second = swarm.blocked_reconciliation_report(with_comment)
+    assert second["release_plan"]["action_count"] == 0
+    assert second["observation_requests"] == [
+        {"kind": "pull_request_state", "number": 300}
+    ]
+
+    complete = {
+        **with_comment,
+        "pull_requests": [{"number": 300, "state": "MERGED", "merged": True}],
+    }
+    third = swarm.blocked_reconciliation_report(complete)
+    assert third == swarm.blocked_reconciliation_report(complete)
+    assert third["observation_requests"] == []
+    assert third["release_plan"]["action_count"] == 1
+    action = third["release_plan"]["actions"][0]
+    assert action["issue_number"] == 200
+    assert action["requires_labels"] == ["oc-blocked"]
+    assert action["idempotency_key"] == "blocked-release:200:pr#300"
