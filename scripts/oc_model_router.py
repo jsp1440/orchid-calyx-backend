@@ -56,6 +56,44 @@ STANDARD_SIGNALS = (
 )
 
 
+class ProviderNotRequired(RuntimeError):
+    """Raised when a task declares only capabilities no provider is needed for.
+
+    Deliberately an exception rather than a quiet downgrade: reaching this router
+    at all means an upstream routing decision was wrong, and that should be
+    visible in a log rather than silently absorbed.
+    """
+
+
+def provider_refusal(body: str) -> str | None:
+    """Explain why this task must not reach a provider, or None if it may.
+
+    Reads the same capability declarations the swarm router reads. A task that
+    declares no capability at all is not refused here — it is simply unproven
+    either way, and that judgement belongs upstream.
+    """
+    try:
+        from app.provider_reservoir.routing import route_task
+    except ImportError:  # pragma: no cover - router must work from a bare checkout
+        return None
+
+    try:
+        routing = route_task({"number": 0, "body": body or ""})
+    except (ValueError, TypeError):
+        # An unclassified or contradictory declaration is not this guard's call.
+        return None
+
+    if not routing.deterministic_capabilities:
+        return None
+    if routing.blocking_provider_capabilities:
+        return None
+    return (
+        "task declares only deterministic capabilities ("
+        + ", ".join(routing.deterministic_capabilities)
+        + "); no provider is required. Difficulty is not a capability requirement."
+    )
+
+
 @dataclass(frozen=True)
 class Route:
     tier: str
@@ -120,6 +158,18 @@ def choose_route(
     combined = f"{title}\n{body}".lower()
     tier = default_tier
     reasons: list[str] = [f"default={default_tier}"]
+
+    # A task that states what it needs, and needs nothing a provider supplies,
+    # must never be routed to one — whatever its prose looks like. This is the
+    # second of two guards; routing should already have kept such a task out of
+    # this lane. Issue #1502 is why there are two: its body contained the word
+    # "architecture", it was promoted to `claude-opus-5` on a
+    # `deep-complexity-signal`, and its own acceptance criteria required a
+    # fixture that runs without external AI credentials. Difficulty is not a
+    # capability requirement.
+    refusal = provider_refusal(body)
+    if refusal is not None:
+        raise ProviderNotRequired(refusal)
 
     explicit = [name for name in TIERS if f"oc-model-{name}" in labels_set]
     if explicit:
