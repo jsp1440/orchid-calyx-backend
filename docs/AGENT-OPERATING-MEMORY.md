@@ -33,12 +33,12 @@ In PR #706 the merge succeeded against the verified head and the squash produced
 
 So, for every integration merge:
 
-1. Record the exact independently verified head, before merging. Derive the paths mechanically -- `git diff --name-status <base>..<verified-head>` -- and use all of them. A hand-picked subset yields a `landed` verdict that says nothing about the paths you left out.
+1. Record the exact independently verified head, before merging. Derive the paths mechanically -- `git diff --name-status <base>..<verified-head>` -- and use all of them. A hand-picked subset yields a `landed` verdict that says nothing about the paths you left out. **At least one must be a path the change kept.** A set made only of deletions proves nothing (see below), and for a pure-deletion change that is exactly what this command returns.
 2. Merge.
 3. Immediately inspect the resulting integration tree, from a real checkout, before reporting anything.
 4. Prove the verified content is present at every declared path:
    `python3 scripts/oc_verify_merge_landed.py --verified-head <sha> --integration-ref <ref> --path <p> [--path ...]`
-   Pass a path the change removed as `--deleted-path`. The tool proves it existed at `git merge-base <verified-head> <integration-ref>`, because a deletion is only a deletion if the file was there to delete. That base is derived from the two refs being compared and is not yours to name: a caller-supplied base is a fact asserted rather than checked, and any commit that happens to contain the path would satisfy it.
+   Pass a path the change removed as `--deleted-path`. The tool proves it existed at every `git merge-base <verified-head> <integration-ref>`, because a deletion is only a deletion if the file was there to delete, and that base is derived from the two refs being compared rather than named by you.
 5. On a mismatch, stop that merge lane, restore the verified result from the verified head, and report the mismatch. Do not proceed to the next item first.
 
 Exit 0 is the only pass. Exit 2 is an argument or ref the tool refused before comparing anything. Exit 1 is everything else, and it covers three verdicts -- `tree_mismatch`, `evidence_incomplete` and `merge_not_reported` -- so read the printed verdict rather than branching on the code alone.
@@ -47,7 +47,11 @@ Never report a pull request as successfully integrated on the strength of the me
 
 What it proves, and only this: the integration side holds what was verified, at the paths you declared, including each path's file mode and object type. It says nothing about content the merge added at paths nobody declared.
 
-Three of this tool's four known false passes were one shape: a path absent on both sides, read as an agreed deletion. Each fix closed a case and the next round found the same shape somewhere else -- a mistyped `--path`, then a `--deleted-path` that required only absence, then a caller-named base that could prove a deletion from anywhere in history. Absence is not evidence, and a fact the caller supplies is not a check. Assume the shape is still reachable somewhere and look for it; if you find yourself declaring a path, or naming a ref, to make a check go green, you are manufacturing the failure this rule exists to prevent.
+**A deletion is never evidence that a merge landed.** Absence is symmetric: two lineages that both lack a file agree about it for reasons that have nothing to do with the merge under test -- someone else's cherry-pick, a revert, a force-push, or a stale `--integration-ref`. Establishing that the deletion was real does not change this, which is why a record made only of deletions is `evidence_incomplete` and never `landed`. Declare a surviving path and the same invocation reads actual content.
+
+Four of this tool's five known false passes were one shape: a path absent on both sides, read as an agreed deletion. Four consecutive fixes each narrowed *where* a deletion's evidence could come from -- it must exist at the verified head, then at a caller-named ref, then at the merge base -- and the next round found the same shape again, because none of them questioned whether a deletion can evidence a merge at all. It cannot. When a fix keeps failing in the same shape, the defect is in the premise the fix preserves, not in the case it closed.
+
+Absence is not evidence, and a fact the caller supplies is not a check. If you find yourself declaring a path, or naming a ref, to make a check go green, you are manufacturing the failure this rule exists to prevent.
 
 ## Stuck-repair protection
 

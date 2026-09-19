@@ -26,18 +26,17 @@ absence is not evidence and comparing "not there" with "not there" is how a
 vacuous pass is manufactured. So:
 
 * `--path P` must resolve at the verified head.
-* `--deleted-path P` must resolve at `git merge-base <verified-head>
-  <integration-ref>`, which is what makes it a deletion rather than a name
-  nobody ever used. A path that resolves at neither is a mistyped or stale
-  argument and is refused.
+* `--deleted-path P` must resolve at every `git merge-base <verified-head>
+  <integration-ref>`, which is what makes it a deletion rather than a name nobody
+  ever used. That base is derived from the two refs being compared, never
+  supplied by the caller.
 
-That base is derived from the two refs already being compared, never supplied by
-the caller. A caller-named ref is a fact asserted rather than checked: any commit
-in the object database that happens to contain the path satisfies it, including
-one with no relationship to the merge, and a declared set consisting only of
-deletions then yields `landed` without a byte of the integration ref being read.
-Ancestry of `--verified-head` is not enough either -- such a ref can be a genuine
-ancestor and still be the wrong base.
+**A deletion can never evidence that a merge landed, however well established it
+is.** Absence is symmetric: two lineages that both lack a file agree about it for
+reasons that have nothing to do with this merge. So a declared set made only of
+deletions is `evidence_incomplete`, never `landed` -- declare at least one path
+the change kept. Four rounds of review each narrowed where a deletion's evidence
+could come from and left that premise standing; the premise was the defect.
 
 Paths are compared as `mode type id`, not blob id alone, so a file that becomes
 a symlink or gains the executable bit without changing a byte is a divergence
@@ -99,16 +98,20 @@ def _rev_parse(rev: str) -> tuple[int, str]:
     return done.returncode, done.stdout.strip()
 
 
-def _merge_base(left: str, right: str) -> tuple[int, str]:
-    """The common ancestor of two commits.
+def _merge_bases(left: str, right: str) -> tuple[int, list[str]]:
+    """Every common ancestor of two commits.
+
+    `--all`, because a criss-cross history has more than one and bare
+    `merge-base` prints whichever git's tie-break picks. A deletion gate whose
+    answer depends on that is not a gate.
 
     Both arguments are 40-hex ids `_resolve_ref` has already produced, so neither
     can be read as an option and no `--end-of-options` is needed to say so.
     """
     done = subprocess.run(
-        ["git", "merge-base", left, right], capture_output=True, text=True, check=False
+        ["git", "merge-base", "--all", left, right], capture_output=True, text=True, check=False
     )
-    return done.returncode, done.stdout.strip()
+    return done.returncode, [line.strip() for line in done.stdout.splitlines() if line.strip()]
 
 
 def _resolve_ref(label: str, ref: str) -> tuple[str, str] | None:
@@ -171,7 +174,7 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=[],
         dest="deleted_paths",
-        help="a path the change removed; it must exist at --deleted-at and be absent after the merge",
+        help="a path the change removed; it must exist at the merge base and be absent after the merge",
     )
     parser.add_argument(
         "--merge-reported-success",
@@ -196,6 +199,11 @@ def main(argv: list[str] | None = None) -> int:
     if verified_ids is None or integration_ids is None:
         return 2
 
+    if verified_ids[0] == integration_ids[0]:
+        print("REFUSED: --verified-head and --integration-ref are the same commit,")
+        print("so the comparison is a tautology rather than evidence that a merge landed.")
+        return 2
+
     verified_entries = {path: _entry(args.verified_head, path) for path in declared}
 
     # Every declared path must carry positive evidence on the verified side.
@@ -209,7 +217,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {path}")
         print("Correct the spelling. A path the change removed is proven, not assumed:")
         print("  derive the set with `git diff --name-status <base>..<verified-head>`,")
-        print("  and pass a removed path as --deleted-path, which must exist at --deleted-at.")
+        print("  and pass a removed path as --deleted-path. Declare at least one path")
+        print("  the change kept as well: a deletion cannot evidence that a merge landed.")
         return 2
     still_present = [path for path in args.deleted_paths if verified_entries[path] is not ABSENT]
     if still_present:
@@ -222,14 +231,18 @@ def main(argv: list[str] | None = None) -> int:
     # this the flag is a way to declare any string, including a typo, and have
     # its absence on both sides read as agreement.
     if args.deleted_paths:
-        code, before = _merge_base(verified_ids[0], integration_ids[0])
-        if code != 0 or not before:
+        code, bases = _merge_bases(verified_ids[0], integration_ids[0])
+        if code != 0 or not bases:
             print("REFUSED: --verified-head and --integration-ref share no common ancestor,")
             print("so there is no base against which a deletion could be established.")
             return 2
-        never_there = [path for path in args.deleted_paths if _entry(before, path) in (ABSENT, UNKNOWN)]
+        # A path must have existed at EVERY common ancestor. Accepting it at one
+        # of several would make the verdict depend on which base git named.
+        never_there = sorted({path for base in bases for path in args.deleted_paths
+                              if _entry(base, path) in (ABSENT, UNKNOWN)})
         if never_there:
-            print(f"REFUSED: these --deleted-path arguments do not exist at the merge base {before[:12]} either,")
+            named = ", ".join(base[:12] for base in bases)
+            print(f"REFUSED: these --deleted-path arguments do not exist at every merge base ({named}),")
             print("so there is no deletion to verify and their absence proves nothing:")
             for path in never_there:
                 print(f"  {path}")
