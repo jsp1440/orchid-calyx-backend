@@ -1,5 +1,9 @@
-from app.calyx_orchestrator.provider_intent_reservoir import ProviderIntent, ProviderRequestReservoir
 import pytest
+
+from app.calyx_orchestrator.provider_intent_reservoir import (
+    ProviderIntent,
+    ProviderRequestReservoir,
+)
 
 
 def intent(**kw):
