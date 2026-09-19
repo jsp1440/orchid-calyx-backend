@@ -23,6 +23,7 @@ from .intelligence_repository import (
     record_intelligence_items,
 )
 from .journal_club import (
+    JournalClubIntakeRequest,
     canonical_journal_club_text,
     journal_club_summary,
     parse_journal_club_transcript,
@@ -45,7 +46,6 @@ from .repository import (
 from .schemas import (
     DocumentReview,
     EmailIntakeRequest,
-    JournalClubIntakeRequest,
     ReviewDecision,
     TextIntakeRequest,
     UrlIntakeRequest,
