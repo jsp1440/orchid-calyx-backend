@@ -9,7 +9,13 @@ is configured, and the in-process fallback is stated, never assumed.
 Moderation lifecycle:
   SUBMITTED → SCREENED → QUARANTINED | APPROVED | REJECTED
 
-# Integration hook: approved observations eligible for intake.propose_task()
+Approving an observation puts it in front of scientific review as a *candidate*,
+never as a fact. See ``service.reconcile_candidate``.
+
+This module deliberately does not call ``app.intake.intelligence_bridge``: that
+bridge admits assessed literature and technology signals into the engineering
+task reservoir, and a human field sighting is not an engineering task. The hook
+that used to be stubbed here named that API; it was the wrong destination.
 """
 from __future__ import annotations
 
@@ -22,6 +28,9 @@ from app.rate_limit import public_write_rate_limit
 from app.security import verify_owner_or_api_key
 
 from .models import (
+    CandidateListResponse,
+    CandidateReconcileResponse,
+    CandidateState,
     CommunityObservation,
     ModerationState,
     ObservationListResponse,
@@ -29,7 +38,14 @@ from .models import (
     ObservationSubmitRequest,
     ObservationSubmitResponse,
 )
-from .service import CommunityObservationRepository, ObservationNotFound, get_store
+from .service import (
+    CandidateRepository,
+    CommunityObservationRepository,
+    ObservationNotFound,
+    get_store,
+    reconcile_all,
+    reconcile_candidate,
+)
 
 router = APIRouter(
     prefix="/api/community",
@@ -40,7 +56,12 @@ def get_repository() -> CommunityObservationRepository:
     return CommunityObservationRepository(get_store())
 
 
+def get_candidate_repository() -> CandidateRepository:
+    return CandidateRepository(get_store())
+
+
 Repository = Annotated[CommunityObservationRepository, Depends(get_repository)]
+Candidates = Annotated[CandidateRepository, Depends(get_candidate_repository)]
 
 # Moderation states that may NOT be set as the initial state via the moderate
 # endpoint — only valid transition targets.
@@ -149,6 +170,7 @@ def moderate_observation(
     observation_id: uuid.UUID,
     decision: ObservationModerationDecision,
     repository: Repository,
+    candidates: Candidates,
     moderator: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
 ) -> ObservationSubmitResponse:
     """
@@ -161,10 +183,10 @@ def moderate_observation(
 
     SUBMITTED is not a valid moderation target (it is set by the system).
 
-    # Integration hook: approved observations eligible for intake.propose_task()
-    When new_state == APPROVED, the observation is eligible to be promoted to
-    the intake pipeline via intake.propose_task() (implementation pending DB
-    integration follow-up).
+    APPROVED files a review-bound candidate carrying the observation's provenance,
+    with the verbatim locality and the submitter's subject left behind. Moving an
+    approved observation to any other state withdraws that candidate, so a
+    retracted sighting does not stay in a reviewer's queue.
     """
     if decision.new_state in _INVALID_MODERATION_TARGETS:
         raise HTTPException(
@@ -185,12 +207,52 @@ def moderate_observation(
     except ObservationNotFound as exc:
         raise HTTPException(status_code=404, detail="Observation not found") from exc
 
-    # Integration hook: approved observations eligible for intake.propose_task()
-    # When obs.moderation_state == ModerationState.APPROVED:
-    #   intake.propose_task(source="community_observation", ref_id=str(obs.id))
+    reconcile_candidate(obs, candidates=candidates)
 
     return ObservationSubmitResponse(
         id=obs.id,
         moderation_state=obs.moderation_state,
         created_at=obs.created_at,
     )
+
+
+@router.get("/observation-candidates", response_model=CandidateListResponse)
+def list_observation_candidates(
+    candidates: Candidates,
+    _reviewer: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
+    candidate_state: Annotated[CandidateState, Query()] = CandidateState.PENDING_REVIEW,
+) -> CandidateListResponse:
+    """The scientific-review queue of approved observations.
+
+    Owner-gated like the full observation record. Each item states that it is a
+    reported human observation, that its taxon name is the submitter's wording
+    and unresolved, that its locality is withheld, and that it may not be
+    promoted without review.
+
+    Defaults to ``PENDING_REVIEW``, because this is a queue of work waiting for a
+    reviewer: a sighting whose approval was retracted has left it. Withdrawn
+    candidates are still on file and are read with
+    ``?candidate_state=WITHDRAWN``.
+    """
+    items = candidates.list(candidate_state=candidate_state)
+    return CandidateListResponse(items=items, total=len(items))
+
+
+@router.post("/observation-candidates/reconcile", response_model=CandidateReconcileResponse)
+def reconcile_observation_candidates(
+    repository: Repository,
+    candidates: Candidates,
+    _reviewer: Annotated[dict[str, object], Depends(verify_owner_or_api_key)],
+) -> CandidateReconcileResponse:
+    """Bring the review queue in line with every moderation decision on file.
+
+    The moderation route files a candidate as each decision is made, so it only
+    ever sees decisions made after it shipped. An observation already approved
+    before then, or one whose candidate write failed after its decision was
+    committed, would otherwise be invisible to a reviewer with nothing to say so.
+
+    Owner-gated and idempotent. It promotes nothing: it files or withdraws
+    candidates according to decisions a human has already made.
+    """
+    counts = reconcile_all(repository, candidates)
+    return CandidateReconcileResponse(**counts)
