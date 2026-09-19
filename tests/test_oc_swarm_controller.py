@@ -250,3 +250,70 @@ def test_github_output_carries_split_matrices(monkeypatch, tmp_path):
     assert 'provider_free_matrix={"include":[{' in text
     assert 'provider_matrix={"include":[{' in text
     assert "launch_count=3\n" in text
+
+
+def test_blocked_reconciliation_is_restart_stable_and_does_not_mutate_snapshot():
+    snapshot = _snapshot()
+    snapshot["issues"][1]["labels"] = ["oc-blocked"]
+    snapshot["issues"][1]["body"] = "BLOCKED on prerequisite.\nOC-BLOCKED-ON: #99"
+    original = [dict(issue, labels=list(issue["labels"])) for issue in snapshot["issues"]]
+
+    first = swarm.blocked_reconciliation_report(snapshot)
+    second = swarm.blocked_reconciliation_report(snapshot)
+
+    assert first == second
+    assert first["release_numbers"] == [100]
+    assert first["results"][0]["release_authorized"] is True
+    assert snapshot["issues"] == original
+
+
+def test_blocked_reconciliation_holds_unknown_and_owner_gated_work():
+    snapshot = {
+        "issues": [
+            {
+                "number": 200,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": 1,
+            },
+            {
+                "number": 201,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "OC-BLOCKED-ON: credential",
+            },
+        ],
+        "issue_comments": {
+            "200": [{"body": "OC-BLOCKED-ON: pr#300"}],
+        },
+        "pull_requests": [{"number": 300, "state": "open", "merged": False}],
+    }
+
+    report = swarm.blocked_reconciliation_report(snapshot)
+    by_number = {row["issue_number"]: row for row in report["results"]}
+    assert by_number[200]["disposition"] == "hold"
+    assert by_number[200]["release_authorized"] is False
+    assert by_number[201]["disposition"] == "owner-gate"
+    assert by_number[201]["release_authorized"] is False
+
+
+def test_swarm_plan_carries_blocked_report_without_relabelling(monkeypatch):
+    snapshot = _snapshot()
+    snapshot["issues"].append(
+        {
+            "number": 103,
+            "title": "Parked work",
+            "body": "OC-BLOCKED-ON: #99",
+            "labels": ["oc-blocked"],
+            "state": "OPEN",
+        }
+    )
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=8)
+
+    assert plan["blocked_reconciliation"]["release_numbers"] == [103]
+    assert "oc-blocked" in snapshot["issues"][-1]["labels"]
+    assert plan["safety"]["blocked_work_fail_closed"] is True
+    assert plan["safety"]["blocked_reconciliation_mutates"] is False
