@@ -11,6 +11,10 @@ for budget, and was parked whole with no record of what it had wanted.
 
 from __future__ import annotations
 
+import importlib.util
+import json
+import pathlib
+
 import pytest
 
 from app.provider_reservoir import (
@@ -21,8 +25,37 @@ from app.provider_reservoir import (
     classify_capabilities,
     redact,
     route_task,
+    routing,
 )
 from app.provider_reservoir.reservoir import AuthorizationEnvelope, ReservoirState
+
+_SCRIPTS = pathlib.Path(__file__).resolve().parents[1] / "scripts"
+
+
+def _load_script(module_name: str):
+    """Load a ``scripts/`` module the way the workflows run it: by path."""
+    spec = importlib.util.spec_from_file_location(
+        module_name, _SCRIPTS / f"{module_name}.py"
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+#: A real lease receipt, in the shape the write-set verifier parses.
+_RECONCILE_LEASE_COMMENT = "[OC-SWARM-V4] Dependency/resource lease claimed: `" + json.dumps(
+    {
+        "dependencies": [],
+        "issue_number": 1,
+        "lease_id": "jsp1440/orchid-calyx-backend:1:1:1",
+        "material_fingerprint": "0" * 16,
+        "reads": [],
+        "schema": "oc.swarm-claim.v1",
+        "writes": ["control-plane"],
+    },
+    sort_keys=True,
+) + "`."
 
 # The exact shape of the task that was misrouted: deterministic capabilities,
 # prose full of the words that used to trigger escalation.
@@ -513,3 +546,179 @@ def test_classification_splits_a_mixed_task_rather_than_blocking_it():
     )
     assert deterministic == ["reasoning-map-assembly", "taxonomy-resolution"]
     assert provider == ["natural-language-explanation"]
+
+
+class TestLaneExecutabilityIsNotProviderFreedom:
+    """Admission to the deterministic lane is a different question from routing.
+
+    On 2026-09-19 at 01:04 the controller leased #1502 into the provider-free
+    lane and the worker rejected it: "provider-free reconcile marker missing or
+    unsupported". The issue went to ``oc-blocked``, a label that holds work
+    outside the execution portfolio permanently. Nothing was blocking it. The
+    lane had no executor for it, which is a different thing and has a different
+    remedy.
+    """
+
+    #: #1502 as it actually stands, reduced to the lines routing reads.
+    COGINT_BODY = """Architecture: Orchid-Continuum-Brain PR #151 and COGINT-001.
+OC-SWARM-CAPABILITY: taxonomy-resolution
+OC-SWARM-CAPABILITY: reasoning-map-assembly
+OC-SWARM-CAPABILITY: contradiction-detection
+OC-SWARM-CAPABILITY: natural-language-explanation
+OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
+
+    def test_declared_capabilities_do_not_staff_the_lane(self) -> None:
+        issue = {"number": 1502, "state": "OPEN", "body": self.COGINT_BODY}
+        result = routing.route_task(issue)
+        # Genuinely provider-free: nothing blocking needs a model.
+        assert result.provider_free is True
+        # And still not executable here, which is the distinction that was missing.
+        assert result.lane_executable is False
+        assert "not an executor that can do it" in (result.unexecutable_reason or "")
+
+    def test_a_named_executor_that_exists_is_admitted(self) -> None:
+        issue = {
+            "number": 9001,
+            "state": "OPEN",
+            "body": "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done",
+        }
+        result = routing.route_task(issue)
+        assert result.lane_executable is True
+        assert result.executable_task == "reconcile"
+        assert result.unexecutable_reason is None
+
+    def test_a_named_executor_that_does_not_exist_is_refused_by_name(self) -> None:
+        # The legacy marker accepts any task name since #1504. Accepting the
+        # name is not the same as having the program, and the refusal has to say
+        # which it is or the next reader repeats the 01:04 diagnosis.
+        issue = {
+            "number": 9002,
+            "state": "OPEN",
+            "body": "OC-SWARM-PROVIDER-FREE: rebuild-the-graph",
+        }
+        result = routing.route_task(issue)
+        assert result.lane_executable is False
+        assert "rebuild-the-graph" in (result.unexecutable_reason or "")
+        assert "reconcile" in (result.unexecutable_reason or "")
+
+    def test_every_advertised_executor_is_one_the_worker_accepts(self) -> None:
+        """The registry may not promise an executor the worker will reject.
+
+        This is the invariant whose absence caused the incident: the controller
+        believed in a lane the worker did not implement.
+        """
+        worker = _load_script("oc_swarm_provider_free_worker")
+        for task in routing.DETERMINISTIC_EXECUTORS:
+            issue = {
+                "number": 1,
+                "state": "OPEN",
+                "body": f"OC-SWARM-PROVIDER-FREE: {task}\nOC-SWARM-DISPOSITION: done",
+            }
+            # Must not raise the "missing or unsupported" marker error.
+            receipt = worker.build_receipt(
+                issue,
+                lease_comment=_RECONCILE_LEASE_COMMENT,
+                changed_files=[],
+                integration_sha="0" * 40,
+            )
+            assert receipt["mode"] == task
+
+    def test_unstaffed_work_is_not_recorded_as_blocked(self) -> None:
+        controller = _load_script("oc_swarm_controller")
+        refusal = controller.lane_refusal(
+            {"number": 1502, "state": "OPEN", "body": self.COGINT_BODY}
+        )
+        assert refusal["schema"] == "oc.lane-refusal.v1"
+        # The whole point: nothing is blocking this, so it keeps its place in
+        # the portfolio instead of being labelled out of it.
+        assert refusal["blocked"] is False
+        assert refusal["provider_free"] is True
+        assert refusal["lane_executable"] is False
+        assert refusal["reason"]
+
+    def test_unstaffed_work_is_not_handed_to_the_paid_lane_either(self) -> None:
+        """Neither lane, and visible. Sending it to a provider is the old defect."""
+        controller = _load_script("oc_swarm_controller")
+        snapshot = {
+            "max_active_lanes": 4,
+            "issues": [
+                {
+                    "number": 1502,
+                    "state": "OPEN",
+                    "body": self.COGINT_BODY,
+                    "labels": ["oc-queued", "oc-p0"],
+                },
+                {
+                    "number": 9001,
+                    "state": "OPEN",
+                    "body": (
+                        "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+                    ),
+                    "labels": ["oc-queued", "oc-p1"],
+                },
+            ],
+        }
+        plan = controller.build_swarm_plan(snapshot, worker_slots=4)
+        free = [w["issue_number"] for w in plan["provider_free_workers"]]
+        paid = [w["issue_number"] for w in plan["provider_workers"]]
+        unstaffed = plan["unstaffed_numbers"]
+
+        assert 9001 in free, "an executor that exists must still be admitted"
+        assert 1502 not in free, "the worker would reject this and blocked-label it"
+        assert 1502 not in paid, "routing it to a provider is the defect #1504 repaired"
+        assert 1502 in unstaffed
+        assert plan["lane_refusals"][0]["issue_number"] == 1502
+
+    def test_the_worker_split_refuses_unstaffed_work_on_its_own(self) -> None:
+        """The withdrawal and the split must each hold without the other.
+
+        Withdrawing unstaffed work from candidacy means it normally never
+        reaches the lane split, which leaves the split's own guard unexercised —
+        and an unexercised guard is a claim, not a property. So this removes the
+        withdrawal and checks the split still refuses: if the two ever disagree,
+        the task reaches the worker that marks it blocked.
+        """
+        controller = _load_script("oc_swarm_controller")
+        controller.unstaffed_numbers = lambda snapshot: []
+        snapshot = {
+            "max_active_lanes": 4,
+            "issues": [
+                {
+                    "number": 1502,
+                    "state": "OPEN",
+                    "body": self.COGINT_BODY,
+                    "labels": ["oc-queued", "oc-p0"],
+                }
+            ],
+        }
+        plan = controller.build_swarm_plan(snapshot, worker_slots=4)
+        assert plan["selected_numbers"] == [1502], "withdrawal is disabled here"
+        assert [w["issue_number"] for w in plan["provider_free_workers"]] == []
+        assert all(w["lane_executable"] for w in plan["provider_free_workers"])
+
+    def test_one_unstaffed_task_does_not_starve_an_executable_one(self) -> None:
+        """Work-conserving: the lane still runs what it can."""
+        controller = _load_script("oc_swarm_controller")
+        snapshot = {
+            "max_active_lanes": 4,
+            "issues": [
+                {
+                    "number": 1502,
+                    "state": "OPEN",
+                    "body": self.COGINT_BODY,
+                    "labels": ["oc-queued", "oc-p0"],
+                },
+                {
+                    "number": 9001,
+                    "state": "OPEN",
+                    "body": (
+                        "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+                    ),
+                    "labels": ["oc-queued", "oc-p4"],
+                },
+            ],
+        }
+        plan = controller.build_swarm_plan(snapshot, worker_slots=4)
+        # #1502 outranks it at P0 and cannot run; the P4 task must still launch.
+        assert plan["provider_free_launch_count"] == 1
+        assert plan["provider_free_workers"][0]["issue_number"] == 9001

@@ -42,6 +42,18 @@ OPTIONAL_MARKER = re.compile(
     re.IGNORECASE | re.MULTILINE,
 )
 
+#: Executors the deterministic lane actually implements, by task name.
+#:
+#: This is a list of *programs that exist*, not of things that ought to be
+#: possible. ``reconcile`` is ``scripts/oc_swarm_provider_free_worker.py``, which
+#: reconciles GitHub state and deliberately performs no repository writes.
+#:
+#: Adding a name here without adding the executor behind it re-creates the exact
+#: failure this constant was introduced to stop: the controller admits the task,
+#: the worker does not recognise it, and the issue is marked blocked for lacking
+#: a capability nothing ever had.
+DETERMINISTIC_EXECUTORS = frozenset({"reconcile"})
+
 
 @dataclass(frozen=True)
 class TaskRouting:
@@ -72,6 +84,54 @@ class TaskRouting:
     def fully_blocked(self) -> bool:
         """True only when the task has no deterministic work at all."""
         return not self.has_deterministic_work and bool(self.blocking_provider_capabilities)
+
+    @property
+    def executable_task(self) -> str | None:
+        """The deterministic executor that can run this task now, if one exists."""
+        if self.provider_free_task in DETERMINISTIC_EXECUTORS:
+            return self.provider_free_task
+        return None
+
+    @property
+    def lane_executable(self) -> bool:
+        """Whether the deterministic lane can execute this task, which is not the
+        same question as whether the task needs a provider.
+
+        Declared capabilities describe what the finished work must be able to do
+        — resolve a taxon, assemble a reasoning map. They do not describe what
+        *executing the issue* takes, which for an unbuilt feature is writing the
+        code. Reading the first as an answer to the second is how #1502 was
+        admitted to a lane whose only worker does GitHub bookkeeping, then marked
+        ``oc-blocked`` at 01:04 on 2026-09-19 for a "missing or unsupported"
+        marker it was never asked to carry.
+
+        So admission requires a named executor that exists. A capability list
+        alone says what to build, not who can build it.
+        """
+        return self.executable_task is not None
+
+    @property
+    def unexecutable_reason(self) -> str | None:
+        """Why the deterministic lane cannot take this, in terms of what is missing.
+
+        ``None`` when it can. This is the text that belongs in a refusal receipt:
+        an issue nothing can execute is not blocked, it is unstaffed, and
+        recording it as blocked removes it from the portfolio permanently.
+        """
+        if self.lane_executable:
+            return None
+        if self.provider_free_task:
+            return (
+                f"no deterministic executor named {self.provider_free_task!r} exists; "
+                f"the lane implements {sorted(DETERMINISTIC_EXECUTORS)}"
+            )
+        if self.deterministic_capabilities:
+            return (
+                "the declared capabilities describe what the finished work must do, "
+                "not an executor that can do it; building it needs "
+                "open-ended-code-authoring"
+            )
+        return "no deterministic work is declared"
 
     @property
     def parked_capabilities(self) -> list[str]:
@@ -130,14 +190,30 @@ def route_task(issue: dict) -> TaskRouting:
 
 
 def is_provider_free(issue: dict) -> bool:
-    """Back-compatible predicate for the swarm controller.
+    """Whether the task's own work needs a paid provider.
 
-    Differs from the old one in exactly the way that matters: a task is
-    provider-free when it has deterministic work to do, not when it carries one
-    particular literal. An unclassified capability raises rather than being
-    quietly routed to a paid lane.
+    Differs from the predicate this replaced in exactly the way that matters: a
+    task is provider-free when it has deterministic work to do, not when it
+    carries one particular literal. An unclassified capability raises rather
+    than being quietly routed to a paid lane.
+
+    This answers a question about the *task*. It is not the lane admission test
+    — see :func:`is_lane_executable` — and using it as one over-admits.
     """
     try:
         return route_task(issue).provider_free
+    except CapabilityUnknown:
+        return False
+
+
+def is_lane_executable(issue: dict) -> bool:
+    """Whether the deterministic lane has an executor that can run this task.
+
+    This is the admission test for the provider-free worker job. It is
+    deliberately stricter than :func:`is_provider_free`: a task can need no
+    provider and still have nobody able to perform it.
+    """
+    try:
+        return route_task(issue).lane_executable
     except CapabilityUnknown:
         return False
