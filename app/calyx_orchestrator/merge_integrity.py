@@ -21,6 +21,12 @@ was wrong. The check that does catch it is cheap: compare the blob the
 integration branch now holds against the blob the checker actually read, for
 every path the change touched.
 
+Scope, stated plainly: this proves the integration side holds what was verified
+at the paths the caller declares. It says nothing about content the merge
+*added* at paths nobody verified. It is built for the dropped-commit failure
+class of #706, not for injection, and a lane must not read a `landed` verdict as
+a statement about the rest of the tree.
+
 Nothing here calls a provider, reads the network, or shells out. It takes
 recorded facts and returns a verdict, so the decision is reproducible from the
 record and testable without a repository.

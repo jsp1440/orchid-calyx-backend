@@ -25,6 +25,26 @@ Do not create one memory file per trivial edit. Persist only rules that material
 - Conversely, once a runner is assigned and repository steps execute, treat a deterministic failing step as a real validation failure until reproduced or explained.
 - Never claim hosted green evidence when no hosted steps ran.
 
+## Merge integrity
+
+A merge API returning success is not evidence that the merged tree is what an independent checker verified. `expectedHeadSha` constrains which commit is merged, not what a squash produces from it.
+
+In PR #706 the merge succeeded against the verified head and the squash produced a tree three commits behind it. Six regressions landed on the integration branch, one of them a real locality leak, and the lane reported the PR as integrated.
+
+So, for every integration merge:
+
+1. Record the exact independently verified head and the paths the change touched, before merging.
+2. Merge.
+3. Immediately inspect the resulting integration tree, from a real checkout, before reporting anything.
+4. Prove the verified content is present at every declared path:
+   `python3 scripts/oc_verify_merge_landed.py --verified-head <sha> --integration-ref <ref> --path <p> [--path ...]`
+   Exit 0 means landed, 1 means stop the lane, 2 means the evidence was never gathered. Use `--deleted-path` for a path the change removes.
+5. On a mismatch, stop that merge lane, restore the verified result from the verified head, and report the mismatch. Do not proceed to the next item first.
+
+Never report a pull request as successfully integrated on the strength of the merge API's response alone. The invariant is `app/calyx_orchestrator/merge_integrity.py`; it is pure, deterministic and provider-free, and calling an external model to perform or confirm this check is not permitted.
+
+It proves the integration side holds what was verified at the declared paths. It says nothing about content the merge added at paths that were never verified.
+
 ## Stuck-repair protection
 
 After three unsuccessful attempts on the same deterministic failure class, stop speculative repair commits. Read the exact failing output, run the exact formatter/linter/test command locally where possible, compare it with workflow behavior, and make one deliberate correction. If accumulated branch churn obscures intent, reconstruct cleanly from current integration and preserve only intentional changes.

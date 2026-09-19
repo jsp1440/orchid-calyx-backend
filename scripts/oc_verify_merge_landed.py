@@ -9,19 +9,43 @@ Usage, run immediately after an integration merge:
         --path src/lib/cognitiveIntegration.ts \\
         --path src/components/calyx/ReasoningMapPanel.tsx
 
-Exit status is the point: 0 only when the integration branch holds what was
-verified. Any other outcome is non-zero, including the inconclusive ones, so a
-lane that pipes this into `&&` stops on missing evidence rather than sailing
-past it.
+Exit status is the point:
 
-Collecting the evidence is three `git rev-parse` calls. That is the whole cost
-of the check that would have caught #706 in seconds. No provider, no network
-beyond whatever fetch the caller already did.
+    0  the integration ref holds the verified content at every declared path
+    1  it does not, or the comparison was inconclusive -- stop the merge lane
+    2  the tool could not obtain the evidence it was asked about
+
+so a lane that pipes this into `&&` stops on missing evidence rather than
+sailing past it. The three exit codes are distinct on purpose: a corrupted merge
+and a mistyped invocation are different problems and a lane must not confuse
+them.
+
+Every declared `--path` must exist at the verified head. A path that is absent
+there is a mistyped or stale argument, and this refuses rather than comparing
+absence with absence and calling that agreement -- which is exactly how a
+vacuous pass is manufactured. A change that genuinely removes a file declares
+that with `--deleted-path`, and the deletion is then checked as strictly as an
+edit.
+
+Both refs are resolved with `--verify --end-of-options` before anything is
+compared, so an unresolvable ref -- including one beginning with `-`, which bare
+`rev-parse` echoes back verbatim with status 0 -- is an evidence failure rather
+than a pair of matching nonsense strings.
+
+Scope, stated plainly: this proves the integration side holds what was verified
+at the declared paths. It says nothing about content the merge *added* at paths
+that were never verified. It is built for the dropped-commit failure class of
+#706, not for injection.
+
+Collecting the evidence is a handful of `git rev-parse` calls. That is the whole
+cost of the check that would have caught #706 in seconds. No provider, no
+network beyond whatever fetch the caller already did.
 """
 
 from __future__ import annotations
 
 import argparse
+import shlex
 import subprocess
 import sys
 from pathlib import Path
@@ -29,6 +53,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.calyx_orchestrator.merge_integrity import (
+    UNKNOWN,
     IntegrationResult,
     MergeVerdict,
     VerifiedResult,
@@ -37,23 +62,46 @@ from app.calyx_orchestrator.merge_integrity import (
     restoration_paths,
 )
 
+ABSENT = None
 
-def _git(*args: str) -> str:
+
+def _rev_parse(rev: str) -> tuple[int, str]:
+    """Resolve one revision. `--verify` rejects what `--end-of-options` protects.
+
+    Bare `git rev-parse -bogus` prints `-bogus` and exits 0, so without these two
+    flags any ref beginning with a dash resolves to itself on both sides and
+    compares equal.
+    """
     done = subprocess.run(
-        ["git", *args], capture_output=True, text=True, check=False
+        ["git", "rev-parse", "--verify", "--quiet", "--end-of-options", rev],
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    return done.stdout.strip() if done.returncode == 0 else ""
+    return done.returncode, done.stdout.strip()
+
+
+def _resolve_ref(label: str, ref: str) -> tuple[str, str] | None:
+    """The commit and tree ids for `ref`, or None with a message already printed."""
+    commit_rc, commit = _rev_parse(f"{ref}^{{commit}}")
+    tree_rc, tree = _rev_parse(f"{ref}^{{tree}}")
+    if commit_rc != 0 or tree_rc != 0 or not commit or not tree:
+        print(f"REFUSED: {label} {ref!r} does not resolve to a commit in this checkout")
+        return None
+    return commit, tree
 
 
 def _blob(ref: str, path: str) -> str | None:
-    """The blob id at `ref:path`, or None when the path is absent there.
+    """The blob id at `ref:path`; ABSENT when the path is not there.
 
-    Absence is a real answer -- a change that deletes a file must be checked as
-    strictly as one that edits it -- so it is distinguished from an unresolved
-    lookup, which `inspect_merge` refuses to treat as agreement.
+    The ref is already proven to resolve, so status 1 means the path is absent,
+    which is a real answer. Any other failure is genuinely unresolved and becomes
+    UNKNOWN, which `inspect_merge` refuses to treat as agreement.
     """
-    out = _git("rev-parse", f"{ref}:{path}")
-    return out or None
+    code, out = _rev_parse(f"{ref}:{path}")
+    if code == 0 and out:
+        return out
+    return ABSENT if code == 1 else UNKNOWN
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -65,31 +113,64 @@ def main(argv: list[str] | None = None) -> int:
         action="append",
         default=[],
         dest="paths",
-        help="a path the change touched; repeat per path",
+        help="a path the change touched and that exists at the verified head; repeat per path",
+    )
+    parser.add_argument(
+        "--deleted-path",
+        action="append",
+        default=[],
+        dest="deleted_paths",
+        help="a path the change removed, and that must therefore be absent after the merge",
     )
     parser.add_argument(
         "--merge-reported-success",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
         default=True,
-        help="set when the merge API returned success (the default)",
+        help="whether the merge API returned success (default: yes)",
     )
     args = parser.parse_args(argv)
 
-    if not args.paths:
+    declared = [*args.paths, *args.deleted_paths]
+    if not declared:
         # Refusing here rather than passing vacuously: "no paths given" is the
         # shape of evidence that let #706 through.
-        print("REFUSED: no --path given, so there is nothing to verify")
+        print("REFUSED: no --path or --deleted-path given, so there is nothing to verify")
+        return 2
+    if len(set(declared)) != len(declared):
+        print("REFUSED: a path was declared twice, or declared both present and deleted")
+        return 2
+
+    verified_ids = _resolve_ref("--verified-head", args.verified_head)
+    integration_ids = _resolve_ref("--integration-ref", args.integration_ref)
+    if verified_ids is None or integration_ids is None:
+        return 2
+
+    verified_blobs = {path: _blob(args.verified_head, path) for path in declared}
+
+    # A --path the verified head does not contain is a mistyped or stale
+    # argument. Comparing its absence with the integration side's absence would
+    # report agreement on evidence that was never gathered.
+    missing = [path for path in args.paths if verified_blobs[path] in (ABSENT, UNKNOWN)]
+    if missing:
+        print("REFUSED: these --path arguments do not exist at the verified head:")
+        for path in missing:
+            print(f"  {path}")
+        print("Correct the path, or declare it with --deleted-path if the change removed it.")
+        return 2
+    present_but_declared_deleted = [path for path in args.deleted_paths if verified_blobs[path] is not ABSENT]
+    if present_but_declared_deleted:
+        print("REFUSED: these --deleted-path arguments still exist at the verified head:")
+        for path in present_but_declared_deleted:
+            print(f"  {path}")
         return 2
 
     verified = VerifiedResult(
-        head_sha=_git("rev-parse", args.verified_head) or args.verified_head,
-        tree_sha=_git("rev-parse", f"{args.verified_head}^{{tree}}") or "",
-        blobs={p: _blob(args.verified_head, p) for p in args.paths},
+        head_sha=verified_ids[0], tree_sha=verified_ids[1], blobs=verified_blobs
     )
     integration = IntegrationResult(
-        head_sha=_git("rev-parse", args.integration_ref) or args.integration_ref,
-        tree_sha=_git("rev-parse", f"{args.integration_ref}^{{tree}}") or "",
-        blobs={p: _blob(args.integration_ref, p) for p in args.paths},
+        head_sha=integration_ids[0],
+        tree_sha=integration_ids[1],
+        blobs={path: _blob(args.integration_ref, path) for path in declared},
         merge_api_reported_success=args.merge_reported_success,
     )
 
@@ -107,7 +188,8 @@ def main(argv: list[str] | None = None) -> int:
 
     if result.verdict is MergeVerdict.TREE_MISMATCH:
         print("\nSTOP THIS MERGE LANE. Restore from the verified head:")
-        print(f"  git checkout {args.verified_head} -- " + " ".join(restoration_paths(result)))
+        restore = " ".join(shlex.quote(path) for path in restoration_paths(result))
+        print(f"  git checkout {shlex.quote(verified.head_sha)} -- {restore}")
 
     return 0 if may_report_integrated(result) else 1
 
