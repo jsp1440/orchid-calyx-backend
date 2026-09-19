@@ -62,9 +62,15 @@ class MergeVerdict(StrEnum):
 class VerifiedResult:
     """What an independent checker actually read, captured before the merge.
 
-    ``blobs`` maps each path the change touches to its git blob id at the head
-    the checker verified. A path the change deletes maps to ``None``; that is a
-    claim about absence and is checked as strictly as a claim about content.
+    ``blobs`` maps each path the change touches to its identity at the head the
+    checker verified -- in practice ``mode type id``, so a mode or type change
+    is a divergence. A path the change deletes maps to ``None``.
+
+    Two ``None`` values on the same path are agreement *here*, because this
+    module is told which paths were genuinely deleted. Establishing that a
+    declared deletion really was one is the caller's job, and not doing it is
+    how a caller manufactures a vacuous pass: an argument that was never a file
+    is absent on both sides and reads as a deletion that landed.
     """
 
     head_sha: str

@@ -191,7 +191,15 @@ class TestTheGoodCase:
         assert result.identical_tree is False
         assert may_report_integrated(result) is True
 
-    def test_a_deletion_is_checked_as_strictly_as_content(self):
+    def test_a_deletion_recorded_on_both_sides_is_agreement(self):
+        """Note what this does NOT say.
+
+        Both sides absent is agreement only because the record asserts the path
+        was deleted. It does not establish that a declared deletion was real --
+        a caller that declares an arbitrary string gets this same verdict,
+        which is precisely the false pass `oc_verify_merge_landed.py` exists to
+        refuse before it ever builds a record.
+        """
         gone = {"src/lib/dead.ts": None}
         assert (
             inspect_merge(

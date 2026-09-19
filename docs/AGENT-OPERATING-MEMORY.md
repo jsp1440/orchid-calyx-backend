@@ -33,17 +33,21 @@ In PR #706 the merge succeeded against the verified head and the squash produced
 
 So, for every integration merge:
 
-1. Record the exact independently verified head and the paths the change touched, before merging.
+1. Record the exact independently verified head, before merging. Derive the paths mechanically -- `git diff --name-status <base>..<verified-head>` -- and use all of them. A hand-picked subset yields a `landed` verdict that says nothing about the paths you left out.
 2. Merge.
 3. Immediately inspect the resulting integration tree, from a real checkout, before reporting anything.
 4. Prove the verified content is present at every declared path:
    `python3 scripts/oc_verify_merge_landed.py --verified-head <sha> --integration-ref <ref> --path <p> [--path ...]`
-   Exit 0 means landed, 1 means stop the lane, 2 means the evidence was never gathered. Use `--deleted-path` for a path the change removes.
+   Pass a path the change removed as `--deleted-path`; it must exist at `--deleted-at` (default `<verified-head>^`), because a deletion is only a deletion if the file was there to delete.
 5. On a mismatch, stop that merge lane, restore the verified result from the verified head, and report the mismatch. Do not proceed to the next item first.
+
+Exit 0 is the only pass. Exit 2 is an argument or ref the tool refused before comparing anything. Exit 1 is everything else, and it covers two different situations -- the tree diverged, and the evidence was incomplete -- so read the printed verdict (`tree_mismatch` vs `evidence_incomplete`) rather than branching on the code alone.
 
 Never report a pull request as successfully integrated on the strength of the merge API's response alone. The invariant is `app/calyx_orchestrator/merge_integrity.py`; it is pure, deterministic and provider-free, and calling an external model to perform or confirm this check is not permitted.
 
-It proves the integration side holds what was verified at the declared paths. It says nothing about content the merge added at paths that were never verified.
+What it proves, and only this: the integration side holds what was verified, at the paths you declared, including each path's file mode and object type. It says nothing about content the merge added at paths nobody declared.
+
+Every false pass this tool has had was the same shape: a path absent on both sides, read as an agreed deletion. Absence is not evidence. If you find yourself declaring a path to make a check go green, you are manufacturing the failure this rule exists to prevent.
 
 ## Stuck-repair protection
 
