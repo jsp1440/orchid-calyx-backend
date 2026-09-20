@@ -84,7 +84,9 @@ class CycleEvidence:
             return False
         if not _is_full_sha(self.verification_base_sha):
             return False
-        if self.verification_base_sha in {self.exact_head_sha, self.merged_sha}:
+        if len(
+            {self.verification_base_sha, self.exact_head_sha, self.merged_sha}
+        ) != 3:
             return False
         if not (
             self.exact_head_ci_green and self.landed_verified and self.lease_released
