@@ -2431,4 +2431,10 @@ class TestTheDeletedPathSplitIsPinned:
                          "--path", "plain.txt", "--deleted-path", undecodable)
 
         assert undecodable in done.stdout or "bad-" in done.stdout
-        assert "the lookup did not produce one comparable" in done.stdout
+        # WHICH branch fired, not how it words itself. This assertion pinned
+        # the literal sentence and broke when that sentence was deleted for
+        # being false in its sibling branch -- the exact tension the file
+        # already records at TestAnAmbiguousPathspecComparesNothingItClaimsTo.
+        assert "did not resolve to one file" in done.stdout
+        assert "do not exist at every pre-change revision" not in done.stdout
+        assert "verdict" not in done.stdout

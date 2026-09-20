@@ -373,9 +373,17 @@ def main(argv: list[str] | None = None) -> int:
     #
     # Each was written to correct its predecessor. The common factor is not the
     # wording; it is that this code does not know the cause, and every sentence
-    # explaining it was invented at the point of writing. So it says the one
-    # thing it does know -- the lookup produced no single comparable entry --
-    # and stops. An explanation nobody can verify is worth less than silence.
+    # explaining it was invented at the point of writing.
+    #
+    # The fourth attempt was to say what it DOES know, and that failed the same
+    # way: "It is not absent there" is true in the --deleted-path branch, where
+    # `still_present` has already intercepted every git-refusal input, and false
+    # here, where nothing has -- `--path ..` is refused by git, so the tool holds
+    # no information about presence either way. It was carried from the branch
+    # where it happens to be true into the one where it is not.
+    #
+    # So this message asserts nothing beyond the refusal itself. An explanation
+    # nobody can verify is worth less than silence, and so is a reassurance.
     absent = [path for path in args.paths if verified_entries[path] is ABSENT]
     unresolved = [path for path in args.paths if verified_entries[path] == UNKNOWN]
     if absent:
@@ -391,8 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         print("verified head:")
         for path in unresolved:
             print(f"  {path}")
-        print("It is not absent there; the lookup did not produce one comparable entry,")
-        print("which is a different fact and the only one this tool has.")
+        print("The lookup did not produce one comparable entry.")
         print("Declare anything real and this tool prints the exact set it derived, which")
         print("is also the only set it accepts.")
         return 2
@@ -573,8 +580,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"every pre-change revision ({named}):")
             for path in unresolved_deleted:
                 print(f"  {path}")
-            print("They are not absent there; the lookup did not produce one comparable")
-            print("entry, which is a different fact and the only one this tool has.")
+            print("The lookup did not produce one comparable entry.")
             return 2
 
     # THE DECLARED SET MUST BE THE SET THIS CHANGE ACTUALLY TOUCHED.
