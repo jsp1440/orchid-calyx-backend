@@ -17,7 +17,9 @@ crossing fails the streak.
 The evaluator derives duplicate detection from the persisted evidence itself.
 Cycle, work, lease, PR, exact-head, and merge identities must each be unique
 across the streak, and commit identities must be complete lowercase 40-character
-Git SHAs. Caller-supplied “no duplicate” assertions are never sufficient.
+Git SHAs. Within every cycle, the pre-change verification base, exact PR head,
+and persisted merge identity must also be pairwise distinct. Caller-supplied
+“no duplicate” assertions are never sufficient.
 
 The JSON ledger can be reconstructed after interruption. Loading fails closed on
 unknown schemas, changed targets, malformed cycle shapes, inconsistent derived
