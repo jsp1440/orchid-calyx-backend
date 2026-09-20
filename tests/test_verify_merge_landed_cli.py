@@ -1355,7 +1355,29 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
-        assert "do not exist at the verified head" in done.stdout
+        # A multi-match is UNKNOWN, not ABSENT, and those are now separate
+        # refusals: "it is not there" and "that did not resolve to one file"
+        # are different facts. This one is the second, it names the pathspec,
+        # and it does not claim the spelling is fine -- a trailing slash IS the
+        # spelling problem here, even though the sibling cause (undecodable
+        # bytes) is not.
+        assert "did not resolve to one file" in done.stdout
+        assert "src/lib/" in done.stdout
+        assert "verdict" not in done.stdout
+        # The PROPERTY, not one spelling of it: this message must not tell the
+        # operator anything about WHICH cause of UNKNOWN they hit, because
+        # `_entry` has four and they disagree about whether the input can be
+        # corrected. Pinning the literal phrase "the spelling is not the
+        # problem" let the next false claim -- "only one of them is a spelling
+        # you can correct" -- straight through.
+        lowered = done.stdout.lower()
+        for overclaim in (
+            "the spelling is not the problem",
+            "only one of them is a spelling",
+            "nothing to correct",
+            "correct the spelling",
+        ):
+            assert overclaim not in lowered, overclaim
 
     def test_and_the_file_that_was_reverted_is_reported_when_it_is_declared(self, tmp_path):
         lab = self._lab(tmp_path / "ambiguous2")
@@ -2056,3 +2078,363 @@ class TestTheDerivationReadsWhatGitActuallyPrinted:
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
+
+class TestTheDerivedSetDoesNotDependOnGitConfig:
+    """Configuration is another way of choosing the set.
+
+    Round 10 replaced a declared path set with a derived one on the premise
+    that the operator can no longer choose it. Two ordinary `git config`
+    settings were still choosing it, and the first is a false pass reproduced
+    against shipped code.
+    """
+
+    def test_ignore_submodules_can_hide_a_dropped_submodule_bump(self, tmp_path):
+        """`diff.ignoreSubmodules=all` dropped the gitlink from the derived set,
+        so the declaration did not have to mention it, and a merge that dropped
+        the bump returned exit 0 `landed`."""
+        repo = tmp_path / "ignored-submodule"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "keep.txt").write_text("keep\n")
+        _git(repo, "update-index", "--add", "--cacheinfo",
+             f"160000,{'0' * 39}1,vendor")
+        _git(repo, "add", "keep.txt")
+        fork = _commit(repo, "M0", stage=False)
+
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}2,vendor")
+        (repo / "keep.txt").write_text("keep2\n")
+        _git(repo, "add", "keep.txt")
+        verified = _commit(repo, "bump the submodule and touch keep", stage=False)
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}1,vendor")
+        integration = _commit(repo, "merge but drop the submodule bump", stage=False)
+
+        # The premise, asserted: this setting really does change what git lists.
+        _git(repo, "config", "diff.ignoreSubmodules", "all")
+        listed = _git(repo, "diff", "--name-status", "--no-renames", f"{fork}..{verified}")
+        assert "vendor" not in listed, listed
+
+        lab = {"repo": repo}
+        # Declaring only what the CONFIGURED listing shows must not pass.
+        done = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", fork, "--path", "keep.txt")
+        assert done.returncode == 2, done.stdout
+        assert "not the paths this change touched" in done.stdout
+        assert "--path vendor" in done.stdout
+
+        # And the set the tool derives catches the dropped bump.
+        caught = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                     "--base-ref", fork,
+                     "--path", "keep.txt", "--path", "vendor")
+        assert caught.returncode == 1, caught.stdout
+        assert "DIVERGED vendor" in caught.stdout
+
+    def test_diff_relative_does_not_move_the_set_with_the_working_directory(self, tmp_path):
+        """`diff.relative=true` lists paths relative to the CURRENT directory
+        while `_entry` reads them with `ls-tree --full-tree` from the root, so
+        the two halves stop agreeing about what a path is called.
+
+        Fail-closed rather than a false pass -- the set empties or shrinks and
+        the refusal follows -- and still the set depending on where someone
+        stood when they ran it.
+        """
+        repo = tmp_path / "relative"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        _git(repo, "config", "diff.relative", "true")
+
+        (repo / "sub").mkdir()
+        (repo / "root.txt").write_text("v1\n")
+        (repo / "sub" / "inner.txt").write_text("s0\n")
+        fork = _commit(repo, "M0")
+
+        (repo / "root.txt").write_text("v2\n")
+        (repo / "sub" / "inner.txt").write_text("s1\n")
+        verified = _commit(repo, "the change touches both")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "checkout", "-q", fork, "--", "root.txt")
+        integration = _commit(repo, "merge, reverting the root file")
+
+        # Run from the subdirectory, which is what the setting reacts to.
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", verified, "--integration-ref", integration,
+             "--base-ref", fork,
+             "--path", "root.txt", "--path", "sub/inner.txt"],
+            cwd=str(repo / "sub"), capture_output=True, text=True, check=False,
+        )
+
+        # Repo-root spellings, derived identically from anywhere, and the
+        # reverted root file is caught rather than lost with the directory.
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED root.txt" in done.stdout
+
+    def test_a_path_that_is_not_utf8_is_refused_rather_than_raised(self, tmp_path):
+        """A crash must not be spelled the same way as a verdict.
+
+        A non-UTF-8 path is legal in git. `subprocess(text=True)` raised
+        `UnicodeDecodeError` out of `communicate()` -- an unhandled traceback
+        and exit 1, which is this tool's code for "the integration ref does not
+        hold the verified result". Fail-closed, and indistinguishable to a
+        caller from a real dropped commit.
+        """
+        repo = tmp_path / "not-utf8"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("a\n")
+        fork = _commit(repo, "M0")
+
+        # Raw bytes. Writing `b"bad-\xff-name.txt".decode("latin-1")` through a
+        # str path re-encodes it as valid UTF-8 and the premise evaporates.
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        (repo / "plain.txt").write_text("a2\n")
+        verified = _commit(repo, "a path that is not utf-8")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        done = run({"repo": repo}, "--verified-head", verified,
+                   "--integration-ref", integration, "--base-ref", fork, "--path", "plain.txt")
+
+        assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "could not derive the changed paths" in done.stdout
+        # The reason, named: 2 is "I cannot read this", 1 is "the merge dropped
+        # your work", and a caller has to be able to tell them apart.
+        assert "not valid UTF-8" in done.stdout
+
+    def test_and_declaring_the_undecodable_path_does_not_raise_either(self, tmp_path):
+        """The other call site, which runs FIRST.
+
+        `_changed_paths` was fixed and `_entry` was not, so the identical
+        traceback stayed reachable by DECLARING the undecodable path rather
+        than merely having it in the range -- `main` builds the verified
+        entries through `_entry` before it ever derives the set. An independent
+        check found it sixty-five lines under a comment saying a crash must not
+        be spelled the same way as a verdict. (An earlier version of THIS line
+        said "two hundred", and the commit that corrected that figure in the
+        source and the operating memory missed this copy of it -- one commit
+        after writing "grep for the pattern, not for the symptom you reproduced"
+        into that same memory file.)
+        """
+        repo = tmp_path / "not-utf8-declared"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("a\n")
+        fork = _commit(repo, "M0")
+
+        bad = os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt")
+        with open(bad, "wb") as handle:
+            handle.write(b"x")
+        (repo / "plain.txt").write_text("a2\n")
+        verified = _commit(repo, "a path that is not utf-8")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        # The undecodable path named directly, as a `--path`.
+        #
+        # An earlier version of this comment said argv's surrogate-escaped
+        # spelling is "a spelling no tree lookup can match". That is FALSE --
+        # `surrogateescape` round-trips to the original bytes, so `:(literal)`
+        # matches the entry exactly; `git ls-tree` returns the record. It also
+        # mattered: had it been true this test would have been VACUOUS, because
+        # a non-matching lookup is ABSENT, which also refuses with exit 2 and no
+        # traceback, so the test would have passed against unfixed code. It
+        # discriminates only because the premise was wrong.
+        #
+        # It is the same error as the one this test's sibling already had to
+        # fix -- a fixture whose stated premise had quietly evaporated -- which
+        # is why the assertion below is on the ABSENCE OF A CRASH, a fact the
+        # lookup's behaviour cannot make vacuous.
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", verified, "--integration-ref", integration,
+             "--base-ref", fork,
+             "--path", os.fsdecode(b"bad-\xff-name.txt"), "--path", "plain.txt"],
+            cwd=str(repo), capture_output=True, text=True, check=False,
+            errors="surrogateescape",
+        )
+
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "UnicodeDecodeError" not in done.stderr, done.stderr
+        assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
+        assert "verdict      : landed" not in done.stdout
+        # And the premise, asserted rather than described: the lookup really
+        # does match, so this path reaches the tool as a resolvable entry and
+        # the refusal is about reading it, not about finding it.
+        record = subprocess.run(
+            ["git", "ls-tree", "--full-tree", "-z", "--end-of-options", verified,
+             "--", ":(literal)" + os.fsdecode(b"bad-\xff-name.txt")],
+            cwd=str(repo), capture_output=True, check=False,
+        )
+        assert record.returncode == 0
+        assert record.stdout, "the pathspec matched nothing; this test would be vacuous"
+
+
+class TestWhatAnUnreadableLookupReturns:
+    """`_entry`'s contract, which only a comment asserted.
+
+    An independent check mutated the new guard two ways -- `return ABSENT`
+    instead of `UNKNOWN`, and `errors="replace"` instead of refusing -- and both
+    left the whole suite green. Neither can produce a wrong verdict, because the
+    gates downstream absorb them, so they are equivalent at the verdict level.
+    They are not equivalent in what the tool SAYS: ABSENT routes an unreadable
+    path to "does not exist at the verified head", which is untrue of a path
+    that is sitting right there.
+    """
+
+    def _repo_with_an_undecodable_path(self, tmp_path):
+        repo = tmp_path / "unreadable-entry"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "plain.txt").write_text("a\n")
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        head = _commit(repo, "a path that is not utf-8")
+        return repo, head
+
+    def test_an_unreadable_lookup_is_unknown_and_not_absent(self, tmp_path):
+        import importlib.util
+
+        repo, head = self._repo_with_an_undecodable_path(tmp_path)
+        spec = importlib.util.spec_from_file_location("verifier_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        cwd = os.getcwd()
+        try:
+            os.chdir(repo)
+            entry = module._entry(head, os.fsdecode(b"bad-\xff-name.txt"))
+        finally:
+            os.chdir(cwd)
+
+        # The distinction the comment claimed and nothing checked.
+        assert entry == module.UNKNOWN
+        assert entry is not module.ABSENT
+        # And it is not a fabricated entry either: nothing that could be
+        # compared against the integration side as though it were read.
+        assert entry == ""
+
+
+class TestTheDeletedPathSplitIsPinned:
+    """The `--deleted-path` half of the ABSENT/UNKNOWN split.
+
+    The `--path` half got a test when a check found its message false. The
+    `--deleted-path` half was fixed in the same commit and got none, and two
+    mutations of it survived the whole focused suite: restoring
+    `in (ABSENT, UNKNOWN)` -- which puts back the exact false message the split
+    removed -- and disabling the unresolved branch entirely.
+
+    The operating memory says to claim a guard covered only after watching a
+    named test go red without it. This is that test.
+    """
+
+    def _run(self, repo, *args):
+        """`run()` uses `text=True`, which cannot read stdout that echoes an
+        undecodable path -- the helper hit the very crash these tests are about,
+        one level up. Surrogate-escape here so the assertions can see it."""
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            cwd=str(repo), capture_output=True, text=True,
+            errors="surrogateescape", check=False,
+        )
+
+    def _lab(self, tmp_path):
+        repo = tmp_path / "deleted-split"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("v1\n")
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        fork = _commit(repo, "F: both present")
+
+        os.unlink(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"))
+        (repo / "plain.txt").write_text("v2\n")
+        verified = _commit(repo, "the change removes the undecodable path")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+        return {"repo": repo}, fork, verified, integration
+
+    def test_an_undecodable_deleted_path_is_not_called_absent(self, tmp_path):
+        """It is sitting right there at the pre-change revision.
+
+        `in (ABSENT, UNKNOWN)` reported "do not exist at every pre-change
+        revision" for a path that does exist -- the same false sentence the
+        `--path` branch had already been corrected for, one branch over.
+        """
+        lab, fork, verified, integration = self._lab(tmp_path)
+        undecodable = os.fsdecode(b"bad-\xff-name.txt")
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", undecodable)
+
+        assert done.returncode == 2, done.stdout
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "did not resolve to one file" in done.stdout
+        assert "do not exist at every pre-change revision" not in done.stdout
+        assert "verdict" not in done.stdout
+
+    def test_a_genuinely_absent_deleted_path_still_says_absent(self, tmp_path):
+        """The other half of the split, so the fix cannot be a blanket rename."""
+        lab, fork, verified, integration = self._lab(tmp_path)
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", "never-existed.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "do not exist at every pre-change revision" in done.stdout
+        assert "did not resolve to one file" not in done.stdout
+
+    def test_the_unresolved_branch_is_reachable_at_all(self, tmp_path):
+        """Disabling it entirely left the suite green, which is how it was
+        found. If nothing can reach this branch the refusal above is a claim of
+        protection rather than protection."""
+        lab, fork, verified, integration = self._lab(tmp_path)
+        undecodable = os.fsdecode(b"bad-\xff-name.txt")
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", undecodable)
+
+        assert undecodable in done.stdout or "bad-" in done.stdout
+        # WHICH branch fired, not how it words itself. This assertion pinned
+        # the literal sentence and broke when that sentence was deleted for
+        # being false in its sibling branch -- the exact tension the file
+        # already records at TestAnAmbiguousPathspecComparesNothingItClaimsTo.
+        assert "did not resolve to one file" in done.stdout
+        assert "do not exist at every pre-change revision" not in done.stdout
+        assert "verdict" not in done.stdout
