@@ -13,6 +13,15 @@ from app.concepts.services import ConceptRegistryService
 from app.literature_extraction.repository import LiteratureResultRepository
 from app.literature_extraction.routes import get_literature_repository
 
+from .figure_requests import (
+    FigureRequestConflictError,
+    FigureRequestIn,
+    FigureRequestPersistenceError,
+    FigureRequestRecord,
+    FigureRequestState,
+    FigureRequestType,
+    JsonFigureRequestRepository,
+)
 from .glossary_candidates import (
     CandidateConflictError,
     CandidatePersistenceError,
@@ -51,6 +60,22 @@ def get_glossary_candidate_repository() -> JsonGlossaryCandidateRepository:
 GlossaryCandidates = Annotated[
     JsonGlossaryCandidateRepository,
     Depends(get_glossary_candidate_repository),
+]
+
+
+def get_figure_request_repository() -> JsonFigureRequestRepository:
+    root = Path(
+        os.getenv(
+            "SCIENTIFIC_LANGUAGE_FIGURE_REQUEST_ROOT",
+            "runtime/scientific_language/figure_requests",
+        )
+    )
+    return JsonFigureRequestRepository(root)
+
+
+FigureRequests = Annotated[
+    JsonFigureRequestRepository,
+    Depends(get_figure_request_repository),
 ]
 
 
@@ -271,6 +296,96 @@ def get_canonical_glossary_entry(
         ) from exc
 
 
+def _figure_request_storage_error(operation):
+    try:
+        return operation()
+    except FigureRequestConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "FIGURE_REQUEST_CONFLICT"},
+        ) from exc
+    except (FigureRequestPersistenceError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "FIGURE_REQUEST_PERSISTENCE_UNAVAILABLE"},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc)},
+        ) from exc
+
+
+@router.post("/figure-requests", status_code=201)
+def create_figure_request(
+    payload: FigureRequestIn,
+    requests: FigureRequests,
+    service: Annotated[ConceptRegistryService, Depends(get_concept_service)],
+):
+    try:
+        concept = service.get_concept(payload.concept_id)
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail={"code": str(exc)}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+    except (RuntimeError, psycopg.Error) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "CONCEPT_DATABASE_UNAVAILABLE"},
+        ) from exc
+    if concept.get("status") != "ACTIVE" or concept.get("review_state") != "APPROVED":
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "FIGURE_REQUEST_CONCEPT_NOT_APPROVED"},
+        )
+
+    result = _figure_request_storage_error(
+        lambda: requests.save(FigureRequestRecord.from_input(payload))
+    )
+    return {
+        "item": result.request,
+        "created": result.created,
+        "review_required": True,
+        "figure_approval_authorized": False,
+        "knowledge_graph_publication_authorized": False,
+    }
+
+
+@router.get("/figure-requests")
+def list_figure_requests(
+    requests: FigureRequests,
+    request_type: Annotated[FigureRequestType | None, Query()] = None,
+    state: Annotated[FigureRequestState | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    def load():
+        records = requests.list()
+        if request_type is not None:
+            records = [record for record in records if record.request_type == request_type]
+        if state is not None:
+            records = [record for record in records if record.state == state]
+        total = len(records)
+        return {
+            "items": records[offset : offset + limit],
+            "count": min(limit, max(0, total - offset)),
+            "total": total,
+            "review_required": True,
+            "figure_approval_authorized": False,
+            "knowledge_graph_publication_authorized": False,
+        }
+
+    return _figure_request_storage_error(load)
+
+
+@router.get("/figure-requests/{request_id}")
+def get_figure_request(request_id: str, requests: FigureRequests):
+    item = _figure_request_storage_error(lambda: requests.get(request_id))
+    if item is None:
+        raise HTTPException(status_code=404, detail="Figure request not found")
+    return item
+
+
 @router.get("/health")
 def health():
     return {
@@ -282,4 +397,6 @@ def health():
         "automatic_concept_promotion": False,
         "durable_candidate_intake": True,
         "reviewed_canonical_glossary_projection": True,
+        "durable_figure_request_queue": True,
+        "automatic_figure_approval": False,
     }
