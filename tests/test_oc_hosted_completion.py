@@ -397,6 +397,49 @@ def test_existing_factory_admits_independent_exact_head_pass(material):
     assert decision.integration_authorized is True
 
 
+def test_a_pull_request_head_that_moved_is_not_authorized_by_the_old_review(material):
+    """The merge path, and the failure that motivated all of this.
+
+    #1524 merged `657b2f1` at 22:07, #1526 merged `85bb2b2` at 00:06 sixteen
+    minutes after it was opened, and #1530 merged `9acced7` six minutes after
+    it was opened. In each case the review of the head being merged had not
+    returned: #1526's came back at `6a57183`, forty minutes after that merge,
+    and #1530's never ran. Each merge was authorized by evidence that was TRUE
+    of another commit, or by none at all.
+
+    This docstring is the fourth copy of that account and the last one to be
+    corrected. The other three said `6a57183` was "#1524's review" (it is the
+    commit carrying what the review of #1526's head found) and that `9acced7`
+    was "#1526's review" (it is #1530's merged head). An independent check of
+    `d1228cb` found this one still shipping the retracted version inside the
+    change that retracts it.
+
+    `decide()` used to convert the checker's evidence without ever asking what
+    the pull request head is now, so the only head comparison was
+    `checked == assignment`, which a moved head satisfies.
+    """
+    state, checked, assignment, evidence = factory_state(material)
+    moved = copy.deepcopy(material)
+    moved["pr"]["head"]["sha"] = "f" * 40
+
+    decision = hosted.decide(state, moved, checked, assignment, evidence)
+
+    assert decision.integration_authorized is False
+    assert decision.action.value == "require_checker"
+    # And it says which commit the evidence was actually about.
+    assert decision.reason.startswith("EVIDENCE_IS_ABOUT_ANOTHER_HEAD")
+    assert assignment.head_sha[:12] in decision.reason
+
+
+def test_and_the_unmoved_head_is_still_authorized(material):
+    state, checked, assignment, evidence = factory_state(material)
+    unmoved = copy.deepcopy(material)
+
+    decision = hosted.decide(state, unmoved, checked, assignment, evidence)
+
+    assert decision.integration_authorized is True
+
+
 @pytest.mark.parametrize("field", hosted.RISK_FIELDS)
 def test_checker_owner_boundary_always_prevents_auto_integration(material, field):
     state, checked, assignment, evidence = factory_state(material, **{field: True})

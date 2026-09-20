@@ -656,7 +656,17 @@ def decide(state, current_material, current_validation, assignment, evidence):
         "validation_event_changed",
     )
     require(asdict(assignment) == state["assignment"], "durable_assignment_changed")
-    validation_evidence = evidence_to_validation(assignment, evidence)
+    # The head the pull request has RIGHT NOW, re-fetched for this decision --
+    # not the head the assignment was written against. Comparing the checker's
+    # head to the assignment's is satisfied by a stale head: if the pull request
+    # moved after the assignment, the checker still verified the assignment's
+    # head and the gate still authorized a commit nobody checked. Three pull
+    # requests in this repository merged exactly that way.
+    validation_evidence = evidence_to_validation(
+        assignment,
+        evidence,
+        current_head_sha=current_material["pr"]["head"]["sha"],
+    )
     review = state["review"]
     # Checker boundary findings can only narrow the owner-scoped safe intent.
     risks = ["low", "moderate", "high", "owner_gated"]
