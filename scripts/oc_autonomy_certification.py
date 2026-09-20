@@ -43,9 +43,33 @@ class CycleEvidence:
 
     @property
     def accepted(self) -> bool:
-        if not all((self.cycle_id, self.work_identity, self.lease_identity)):
+        if not all(
+            isinstance(value, str) and bool(value)
+            for value in (self.cycle_id, self.work_identity, self.lease_identity)
+        ):
+            return False
+        if isinstance(self.pr_number, bool) or not isinstance(self.pr_number, int):
             return False
         if self.pr_number <= 0:
+            return False
+        if not isinstance(self.exact_head_sha, str) or not isinstance(self.merged_sha, str):
+            return False
+        if not isinstance(self.verification_base_sha, str):
+            return False
+        gate_fields = (
+            self.exact_head_ci_green,
+            self.landed_verified,
+            self.lease_released,
+            self.duplicate_ownership,
+            self.duplicate_lineage,
+            self.unauthorized_owner_gate_crossing,
+            self.abandoned_lease,
+            self.false_green,
+            self.recoverable_fault_seen,
+            self.recoverable_fault_healed,
+            self.manual_intervention,
+        )
+        if not all(isinstance(value, bool) for value in gate_fields):
             return False
         if not _is_full_sha(self.exact_head_sha) or not _is_full_sha(self.merged_sha):
             return False

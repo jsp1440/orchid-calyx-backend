@@ -202,3 +202,32 @@ def test_verification_base_identity_cannot_be_reused():
     assert not result.certified
     assert result.accepted_streak == 1
     assert "verification base" in result.reason
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cycle_id", 5),
+        ("work_identity", ["work"]),
+        ("lease_identity", {"lease": "x"}),
+        ("pr_number", True),
+        ("pr_number", "1539"),
+        ("exact_head_sha", 123),
+        ("merged_sha", None),
+        ("verification_base_sha", 123),
+        ("exact_head_ci_green", 1),
+        ("landed_verified", "true"),
+        ("lease_released", 1),
+        ("duplicate_ownership", 0),
+        ("duplicate_lineage", None),
+        ("unauthorized_owner_gate_crossing", 0),
+        ("abandoned_lease", 0),
+        ("false_green", 0),
+        ("recoverable_fault_seen", 0),
+        ("recoverable_fault_healed", 0),
+        ("manual_intervention", 0),
+    ],
+)
+def test_wrong_scalar_evidence_types_fail_closed(field, value):
+    cycle = good(5, **{field: value})
+    assert cycle.accepted is False
