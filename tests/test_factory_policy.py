@@ -37,6 +37,15 @@ def _intent(**overrides: object) -> WorkIntent:
 HEAD = "6a57183395c29f0a47b4a11cd86fabe34ac10d95"
 OTHER_HEAD = "657b2f183c35852af10ca290730b03a23dd1d64e"
 
+#: Two SYNTHETIC ids sharing a 12-hex prefix. Synthetic on purpose -- the point
+#: is the comparison, and two real commits colliding on twelve hex would have to
+#: be manufactured anyway. The comment here called them "two real commits",
+#: which they are not: `git rev-parse --verify abc1234def56` resolves nothing.
+#: Defined here rather than beside the prefix tests below because the
+#: intent-head refusal above needs them too.
+PREFIX_A = "abc1234def56" + "0" * 28
+PREFIX_B = "abc1234def56" + "f" * 28
+
 
 def _passing_evidence(**overrides: object) -> ValidationEvidence:
     values: dict[str, object] = {
@@ -75,9 +84,59 @@ def test_evidence_for_another_head_cannot_authorize_at_the_gate_itself() -> None
     # And it names both commits. A refusal that cannot say which commit it is
     # about is the defect this lineage replaced `EXACT_HEAD_VALIDATION_REQUIRED`
     # to fix; a gate added later should not reintroduce it one line down.
-    assert OTHER_HEAD[:12] in decision.reason
-    assert HEAD[:12] in decision.reason
+    assert OTHER_HEAD in decision.reason
+    assert HEAD in decision.reason
     assert decision.integration_authorized is False
+
+
+def test_the_refusal_names_the_commits_in_full_not_by_a_colliding_prefix() -> None:
+    """A twelve-hex prefix does not identify a commit.
+
+    An earlier draft of this refusal printed `head_sha[:12]`. For two heads
+    that share a prefix -- which is why
+    `test_two_heads_sharing_a_twelve_hex_prefix_are_different_heads` exists --
+    the sentence whose entire purpose is "these are two different commits"
+    printed the same twelve characters twice and then refused because they
+    differ. It read as false to anyone holding it.
+    """
+    assert PREFIX_A != PREFIX_B and PREFIX_A[:12] == PREFIX_B[:12]
+
+    decision = evaluate_factory_gate(
+        _intent(head_sha=PREFIX_A),
+        _passing_evidence(
+            head_sha=PREFIX_B, checker_head_sha=PREFIX_B, checks_head_sha=PREFIX_B
+        ),
+    )
+
+    assert decision.reason.startswith("INTENT_HEAD_MISMATCH")
+    assert decision.integration_authorized is False
+    # Both commits, whole. Truncating either one to any shared width makes the
+    # two halves of this sentence identical.
+    assert PREFIX_A in decision.reason
+    assert PREFIX_B in decision.reason
+    assert decision.reason.count(PREFIX_A[:12]) == 2
+
+
+def test_an_absent_head_is_refused_rather_than_raised() -> None:
+    """Absence is a no, not an error.
+
+    #1544 already repaired one instance of this shape: `.strip()` on a `None`
+    checker id raised inside the gate. `head_sha` reaches `WorkIntent` from
+    JSON, where `null` is representable, and nothing validates it on the way
+    in -- so a gate whose one job is to refuse must not crash while refusing.
+    """
+    for absent in (None, ""):
+        decision = evaluate_factory_gate(
+            _intent(head_sha=absent),
+            _passing_evidence(
+                head_sha=HEAD, checker_head_sha=HEAD, checks_head_sha=HEAD
+            ),
+        )
+
+        assert decision.action is FactoryAction.REQUIRE_CHECKER
+        assert decision.integration_authorized is False
+        assert "no recorded head" in decision.reason
+        assert HEAD in decision.reason
 
 
 def test_maker_cannot_serve_as_checker() -> None:
@@ -228,14 +287,6 @@ def test_invalid_mission_state_fails_closed(
 # because the prefix test had been written against `head_bound_integration` --
 # and this is the copy the merge path actually reads.
 # ---------------------------------------------------------------------------
-
-
-#: Two SYNTHETIC ids sharing a 12-hex prefix. Synthetic on purpose -- the point
-#: is the comparison, and two real commits colliding on twelve hex would have to
-#: be manufactured anyway. The comment here called them "two real commits",
-#: which they are not: `git rev-parse --verify abc1234def56` resolves nothing.
-PREFIX_A = "abc1234def56" + "0" * 28
-PREFIX_B = "abc1234def56" + "f" * 28
 
 
 def test_two_heads_sharing_a_twelve_hex_prefix_are_different_heads() -> None:
