@@ -65,6 +65,36 @@ jobs:
             echo "- next action: dispatch continuous completion supervisor"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Publish exact-head federation receipt
+        if: github.event_name != 'schedule'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FEDERATION_ISSUE: "1330"
+        run: |
+          set -euo pipefail
+          head_sha=$(git rev-parse HEAD)
+          python3 scripts/oc_federation_state.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --work-id "backend:integration:${head_sha:0:12}" \
+            --integration-sha "$head_sha" \
+            --verification-sha "$head_sha" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --capability schema-validation \
+            --capability test-execution \
+            > "$RUNNER_TEMP/oc-federation-state.json"
+          {
+            echo '<!-- OC-FEDERATION-STATE-V1'
+            cat "$RUNNER_TEMP/oc-federation-state.json"
+            echo '-->'
+          } > "$RUNNER_TEMP/oc-federation-comment.md"
+          gh issue comment "$FEDERATION_ISSUE" \
+            --repo "$GITHUB_REPOSITORY" \
+            --body-file "$RUNNER_TEMP/oc-federation-comment.md" >/dev/null
+          jq -r '"- federation schema: `" + .schema + "`\n- federation state: `" + .state + "`\n- federation implementation/integration: `" + .integration_sha + "`\n- downstream dependents declared: " + ((.downstream_dependents | length) | tostring)' \
+            "$RUNNER_TEMP/oc-federation-state.json" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Dispatch same-repo completion supervisor
         env:
           GH_TOKEN: ${{ github.token }}
