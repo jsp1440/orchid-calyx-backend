@@ -110,11 +110,14 @@ def test_the_refusal_names_the_commits_in_full_not_by_a_colliding_prefix() -> No
 
     assert decision.reason.startswith("INTENT_HEAD_MISMATCH")
     assert decision.integration_authorized is False
-    # Both commits, whole. Truncating either one to any shared width makes the
-    # two halves of this sentence identical.
-    assert PREFIX_A in decision.reason
-    assert PREFIX_B in decision.reason
-    assert decision.reason.count(PREFIX_A[:12]) == 2
+    # Both commits, whole, AND each on its own side. Membership alone is not
+    # enough: an independent check swapped the two names and the whole suite
+    # stayed green, which means the sentence could say the exact opposite of
+    # the truth -- naming the reviewed commit as the authorized one -- and
+    # nothing objected. Truncating either name to any shared width would also
+    # collapse these two assertions into one.
+    assert f"authorized for {PREFIX_A}" in decision.reason
+    assert f"evidence is about {PREFIX_B}" in decision.reason
 
 
 def test_an_absent_head_is_refused_rather_than_raised() -> None:
@@ -126,6 +129,7 @@ def test_an_absent_head_is_refused_rather_than_raised() -> None:
     in -- so a gate whose one job is to refuse must not crash while refusing.
     """
     for absent in (None, ""):
+        # Absent on the intent side. The evidence names a real commit.
         decision = evaluate_factory_gate(
             _intent(head_sha=absent),
             _passing_evidence(
@@ -135,8 +139,25 @@ def test_an_absent_head_is_refused_rather_than_raised() -> None:
 
         assert decision.action is FactoryAction.REQUIRE_CHECKER
         assert decision.integration_authorized is False
-        assert "no recorded head" in decision.reason
-        assert HEAD in decision.reason
+        assert f"authorized for no recorded head, evidence is about {HEAD}" in (
+            decision.reason
+        )
+
+        # And absent on the evidence side. Both sides need their own case:
+        # dropping the guard from the evidence half alone left the suite green,
+        # printing "evidence is about None" with nothing to object.
+        decision = evaluate_factory_gate(
+            _intent(head_sha=HEAD),
+            _passing_evidence(
+                head_sha=absent, checker_head_sha=HEAD, checks_head_sha=HEAD
+            ),
+        )
+
+        assert decision.action is FactoryAction.REQUIRE_CHECKER
+        assert decision.integration_authorized is False
+        assert f"authorized for {HEAD}, evidence is about no recorded head" in (
+            decision.reason
+        )
 
 
 def test_maker_cannot_serve_as_checker() -> None:
