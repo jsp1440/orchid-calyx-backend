@@ -9,6 +9,7 @@ from app.calyx_orchestrator.head_bound_integration import (
     EvidenceSource,
     IntegrationEvidence,
     Observation,
+    same_actor,
 )
 from app.calyx_orchestrator.head_bound_integration import (
     exact_head_verified as head_bound_exact_head_verified,
@@ -45,9 +46,14 @@ class MissionStatus(StrEnum):
     DONE = "done"
 
 
-def _same_actor(left: str, right: str) -> bool:
-    """Whether two identity strings name the same actor."""
-    return " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
+#: One rule, imported rather than restated. What stood here was a SEPARATE
+#: implementation that happened to agree -- a `(str, str) -> bool` predicate
+#: beside the module's `(str) -> str` normaliser -- and agreeing is exactly the
+#: problem, because nothing made it keep agreeing. (Not "identical": an
+#: independent check diffed them, and this comment asserted the same falsehood
+#: its sibling in `head_bound_integration` had already been corrected for, in
+#: the same commit.)
+_same_actor = same_actor
 
 
 def _head_bound_verified(
@@ -207,10 +213,24 @@ class ValidationEvidence:
         """Which facts are about some other commit, for a refusal that can say so."""
         stale: list[str] = []
         if self.checker_head_sha and self.checker_head_sha != self.head_sha:
-            stale.append(f"checker verified {self.checker_head_sha[:12]}")
+            stale.append(f"checker verified {self.checker_head_sha}")
         if self.checks_head_sha and self.checks_head_sha != self.head_sha:
-            stale.append(f"checks ran against {self.checks_head_sha[:12]}")
+            stale.append(f"checks ran against {self.checks_head_sha}")
         return tuple(stale)
+
+
+def _named(head_sha: str | None) -> str:
+    """Name a commit in a refusal, in full, or say plainly that there is none.
+
+    Two things this must not do. It must not raise: absence is a no, not an
+    error, and a gate whose job is to refuse cannot crash while refusing. And
+    it must not abbreviate. A twelve-hex prefix does not identify a commit --
+    `test_two_heads_sharing_a_twelve_hex_prefix_are_different_heads` is in this
+    repository because of that -- so truncating here would let the one sentence
+    whose whole purpose is "these are two different commits" print the same
+    twelve characters twice and then refuse because they differ.
+    """
+    return head_sha if head_sha else "no recorded head"
 
 
 @dataclass(frozen=True, slots=True)
@@ -271,6 +291,22 @@ def evaluate_factory_gate(
         return FactoryDecision(
             action=FactoryAction.PARK_PROVIDER_REQUIRED,
             reason="NO_API_PROVIDER_WORK_PARKED",
+            fingerprint=fingerprint,
+        )
+
+    if evidence.head_sha != intent.head_sha:
+        # Named, not bare. `EXACT_HEAD_VALIDATION_REQUIRED` was replaced for
+        # exactly this: a refusal that cannot say which commit it is about
+        # reads as "nobody checked" when the truth is "somebody checked
+        # something else", and this whole lineage exists because of that
+        # confusion. A new gate gets the same treatment as the ones it stands
+        # beside.
+        return FactoryDecision(
+            action=FactoryAction.REQUIRE_CHECKER,
+            reason=(
+                f"INTENT_HEAD_MISMATCH: authorized for {_named(intent.head_sha)}, "
+                f"evidence is about {_named(evidence.head_sha)}"
+            ),
             fingerprint=fingerprint,
         )
 

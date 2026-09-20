@@ -124,7 +124,17 @@ The same rule applies in the other direction, to a **green** result. A compariso
 
 An absent result and a passing result are the same shape on the way out: both are "nothing to report". Only one of them is evidence.
 
+**Restoring the source is not restoring what runs.** A mutation sweep restored `factory_policy.py` from a pristine copy and confirmed it with `md5sum` — identical — and the very next run still failed on the mutant's behaviour, raising a `TypeError` from a line that no longer contained a subscript. The interpreter was executing a stale `__pycache__` entry; the traceback rendered the *new* source beside the *old* bytecode, which is why it read as impossible. A cached `.pyc` is keyed on the source's mtime and size, and a mutate/restore cycle inside one second can produce a pair those two fields do not distinguish.
+
+So an md5 match on the source proves only that the file is right, never that the run used it. Mutate with bytecode caching off — `python -B -m pytest -p no:cacheprovider`, purging `__pycache__` between runs — and finish the sweep by **re-running the restored tree and requiring the control result back**. Had this landed in the other direction it would have been worse than a false failure: a mutant recorded as SURVIVED because the cached pre-mutation bytecode ran, which is a claim that a guard is unnecessary.
+
 **A local gate is only evidence about CI if it is the same tool.** These workflows `pip install ruff` unpinned, so CI runs the newest release. This container has two ruff binaries and `/root/.local/bin/ruff` (0.15.8) shadows `/usr/local/bin/ruff` (0.16.8) on `PATH`, so a local "ruff clean" was a statement about an older rule set and CI failed on a rule the local run does not have. Check `ruff --version` against what the workflow installs — `python -m ruff` reaches the installed package rather than whatever is first on `PATH` — and say which version a clean result came from.
+
+## Scope claims and names in durable records
+
+**Do not write a universal claim you have not enumerated, and prefer not to write one at all.** "The only one", "every caller", "all three sites": each is a promise about code you did not read. Three were shipped false in one lineage and each took a separate independent check to catch — including one written to *replace* the previous false one. State the scope as narrowly as what you actually verified, and if the narrow version is uninteresting, say nothing.
+
+**A name in a durable record is a claim too.** A commit message and pull request body in this lineage referred to `Observation.is_by`; the method is `Observation.by`, and `is_by` exists nowhere in the repository. It propagated into a checker's own brief before anyone noticed, which is the specific harm: a record that names something the codebase does not have gets repeated by the next reader as though it did. Grep for the identifier before you write it down.
 
 ## Stuck-repair protection
 

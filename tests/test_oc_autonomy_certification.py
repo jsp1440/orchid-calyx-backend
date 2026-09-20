@@ -195,10 +195,11 @@ def test_reader_fails_closed_on_corrupt_or_inconsistent_ledger(
         read_ledger(path)
 
 
-def test_verification_base_is_required_and_distinct():
+def test_result_commit_identities_are_pairwise_distinct():
     assert not good(1, verification_base_sha="").accepted
     assert not good(1, verification_base_sha=_sha(1001)).accepted
     assert not good(1, verification_base_sha=_sha(2001)).accepted
+    assert not good(1, merged_sha=_sha(1001)).accepted
 
 
 def test_verification_base_identity_cannot_be_reused():

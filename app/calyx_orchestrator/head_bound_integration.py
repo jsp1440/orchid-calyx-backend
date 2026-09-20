@@ -97,6 +97,47 @@ class Refusal(StrEnum):
     LANDED_RESULT_STALE = "landed_result_stale"
 
 
+def same_actor(left: str, right: str) -> bool:
+    """Whether two identity strings name the same actor.
+
+    Public, and the rule every INDEPENDENCE decision in this package asks --
+    "is this reviewer the maker" -- rather than every identity comparison.
+    `checker_dispatch.validate_checker_evidence` still compares `checker_id`
+    and `maker_id` byte-for-byte, deliberately: it is matching a record against
+    the assignment it must correspond to, exact equality is strictly stricter
+    there, and it fails closed. That is a different question, so it is not
+    this rule and is not widened to it.
+
+    The claim here said "the only one", was corrected to "the one every caller
+    reaches for", and both were false -- the second by the lines just named.
+    Two sweeping claims, two rounds, two independent checks to catch them. The
+    scope is now stated as narrowly as it is true.
+
+    Before this, `factory_policy` held a separate `(str, str) -> bool` predicate
+    beside this module's `(str) -> str` normaliser. The two agreed, which is the
+    hazard rather than the comfort: nothing made them keep agreeing. And
+    `checker_dispatch` did not hold a copy of this rule at all -- it held a
+    DIFFERENT rule, a bare `==` at two sites and a `!=` at a third, which is
+    why it let a maker be selected as their own checker by adding a space while
+    the gate downstream refused the record that selection produced.
+
+    Two rules that disagree about who someone is will eventually disagree about
+    whether anyone checked.
+
+    Three corrections are recorded here rather than quietly applied, because
+    this lineage's subject is records that assert what is not so:
+
+    * An earlier version called the `factory_policy` predicate "byte-identical".
+      It was not -- different name, signature, arity, docstring and body.
+    * The correction then over-shot, calling the two "semantically the same".
+      They are not the same FUNCTION; a normaliser and a predicate are different
+      shapes. What agreed was the expression `_identity(a) == _identity(b)`
+      against `_same_actor(a, b)`.
+    * It said "three sites doing a bare `==`". Two did `==`; the third did `!=`.
+    """
+    return _identity(left) == _identity(right)
+
+
 def _identity(value: str) -> str:
     """One spelling for one actor.
 
@@ -137,7 +178,7 @@ class Observation:
 
     def by(self, actor_id: str) -> bool:
         """Whether the same actor produced this, however they spelled it."""
-        return _identity(self.observer_id) == _identity(actor_id)
+        return same_actor(self.observer_id, actor_id)
 
 
 @dataclass(frozen=True, slots=True)
