@@ -97,6 +97,19 @@ class Refusal(StrEnum):
     LANDED_RESULT_STALE = "landed_result_stale"
 
 
+def same_actor(left: str, right: str) -> bool:
+    """Whether two identity strings name the same actor.
+
+    Public, and the only one. Three private copies of this rule existed --
+    here, in `factory_policy`, and as a bare `==` in `checker_dispatch` -- and
+    they disagreed: the bare comparison let a maker be selected as their own
+    checker by adding a space, while the gate downstream refused the record
+    that selection produced. Two rules that disagree about who someone is will
+    eventually disagree about whether anyone checked.
+    """
+    return _identity(left) == _identity(right)
+
+
 def _identity(value: str) -> str:
     """One spelling for one actor.
 

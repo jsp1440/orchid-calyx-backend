@@ -9,6 +9,7 @@ from app.calyx_orchestrator.head_bound_integration import (
     EvidenceSource,
     IntegrationEvidence,
     Observation,
+    same_actor,
 )
 from app.calyx_orchestrator.head_bound_integration import (
     exact_head_verified as head_bound_exact_head_verified,
@@ -45,9 +46,10 @@ class MissionStatus(StrEnum):
     DONE = "done"
 
 
-def _same_actor(left: str, right: str) -> bool:
-    """Whether two identity strings name the same actor."""
-    return " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
+#: One rule, imported rather than restated. The copy that stood here was
+#: identical to the module's and that is exactly the problem: nothing made it
+#: stay identical.
+_same_actor = same_actor
 
 
 def _head_bound_verified(
