@@ -96,7 +96,15 @@ def test_reused_durable_identity_stops_the_streak():
 def test_non_positive_target_fails_closed():
     result = evaluate([good(1)], target=0)
     assert not result.certified
-    assert result.reason == "target must be positive"
+    assert result.reason == "target must be a positive integer"
+
+
+@pytest.mark.parametrize("target", [True, False, "10", 10.0, None])
+def test_noninteger_target_fails_closed_without_exception(target):
+    result = evaluate([good(1)], target=target)
+    assert not result.certified
+    assert result.accepted_streak == 0
+    assert result.reason == "target must be a positive integer"
 
 
 def test_ledger_is_machine_readable_and_atomic_shape(tmp_path: Path):
