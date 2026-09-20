@@ -17,7 +17,9 @@ The JSON ledger can be reconstructed after interruption. Loading fails closed on
 unknown schemas, changed targets, malformed cycle shapes, inconsistent derived
 acceptance, or a result that does not match the stored evidence. Appending is
 atomic; replaying the identical cycle is a no-op, while reusing any durable
-identity with changed evidence is refused.
+identity with changed evidence is refused. Durable string identities must also
+be non-empty, unpadded, and printable; whitespace padding and embedded control
+characters fail closed instead of creating visually ambiguous identities.
 
 Individual records are insufficient: ledger read and write also validate the
 aggregate streak. A duplicate or otherwise rejected cycle cannot be persisted

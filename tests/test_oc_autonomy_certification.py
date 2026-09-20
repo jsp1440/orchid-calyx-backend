@@ -231,3 +231,18 @@ def test_verification_base_identity_cannot_be_reused():
 def test_wrong_scalar_evidence_types_fail_closed(field, value):
     cycle = good(5, **{field: value})
     assert cycle.accepted is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("cycle_id", ""),
+        ("cycle_id", " 6"),
+        ("work_identity", "issue:6 "),
+        ("work_identity", "issue:\n6"),
+        ("lease_identity", "lease:\t6"),
+        ("lease_identity", "lease:\x006"),
+    ],
+)
+def test_noncanonical_durable_identities_fail_closed(field, value):
+    assert good(6, **{field: value}).accepted is False
