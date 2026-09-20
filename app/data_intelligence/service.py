@@ -229,6 +229,61 @@ class DataIntelligenceService:
         )
         return stable
 
+    def save_workflow(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        name: str,
+        dataset_id: str,
+        version_id: str,
+        analysis_id: str,
+    ) -> dict[str, Any]:
+        manifest = self.repository.get_analysis(
+            owner,
+            project_id,
+            dataset_id,
+            version_id,
+            analysis_id,
+        )
+        dataset = manifest.get("dataset")
+        plan = manifest.get("plan")
+        plan_fingerprint = manifest.get("plan_fingerprint")
+        if (
+            not isinstance(dataset, dict)
+            or dataset.get("dataset_id") != dataset_id
+            or dataset.get("version_id") != version_id
+            or manifest.get("analysis_id") != analysis_id
+            or not isinstance(plan, dict)
+            or not isinstance(plan_fingerprint, str)
+        ):
+            raise DataIntelligenceError("WORKFLOW_SOURCE_MISMATCH")
+        workflow, created = self.repository.save_workflow(
+            owner=owner,
+            project_id=project_id,
+            name=name,
+            source_analysis_id=analysis_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            plan=plan,
+            plan_fingerprint=plan_fingerprint,
+        )
+        return {"created": created, "workflow": workflow}
+
+    def submit_workflow(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        workflow_id: str,
+    ) -> dict[str, Any]:
+        return self.repository.submit_workflow(
+            owner=owner,
+            project_id=project_id,
+            workflow_id=workflow_id,
+            actor=owner,
+        )
+
     def export_result(
         self,
         *,
