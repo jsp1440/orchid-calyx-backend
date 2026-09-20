@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Annotated, Any
 
 import psycopg
@@ -11,6 +13,13 @@ from app.concepts.services import ConceptRegistryService
 from app.literature_extraction.repository import LiteratureResultRepository
 from app.literature_extraction.routes import get_literature_repository
 
+from .glossary_candidates import (
+    CandidateConflictError,
+    CandidatePersistenceError,
+    CandidateState,
+    GlossaryCandidateRecord,
+    JsonGlossaryCandidateRepository,
+)
 from .language import (
     BOTANICAL_LATIN_BACKGROUND,
     BotanicalLanguageService,
@@ -23,6 +32,22 @@ router = APIRouter(prefix="/language", tags=["scientific-language"])
 class TermAnalysisIn(BaseModel):
     term: str = Field(min_length=1, max_length=300)
     include_concepts: bool = True
+
+
+def get_glossary_candidate_repository() -> JsonGlossaryCandidateRepository:
+    root = Path(
+        os.getenv(
+            "SCIENTIFIC_LANGUAGE_CANDIDATE_ROOT",
+            "runtime/scientific_language/candidates",
+        )
+    )
+    return JsonGlossaryCandidateRepository(root)
+
+
+GlossaryCandidates = Annotated[
+    JsonGlossaryCandidateRepository,
+    Depends(get_glossary_candidate_repository),
+]
 
 
 def _unavailable(term: str, exc: BaseException | None = None) -> dict[str, Any]:
@@ -117,6 +142,97 @@ def analyze_paper_glossary(
     return result
 
 
+def _candidate_storage_error(operation):
+    try:
+        return operation()
+    except CandidateConflictError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "GLOSSARY_CANDIDATE_CONFLICT"},
+        ) from exc
+    except (CandidatePersistenceError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "GLOSSARY_CANDIDATE_PERSISTENCE_UNAVAILABLE"},
+        ) from exc
+
+
+@router.post("/papers/{paper_id}/candidates", status_code=201)
+def persist_paper_glossary_candidates(
+    paper_id: str,
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+    candidates: GlossaryCandidates,
+):
+    paper = repository.get(paper_id)
+    if paper is None:
+        raise HTTPException(status_code=404, detail="Literature extraction result not found")
+    concepts = _load_concept_service()
+    analyses = BotanicalLanguageService(
+        lambda term: _concept_search(concepts, term)
+    ).analyze_glossary(paper.glossary_terms)["items"]
+
+    def persist():
+        results = [
+            candidates.save(
+                GlossaryCandidateRecord.from_analysis(
+                    paper_id=paper.paper_id,
+                    source_hash=paper.source.content_hash,
+                    analysis=analysis,
+                )
+            )
+            for analysis in analyses
+        ]
+        return {
+            "paper_id": paper.paper_id,
+            "source_hash": paper.source.content_hash,
+            "count": len(results),
+            "created_count": sum(result.created for result in results),
+            "items": [result.candidate for result in results],
+            "review_required": True,
+            "canonical_promotion_authorized": False,
+            "knowledge_graph_publication_authorized": False,
+        }
+
+    return _candidate_storage_error(persist)
+
+
+@router.get("/candidates")
+def list_glossary_candidates(
+    candidates: GlossaryCandidates,
+    state: Annotated[CandidateState | None, Query()] = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+):
+    def load():
+        records = candidates.list()
+        if state is not None:
+            records = [record for record in records if record.state == state]
+        total = len(records)
+        return {
+            "items": records[offset : offset + limit],
+            "count": min(limit, max(0, total - offset)),
+            "total": total,
+            "review_required": True,
+            "canonical_promotion_authorized": False,
+            "knowledge_graph_publication_authorized": False,
+        }
+
+    return _candidate_storage_error(load)
+
+
+@router.get("/candidates/{candidate_id}")
+def get_glossary_candidate(
+    candidate_id: str,
+    candidates: GlossaryCandidates,
+):
+    record = _candidate_storage_error(lambda: candidates.get(candidate_id))
+    if record is None:
+        raise HTTPException(status_code=404, detail="Glossary candidate not found")
+    return record
+
+
 @router.get("/health")
 def health():
     return {
@@ -126,4 +242,5 @@ def health():
         "word_roots_and_combining_forms": True,
         "botanical_latin_background": True,
         "automatic_concept_promotion": False,
+        "durable_candidate_intake": True,
     }
