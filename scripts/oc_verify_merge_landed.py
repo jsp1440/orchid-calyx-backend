@@ -321,14 +321,19 @@ def main(argv: list[str] | None = None) -> int:
         fields = entry.split(" ") if isinstance(entry, str) else []
         return fields[1] if len(fields) == 3 else ""
 
-    directories = [path for path in args.paths if _kind(verified_entries[path]) in ("tree", "commit")]
+    # Only a TREE is refused. Its identity aggregates its children, so it
+    # changes when one is DELETED -- that is how a directory turned an absence
+    # into presence. A gitlink aggregates nothing: `160000 commit <sha>` is a
+    # single object id and compares exactly like a blob, so a submodule bump is
+    # real, comparable content. Refusing it made a submodule change
+    # unverifiable by construction.
+    directories = [path for path in args.paths if _kind(verified_entries[path]) == "tree"]
     if directories:
-        print("REFUSED: these arguments do not name a file, so they cannot witness content:")
+        print("REFUSED: these arguments name a directory, which cannot witness content:")
         for path in directories:
-            print(f"  {path} ({_kind(verified_entries[path])})")
+            print(f"  {path}")
         print("A tree's identity changes when any child changes, including when one is")
-        print("deleted, so a directory turns absence into presence; a gitlink records a")
-        print("submodule's commit, not this repository's content. Declare the files.")
+        print("deleted, so a directory turns an absence into presence. Declare the files.")
         return 2
 
     still_present = [path for path in args.deleted_paths if verified_entries[path] is not ABSENT]
@@ -371,43 +376,86 @@ def main(argv: list[str] | None = None) -> int:
     # and the tool refuses until they do. That is a REF used to derive which
     # paths are probative, checked before it is used -- not a verdict, and not
     # an assertion that anything landed.
+    # WHERE THE CHANGE FORKED FROM IS NOT DERIVABLE FROM THESE TWO REFS.
+    #
+    # `merge-base(verified, integration)` is an ancestor of the verified head.
+    # So is every commit of the change itself. Nothing distinguishes the fork
+    # point from a commit INSIDE the change without knowing the branch the
+    # change forked off -- and when the integration ref descends from an
+    # intermediate commit of the change, which is exactly what happens when a
+    # branch is merged from a commit behind its head, the merge base IS that
+    # intermediate commit. The derived set then shrinks to the tail of the
+    # change, and the tool refuses the very path that would catch the
+    # regression, stating as fact that the change "does not touch" it.
+    #
+    # Round 9 reasoned only about a base named further BACK than the fork
+    # point -- "it does not shrink the derived set, it grows it" -- which is
+    # true and answers the wrong direction. A base forward of the fork point
+    # shrinks it, and shrinking is what hides a regression.
+    #
+    # So `--base-ref` is required. Refusing every ancestor of the verified head
+    # was tried and is wrong: a base branch that has not moved since the fork IS
+    # an ancestor, and that is the ordinary case.
     contained = verified_ids[0] in bases
-    if args.base_ref is not None and not contained:
-        # The merge base of the two refs is a real pre-change revision here, and
-        # it is derived rather than named. Letting a caller-supplied ref override
-        # it replaced a good derivation with a worse one -- and a base far enough
-        # back makes almost any path in the repository look touched.
-        print("REFUSED: --base-ref is only for the case it exists for. --verified-head is NOT")
-        print("an ancestor of --integration-ref, so their merge base is already a revision")
-        print("before this change. Drop --base-ref and let it be derived.")
-        return 2
     if args.base_ref is None:
-        before = bases
-    else:
-        base_ids = _resolve_ref("--base-ref", args.base_ref)
-        if base_ids is None:
-            return 2
-        # A base that already contains the change is not a state before it.
-        if _is_ancestor(verified_ids[0], base_ids[0]):
-            print("REFUSED: --base-ref already contains --verified-head, so it is not a state")
-            print("before this change and the paths derived from it would be empty.")
-            return 2
-        code, before = _merge_bases(verified_ids[0], base_ids[0])
-        if code != 0 or not before:
-            print("REFUSED: --verified-head and --base-ref share no common ancestor.")
-            return 2
+        print("REFUSED: --base-ref is required. It names the branch this change forked off,")
+        print("as it stood BEFORE the merge, and it is the only way to know which paths the")
+        print("change touched.")
+        print("The merge base of --verified-head and --integration-ref cannot stand in for")
+        print("it: every commit of the change is also an ancestor of the verified head, so")
+        print("when the integration ref descends from a commit INSIDE the change -- a branch")
+        print("merged from behind its head -- that merge base is inside the change too, and")
+        print("the set derived from it silently omits everything before it.")
+        return 2
 
+    base_ids = _resolve_ref("--base-ref", args.base_ref)
+    if base_ids is None:
+        return 2
+    if _is_ancestor(verified_ids[0], base_ids[0]):
+        print("REFUSED: --base-ref already contains --verified-head, so it is not a state")
+        print("before this change. Pass the base branch as it stood BEFORE the merge.")
+        return 2
+    code, before = _merge_bases(verified_ids[0], base_ids[0])
+    if code != 0 or not before:
+        print("REFUSED: --verified-head and --base-ref share no common ancestor.")
+        return 2
+
+    # WHAT THIS DOES AND DOES NOT ESTABLISH, stated because the alternative is
+    # a claim that keeps turning out to be false.
+    #
+    # Requiring `--base-ref` closes the variant that needed no choice at all:
+    # the tool no longer derives the pre-change revision from the integration
+    # ref, so an integration branch descending from a commit INSIDE the change
+    # can no longer silently shrink the set to that change's tail.
+    #
+    # It does not, and cannot, establish that the ref you name IS the fork
+    # point. A commit inside the change is an ancestor of the verified head,
+    # and so is the fork point; nothing in these three refs tells them apart.
+    # Name one and the derived set covers only what the change did afterwards.
+    # Refusing every ancestor is not the answer either -- a base branch that has
+    # not moved since the fork IS an ancestor, and that is the ordinary case.
+    #
+    # So: derive `--base-ref` from the pull request's own base branch,
+    # mechanically. Do not pick a commit. The same rule as every other input
+    # here -- a fact you choose is not a check -- applies to this one, and this
+    # is the one place the tool cannot enforce it for you.
     if args.deleted_paths:
         # A path must have existed at EVERY pre-change revision. Accepting it at
         # one of several would make the verdict depend on which base git named.
         never_there = sorted({path for base in before for path in args.deleted_paths
                               if _entry(base, path) in (ABSENT, UNKNOWN)})
+        # Only a TREE. A gitlink is one object id and compares like a blob, and
+        # refusing it made a submodule removal unverifiable BY CONSTRUCTION:
+        # `git diff` reports `D vendor`, the tool printed it under "Declare
+        # exactly", and then refused that exact declaration. A refusal that
+        # instructs the operator to do the thing it refuses is the third time a
+        # message here has become the defect.
         wrong_kind = sorted({path for base in before for path in args.deleted_paths
-                             if _kind(_entry(base, path)) in ("tree", "commit")})
+                             if _kind(_entry(base, path)) == "tree"})
         if wrong_kind:
             named = ", ".join(base[:12] for base in before)
-            print("REFUSED: these --deleted-path arguments name a directory or a gitlink at the")
-            print(f"pre-change revision ({named}), so their absence afterwards is not a file's:")
+            print("REFUSED: these --deleted-path arguments name a directory at the pre-change")
+            print(f"revision ({named}), so their absence afterwards is not a file's:")
             for path in wrong_kind:
                 print(f"  {path}")
             return 2

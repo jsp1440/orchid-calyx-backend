@@ -282,3 +282,41 @@ class TestWhyTheIdenticalTreeGuardsCannotBeExercised:
         )
         assert result.verdict is MergeVerdict.LANDED
         assert result.identical_tree is False
+
+
+class TestTheUnknownArmIsReachableThroughTheLibrary:
+    """A claim of mine that was false.
+
+    The survivor list called `inspect_merge`'s `expected == UNKNOWN` arm
+    unreachable "for the same reason" as the `identical_tree` conjuncts. The
+    reason there is `__post_init__` validation -- and `VerifiedResult.blobs`
+    has none. This module says of itself that it is "testable without a
+    repository" and it has this test file; the CLI is not its only caller.
+    """
+
+    def test_an_unresolved_verified_blob_is_incomplete_evidence(self):
+        result = inspect_merge(
+            verified(**{TOUCHED[0]: UNKNOWN, TOUCHED[1]: "blob-kept"}),
+            IntegrationResult(
+                head_sha="abc", tree_sha=VERIFIED_TREE,
+                blobs={TOUCHED[0]: "anything", TOUCHED[1]: "blob-kept"},
+                merge_api_reported_success=True,
+            ),
+        )
+
+        assert result.verdict is MergeVerdict.EVIDENCE_INCOMPLETE
+        assert TOUCHED[0] in result.unresolved_paths
+        assert may_report_integrated(result) is False
+
+    def test_and_it_is_not_read_as_agreement_with_whatever_is_there(self):
+        # The failure this arm prevents: UNKNOWN == UNKNOWN on both sides.
+        result = inspect_merge(
+            verified(**{TOUCHED[0]: UNKNOWN}),
+            IntegrationResult(
+                head_sha="abc", tree_sha=VERIFIED_TREE, blobs={TOUCHED[0]: UNKNOWN},
+                merge_api_reported_success=True,
+            ),
+        )
+
+        assert result.verdict is MergeVerdict.EVIDENCE_INCOMPLETE
+        assert may_report_integrated(result) is False

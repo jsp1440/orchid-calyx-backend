@@ -45,6 +45,35 @@ def _commit(repo: Path, message: str, stage: bool = True) -> str:
     return _git(repo, "rev-parse", "HEAD")
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _unsigned_fixture_commits():
+    """Fixture repositories must not depend on the ambient commit signer.
+
+    This environment configures a global `commit.gpgsign` helper. When it fails
+    -- it began returning "too many open files" partway through a mutation
+    sweep -- every `git commit` in every fixture returns 128, the suite goes red
+    for a reason that has nothing to do with the code, and a mutation run then
+    reports each mutant as KILLED while proving nothing. Six mutants were
+    recorded that way before a red baseline gave it away.
+
+    Signing a throwaway commit in a temp directory buys nothing, so turn it off
+    for the whole session and let the suite measure the code.
+    """
+    previous = {key: os.environ.get(key) for key in
+                ("GIT_CONFIG_COUNT", "GIT_CONFIG_KEY_0", "GIT_CONFIG_VALUE_0")}
+    os.environ["GIT_CONFIG_COUNT"] = "1"
+    os.environ["GIT_CONFIG_KEY_0"] = "commit.gpgsign"
+    os.environ["GIT_CONFIG_VALUE_0"] = "false"
+    try:
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 @pytest.fixture(scope="module")
 def history(tmp_path_factory: pytest.TempPathFactory) -> dict[str, object]:
     """A base, a change, and integration refs that FORK from the base.
@@ -155,7 +184,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", "does/not/exist.txt",
         )
         assert done.returncode == 2
@@ -168,7 +197,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
             "--path", UNTOUCHED,
             "--path", "does/not/exist.txt",
         )
@@ -193,7 +222,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", "0" * 40,
-            "--integration-ref", str(history["verified"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
         )
         assert done.returncode == 2
@@ -216,7 +245,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--deleted-path", "never/was/a/file.txt",
         )
         assert done.returncode == 2
@@ -230,7 +259,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", near_miss,
             "--path", EDITED,
         )
@@ -247,7 +276,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -257,7 +286,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -281,7 +310,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--deleted-at", str(history["verified"]),
         )
@@ -298,7 +327,7 @@ class TestADeletionMustBeAnActualDeletion:
         provable = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -307,12 +336,17 @@ class TestADeletionMustBeAnActualDeletion:
         unprovable = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["from_the_base"]),
+            "--integration-ref", str(history["from_the_base"]), "--base-ref", str(history["base"]),
             "--deleted-path", LATER,
             "--path", EDITED,
         )
+        # LATER was added AND removed by the change, so it is not in the diff
+        # against the fork point at all -- there is no deletion of it to verify,
+        # and the refusal now says so by naming the set instead of hunting for a
+        # revision where the path happened to exist.
         assert unprovable.returncode == 2
         assert "no deletion to verify" in unprovable.stdout
+        assert LATER in unprovable.stdout
 
     def test_refs_with_no_common_ancestor_are_refused(self, history):
         tree = _git(history["repo"], "rev-parse", f'{history["verified"]}^{{tree}}')
@@ -333,7 +367,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--deleted-path", "gone.txt",
         )
         assert done.returncode == 2
@@ -362,8 +396,8 @@ class TestThePathspecIsLiteral:
         (repo / "beside.txt").write_text("other work\n")
         integration = _commit(repo, "it landed, alongside other work")
 
-        done = run({"repo": repo}, "--verified-head", verified,
-                   "--integration-ref", integration, "--path", COLON_PREFIXED)
+        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, "--path", COLON_PREFIXED)
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
@@ -375,7 +409,7 @@ class TestThePathspecIsLiteral:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", f"{EDITED[:-1]}*",
         )
         assert done.returncode == 2
@@ -385,57 +419,59 @@ class TestThePathspecIsLiteral:
 class TestHowTheTreeIsRead:
     """What is pinned, what is not, and why -- counted from a sweep, not read.
 
-    47 mutants, 31 killed, SIXTEEN survivors. Earlier versions of this docstring
-    said three, then five, then eight, then six, every one reached by reading
-    the code and every one wrong; the last one claimed six while an independent
-    sweep of a wider surface found sixteen. The number here is whatever the last
-    sweep printed.
+    50 mutants, 33 killed, SEVENTEEN survivors, 0 skipped, with an unmutated
+    control copy green through the same pipeline first. Earlier versions of this
+    docstring said three, five, eight, six and sixteen; every one before the
+    last was reached by reading the code, and every one was wrong.
 
-    The sweep also runs an UNMUTATED copy through the same pipeline first. That
-    control exists because this tooling has produced false results four times:
-    a `replace(..., 1)` mutating the wrong copy of a guard appearing twice; a
-    killed sweep leaving a mutant stranded so a later green run was measured
-    against it; a test whose own premise was wrong, so the baseline was red and
-    every "kill" was an artifact; and a sibling harness that excluded `.git`,
-    breaking 22 subprocess tests before any mutation was applied.
-
-    UNREACHABLE, because the declared set is now derived rather than chosen.
-    Every declared path comes from `git diff --name-status`, so it is a path git
-    named, spelled as git spells it:
+    UNREACHABLE, because the declared set is derived rather than chosen. Every
+    declared path comes from `git diff --name-status`, so it is a path git named,
+    spelled as git spells it:
 
       * `_differs_from_every_base`'s UNKNOWN guard -- a derived path resolves.
-      * the type gate on `--deleted-path`, and its UNKNOWN arm -- `git diff`
-        reports file deletions, never directory ones, so a directory can no
-        longer be declared deleted in the first place.
-      * `identical_tree`'s two `!= UNKNOWN` conjuncts -- `VerifiedResult`
-        refuses an empty tree sha and identity needs both sides equal.
+      * the `--deleted-path` UNKNOWN arm.
+      * `identical_tree`'s two `!= UNKNOWN` conjuncts -- `VerifiedResult` refuses
+        an empty tree sha and identity needs both sides equal.
         `TestWhyTheIdenticalTreeGuardsCannotBeExercised` proves that premise.
-      * `inspect_merge`'s `expected == UNKNOWN` arm -- same reason on the
-        verified side.
+      * the empty-derived-set gate -- `--base-ref` is required now, so the
+        revision it guarded against (the verified head standing in for its own
+        pre-change state) can no longer be reached.
 
     DEFENSIVE, and correct rather than covered:
 
-      * `--end-of-options` on ls-tree and on rev-parse (`--verify` already
-        rejects a dash ref, and the refs are 40-hex by then anyway)
+      * `--end-of-options` on ls-tree, on rev-parse and on git diff (`--verify`
+        already rejects a dash ref, and by the time the diff runs both ends are
+        40-hex ids)
       * `--quiet` on rev-parse
       * `_entry`'s empty-field guard
       * `_resolve_ref`'s commit and tree resolution checks
-      * `_changed_paths`' return-code guard
+      * `_changed_paths`' return-code guard and its odd-field guard -- the
+        second is what would catch a pair-wise parse sliding by one, and `-z`
+        plus `--no-renames` means it never does. `TestTheDerivationReadsWhat
+        GitActuallyPrinted` asserts the property instead of the guard.
+      * the derived union's preference for `D` when bases disagree
       * `may_report_integrated`'s `and inspection.landed` conjunct
       * `restoration_paths`' verdict guard
-      * the derived union's preference for `D` when bases disagree about a path
 
-    They stay because they are correct. None of them is claimed as covered.
+    None of them is claimed as covered.
 
-    Three guards that earlier versions listed as unpinnable are now pinned, and
-    each was unpinnable only because the test was reaching for the wrong thing:
+    A NOTE ON METHOD, because this harness has now produced false results FIVE
+    times and three of them nearly reached a commit message:
 
-      * the multi-record guard, by `TestAnAmbiguousPathspecComparesNothingItClaimsTo`.
-      * `merge-base --all` and the probative arm's multi-base read, by asserting
-        the MESSAGE rather than the verdict. Both readings can give the same
-        verdict for a given tie-break, so a verdict assertion is order-dependent
-        and survives; the refusal's LIST of bases, and its list of
-        non-probative paths, cannot be produced by reading one base.
+      1. a `replace(..., 1)` mutating the wrong copy of a guard appearing twice;
+      2. a killed sweep leaving a mutant stranded in the working tree, so the
+         next run's green suite was measured against it;
+      3. a test whose own premise was wrong, so the baseline was red and every
+         "kill" was an artifact;
+      4. a sibling harness whose copies excluded `.git`, breaking 22 subprocess
+         tests before any mutation;
+      5. this environment's global commit-signing helper running out of file
+         descriptors mid-sweep, so every fixture's `git commit` returned 128 and
+         six mutants were recorded as KILLED while proving nothing.
+
+    Hence the session fixture that turns commit signing off, the control copy
+    that must be green before any result is believed, and the byte-for-byte
+    restoration check after. A kill you did not watch happen is not a kill.
     """
 
     def test_a_path_resolves_the_same_from_a_subdirectory(self, history):
@@ -446,7 +482,7 @@ class TestHowTheTreeIsRead:
         done = subprocess.run(
             [sys.executable, str(SCRIPT),
              "--verified-head", str(history["verified"]),
-             "--integration-ref", str(history["diverged"]),
+             "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
              "--path", EDITED, "--path", LATER],
             cwd=str(nested), capture_output=True, text=True, check=False,
         )
@@ -474,7 +510,8 @@ class TestHowTheTreeIsRead:
         _git(repo, "commit", "-q", "-m", "a commit that holds it without being it")
         landed = _git(repo, "rev-parse", "HEAD")
 
-        done = run(history, "--verified-head", head, "--integration-ref", landed, "--path", odd)
+        done = run(history, "--verified-head", head, "--integration-ref", landed,
+                   "--base-ref", str(history["base"]), "--path", odd)
         assert done.returncode == 0
         assert "landed" in done.stdout
 
@@ -486,7 +523,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["chmodded"]),
+            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -498,7 +535,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["symlinked"]),
-            "--integration-ref", str(history["verified"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
             "--path", SYMLINKABLE,
             "--path", EDITED,
             "--path", LATER,
@@ -511,7 +548,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["chmodded"]),
+            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -525,7 +562,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
         )
         assert done.returncode == 2
@@ -535,7 +572,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
         )
         assert done.returncode == 2
         assert "nothing to verify" in done.stdout
@@ -546,7 +583,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -559,7 +596,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -570,7 +607,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", UNTOUCHED,
             "--path", EDITED,
             "--path", LATER,
@@ -585,7 +622,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
             "--no-merge-reported-success",
@@ -599,7 +636,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -609,7 +646,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["kept_the_removed_file"]),
+            "--integration-ref", str(history["kept_the_removed_file"]), "--base-ref", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -620,7 +657,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
             "--deleted-path", EDITED,
         )
         assert done.returncode == 2
@@ -630,7 +667,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--deleted-path", EDITED,
         )
@@ -679,7 +716,7 @@ class TestAnUnresolvedLookup:
             [
                 sys.executable, str(SCRIPT),
                 "--verified-head", str(history["verified"]),
-                "--integration-ref", str(history["diverged"]),
+                "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
                 "--path", EDITED,
                 "--path", LATER,
             ],
@@ -720,7 +757,7 @@ class TestADeletionCannotEvidenceAMerge:
         (repo / "core.py").write_text("REGRESSED\n")
         integration = _commit(repo, "someone else removed it, and regressed core")
 
-        return {"repo": repo, "verified": verified, "integration": integration}
+        return {"repo": repo, "base": base, "verified": verified, "integration": integration}
 
     def test_a_record_of_only_deletions_never_reports_landed(self, tmp_path):
         history = self._forked(tmp_path / "forked")
@@ -728,7 +765,7 @@ class TestADeletionCannotEvidenceAMerge:
         # exactly this set, so the operating memory's own prescribed workflow
         # produced it. It returned `landed`, exit 0, having read nothing.
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]), "--deleted-path", "leak.py")
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]), "--deleted-path", "leak.py")
 
         # Refused before anything is compared. The tool now derives the set
         # itself, so a deletions-only DECLARATION of a change that also edited a
@@ -743,7 +780,7 @@ class TestADeletionCannotEvidenceAMerge:
     def test_and_the_full_set_reaches_a_real_comparison(self, tmp_path):
         history = self._forked(tmp_path / "forked-full")
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]),
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]),
                    "--path", "core.py", "--deleted-path", "leak.py")
 
         # Whatever the verdict, it was reached by reading content rather than by
@@ -754,7 +791,7 @@ class TestADeletionCannotEvidenceAMerge:
     def test_the_same_refs_reveal_the_regression_once_a_kept_path_is_declared(self, tmp_path):
         history = self._forked(tmp_path / "forked2")
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]),
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]),
                    "--deleted-path", "leak.py", "--path", "core.py")
 
         assert done.returncode == 1
@@ -802,7 +839,7 @@ class TestTheMergeBaseIsNotATieBreak:
             pytest.skip("this git produced a single merge base; the tie-break is not exercised")
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--deleted-path", "F.py", "--path", "keep.txt")
+                   "--base-ref", root, "--deleted-path", "F.py", "--path", "keep.txt")
 
         assert done.returncode == 2
         assert "do not exist at every pre-change revision" in done.stdout
@@ -841,7 +878,12 @@ class TestTheMergeBaseIsNotATieBreak:
         _git(repo, "merge", "-q", "--no-edit", "-X", "theirs", left)
         integration = _git(repo, "rev-parse", "HEAD")
 
-        bases = _git(repo, "merge-base", "--all", verified, integration).split()
+        _git(repo, "checkout", "-q", "--force", "-b", "base-branch", left)
+        _git(repo, "merge", "-q", "--no-edit", right)
+        (repo / "base-branch-marker.txt").write_text("the base branch moved on\n")
+        crisscross_base = _commit(repo, "base branch, merging both sides")
+
+        bases = _git(repo, "merge-base", "--all", verified, crisscross_base).split()
         if len(bases) < 2:
             pytest.skip("this git produced a single merge base")
         values = {_git(repo, "ls-tree", base, "--", "P.txt") for base in bases}
@@ -854,7 +896,7 @@ class TestTheMergeBaseIsNotATieBreak:
         # `P.txt` still matches one base and differs from the other, which is
         # exactly the case the quantifier decides.
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--path", "P.txt", "--path", "other.txt")
+                   "--base-ref", crisscross_base, "--path", "P.txt", "--path", "other.txt")
 
         assert done.returncode == 2, done.stdout
         assert "do not differ from EVERY pre-change revision" in done.stdout
@@ -877,7 +919,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", UNTOUCHED,
         )
 
@@ -889,7 +931,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -901,7 +943,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -939,7 +981,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
             "--path", "does/not/exist.txt",
         )
 
@@ -985,7 +1027,7 @@ class TestAnUnresolvedBaseLookupIsNotADifference:
         _git(repo, "rm", "-qr", "src/lib/legacy")
         bad = _commit(repo, "bad squash: legacy dropped, locality fix lost")
 
-        return {"repo": repo, "verified": verified, "bad": bad}
+        return {"repo": repo, "base": base, "verified": verified, "bad": bad}
 
     def test_a_trailing_slash_path_cannot_certify_a_squash_that_lost_the_fix(self, tmp_path):
         lab = self._lab(tmp_path / "slash")
@@ -993,17 +1035,17 @@ class TestAnUnresolvedBaseLookupIsNotADifference:
         # head, so the base lookup is UNKNOWN. That was read as a difference,
         # and the only object compared -- `src/lib/core` -- is byte-identical
         # everywhere, while the integration side reverted the locality fix.
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--path", "src/lib/")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"], "--path", "src/lib/")
 
         assert done.returncode == 2
         # Refused before the comparison, as a directory rather than as an
         # ambiguous pathspec: either way it never reaches the merge base, which
         # is where UNKNOWN was being read as a difference.
-        assert "do not name a file" in done.stdout
+        assert "name a directory" in done.stdout
 
     def test_the_same_squash_is_caught_when_the_path_is_spelled_as_git_reports_it(self, tmp_path):
         lab = self._lab(tmp_path / "slash2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"],
                    "--path", "src/locality.ts", "--deleted-path", "src/lib/legacy/index.ts")
 
         assert done.returncode == 1, done.stdout
@@ -1065,18 +1107,20 @@ class TestAnOrdinaryMergeCanBeVerified:
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
 
-    def test_containment_alone_is_refused_without_a_base_ref(self, tmp_path):
+    def test_nothing_is_verified_without_a_base_ref(self, tmp_path):
         lab = self._lab(tmp_path / "no-base")
+        # Deliberately no `--base-ref`: the merge base of the two refs is an
+        # ancestor of the verified head, and so is every commit of the change,
+        # so it cannot be trusted to be the fork point.
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
                    "--path", "keep.ts")
 
         assert done.returncode == 2
-        assert "--base-ref" in done.stdout
-        # The pre-change revision is the verified head itself here, so the tool
-        # derives an empty set and says so. It must not send the operator
-        # looking for some other path to declare.
-        assert "touches no path at all" in done.stdout
+        # `--base-ref` is required now, precisely because the merge base of the
+        # two refs cannot be trusted to be the fork point.
+        assert "--base-ref is required" in done.stdout
         assert "BEFORE the merge" in done.stdout
+        assert "verdict      :" not in done.stdout
 
     def test_a_merge_that_kept_the_commit_and_dropped_the_content_is_caught(self, tmp_path):
         # `-s ours`: the verified head IS a parent, and not one byte of it
@@ -1158,7 +1202,7 @@ class TestADirectoryCannotWitnessContent:
 
     def test_the_tool_refuses_a_pure_deletion_as_it_says_it_does(self, tmp_path):
         lab = self._lab(tmp_path / "delonly")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--deleted-path", "src/lib/legacy/index.ts")
 
         assert done.returncode == 2
@@ -1169,11 +1213,11 @@ class TestADirectoryCannotWitnessContent:
         # Both of these returned exit 0 `landed` for two lineages that never
         # merged, on the strength of a tree whose only change was a removal.
         lab = self._lab(tmp_path / f"dir-{directory.replace('/', '-')}")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", directory)
 
         assert done.returncode == 2, done.stdout
-        assert "do not name a file" in done.stdout
+        assert "name a directory" in done.stdout
 
     def test_the_trailing_slash_spelling_is_refused_by_the_probative_gate_instead(self, tmp_path):
         # `src/lib/` is a directory PREFIX, so git lists the children rather than
@@ -1181,7 +1225,7 @@ class TestADirectoryCannotWitnessContent:
         # It is still refused, by the gate that asks what the change could have
         # altered -- and the refusal has to be exit 2, not a pass.
         lab = self._lab(tmp_path / "dir-trailing")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
@@ -1192,7 +1236,7 @@ class TestADirectoryCannotWitnessContent:
 
     def test_a_file_under_it_reports_what_actually_happened(self, tmp_path):
         lab = self._lab(tmp_path / "dir-file")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "README.md")
 
         # Untouched by the change, so it cannot witness the merge -- and the
@@ -1240,14 +1284,19 @@ class TestTheMergeBaseAllFlagIsPinnedWithoutATieBreak:
         (repo / "y.txt").write_text("y moves on\n")
         integration = _commit(repo, "y moves on")
 
-        bases = _git(repo, "merge-base", "--all", verified, integration).split()
+        _git(repo, "checkout", "-q", "--force", "-b", "base-branch", left)
+        _git(repo, "merge", "-q", "--no-edit", right)
+        (repo / "base-branch-marker.txt").write_text("the base branch moved on\n")
+        crisscross_base = _commit(repo, "base branch, merging both sides")
+
+        bases = _git(repo, "merge-base", "--all", verified, crisscross_base).split()
         if len(bases) < 2:
             pytest.skip("this git produced a single merge base")
 
         # `never.txt` existed at neither base, so the verdict is a refusal under
         # either reading -- no tie-break is involved. What differs is the list.
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--path", "keep.txt", "--deleted-path", "never.txt")
+                   "--base-ref", crisscross_base, "--path", "keep.txt", "--deleted-path", "never.txt")
 
         assert done.returncode == 2
         for base in bases:
@@ -1302,7 +1351,7 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
         assert len(records.splitlines()) > 1
         assert "REDACTED" not in _git(repo, "cat-file", "-p", f"{lab['integration']}:src/lib/locality.ts")
 
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
@@ -1310,7 +1359,7 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
 
     def test_and_the_file_that_was_reverted_is_reported_when_it_is_declared(self, tmp_path):
         lab = self._lab(tmp_path / "ambiguous2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "src/lib/a.ts", "--path", "src/lib/locality.ts")
 
         assert done.returncode == 1
@@ -1333,7 +1382,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
     with `git diff --name-status <pre-change revision>..<verified head>` and
     refuses anything else.
 
-    A distant base is then self-defeating: it does not shrink the derived set,
+    A base further BACK is then self-defeating: it does not shrink the set,
     it GROWS it, and every path it adds must be declared and compared. The
     expectations below are written out by hand, never derived by the helper, so
     they cannot agree with the tool by construction.
@@ -1473,45 +1522,95 @@ class TestTheDeclaredSetIsDerivedNotChosen:
         if done.returncode == 0:
             assert "landed" in done.stdout
 
-    def test_base_ref_is_refused_where_the_real_merge_base_is_usable(self, tmp_path):
-        # It was consulted even when the verified head is NOT an ancestor of the
-        # integration ref -- the original #706 squash shape -- replacing a good
-        # derivation with a caller-named one.
-        repo = tmp_path / "not-contained"
+    def test_a_base_ref_is_required_even_where_the_merge_base_looks_usable(self, tmp_path):
+        """The squash shape, where round 9 derived the base and called it safe.
+
+        `merge-base(verified, integration)` is an ancestor of the verified head
+        -- and so is every commit of the change. When the integration ref
+        descends from a commit INSIDE the change, that merge base IS that
+        commit, the derived set shrinks to the change's tail, and the paths the
+        earlier commits touched are reported as paths the change "does not
+        touch". Round 9 reasoned only about a base further BACK, where the set
+        grows; a base forward of the fork point shrinks it, and shrinking is
+        what hides a regression.
+
+        This is the shape this repository keeps producing: a branch merged from
+        a commit behind its head.
+        """
+        repo = tmp_path / "merged-from-behind"
         repo.mkdir(parents=True, exist_ok=True)
         _git(repo, "init", "-q", "-b", "main")
         _git(repo, "config", "user.email", "checker@example.invalid")
         _git(repo, "config", "user.name", "checker")
-        (repo / "p.txt").write_text("v1\n")
-        ancient = _commit(repo, "ancient")
-        (repo / "p.txt").write_text("v2\n")
-        fork = _commit(repo, "fork point")
+        (repo / "src").mkdir()
+        (repo / "src" / "locality.py").write_text("coords: PLAIN\n")
+        (repo / "docs.md").write_text("v0\n")
+        base = _commit(repo, "the base branch")
+
+        # A two-commit change: C1 hardens the locality, C2 edits the docs.
+        _git(repo, "checkout", "-q", "-b", "feature")
+        (repo / "src" / "locality.py").write_text("coords: WITHHELD  # C1 hardening\n")
+        c1 = _commit(repo, "C1: withhold the coordinates")
+        (repo / "docs.md").write_text("v1\n")
+        verified = _commit(repo, "C2: document it")
+
+        # The integration branch took C1 only -- merged from behind the head.
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", c1)
+        (repo / "docs.md").write_text("v1\n")
+        integration = _commit(repo, "integration carries C1 and its own docs edit")
+
+        lab = {"repo": repo}
+        # The merge base of the two refs IS C1, inside the change.
+        assert _git(Path(str(repo)), "merge-base", verified, integration) == c1
+
+        # Without a base ref the tool refuses rather than deriving from C1.
+        refused = run(lab, "--verified-head", verified, "--integration-ref", integration, "--path", "docs.md")
+        assert refused.returncode == 2, refused.stdout
+        assert "--base-ref is required" in refused.stdout
+
+        # With the real fork point, the locality file is in the derived set and
+        # the regression is reported instead of being called untouched.
+        honest = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                     "--base-ref", base, "--path", "docs.md")
+        assert honest.returncode == 2, honest.stdout
+        assert "src/locality.py" in honest.stdout
+
+        caught = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                     "--base-ref", base, "--path", "docs.md", "--path", "src/locality.py")
+        assert caught.returncode == 0, caught.stdout
+        # C1 did land here, so this one passes -- the point is that the path was
+        # COMPARED rather than declared untouchable.
+        assert "landed" in caught.stdout
+
+    def test_and_the_regression_is_caught_when_the_integration_side_lost_it(self, tmp_path):
+        repo = tmp_path / "merged-from-behind-lost"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "src").mkdir()
+        (repo / "src" / "locality.py").write_text("coords: PLAIN\n")
+        (repo / "docs.md").write_text("v0\n")
+        base = _commit(repo, "the base branch")
 
         _git(repo, "checkout", "-q", "-b", "feature")
-        (repo / "a.txt").write_text("the change\n")
-        verified = _commit(repo, "the change")
+        (repo / "src" / "locality.py").write_text("coords: WITHHELD  # C1 hardening\n")
+        c1 = _commit(repo, "C1: withhold the coordinates")
+        (repo / "docs.md").write_text("v1\n")
+        verified = _commit(repo, "C2: document it")
 
-        _git(repo, "checkout", "-q", "--force", "-b", "squashed", fork)
-        (repo / "unrelated.txt").write_text("the squash dropped it\n")
-        integration = _commit(repo, "squash that dropped the change")
+        # The integration branch reverted the hardening after taking it.
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", c1)
+        (repo / "src" / "locality.py").write_text("coords: PLAIN\n")
+        (repo / "docs.md").write_text("v1\n")
+        integration = _commit(repo, "integration lost the locality hardening")
 
-        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", ancient, "--path", "p.txt")
+        lab = {"repo": repo}
+        done = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, "--path", "docs.md", "--path", "src/locality.py")
 
-        assert done.returncode == 2, done.stdout
-        assert "only for the case it exists for" in done.stdout
-        assert "Drop --base-ref" in done.stdout
-
-
-class TestTheMultiBaseArmsAreNotSingleBase:
-    """M50 and M27: two guards that survived a whole suite.
-
-    `_differs_from_every_base` reading only `before[0]` survived everything --
-    the probative gate the tool turns on, unpinned for the multi-base case. So
-    did the `--base-ref` no-common-ancestor guard, which this work introduced.
-    """
-
-    @staticmethod
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED src/locality.py" in done.stdout
     def _criss_cross(repo: Path) -> dict[str, str]:
         repo.mkdir(parents=True, exist_ok=True)
         _git(repo, "init", "-q", "-b", "main")
@@ -1537,7 +1636,7 @@ class TestTheMultiBaseArmsAreNotSingleBase:
         _git(repo, "merge", "-q", "--no-edit", "-X", "theirs", left)
         (repo / "keep.txt").write_text("y moves on\n")
         integration = _commit(repo, "y moves on")
-        return {"repo": repo, "verified": verified, "integration": integration}
+        return {"repo": repo, "base": root, "verified": verified, "integration": integration}
 
     def test_the_probative_gate_reads_every_base_not_the_first(self, tmp_path):
         """Two paths, each matching a DIFFERENT base.
@@ -1578,7 +1677,12 @@ class TestTheMultiBaseArmsAreNotSingleBase:
         (repo / "keep.txt").write_text("y moves on\n")
         integration = _commit(repo, "y moves on")
 
-        bases = _git(repo, "merge-base", "--all", verified, integration).split()
+        _git(repo, "checkout", "-q", "--force", "-b", "base-branch", left)
+        _git(repo, "merge", "-q", "--no-edit", right)
+        (repo / "base-branch-marker.txt").write_text("the base branch moved on\n")
+        crisscross_base = _commit(repo, "base branch, merging both sides")
+
+        bases = _git(repo, "merge-base", "--all", verified, crisscross_base).split()
         if len(bases) < 2:
             pytest.skip("this git produced a single merge base")
         # The premise, asserted: each path matches exactly one of the two bases.
@@ -1589,7 +1693,7 @@ class TestTheMultiBaseArmsAreNotSingleBase:
 
         lab = {"repo": repo}
         done = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                   "--path", "P.txt", "--path", "Q.txt")
+                   "--base-ref", crisscross_base, "--path", "P.txt", "--path", "Q.txt")
 
         assert done.returncode == 2, done.stdout
         assert "do not differ from EVERY pre-change revision" in done.stdout
@@ -1666,7 +1770,7 @@ class TestARenameIsTwoPathsNotOne:
         lab = self._lab(tmp_path / "rename")
         # A real path, but an incomplete set, so the refusal prints the whole
         # derived set rather than stopping at a spelling mistake.
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "new-name.ts")
 
         assert done.returncode == 2
@@ -1678,8 +1782,277 @@ class TestARenameIsTwoPathsNotOne:
 
     def test_and_the_derived_set_catches_what_the_squash_dropped(self, tmp_path):
         lab = self._lab(tmp_path / "rename2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
                    "--path", "new-name.ts", "--path", "beside.ts", "--deleted-path", "old-name.ts")
 
         assert done.returncode == 1, done.stdout
         assert "DIVERGED beside.ts" in done.stdout
+
+
+class TestASubmoduleIsVerifiableLikeAnythingElse:
+    """A gitlink is one object id, so it compares like a blob.
+
+    Refusing gitlinks made a submodule change unverifiable BY CONSTRUCTION:
+    `git diff --name-status` reports `D vendor` for a removed submodule, the
+    tool printed that under `Declare exactly:`, and then refused the very
+    declaration it had just instructed the operator to make. That closed loop
+    is the third time a refusal message here has been the defect, and it was
+    shipped in the same round that listed the gate as a headline feature and
+    gave it no test at all.
+
+    A tree is still refused: its identity aggregates its children, so it changes
+    when one is DELETED, which is how a directory turned an absence into
+    presence. A gitlink aggregates nothing.
+    """
+
+    @staticmethod
+    def _repo_with_submodule(tmp_path: Path, name: str):
+        inner = tmp_path / f"{name}-inner"
+        inner.mkdir(parents=True, exist_ok=True)
+        _git(inner, "init", "-q", "-b", "main")
+        _git(inner, "config", "user.email", "checker@example.invalid")
+        _git(inner, "config", "user.name", "checker")
+        (inner / "lib.txt").write_text("v1\n")
+        first = _commit(inner, "inner v1")
+        (inner / "lib.txt").write_text("v2\n")
+        second = _commit(inner, "inner v2")
+
+        repo = tmp_path / name
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        _git(repo, "-c", "protocol.file.allow=always", "submodule", "add", "-q", str(inner), "vendor")
+        # Pin the submodule at its FIRST commit, so a bump to the second is a
+        # real change rather than a no-op.
+        _git(repo / "vendor", "checkout", "-q", first)
+        (repo / "app.txt").write_text("v0\n")
+        base = _commit(repo, "base, with a submodule")
+        return repo, inner, base, second
+
+    def test_a_removed_submodule_can_be_declared_as_the_tool_instructs(self, tmp_path):
+        repo, _inner, base, _bumped = self._repo_with_submodule(tmp_path, "sub-removed")
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        _git(repo, "rm", "-q", "vendor")
+        (repo / "app.txt").write_text("v1\n")
+        verified = _commit(repo, "drop the submodule and edit the app")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        _git(repo, "rm", "-q", "vendor")
+        (repo / "app.txt").write_text("v1\n")
+        integration = _commit(repo, "it landed")
+
+        lab = {"repo": repo}
+        refused = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                      "--base-ref", base, "--path", "app.txt")
+        assert refused.returncode == 2
+        assert "--deleted-path vendor" in refused.stdout
+
+        # Follow the instruction VERBATIM -- which is the whole point: the tool
+        # printed a declaration and then refused it.
+        instructed: list[str] = []
+        for line in refused.stdout.splitlines():
+            line = line.strip()
+            for flag in ("--deleted-path ", "--path "):
+                if line.startswith(flag):
+                    instructed += [flag.strip(), line[len(flag):]]
+                    break
+
+        done = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, *instructed)
+        assert done.returncode == 0, done.stdout
+        assert "landed" in done.stdout
+
+    def test_a_gitlink_the_merge_did_not_carry_is_a_divergence(self, tmp_path):
+        """The gitlink written straight into the index.
+
+        `git submodule` needs a working checkout to bump a pointer, which makes
+        a fixture that has to fetch. `update-index --cacheinfo 160000` records
+        exactly the same tree entry without one, and the tree entry is all this
+        tool ever reads.
+        """
+        repo = tmp_path / "gitlink"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "app.txt").write_text("v0\n")
+        old_pointer = "1" * 40
+        new_pointer = "2" * 40
+        _git(repo, "update-index", "--add", "--cacheinfo", f"160000,{old_pointer},vendor")
+        base = _commit(repo, "base, pointing at the old commit", stage=False)
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        _git(repo, "update-index", "--cacheinfo", f"160000,{new_pointer},vendor")
+        verified = _commit(repo, "bump the pointer", stage=False)
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        (repo / "other.txt").write_text("other work\n")
+        integration = _commit(repo, "the squash did not carry the bump")
+
+        at_verified = _git(repo, "ls-tree", verified, "--", "vendor")
+        at_integration = _git(repo, "ls-tree", integration, "--", "vendor")
+        assert at_verified != at_integration, (at_verified, at_integration)
+
+        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, "--path", "vendor")
+
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED vendor" in done.stdout
+        # `mode type id`, so the gitlink's commit is what was compared.
+        assert "160000 commit" in done.stdout
+
+class TestTheDeletedPathTypeGateIsReachable:
+    """A claim of mine that was false, and the reason it mattered.
+
+    The survivor list called the `--deleted-path` type gate UNREACHABLE, on the
+    grounds that `git diff` never reports a directory deletion. Two things were
+    wrong with that: the gate runs BEFORE the set is derived, so any string can
+    reach it; and `git diff` does report a gitlink deletion, which is how the
+    closed loop above came about.
+    """
+
+    def test_a_directory_declared_deleted_is_refused_before_any_derivation(self, tmp_path):
+        repo = tmp_path / "dir-deleted"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "gone").mkdir()
+        (repo / "gone" / "a.txt").write_text("a\n")
+        (repo / "keep.txt").write_text("v0\n")
+        base = _commit(repo, "base")
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        _git(repo, "rm", "-qr", "gone")
+        (repo / "keep.txt").write_text("v1\n")
+        verified = _commit(repo, "remove the directory")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        (repo / "other.txt").write_text("other\n")
+        integration = _commit(repo, "other work")
+
+        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, "--path", "keep.txt", "--deleted-path", "gone")
+
+        assert done.returncode == 2, done.stdout
+        assert "name a directory" in done.stdout
+
+
+class TestBothHalvesOfTheSetGate:
+    """The deleted half of the set-equality gate had no test.
+
+    `sorted(args.deleted_paths) != expected_deleted` could be dropped and the
+    suite stayed green -- the `--path` half was pinned, the `--deleted-path`
+    half was not, and the equality of those two sets is this whole design's
+    thesis. An undeclared deletion is a path the verdict says nothing about.
+    """
+
+    @staticmethod
+    def _lab(repo: Path) -> dict[str, str]:
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "kept.txt").write_text("v0\n")
+        (repo / "dropped-a.txt").write_text("a\n")
+        (repo / "dropped-b.txt").write_text("b\n")
+        base = _commit(repo, "base")
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        (repo / "kept.txt").write_text("v1\n")
+        (repo / "dropped-a.txt").unlink()
+        (repo / "dropped-b.txt").unlink()
+        verified = _commit(repo, "edit one file and remove two")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        (repo / "kept.txt").write_text("v1\n")
+        (repo / "dropped-a.txt").unlink()
+        # `dropped-b.txt` SURVIVES the squash -- the deletion did not land.
+        integration = _commit(repo, "squash that kept one of the removed files")
+        return {"repo": repo, "base": base, "verified": verified, "integration": integration}
+
+    def test_an_undeclared_deletion_is_refused_not_ignored(self, tmp_path):
+        lab = self._lab(tmp_path / "half-set")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+                   "--base-ref", lab["base"], "--path", "kept.txt", "--deleted-path", "dropped-a.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "not the paths this change touched" in done.stdout
+        assert "--deleted-path dropped-b.txt" in done.stdout
+
+    def test_and_the_full_set_catches_the_deletion_that_did_not_land(self, tmp_path):
+        lab = self._lab(tmp_path / "half-set-full")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+                   "--base-ref", lab["base"], "--path", "kept.txt",
+                   "--deleted-path", "dropped-a.txt", "--deleted-path", "dropped-b.txt")
+
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED dropped-b.txt" in done.stdout
+
+    def test_a_surplus_deletion_is_refused_too(self, tmp_path):
+        lab = self._lab(tmp_path / "half-set-surplus")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
+                   "--base-ref", lab["base"], "--path", "kept.txt",
+                   "--deleted-path", "dropped-a.txt", "--deleted-path", "dropped-b.txt",
+                   "--deleted-path", "never-existed.txt")
+
+        assert done.returncode == 2, done.stdout
+
+
+class TestTheDerivationReadsWhatGitActuallyPrinted:
+    """Two guards in `_changed_paths` that the survivor list under-described.
+
+    The disclosed bullet covered its return-code guard. It did not cover
+    `--end-of-options`, nor the odd-field guard that refuses a half-record --
+    the one that keeps a pair-wise parse from silently sliding by one.
+    """
+
+    def test_a_dash_leading_ref_cannot_reach_git_diff_as_an_option(self, tmp_path):
+        repo = tmp_path / "dash"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "f.txt").write_text("v0\n")
+        _commit(repo, "base")
+
+        # Refused at resolution, long before the derivation -- which is why the
+        # `--end-of-options` on `git diff` is belt-and-braces and is disclosed
+        # as a survivor rather than claimed as covered.
+        done = run({"repo": repo}, "--verified-head", "-bogus", "--integration-ref", "HEAD",
+                   "--base-ref", "HEAD", "--path", "f.txt")
+        assert done.returncode == 2
+        # argparse refuses it as a missing argument, which is earlier still.
+        assert "expected one argument" in done.stderr or "does not resolve" in done.stdout
+
+    def test_a_path_with_a_newline_survives_the_pairwise_parse(self, tmp_path):
+        # `-z` makes every record NUL-separated, so a path containing a newline
+        # cannot be read as a status field. This is the case the odd-field guard
+        # exists for: if the stream ever desynchronised, the count would be odd.
+        repo = tmp_path / "odd-fields"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        odd = "two\nlines.txt"
+        (repo / odd).write_text("v0\n")
+        (repo / "plain.txt").write_text("v0\n")
+        base = _commit(repo, "base")
+
+        _git(repo, "checkout", "-q", "-b", "feature")
+        (repo / odd).write_text("v1\n")
+        (repo / "plain.txt").write_text("v1\n")
+        verified = _commit(repo, "edit both")
+
+        _git(repo, "checkout", "-q", "--force", "-b", "integ", base)
+        (repo / odd).write_text("v1\n")
+        (repo / "plain.txt").write_text("v1\n")
+        integration = _commit(repo, "both landed")
+
+        done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", base, "--path", odd, "--path", "plain.txt")
+
+        assert done.returncode == 0, done.stdout
+        assert "landed" in done.stdout
