@@ -114,6 +114,10 @@ The same rule applies in the other direction, to a **green** result. A compariso
 
 An absent result and a passing result are the same shape on the way out: both are "nothing to report". Only one of them is evidence.
 
+**Restoring the source is not restoring what runs.** A mutation sweep restored `factory_policy.py` from a pristine copy and confirmed it with `md5sum` — identical — and the very next run still failed on the mutant's behaviour, raising a `TypeError` from a line that no longer contained a subscript. The interpreter was executing a stale `__pycache__` entry; the traceback rendered the *new* source beside the *old* bytecode, which is why it read as impossible. A cached `.pyc` is keyed on the source's mtime and size, and a mutate/restore cycle inside one second can produce a pair those two fields do not distinguish.
+
+So an md5 match on the source proves only that the file is right, never that the run used it. Mutate with bytecode caching off — `python -B -m pytest -p no:cacheprovider`, purging `__pycache__` between runs — and finish the sweep by **re-running the restored tree and requiring the control result back**. Had this landed in the other direction it would have been worse than a false failure: a mutant recorded as SURVIVED because the cached pre-mutation bytecode ran, which is a claim that a guard is unnecessary.
+
 **A local gate is only evidence about CI if it is the same tool.** These workflows `pip install ruff` unpinned, so CI runs the newest release. This container has two ruff binaries and `/root/.local/bin/ruff` (0.15.8) shadows `/usr/local/bin/ruff` (0.16.8) on `PATH`, so a local "ruff clean" was a statement about an older rule set and CI failed on a rule the local run does not have. Check `ruff --version` against what the workflow installs — `python -m ruff` reaches the installed package rather than whatever is first on `PATH` — and say which version a clean result came from.
 
 ## Scope claims and names in durable records

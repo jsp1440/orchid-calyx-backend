@@ -219,6 +219,20 @@ class ValidationEvidence:
         return tuple(stale)
 
 
+def _named(head_sha: str | None) -> str:
+    """Name a commit in a refusal, in full, or say plainly that there is none.
+
+    Two things this must not do. It must not raise: absence is a no, not an
+    error, and a gate whose job is to refuse cannot crash while refusing. And
+    it must not abbreviate. A twelve-hex prefix does not identify a commit --
+    `test_two_heads_sharing_a_twelve_hex_prefix_are_different_heads` is in this
+    repository because of that -- so truncating here would let the one sentence
+    whose whole purpose is "these are two different commits" print the same
+    twelve characters twice and then refuse because they differ.
+    """
+    return head_sha if head_sha else "no recorded head"
+
+
 @dataclass(frozen=True, slots=True)
 class FactoryDecision:
     action: FactoryAction
@@ -281,9 +295,18 @@ def evaluate_factory_gate(
         )
 
     if evidence.head_sha != intent.head_sha:
+        # Named, not bare. `EXACT_HEAD_VALIDATION_REQUIRED` was replaced for
+        # exactly this: a refusal that cannot say which commit it is about
+        # reads as "nobody checked" when the truth is "somebody checked
+        # something else", and this whole lineage exists because of that
+        # confusion. A new gate gets the same treatment as the ones it stands
+        # beside.
         return FactoryDecision(
             action=FactoryAction.REQUIRE_CHECKER,
-            reason="INTENT_HEAD_MISMATCH",
+            reason=(
+                f"INTENT_HEAD_MISMATCH: authorized for {_named(intent.head_sha)}, "
+                f"evidence is about {_named(evidence.head_sha)}"
+            ),
             fingerprint=fingerprint,
         )
 

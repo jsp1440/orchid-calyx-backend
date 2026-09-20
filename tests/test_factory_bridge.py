@@ -15,13 +15,21 @@ from app.calyx_orchestrator.factory_policy import (
     WorkIntent,
 )
 
+#: A real commit. The placeholder "abc123" that stood here predates two
+#: independent bindings that now require a real commit id -- the bridge's own
+#: `intent.head_sha == current_head_sha` check, and the gate's
+#: `evidence.head_sha == intent.head_sha` added in #1550 -- so a fixture whose
+#: intent was authorized for a string that is not a commit made the honest path
+#: refuse.
+HEAD = "6a57183395c29f0a47b4a11cd86fabe34ac10d95"
+
 
 def _event(**overrides: object):
     payload: dict[str, object] = {
         "repository": "jsp1440/orchid-calyx-backend",
         "kind": "workflow_run",
         "event_id": "workflow_run:5001:completed",
-        "head_sha": "abc123",
+        "head_sha": HEAD,
         "branch": "oc-maker",
         "workflow_run_id": "5001",
         "pull_request_number": 1297,
@@ -37,14 +45,11 @@ def _intent(**overrides: object) -> WorkIntent:
     values: dict[str, object] = {
         "repository": "jsp1440/orchid-calyx-backend",
         "issue_number": 1023,
-        "head_sha": "abc123",
+        "head_sha": HEAD,
         "target_branch": "oc-autonomous-integration",
     }
     values.update(overrides)
     return WorkIntent(**values)  # type: ignore[arg-type]
-
-
-HEAD = "6a57183395c29f0a47b4a11cd86fabe34ac10d95"
 
 
 def _evidence(**overrides: object) -> ValidationEvidence:
@@ -66,7 +71,7 @@ def _evidence(**overrides: object) -> ValidationEvidence:
 def test_successful_exact_head_routes_to_safe_auto_integration() -> None:
     decision = route_completion_to_factory(
         _event(),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
     )
@@ -81,7 +86,7 @@ def test_successful_exact_head_routes_to_safe_auto_integration() -> None:
 def test_missing_independent_checker_stays_in_validation() -> None:
     decision = route_completion_to_factory(
         _event(),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(checker_id="maker-a"),
     )
@@ -94,7 +99,7 @@ def test_missing_independent_checker_stays_in_validation() -> None:
 def test_stale_queue_bridge_head_reconciles_before_factory_gate() -> None:
     decision = route_completion_to_factory(
         _event(head_sha="old-head"),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
     )
@@ -107,7 +112,7 @@ def test_stale_queue_bridge_head_reconciles_before_factory_gate() -> None:
 def test_terminal_failure_routes_to_repair_before_checker_gate() -> None:
     decision = route_completion_to_factory(
         _event(conclusion="failure"),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
     )
@@ -120,7 +125,7 @@ def test_terminal_failure_routes_to_repair_before_checker_gate() -> None:
 def test_provider_required_continuation_parks_in_no_api_mode() -> None:
     decision = route_completion_to_factory(
         _event(),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
         continuation_policy=ContinuationPolicy(
@@ -137,7 +142,7 @@ def test_provider_required_continuation_parks_in_no_api_mode() -> None:
 def test_owner_boundary_from_factory_gate_blocks_main_target() -> None:
     decision = route_completion_to_factory(
         _event(),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(target_branch="main"),
         evidence=_evidence(),
     )
@@ -150,7 +155,7 @@ def test_owner_boundary_from_factory_gate_blocks_main_target() -> None:
 def test_factory_identity_mismatch_reconciles_instead_of_integrating() -> None:
     decision = route_completion_to_factory(
         _event(),
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(repository="jsp1440/orchid-continuum-frontend"),
         evidence=_evidence(),
     )
@@ -164,13 +169,13 @@ def test_replayed_event_is_no_op_and_does_not_reenter_checker() -> None:
     event = _event()
     first = route_completion_to_factory(
         event,
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
     )
     replay = route_completion_to_factory(
         event,
-        current_head_sha="abc123",
+        current_head_sha=HEAD,
         intent=_intent(),
         evidence=_evidence(),
         seen_fingerprints=frozenset({first.continuation.fingerprint}),
