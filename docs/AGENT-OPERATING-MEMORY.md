@@ -74,6 +74,10 @@ When a fix keeps failing in the same shape, the defect is in the premise the fix
 
 A coverage note believed instead of executed is the same failure wearing a different hat. The seventh instance was unreachable-by-inspection for exactly as long as a test docstring asserted that `:(literal)` made a multi-match impossible; it does not, and nobody ran the mutation that would have said so. Claim a guard is covered only after watching the named test go red without it, and count survivors from that run, not from reading.
 
+**Configuration is another way of choosing the set.** `git diff --name-status` obeys `git config`. With `diff.ignoreSubmodules=all` — an ordinary setting for anyone who works in a repository with submodules — the gitlink is simply absent from the listing, so a submodule the change bumped need not be declared, and a merge that dropped the bump returns `landed`, exit 0. Reproduced against shipped code. `diff.relative=true` is the milder cousin: run from a subdirectory the derived set is relative to the cwd while `ls-tree --full-tree` reads from the root, and the set empties or shrinks with where someone happened to stand.
+
+`--no-renames` was already passed explicitly, which is the reason to look for the rest: **one option pinned against config while its neighbours are not is a rule that holds by luck.** Every option that decides WHICH paths a derivation lists must be on the command line — here `--no-renames --no-relative --ignore-submodules=none -z`. When a tool's guarantee is "you cannot choose this", enumerate everything that can still change the answer, including the reader's environment.
+
 Absence is not evidence, and a fact the caller supplies is not a check. If you find yourself declaring a path, or naming a ref, to make a check go green, you are manufacturing the failure this rule exists to prevent.
 
 ## Evidence is about a commit, or it is not evidence

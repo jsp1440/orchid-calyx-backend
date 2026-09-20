@@ -2056,3 +2056,143 @@ class TestTheDerivationReadsWhatGitActuallyPrinted:
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
+
+class TestTheDerivedSetDoesNotDependOnGitConfig:
+    """Configuration is another way of choosing the set.
+
+    Round 10 replaced a declared path set with a derived one on the premise
+    that the operator can no longer choose it. Two ordinary `git config`
+    settings were still choosing it, and the first is a false pass reproduced
+    against shipped code.
+    """
+
+    def test_ignore_submodules_can_hide_a_dropped_submodule_bump(self, tmp_path):
+        """`diff.ignoreSubmodules=all` dropped the gitlink from the derived set,
+        so the declaration did not have to mention it, and a merge that dropped
+        the bump returned exit 0 `landed`."""
+        repo = tmp_path / "ignored-submodule"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "keep.txt").write_text("keep\n")
+        _git(repo, "update-index", "--add", "--cacheinfo",
+             f"160000,{'0' * 39}1,vendor")
+        _git(repo, "add", "keep.txt")
+        fork = _commit(repo, "M0", stage=False)
+
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}2,vendor")
+        (repo / "keep.txt").write_text("keep2\n")
+        _git(repo, "add", "keep.txt")
+        verified = _commit(repo, "bump the submodule and touch keep", stage=False)
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}1,vendor")
+        integration = _commit(repo, "merge but drop the submodule bump", stage=False)
+
+        # The premise, asserted: this setting really does change what git lists.
+        _git(repo, "config", "diff.ignoreSubmodules", "all")
+        listed = _git(repo, "diff", "--name-status", "--no-renames", f"{fork}..{verified}")
+        assert "vendor" not in listed, listed
+
+        lab = {"repo": repo}
+        # Declaring only what the CONFIGURED listing shows must not pass.
+        done = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", fork, "--path", "keep.txt")
+        assert done.returncode == 2, done.stdout
+        assert "not the paths this change touched" in done.stdout
+        assert "--path vendor" in done.stdout
+
+        # And the set the tool derives catches the dropped bump.
+        caught = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                     "--base-ref", fork,
+                     "--path", "keep.txt", "--path", "vendor")
+        assert caught.returncode == 1, caught.stdout
+        assert "DIVERGED vendor" in caught.stdout
+
+    def test_diff_relative_does_not_move_the_set_with_the_working_directory(self, tmp_path):
+        """`diff.relative=true` lists paths relative to the CURRENT directory
+        while `_entry` reads them with `ls-tree --full-tree` from the root, so
+        the two halves stop agreeing about what a path is called.
+
+        Fail-closed rather than a false pass -- the set empties or shrinks and
+        the refusal follows -- and still the set depending on where someone
+        stood when they ran it.
+        """
+        repo = tmp_path / "relative"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        _git(repo, "config", "diff.relative", "true")
+
+        (repo / "sub").mkdir()
+        (repo / "root.txt").write_text("v1\n")
+        (repo / "sub" / "inner.txt").write_text("s0\n")
+        fork = _commit(repo, "M0")
+
+        (repo / "root.txt").write_text("v2\n")
+        (repo / "sub" / "inner.txt").write_text("s1\n")
+        verified = _commit(repo, "the change touches both")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "checkout", "-q", fork, "--", "root.txt")
+        integration = _commit(repo, "merge, reverting the root file")
+
+        # Run from the subdirectory, which is what the setting reacts to.
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", verified, "--integration-ref", integration,
+             "--base-ref", fork,
+             "--path", "root.txt", "--path", "sub/inner.txt"],
+            cwd=str(repo / "sub"), capture_output=True, text=True, check=False,
+        )
+
+        # Repo-root spellings, derived identically from anywhere, and the
+        # reverted root file is caught rather than lost with the directory.
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED root.txt" in done.stdout
+
+    def test_a_path_that_is_not_utf8_is_refused_rather_than_raised(self, tmp_path):
+        """A crash must not be spelled the same way as a verdict.
+
+        A non-UTF-8 path is legal in git. `subprocess(text=True)` raised
+        `UnicodeDecodeError` out of `communicate()` -- an unhandled traceback
+        and exit 1, which is this tool's code for "the integration ref does not
+        hold the verified result". Fail-closed, and indistinguishable to a
+        caller from a real dropped commit.
+        """
+        repo = tmp_path / "not-utf8"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("a\n")
+        fork = _commit(repo, "M0")
+
+        # Raw bytes. Writing `b"bad-\xff-name.txt".decode("latin-1")` through a
+        # str path re-encodes it as valid UTF-8 and the premise evaporates.
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        (repo / "plain.txt").write_text("a2\n")
+        verified = _commit(repo, "a path that is not utf-8")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        done = run({"repo": repo}, "--verified-head", verified,
+                   "--integration-ref", integration, "--base-ref", fork, "--path", "plain.txt")
+
+        assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "could not derive the changed paths" in done.stdout
+        # The reason, named: 2 is "I cannot read this", 1 is "the merge dropped
+        # your work", and a caller has to be able to tell them apart.
+        assert "not valid UTF-8" in done.stdout

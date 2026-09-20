@@ -159,15 +159,52 @@ def _changed_paths(base: str, head: str) -> tuple[int, dict[str, str]]:
 
     `-z` because a status record and its path are NUL-separated here; a rename
     carries two paths, so the fields are consumed as a stream rather than split
-    per line.
+    per line. It also turns off `core.quotePath`, so a non-ASCII path arrives as
+    its bytes rather than as an escaped spelling nothing else here would match.
+
+    EVERY option that decides WHICH paths are listed is passed explicitly, and
+    none is left to `git config`. Round 10 replaced a declared set with a derived
+    one on the premise that the operator can no longer choose it. Configuration
+    is another way of choosing, and two settings a person may perfectly
+    reasonably have are changing the answer:
+
+    * `diff.ignoreSubmodules=all` drops gitlinks from the listing. The derived
+      set then omits a submodule the change bumped, so the declaration need not
+      mention it, and a merge that dropped the bump reported `landed` with exit
+      0. Reproduced against shipped code. `--ignore-submodules=none` says so
+      outright.
+    * `diff.relative=true` makes the listing relative to the CURRENT DIRECTORY,
+      while `_entry` reads paths with `ls-tree --full-tree` from the repository
+      root. Run from a subdirectory the two halves then disagree about what a
+      path is called -- the derived set empties out, or shrinks to the paths
+      under that directory. That is fail-closed rather than a false pass, and it
+      is still the set depending on where someone stood. `--no-relative`.
+
+    `--no-renames` was already explicit for the same reason, and is the reason to
+    look for the rest: one option pinned against config while its neighbours are
+    not is a rule that holds by luck.
     """
+    # Bytes, decoded here rather than by `subprocess`. A path that is not UTF-8
+    # is legal in git, and `text=True` raised `UnicodeDecodeError` out of
+    # `communicate()` -- an unhandled traceback and exit 1, which is this tool's
+    # code for "the integration ref does not hold the verified result". A crash
+    # must not be spelled the same way as a verdict, even a refusing one.
     done = subprocess.run(
-        ["git", "diff", "--name-status", "--no-renames", "-z", "--end-of-options", f"{base}..{head}"],
-        capture_output=True, text=True, check=False,
+        [
+            "git", "diff", "--name-status", "--no-renames", "--no-relative",
+            "--ignore-submodules=none", "-z", "--end-of-options", f"{base}..{head}",
+        ],
+        capture_output=True, check=False,
     )
     if done.returncode != 0:
         return done.returncode, {}
-    fields = [field for field in done.stdout.split("\0") if field]
+    try:
+        stdout = done.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # 2, not 1: this is an evidence failure, and the caller must be able to
+        # tell "I cannot read this" from "the merge dropped your work".
+        return 2, {}
+    fields = [field for field in stdout.split("\0") if field]
     changed: dict[str, str] = {}
     index = 0
     while index + 1 < len(fields) + 1 and index < len(fields):
@@ -496,6 +533,10 @@ def main(argv: list[str] | None = None) -> int:
         code, changed = _changed_paths(base, verified_ids[0])
         if code != 0:
             print(f"REFUSED: could not derive the changed paths between {base[:12]} and the verified head.")
+            if code == 2:
+                print("A path in this range is not valid UTF-8. Every other spelling here --")
+                print("`--path`, `ls-tree` output, this message -- is text, so the tool cannot")
+                print("compare it honestly and says so rather than reporting on the rest.")
             return 2
         for path, status in changed.items():
             derived[path] = "D" if derived.get(path) == "D" or status == "D" else status
