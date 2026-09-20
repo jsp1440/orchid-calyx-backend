@@ -230,7 +230,7 @@ def test_evidence_with_unknown_verdict_fails_closed() -> None:
 def test_checker_fail_evidence_routes_to_prepare_repair() -> None:
     assignment = _assignment()
     evidence = _evidence(verdict=CheckerVerdict.FAIL)
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     decision = evaluate_factory_gate(_intent(), validation)
 
@@ -255,7 +255,7 @@ def test_checker_fail_with_repair_lineage_is_recorded() -> None:
 def test_checker_inconclusive_does_not_authorize_integration() -> None:
     assignment = _assignment()
     evidence = _evidence(verdict=CheckerVerdict.INCONCLUSIVE)
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     decision = evaluate_factory_gate(_intent(), validation)
 
@@ -276,7 +276,7 @@ def test_valid_checker_pass_reaches_auto_integrate_for_safe_work() -> None:
     # No mismatches
     assert validate_checker_evidence(assignment, evidence) == []
 
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     assert validation.checker_id == CHECKER
     assert validation.exact_head_verified is True
@@ -324,7 +324,7 @@ def test_duplicate_evidence_record_parses_to_same_object() -> None:
 def test_replayed_evidence_produces_same_factory_decision() -> None:
     assignment = _assignment()
     evidence = _evidence()
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     d1 = evaluate_factory_gate(_intent(), validation)
     d2 = evaluate_factory_gate(_intent(), validation)
@@ -342,7 +342,7 @@ def test_replayed_evidence_produces_same_factory_decision() -> None:
 def test_high_risk_remains_owner_gated_even_after_checker_pass(risk: RiskTier) -> None:
     assignment = _assignment()
     evidence = _evidence()
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     decision = evaluate_factory_gate(_intent(risk_tier=risk), validation)
 
@@ -368,7 +368,7 @@ def test_owner_boundaries_remain_gated_after_checker_pass(
 ) -> None:
     assignment = _assignment()
     evidence = _evidence()
-    validation = evidence_to_validation(assignment, evidence)
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
 
     decision = evaluate_factory_gate(_intent(**override), validation)
 
@@ -435,3 +435,142 @@ def test_required_checks_requires_json_boolean(value):
     )
     assert body != original
     assert parse_evidence(body) is None
+
+
+# ---------------------------------------------------------------------------
+# The head the pull request has NOW, as distinct from the head the assignment
+# was written against. Three pull requests in this repository merged on evidence
+# that was true of a different commit.
+# ---------------------------------------------------------------------------
+
+
+MOVED_HEAD = "9acced7e703544c701b3730152b56ca558f9d394"
+
+
+def test_a_head_that_moved_after_the_assignment_is_not_verified() -> None:
+    """The hole this closes.
+
+    `checked_head_sha == assignment.head_sha` is satisfied by a stale head: the
+    checker really did verify the assignment's head, and the pull request has
+    since moved. The old derivation returned True and the gate authorized a
+    commit nobody had checked.
+    """
+    assignment = _assignment(head_sha=HEAD_SHA)
+    evidence = _evidence(checked_head_sha=HEAD_SHA)
+
+    validation = evidence_to_validation(
+        assignment, evidence, current_head_sha=MOVED_HEAD
+    )
+
+    assert validation.exact_head_verified is False
+    assert validation.stale_evidence  # and it can say which fact is stale
+    decision = evaluate_factory_gate(_intent(), validation)
+    assert decision.action is FactoryAction.REQUIRE_CHECKER
+    assert decision.integration_authorized is False
+    assert HEAD_SHA[:12] in decision.reason
+
+
+def test_an_unknown_current_head_is_refused_rather_than_assumed() -> None:
+    """Fail closed. Defaulting the current head to the assignment head would
+    restore precisely the hole above, so an unknown head is recorded as unknown.
+    """
+    assignment = _assignment(head_sha=HEAD_SHA)
+    evidence = _evidence(checked_head_sha=HEAD_SHA)
+
+    validation = evidence_to_validation(assignment, evidence)
+
+    assert validation.head_sha == ""
+    assert validation.exact_head_verified is False
+    assert evaluate_factory_gate(_intent(), validation).integration_authorized is False
+
+
+def test_checks_observed_against_another_head_are_stale_too() -> None:
+    assignment = _assignment(head_sha=HEAD_SHA)
+    evidence = _evidence(checked_head_sha=HEAD_SHA, checks_head_sha=MOVED_HEAD)
+
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
+
+    assert validation.exact_head_verified is False
+    assert any("checks ran against" in entry for entry in validation.stale_evidence)
+
+
+def test_the_unmoved_case_still_authorizes_integration() -> None:
+    assignment = _assignment(head_sha=HEAD_SHA)
+    evidence = _evidence(checked_head_sha=HEAD_SHA)
+
+    validation = evidence_to_validation(assignment, evidence, current_head_sha=HEAD_SHA)
+
+    assert validation.exact_head_verified is True
+    assert validation.stale_evidence == ()
+    assert (
+        evaluate_factory_gate(_intent(), validation).action
+        is FactoryAction.AUTO_INTEGRATE
+    )
+
+
+# ---------------------------------------------------------------------------
+# A refusal that disappears when the record is written down is not a refusal.
+# ---------------------------------------------------------------------------
+
+
+def test_the_checks_head_survives_the_round_trip() -> None:
+    """`checks_head_sha` was not serialized and not parsed.
+
+    `evidence_to_validation` falls back to `checked_head_sha` when it is empty,
+    so a record saying "the checks ran on another commit" came back saying they
+    ran on this one, and a refusal became AUTO_INTEGRATE purely by being
+    persisted and re-read. `settle()`'s body-integrity guard could not catch it
+    because both sides dropped the field identically.
+    """
+    evidence = _evidence(checked_head_sha=HEAD_SHA, checks_head_sha=MOVED_HEAD)
+
+    before = evidence_to_validation(
+        _assignment(head_sha=HEAD_SHA), evidence, current_head_sha=HEAD_SHA
+    )
+    assert before.exact_head_verified is False
+
+    round_tripped = parse_evidence(serialize_evidence(evidence))
+    assert round_tripped is not None
+    assert round_tripped.checks_head_sha == MOVED_HEAD
+
+    after = evidence_to_validation(
+        _assignment(head_sha=HEAD_SHA), round_tripped, current_head_sha=HEAD_SHA
+    )
+    assert after.exact_head_verified is False
+    assert any("checks ran against" in entry for entry in after.stale_evidence)
+
+
+def test_a_record_written_before_the_field_existed_still_parses() -> None:
+    # Absent is "not separately observed", not a claim about this head.
+    import json as _json
+    import re as _re
+
+    body = serialize_evidence(_evidence(checked_head_sha=HEAD_SHA))
+    block = _re.search(r"<!-- [^\n]*\n(.*?)\n-->", body, _re.DOTALL)
+    assert block is not None
+    payload = _json.loads(block.group(1))
+    payload.pop("checks_head_sha")
+    stripped = body.replace(
+        block.group(1), _json.dumps(payload, indent=2, sort_keys=True)
+    )
+    assert "checks_head_sha" not in stripped
+
+    parsed = parse_evidence(stripped)
+
+    assert parsed is not None
+    assert parsed.checks_head_sha == ""
+
+
+def test_the_checker_head_binding_is_the_checker_head() -> None:
+    """Binding `checker_head_sha` to the current head instead of the checked one
+    survived a whole sweep: the other field still carried the real head, so the
+    two mutations only showed up together. Pinned separately now."""
+    evidence = _evidence(checked_head_sha=MOVED_HEAD, checks_head_sha=HEAD_SHA)
+
+    validation = evidence_to_validation(
+        _assignment(head_sha=MOVED_HEAD), evidence, current_head_sha=HEAD_SHA
+    )
+
+    assert validation.checker_head_sha == MOVED_HEAD
+    assert validation.exact_head_verified is False
+    assert any("checker verified" in entry for entry in validation.stale_evidence)

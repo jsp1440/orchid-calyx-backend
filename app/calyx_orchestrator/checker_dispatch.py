@@ -69,6 +69,13 @@ class CheckerEvidence:
     reason: str
     material_fingerprint: str
     repair_lineage: str | None = None
+    #: The head the REQUIRED CHECKS ran against, when the checker observed it
+    #: separately. Left empty it falls back to `checked_head_sha`, because a
+    #: checker reporting `required_checks_passed` is making a statement about
+    #: the head it checked -- but where the two can be observed apart, they are
+    #: recorded apart, so a green run on an older commit cannot be read as a
+    #: green run on this one.
+    checks_head_sha: str = ""
 
     def __post_init__(self) -> None:
         if not self.repository.strip():
@@ -171,6 +178,8 @@ def validate_checker_evidence(
 def evidence_to_validation(
     assignment: CheckerAssignment,
     evidence: CheckerEvidence,
+    *,
+    current_head_sha: str | None = None,
 ) -> ValidationEvidence:
     """Convert durable checker evidence to ValidationEvidence for factory re-evaluation.
 
@@ -182,12 +191,22 @@ def evidence_to_validation(
     if errors:
         raise CheckerDispatchError(f"INVALID_CHECKER_EVIDENCE: {'; '.join(errors)}")
 
+    # `current_head_sha` is the pull request head observed NOW. Without it the
+    # comparison below is `checked == assignment`, which a stale head satisfies:
+    # if the pull request moved after the assignment was written, the checker
+    # still verified the assignment's head and the gate still authorized a
+    # commit nobody checked. Three pull requests in this repository merged that
+    # way. Defaulting it to the assignment head would restore exactly that hole,
+    # so an unknown current head is recorded as unknown and the gate refuses.
+    head_sha = current_head_sha if current_head_sha is not None else ""
     return ValidationEvidence(
         maker_id=evidence.maker_id,
         checker_id=evidence.checker_id,
         checker_verdict=evidence.verdict,
-        exact_head_verified=(evidence.checked_head_sha == assignment.head_sha),
         required_checks_passed=evidence.required_checks_passed,
+        head_sha=head_sha,
+        checker_head_sha=evidence.checked_head_sha,
+        checks_head_sha=evidence.checks_head_sha or evidence.checked_head_sha,
     )
 
 
@@ -258,6 +277,12 @@ def serialize_evidence(evidence: CheckerEvidence) -> str:
         "issue_number": evidence.issue_number,
         "pr_number": evidence.pr_number,
         "checked_head_sha": evidence.checked_head_sha,
+        # Persisted, because it is the field that distinguishes a green run on
+        # an older commit from a green run on this one. Dropping it here made a
+        # refusal disappear on the round trip: `evidence_to_validation` falls
+        # back to `checked_head_sha`, so a record that had said "the checks ran
+        # elsewhere" came back saying they ran here, and the gate authorized.
+        "checks_head_sha": evidence.checks_head_sha,
         "checker_id": evidence.checker_id,
         "maker_id": evidence.maker_id,
         "verdict": evidence.verdict.value,
@@ -307,6 +332,10 @@ def parse_evidence(comment_body: str) -> CheckerEvidence | None:
             reason=str(payload["reason"]),
             material_fingerprint=str(payload["material_fingerprint"]),
             repair_lineage=payload.get("repair_lineage"),
+            # Absent in a record written before this field existed, which is a
+            # genuine "not separately observed" rather than a claim about this
+            # head; `evidence_to_validation` treats it as such.
+            checks_head_sha=str(payload.get("checks_head_sha") or ""),
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return None
