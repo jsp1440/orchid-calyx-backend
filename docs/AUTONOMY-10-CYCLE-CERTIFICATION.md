@@ -1,0 +1,18 @@
+# Autonomous 10-cycle certification
+
+The engineering loop is certified only after ten consecutive accepted cycles.
+
+Each cycle must carry durable work identity and lease identity, an exact PR number
+and exact head SHA, exact-head green CI, a merge SHA, independent landed-result
+verification, and lease release. Duplicate ownership/lineage, false-green
+evidence, abandoned leases, manual intervention, or an unauthorized owner-gate
+crossing fails the streak.
+
+At least one of the ten cycles must encounter a recoverable fault and heal it
+without manual intervention. A genuine owner gate parks that item and the
+scheduler should select other eligible work; an owner gate is never healed by
+bypassing it.
+
+This certification layer is provider-free and evidence-only. It does not grant
+merge, deployment, production/scientific mutation, publication, credential,
+spending, security, or governance authority.
