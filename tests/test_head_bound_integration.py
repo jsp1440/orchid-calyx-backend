@@ -653,7 +653,13 @@ class TestTheOneSurvivingMutant:
     anchor had been silently weakened.
 
     That is only true of `\\Z`. The `^[0-9a-f]{40}$` this replaced is a
-    different rule, and `$` is exactly where the trailing-newline head got in.
+    different rule UNDER `.match`, and `$` is exactly where the
+    trailing-newline head got in. Under `.fullmatch` the two patterns agree,
+    because `fullmatch` requires the whole string on its own -- so the guard is
+    doubly anchored and neither single mutation can be seen. Stated, because
+    "the old pattern is not equivalent" is true of one combination and not of
+    the other, and a sentence that omits which is the half-claim this lineage
+    keeps shipping.
     """
 
     PATTERN = r"[0-9a-f]{40}\Z"
@@ -692,4 +698,116 @@ class TestTheOneSurvivingMutant:
                 source=EvidenceSource.REQUIRED_CHECKS,
                 head_sha="a" * 40 + "\n",
                 passed=True,
+            )
+
+
+class TestTheVocabularyIsWhatTheCodeCanProduce:
+    """An outcome that cannot occur is a claim of protection, not protection.
+
+    `Refusal.HEAD_NOT_A_FULL_SHA`, `Refusal.REVIEW_INCONCLUSIVE`,
+    `IntegrationStep.REFILL` and `IntegrationStep.BLOCKED` were all defined and
+    none could ever be produced -- an unnameable commit raises before any
+    decision is taken, `passed` is a bool with no third state, refilling is the
+    caller's move once the lease is retired, and nothing produced `BLOCKED` at
+    all. An independent check found them one file away from the dead guard this
+    same change removed for exactly that reason.
+
+    These tests are why they cannot come back unnoticed: every member must be
+    reachable, and every outcome produced must be a member.
+    """
+
+    def _every_decision(self) -> list[IntegrationDecision]:
+        """One evidence shape per branch of `decide_next_step`, exhaustively."""
+        good_checks = passing(
+            EvidenceSource.REQUIRED_CHECKS, FIX_AFTER_1526, observer="ci"
+        )
+        good_review = passing(EvidenceSource.INDEPENDENT_CHECKER, FIX_AFTER_1526)
+
+        def evidence(**slots) -> IntegrationEvidence:
+            return IntegrationEvidence(head_sha=FIX_AFTER_1526, maker_id=MAKER, **slots)
+
+        def observation(source, head=FIX_AFTER_1526, passed=True, observer=CHECKER):
+            return Observation(
+                source=source, head_sha=head, passed=passed, observer_id=observer
+            )
+
+        shapes = (
+            evidence(),
+            evidence(
+                checks=observation(EvidenceSource.REQUIRED_CHECKS, head=MERGED_1524)
+            ),
+            evidence(checks=observation(EvidenceSource.REQUIRED_CHECKS, passed=False)),
+            evidence(
+                checks=good_checks,
+            ),
+            evidence(
+                checks=good_checks,
+                review=observation(
+                    EvidenceSource.INDEPENDENT_CHECKER, head=MERGED_1524
+                ),
+            ),
+            evidence(
+                checks=good_checks,
+                review=observation(EvidenceSource.INDEPENDENT_CHECKER, observer=MAKER),
+            ),
+            evidence(
+                checks=good_checks,
+                review=observation(EvidenceSource.INDEPENDENT_CHECKER, passed=False),
+            ),
+            evidence(checks=good_checks, review=good_review),
+            evidence(
+                checks=good_checks,
+                review=good_review,
+                landed=observation(EvidenceSource.LANDED_RESULT, head=MERGED_1524),
+            ),
+            evidence(
+                checks=good_checks,
+                review=good_review,
+                landed=observation(EvidenceSource.LANDED_RESULT, passed=False),
+            ),
+            evidence(
+                checks=good_checks,
+                review=good_review,
+                landed=observation(EvidenceSource.LANDED_RESULT),
+            ),
+        )
+        return [decide_next_step(shape) for shape in shapes]
+
+    def test_every_step_the_enum_defines_can_actually_be_returned(self):
+        produced = {decision.step for decision in self._every_decision()}
+        assert produced == set(IntegrationStep), set(IntegrationStep) - produced
+
+    def test_every_refusal_the_enum_defines_can_actually_be_produced(self):
+        produced = {
+            refusal
+            for decision in self._every_decision()
+            for refusal in decision.refusals
+        }
+        assert produced == set(Refusal), set(Refusal) - produced
+
+
+class TestAnEvidenceRecordNamesItsMaker:
+    """The guard an independent check found untested.
+
+    `IntegrationEvidence.__post_init__` refuses a blank maker id, and removing
+    that raise left the whole suite green -- a real, non-equivalent survivor the
+    mutation report did not disclose. It matters because every independence
+    decision here is "is the reviewer the maker", and the answer when nobody is
+    recorded as the maker is not "yes, independent".
+    """
+
+    def test_a_record_with_no_maker_cannot_be_constructed(self):
+        for spelling in ("", "   ", "\n", "\t "):
+            with pytest.raises(ValueError, match="MAKER_ID_REQUIRED"):
+                IntegrationEvidence(head_sha=FIX_AFTER_1526, maker_id=spelling)
+
+    def test_and_that_is_true_however_complete_the_rest_of_it_is(self):
+        with pytest.raises(ValueError, match="MAKER_ID_REQUIRED"):
+            IntegrationEvidence(
+                head_sha=FIX_AFTER_1526,
+                maker_id=" ",
+                checks=passing(
+                    EvidenceSource.REQUIRED_CHECKS, FIX_AFTER_1526, observer="ci"
+                ),
+                review=passing(EvidenceSource.INDEPENDENT_CHECKER, FIX_AFTER_1526),
             )

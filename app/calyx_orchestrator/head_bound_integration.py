@@ -61,6 +61,14 @@ class IntegrationStep(StrEnum):
     Each step is authorized by evidence about the head the previous step ran
     against. Skipping one, or carrying evidence forward from a different head,
     is what this module exists to refuse.
+
+    Every member here is a step `decide_next_step` can actually return, and
+    `TestTheVocabularyIsWhatTheCodeCanProduce` asserts that both ways round. A
+    `REFILL` and a `BLOCKED` stood here and neither was reachable: refilling is
+    what the CALLER does once the lease is retired, and nothing produced
+    `BLOCKED` at all. The rest of this change removed a dead guard on the
+    grounds that a guard which cannot fire is a claim of protection rather than
+    protection; an outcome that cannot occur is the same claim in the same file.
     """
 
     RUN_CHECKS = "run_checks"
@@ -68,15 +76,16 @@ class IntegrationStep(StrEnum):
     INTEGRATE = "integrate"
     VERIFY_LANDED_RESULT = "verify_landed_result"
     RETIRE_LEASE = "retire_lease"
-    REFILL = "refill"
     REPAIR = "repair"
-    BLOCKED = "blocked"
 
 
 class Refusal(StrEnum):
     """Why integration was refused. Every value names a specific missing fact."""
 
-    HEAD_NOT_A_FULL_SHA = "head_not_a_full_sha"
+    # No `HEAD_NOT_A_FULL_SHA`: an observation that cannot name its commit is
+    # refused by `__post_init__` before any decision is taken, so the refusal
+    # could never be reached. No `REVIEW_INCONCLUSIVE` either -- `passed` is a
+    # bool and there is no third state to report.
     CHECKS_NOT_RUN = "checks_not_run"
     CHECKS_STALE = "checks_stale"
     CHECKS_FAILED = "checks_failed"
@@ -84,7 +93,6 @@ class Refusal(StrEnum):
     REVIEW_STALE = "review_stale"
     REVIEW_NOT_INDEPENDENT = "review_not_independent"
     REVIEW_REJECTED = "review_rejected"
-    REVIEW_INCONCLUSIVE = "review_inconclusive"
     LANDED_RESULT_UNVERIFIED = "landed_result_unverified"
     LANDED_RESULT_STALE = "landed_result_stale"
 

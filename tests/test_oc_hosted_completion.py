@@ -400,9 +400,19 @@ def test_existing_factory_admits_independent_exact_head_pass(material):
 def test_a_pull_request_head_that_moved_is_not_authorized_by_the_old_review(material):
     """The merge path, and the failure that motivated all of this.
 
-    #1524 merged at `657b2f1` while its review was at `6a57183`; #1526 at
-    `85bb2b2` while its review was at `9acced7`; #1530 six minutes after it was
-    opened. Each was authorized by evidence that was TRUE -- of another commit.
+    #1524 merged `657b2f1` at 22:07, #1526 merged `85bb2b2` at 00:06 sixteen
+    minutes after it was opened, and #1530 merged `9acced7` six minutes after
+    it was opened. In each case the review of the head being merged had not
+    returned: #1526's came back at `6a57183`, forty minutes after that merge,
+    and #1530's never ran. Each merge was authorized by evidence that was TRUE
+    of another commit, or by none at all.
+
+    This docstring is the fourth copy of that account and the last one to be
+    corrected. The other three said `6a57183` was "#1524's review" (it is the
+    commit carrying what the review of #1526's head found) and that `9acced7`
+    was "#1526's review" (it is #1530's merged head). An independent check of
+    `d1228cb` found this one still shipping the retracted version inside the
+    change that retracts it.
 
     `decide()` used to convert the checker's evidence without ever asking what
     the pull request head is now, so the only head comparison was

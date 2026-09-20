@@ -214,7 +214,10 @@ def test_invalid_mission_state_fails_closed(
 # ---------------------------------------------------------------------------
 
 
-#: Two real, different commits sharing a 12-hex prefix.
+#: Two SYNTHETIC ids sharing a 12-hex prefix. Synthetic on purpose -- the point
+#: is the comparison, and two real commits colliding on twelve hex would have to
+#: be manufactured anyway. The comment here called them "two real commits",
+#: which they are not: `git rev-parse --verify abc1234def56` resolves nothing.
 PREFIX_A = "abc1234def56" + "0" * 28
 PREFIX_B = "abc1234def56" + "f" * 28
 
