@@ -118,9 +118,11 @@ An absent result and a passing result are the same shape on the way out: both ar
 
 ## Scope claims and names in durable records
 
-**Do not write a universal claim you have not enumerated, and prefer not to write one at all.** "The only one", "every caller", "all three sites": each is a promise about code you did not read. Three were shipped false in one lineage and each took a separate independent check to catch — including one written to *replace* the previous false one. State the scope as narrowly as what you actually verified, and if the narrow version is uninteresting, say nothing.
+**Do not write a universal claim you have not enumerated, and prefer not to write one at all.** "The only one", "every caller": each is a promise about code you did not read. State the scope as narrowly as what you actually verified — name the sites — and if the narrow version is uninteresting, say nothing.
 
-**A name in a durable record is a claim too.** A commit message and pull request body in this lineage referred to `Observation.is_by`; the method is `Observation.by`, and `is_by` exists nowhere in the repository. It propagated into a checker's own brief before anyone noticed, which is the specific harm: a record that names something the codebase does not have gets repeated by the next reader as though it did. Grep for the identifier before you write it down.
+**A name in a durable record is a claim too.** Grep for the identifier before you write it down. A pull request body and commit message in this lineage named a method `Observation.is_by`; the method is `Observation.by`. A record that names something the codebase does not have gets repeated by the next reader as though it did.
+
+**The illustrations that stood here were themselves wrong, and that is the point.** They said each false claim "took a separate independent check to catch" (two of three were self-corrections), that a name appeared "twice" in a commit message (once), and that an identifier "exists nowhere in the repository" (it occurs as a substring). Three unverified assertions inside the paragraph telling you not to make unverified assertions, written in one sitting. **The rule above is worth keeping and the war stories are not** — a history of your own errors is a surface that generates more of them, and it is the first thing to delete rather than the last.
 
 ## Stuck-repair protection
 

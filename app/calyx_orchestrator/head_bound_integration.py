@@ -110,8 +110,9 @@ def same_actor(left: str, right: str) -> bool:
 
     The claim here said "the only one", was corrected to "the one every caller
     reaches for", and both were false -- the second by the lines just named.
-    Two sweeping claims, two rounds, two independent checks to catch them. The
-    scope is now stated as narrowly as it is true.
+    The scope is now stated as narrowly as it is true, which is the only part
+    of this worth carrying: `specialist_service` has its own reviewer check
+    against a fixed expected value, and it is not this rule either.
 
     Before this, `factory_policy` held a separate `(str, str) -> bool` predicate
     beside this module's `(str) -> str` normaliser. The two agreed, which is the
