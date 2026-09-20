@@ -20,6 +20,15 @@ def _is_full_sha(value: str) -> bool:
     return bool(FULL_SHA_PATTERN.fullmatch(value))
 
 
+def _is_canonical_identity(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value)
+        and value == value.strip()
+        and value.isprintable()
+    )
+
+
 @dataclass(frozen=True)
 class CycleEvidence:
     cycle_id: str
@@ -44,7 +53,7 @@ class CycleEvidence:
     @property
     def accepted(self) -> bool:
         if not all(
-            isinstance(value, str) and bool(value)
+            _is_canonical_identity(value)
             for value in (self.cycle_id, self.work_identity, self.lease_identity)
         ):
             return False
