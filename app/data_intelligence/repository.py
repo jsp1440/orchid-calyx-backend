@@ -89,9 +89,7 @@ class FileDatasetRepository:
     @staticmethod
     def _dataset_id(owner: str, project_id: str, logical_name: str) -> str:
         payload = (
-            f"{owner}\x1f{project_id}\x1f{logical_name.strip().casefold()}".encode(
-                "utf-8"
-            )
+            f"{owner}\x1f{project_id}\x1f{logical_name.strip().casefold()}".encode()
         )
         return hashlib.sha256(payload).hexdigest()[:32]
 
