@@ -249,6 +249,13 @@ def plan_refill(
         }
         if candidate.get("queue_source_kind") is not None:
             proposal["queue_source_kind"] = candidate["queue_source_kind"]
+        if candidate.get("required_capabilities") is not None:
+            proposal["required_capabilities"] = sorted(
+                {
+                    str(capability_id)
+                    for capability_id in candidate["required_capabilities"]
+                }
+            )
         if candidate.get("source_payload") is not None:
             proposal["source_payload"] = candidate["source_payload"]
         result["proposals"].append(proposal)

@@ -95,11 +95,26 @@ class CapabilityRegistry:
             capabilities.append(
                 {**item.to_dict(), "eligibility": self.eligibility(capability_id)}
             )
+        eligible_count = sum(
+            1
+            for item in capabilities
+            if item["eligibility"]["eligible"]
+        )
+        total_count = len(capabilities)
         return {
             "contract": "calyx-brain-capability-registry-v1",
             "read_only": True,
             "publication_authority": False,
             "execution_authority": False,
+            "completion": {
+                "verified_eligible": eligible_count,
+                "total_capabilities": total_count,
+                "percent": (
+                    round((eligible_count / total_count) * 100, 2)
+                    if total_count
+                    else 0.0
+                ),
+            },
             "capabilities": capabilities,
         }
 

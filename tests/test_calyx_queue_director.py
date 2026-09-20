@@ -1,3 +1,9 @@
+from dataclasses import replace
+
+from runtime.brain_capability_registry import (
+    CapabilityRegistry,
+    canonical_brain_registry,
+)
 from runtime.calyx_queue_director import (
     DevelopmentIntent,
     normalize_intents,
@@ -150,14 +156,26 @@ def test_unknown_brain_capability_parks_intent_fail_closed():
 
 
 def test_incomplete_brain_capability_parks_without_blocking_other_work():
+    canonical = canonical_brain_registry()
+    seed = canonical._items["literature_candidate_handoff"]
+    incomplete = replace(
+        seed,
+        capability_id="incomplete_capability",
+        status="PARTIAL",
+        upstream_dependencies=(),
+        downstream_consumers=(),
+        blockers=("not integrated",),
+    )
+    registry = CapabilityRegistry((*canonical._items.values(), incomplete))
     result = normalize_intents(
         [
             intent(
                 source_key="blocked",
-                required_capabilities=("executive_planning",),
+                required_capabilities=("incomplete_capability",),
             ),
             intent(source_key="ready", issue_number=661),
-        ]
+        ],
+        registry=registry,
     )
 
     assert [item["source_key"] for item in result["parked"]] == ["blocked"]
