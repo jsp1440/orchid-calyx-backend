@@ -12,14 +12,19 @@ from scripts.oc_autonomy_certification import (
 )
 
 
+def _sha(value: int) -> str:
+    return f"{value:040x}"
+
+
 def good(i, **kw):
     base = {
         "cycle_id": str(i),
         "work_identity": f"issue:{i}",
         "lease_identity": f"lease:{i}",
         "pr_number": 1500 + i,
-        "exact_head_sha": f"{i:040x}",
-        "merged_sha": f"{i + 100:040x}",
+        "exact_head_sha": _sha(1000 + i),
+        "merged_sha": _sha(2000 + i),
+        "verification_base_sha": _sha(3000 + i),
         "exact_head_ci_green": True,
         "landed_verified": True,
         "lease_released": True,
@@ -78,8 +83,8 @@ def test_reused_durable_identity_stops_the_streak():
         {"work_identity": "issue:1"},
         {"lease_identity": "lease:1"},
         {"pr_number": 1501},
-        {"exact_head_sha": f"{1:040x}"},
-        {"merged_sha": f"{101:040x}"},
+        {"exact_head_sha": _sha(1001)},
+        {"merged_sha": _sha(2001)},
     )
     for duplicate in duplicate_cases:
         result = evaluate([good(1), good(2, **duplicate)])
