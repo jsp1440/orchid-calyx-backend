@@ -355,12 +355,18 @@ def main(argv: list[str] | None = None) -> int:
     # already records that a refusal instructing the operator to do the thing it
     # refuses has become the defect three times.
     #
-    # The UNKNOWN message does NOT claim the spelling is fine, because UNKNOWN
-    # has more than one cause: a trailing slash matching several entries IS a
-    # spelling problem, and undecodable bytes are not. Splitting the message and
-    # asserting "the spelling is not the problem" turned the directory case into
-    # a second false statement -- caught by an existing test, which is what it
-    # was there for.
+    # The UNKNOWN message claims NOTHING about which cause applies, because
+    # `_entry` has four `return UNKNOWN` sites and they do not agree about
+    # whether the operator can fix the input: a trailing slash and a `..` are
+    # correctable spellings, undecodable bytes and a malformed record are not.
+    #
+    # Two false statements were written here before this one. "The spelling is
+    # not the problem" broke the directory case; an existing test caught it.
+    # "Three things land here and only one of them is a spelling you can
+    # correct" then broke the `--path ..` case -- git refuses that pathspec
+    # outright, which IS a correctable spelling -- and miscounted four causes
+    # as three. Both were attempts to be helpful about a fact this code does
+    # not have. It has the refusal; it does not have the cause.
     absent = [path for path in args.paths if verified_entries[path] is ABSENT]
     unresolved = [path for path in args.paths if verified_entries[path] == UNKNOWN]
     if absent:
@@ -376,10 +382,12 @@ def main(argv: list[str] | None = None) -> int:
         print("verified head:")
         for path in unresolved:
             print(f"  {path}")
-        print("Three things land here and only one of them is a spelling you can correct:")
-        print("the pathspec matched SEVERAL entries (a trailing slash does that, and")
-        print("resolves to nothing usable); the lookup failed; or it returned bytes this")
-        print("tool cannot compare, which is what a path that is not valid UTF-8 does.")
+        print("The lookup returned no single entry. That happens when the pathspec")
+        print("matches SEVERAL entries (a trailing slash does it), when git refuses the")
+        print("pathspec outright (`..` and absolute paths do it), when the entry it")
+        print("returned is not readable as text, and when the record comes back")
+        print("malformed. Some of those are spellings you can correct and some are not,")
+        print("and this tool does not know which one you hit.")
         print("Declare anything real and this tool prints the exact set it derived, which")
         print("is also the only set it accepts.")
         return 2
@@ -519,8 +527,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.deleted_paths:
         # A path must have existed at EVERY pre-change revision. Accepting it at
         # one of several would make the verdict depend on which base git named.
+        # Split for the same reason as the `--path` branch above, and found the
+        # same way: an independent check ran the undecodable case through THIS
+        # branch and got "do not exist at every pre-change revision" for a path
+        # that does exist. The same false sentence, one branch over, in the
+        # commit whose subject was that sentence.
         never_there = sorted({path for base in before for path in args.deleted_paths
-                              if _entry(base, path) in (ABSENT, UNKNOWN)})
+                              if _entry(base, path) is ABSENT})
+        unresolved_deleted = sorted({path for base in before for path in args.deleted_paths
+                                     if _entry(base, path) == UNKNOWN})
         # Only a TREE. A gitlink is one object id and compares like a blob, and
         # refusing it made a submodule removal unverifiable BY CONSTRUCTION:
         # `git diff` reports `D vendor`, the tool printed it under "Declare
@@ -546,6 +561,16 @@ def main(argv: list[str] | None = None) -> int:
                 print("--verified-head is an ancestor of --integration-ref, so that revision is the")
                 print("verified head itself, where a deleted path is absent by definition. Pass")
                 print("--base-ref <the branch this change forked off> to derive it properly.")
+            return 2
+        if unresolved_deleted:
+            named = ", ".join(base[:12] for base in before)
+            print("REFUSED: these --deleted-path arguments did not resolve to one file at")
+            print(f"every pre-change revision ({named}):")
+            for path in unresolved_deleted:
+                print(f"  {path}")
+            print("They are not absent there -- the lookup returned no single entry, which")
+            print("is a different fact and this tool does not know which of its causes you")
+            print("hit. See the --path refusal above for the list.")
             return 2
 
     # THE DECLARED SET MUST BE THE SET THIS CHANGE ACTUALLY TOUCHED.

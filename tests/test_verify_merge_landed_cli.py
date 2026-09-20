@@ -1363,8 +1363,21 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
         # bytes) is not.
         assert "did not resolve to one file" in done.stdout
         assert "src/lib/" in done.stdout
-        assert "the spelling is not the problem" not in done.stdout.lower()
         assert "verdict" not in done.stdout
+        # The PROPERTY, not one spelling of it: this message must not tell the
+        # operator anything about WHICH cause of UNKNOWN they hit, because
+        # `_entry` has four and they disagree about whether the input can be
+        # corrected. Pinning the literal phrase "the spelling is not the
+        # problem" let the next false claim -- "only one of them is a spelling
+        # you can correct" -- straight through.
+        lowered = done.stdout.lower()
+        for overclaim in (
+            "the spelling is not the problem",
+            "only one of them is a spelling",
+            "nothing to correct",
+            "correct the spelling",
+        ):
+            assert overclaim not in lowered, overclaim
 
     def test_and_the_file_that_was_reverted_is_reported_when_it_is_declared(self, tmp_path):
         lab = self._lab(tmp_path / "ambiguous2")
@@ -2213,8 +2226,12 @@ class TestTheDerivedSetDoesNotDependOnGitConfig:
         traceback stayed reachable by DECLARING the undecodable path rather
         than merely having it in the range -- `main` builds the verified
         entries through `_entry` before it ever derives the set. An independent
-        check found it two hundred lines under a comment saying a crash must
-        not be spelled the same way as a verdict.
+        check found it sixty-five lines under a comment saying a crash must not
+        be spelled the same way as a verdict. (An earlier version of THIS line
+        said "two hundred", and the commit that corrected that figure in the
+        source and the operating memory missed this copy of it -- one commit
+        after writing "grep for the pattern, not the symptom you reproduced"
+        into that same memory file.)
         """
         repo = tmp_path / "not-utf8-declared"
         repo.mkdir(parents=True, exist_ok=True)
