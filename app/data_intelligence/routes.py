@@ -7,7 +7,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, Up
 
 from app.security import verify_owner_or_api_key
 
-from .models import AnalysisPlan, CompileIntentIn, DataIntelligenceError
+from .models import (
+    AnalysisPlan,
+    CompileIntentIn,
+    DataIntelligenceError,
+    SaveWorkflowIn,
+)
 from .repository import FileDatasetRepository
 from .service import DataIntelligenceService
 
@@ -36,6 +41,7 @@ def _translate(exc: Exception) -> None:
                 "ANALYSIS_NOT_FOUND",
                 "ARTIFACT_NOT_FOUND",
                 "DATASET_VERSION_NOT_FOUND",
+                "WORKFLOW_NOT_FOUND",
             }
             else 409
             if exc.code == "ARTIFACT_INTEGRITY_FAILURE"
@@ -153,6 +159,54 @@ def get_analysis(
             dataset_id,
             version_id,
             analysis_id,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.post("/projects/{project_id}/workflows", status_code=201)
+def save_workflow(project_id: str, payload: SaveWorkflowIn, auth: Auth):
+    owner = _subject(auth)
+    try:
+        return _service().save_workflow(
+            owner=owner,
+            project_id=project_id,
+            name=payload.name,
+            dataset_id=payload.dataset.dataset_id,
+            version_id=payload.dataset.version_id,
+            analysis_id=payload.analysis_id,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.get("/projects/{project_id}/workflows/{workflow_id}")
+def get_workflow(project_id: str, workflow_id: str, auth: Auth):
+    owner = _subject(auth)
+    try:
+        return _service().repository.get_workflow(
+            owner,
+            project_id,
+            workflow_id,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.post(
+    "/projects/{project_id}/workflows/{workflow_id}/submit",
+    status_code=202,
+)
+def submit_workflow(project_id: str, workflow_id: str, auth: Auth):
+    owner = _subject(auth)
+    try:
+        return _service().submit_workflow(
+            owner=owner,
+            project_id=project_id,
+            workflow_id=workflow_id,
         )
     except Exception as exc:
         _translate(exc)
