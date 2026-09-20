@@ -357,7 +357,7 @@ class DataIntelligenceService:
         identity_payload = (
             f"{owner}\x1f{project_id}\x1f{EXECUTOR_VERSION}\x1f"
             f"{plan.fingerprint}"
-        ).encode("utf-8")
+        ).encode()
         analysis_id = hashlib.sha256(identity_payload).hexdigest()[:40]
         stable_manifest: dict[str, Any] = {
             "schema_version": EXECUTOR_VERSION,
