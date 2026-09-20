@@ -394,7 +394,7 @@ class FileDatasetRepository:
         workflow_id: str,
         actor: str,
     ) -> dict[str, Any]:
-        workflow = self.get_workflow(owner, project_id, workflow_id)
+        self.get_workflow(owner, project_id, workflow_id)
         directory = (
             self._scope(owner, project_id)
             / "workflows"
