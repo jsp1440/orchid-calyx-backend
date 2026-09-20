@@ -114,6 +114,8 @@ The same rule applies in the other direction, to a **green** result. A compariso
 
 An absent result and a passing result are the same shape on the way out: both are "nothing to report". Only one of them is evidence.
 
+**A local gate is only evidence about CI if it is the same tool.** These workflows `pip install ruff` unpinned, so CI runs the newest release. This container has two ruff binaries and `/root/.local/bin/ruff` (0.15.8) shadows `/usr/local/bin/ruff` (0.16.8) on `PATH`, so a local "ruff clean" was a statement about an older rule set and CI failed on a rule the local run does not have. Check `ruff --version` against what the workflow installs — `python -m ruff` reaches the installed package rather than whatever is first on `PATH` — and say which version a clean result came from.
+
 ## Stuck-repair protection
 
 After three unsuccessful attempts on the same deterministic failure class, stop speculative repair commits. Read the exact failing output, run the exact formatter/linter/test command locally where possible, compare it with workflow behavior, and make one deliberate correction. If accumulated branch churn obscures intent, reconstruct cleanly from current integration and preserve only intentional changes.

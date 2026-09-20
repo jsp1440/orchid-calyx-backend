@@ -546,7 +546,7 @@ def test_a_record_written_before_the_field_existed_still_parses() -> None:
     import re as _re
 
     body = serialize_evidence(_evidence(checked_head_sha=HEAD_SHA))
-    block = _re.search(r"<!-- [^\n]*\n(.*?)\n-->", body, _re.S)
+    block = _re.search(r"<!-- [^\n]*\n(.*?)\n-->", body, _re.DOTALL)
     assert block is not None
     payload = _json.loads(block.group(1))
     payload.pop("checks_head_sha")
