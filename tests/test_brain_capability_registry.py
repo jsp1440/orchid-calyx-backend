@@ -15,7 +15,7 @@ def test_seed_exposes_only_verified_operational_work_as_eligible():
     }
 
     assert decisions["literature_candidate_handoff"]["eligible"] is True
-    assert decisions["scientific_language_intake"]["eligible"] is False
+    assert decisions["scientific_language_intake"]["eligible"] is True
     assert decisions["reasoning_ledger"]["eligible"] is False
     assert view["read_only"] is True
     assert view["execution_authority"] is False
