@@ -121,6 +121,10 @@ def evaluate(
             False, 0, target, False, "target must be a positive integer"
         )
 
+    cycle_list = list(cycles)
+    if len(cycle_list) > target:
+        return Certification(False, 0, target, False, "evidence exceeds target")
+
     streak = 0
     recovery_proven = False
     seen_cycle_ids: set[str] = set()
@@ -130,7 +134,7 @@ def evaluate(
     seen_exact_heads: set[str] = set()
     seen_merge_shas: set[str] = set()
     seen_verification_bases: set[str] = set()
-    for cycle in cycles:
+    for cycle in cycle_list:
         if not cycle.accepted:
             return Certification(
                 False,

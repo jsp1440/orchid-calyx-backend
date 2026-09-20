@@ -2,7 +2,9 @@
 
 The engineering loop is certified only after ten consecutive accepted cycles.
 The evaluator accepts only a positive integer target; booleans, numeric-looking
-strings, floats, nulls, and non-positive integers fail closed.
+strings, floats, nulls, and non-positive integers fail closed. It materializes
+all supplied evidence and refuses records beyond the target, so an eleventh
+record cannot be hidden by returning certification after the first ten.
 
 Each cycle must carry durable work identity and lease identity, an exact PR number
 and exact head SHA, exact-head green CI, a merge SHA, independent landed-result

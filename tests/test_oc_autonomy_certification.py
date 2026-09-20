@@ -254,3 +254,18 @@ def test_wrong_scalar_evidence_types_fail_closed(field, value):
 )
 def test_noncanonical_durable_identities_fail_closed(field, value):
     assert good(6, **{field: value}).accepted is False
+
+
+def test_direct_evaluation_refuses_evidence_beyond_target():
+    cycles = [good(i) for i in range(1, 12)]
+    cycles[4] = good(5, recoverable_fault_seen=True, recoverable_fault_healed=True)
+    result = evaluate(cycles)
+    assert not result.certified
+    assert result.accepted_streak == 0
+    assert result.reason == "evidence exceeds target"
+
+
+def test_generator_evaluation_does_not_hide_excess_evidence():
+    result = evaluate(good(i) for i in range(1, 12))
+    assert not result.certified
+    assert result.reason == "evidence exceeds target"
