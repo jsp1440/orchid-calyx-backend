@@ -18,7 +18,7 @@ def _intent(**overrides: object) -> WorkIntent:
     values: dict[str, object] = {
         "repository": "jsp1440/orchid-calyx-backend",
         "issue_number": 1023,
-        "head_sha": "abc123",
+        "head_sha": "6a57183395c29f0a47b4a11cd86fabe34ac10d95",
         "target_branch": "oc-autonomous-integration",
         "risk_tier": RiskTier.LOW,
         "reversible": True,
@@ -62,6 +62,17 @@ def test_safe_non_main_change_can_auto_integrate_after_independent_check() -> No
     assert decision.integration_authorized is True
     assert decision.reason == "INDEPENDENT_VALIDATION_PASSED_SAFE_INTEGRATION"
     assert len(decision.fingerprint) == 64
+
+
+def test_evidence_for_another_head_cannot_authorize_when_gate_is_called_directly() -> None:
+    decision = evaluate_factory_gate(
+        _intent(head_sha=OTHER_HEAD),
+        _passing_evidence(head_sha=HEAD, checker_head_sha=HEAD, checks_head_sha=HEAD),
+    )
+
+    assert decision.action is FactoryAction.REQUIRE_CHECKER
+    assert decision.reason == "INTENT_HEAD_MISMATCH"
+    assert decision.integration_authorized is False
 
 
 def test_maker_cannot_serve_as_checker() -> None:

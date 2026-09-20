@@ -280,6 +280,13 @@ def evaluate_factory_gate(
             fingerprint=fingerprint,
         )
 
+    if evidence.head_sha != intent.head_sha:
+        return FactoryDecision(
+            action=FactoryAction.REQUIRE_CHECKER,
+            reason="INTENT_HEAD_MISMATCH",
+            fingerprint=fingerprint,
+        )
+
     if not evidence.independent_checker:
         return FactoryDecision(
             action=FactoryAction.REQUIRE_CHECKER,
