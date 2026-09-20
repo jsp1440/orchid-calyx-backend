@@ -167,7 +167,7 @@ def read_ledger(path: Path) -> list[CycleEvidence]:
     except (OSError, json.JSONDecodeError) as exc:
         raise ValueError("certification ledger is unavailable or corrupt") from exc
     if not isinstance(payload, dict):
-        raise ValueError("certification ledger root must be an object")
+        raise TypeError("certification ledger root must be an object")
     if payload.get("schema") != LEDGER_SCHEMA:
         raise ValueError("certification ledger schema is unknown")
     if payload.get("target_streak") != TARGET_STREAK:
@@ -175,7 +175,7 @@ def read_ledger(path: Path) -> list[CycleEvidence]:
 
     raw_cycles = payload.get("cycles")
     if not isinstance(raw_cycles, list):
-        raise ValueError("certification ledger cycles must be a list")
+        raise TypeError("certification ledger cycles must be a list")
     field_names = {field.name for field in fields(CycleEvidence)}
     expected_keys = field_names | {"accepted"}
     cycles: list[CycleEvidence] = []
@@ -184,7 +184,7 @@ def read_ledger(path: Path) -> list[CycleEvidence]:
             raise ValueError(f"cycle {index} has an invalid evidence shape")
         accepted = raw_cycle["accepted"]
         if not isinstance(accepted, bool):
-            raise ValueError(f"cycle {index} has a non-boolean acceptance result")
+            raise TypeError(f"cycle {index} has a non-boolean acceptance result")
         values = {name: raw_cycle[name] for name in field_names}
         try:
             cycle = CycleEvidence(**values)
