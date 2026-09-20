@@ -113,6 +113,10 @@ class TestApiSuccessIsNotEvidence:
             landed_cleanly(),
         )
         assert result.verdict is MergeVerdict.EVIDENCE_INCOMPLETE
+        # The reason too: `all([])` is vacuously true, so without this gate the
+        # deletions-only check absorbs an empty record and reports a reason that
+        # is not what happened.
+        assert result.reason == "NO_VERIFIED_PATHS_RECORDED"
         assert may_report_integrated(result) is False
 
     def test_a_path_the_integration_side_never_resolved_is_not_agreement(self):
@@ -191,44 +195,58 @@ class TestTheGoodCase:
         assert result.identical_tree is False
         assert may_report_integrated(result) is True
 
-    def test_a_deletion_recorded_on_both_sides_is_agreement(self):
-        """Note what this does NOT say.
+    def test_a_record_of_only_deletions_is_never_a_pass(self):
+        """The fifth instance of one failure class, and the last one.
 
-        Both sides absent is agreement only because the record asserts the path
-        was deleted. It does not establish that a declared deletion was real --
-        a caller that declares an arbitrary string gets this same verdict,
-        which is precisely the false pass `oc_verify_merge_landed.py` exists to
-        refuse before it ever builds a record.
+        Rounds 1-4 each narrowed where a deletion's evidence could come from --
+        the path must exist at the verified head, then at a caller-named ref,
+        then at the merge base -- and each time a record made only of deletions
+        still returned LANDED after reading none of the integration side's
+        content. Absence is symmetric: two lineages that both lack a file agree
+        about it for reasons that have nothing to do with this merge.
         """
-        gone = {"src/lib/dead.ts": None}
-        assert (
-            inspect_merge(
-                verified(**gone),
-                IntegrationResult(
-                    head_sha="abc",
-                    tree_sha=VERIFIED_TREE,
-                    blobs={"src/lib/dead.ts": None},
-                    merge_api_reported_success=True,
-                ),
-            ).verdict
-            is MergeVerdict.LANDED
-        )
-        # A file that should have been deleted and was not is a mismatch.
-        assert (
-            inspect_merge(
-                verified(**gone),
-                IntegrationResult(
-                    head_sha="abc",
-                    tree_sha=VERIFIED_TREE,
-                    blobs={"src/lib/dead.ts": "still-here"},
-                    merge_api_reported_success=True,
-                ),
-            ).verdict
-            is MergeVerdict.TREE_MISMATCH
+        result = inspect_merge(
+            verified(**{"src/lib/dead.ts": None}),
+            IntegrationResult(
+                head_sha="abc",
+                tree_sha="a-different-tree",
+                blobs={"src/lib/dead.ts": None},
+                merge_api_reported_success=True,
+            ),
         )
 
+        assert result.verdict is MergeVerdict.EVIDENCE_INCOMPLETE
+        assert result.reason == "ONLY_DELETIONS_RECORDED_SO_NOTHING_WAS_COMPARED"
+        assert may_report_integrated(result) is False
 
-class TestRecordRequirements:
+    def test_a_deletion_beside_surviving_content_is_agreement(self):
+        result = inspect_merge(
+            verified(**{"src/lib/dead.ts": None, "src/lib/kept.ts": "blob-kept"}),
+            IntegrationResult(
+                head_sha="abc",
+                tree_sha=VERIFIED_TREE,
+                blobs={"src/lib/dead.ts": None, "src/lib/kept.ts": "blob-kept"},
+                merge_api_reported_success=True,
+            ),
+        )
+
+        assert result.verdict is MergeVerdict.LANDED
+        assert may_report_integrated(result) is True
+
+    def test_a_deletion_the_merge_did_not_apply_is_still_a_mismatch(self):
+        result = inspect_merge(
+            verified(**{"src/lib/dead.ts": None, "src/lib/kept.ts": "blob-kept"}),
+            IntegrationResult(
+                head_sha="abc",
+                tree_sha=VERIFIED_TREE,
+                blobs={"src/lib/dead.ts": "still-here", "src/lib/kept.ts": "blob-kept"},
+                merge_api_reported_success=True,
+            ),
+        )
+
+        assert result.verdict is MergeVerdict.TREE_MISMATCH
+        assert result.divergent_paths == (("src/lib/dead.ts", None, "still-here"),)
+
     @pytest.mark.parametrize("head,tree", [("", "t"), ("h", ""), ("  ", "t")])
     def test_a_verified_result_without_identity_is_refused(self, head, tree):
         with pytest.raises(ValueError):
