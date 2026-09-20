@@ -212,9 +212,11 @@ def canonical_brain_registry() -> CapabilityRegistry:
             Capability(
                 capability_id="data_intelligence",
                 canonical_issue="orchid-calyx-backend#143",
-                status="PARTIAL",
+                status="OPERATIONAL",
                 repository_evidence=(
                     "orchid-calyx-backend#1558 governed vertical path",
+                    "orchid-calyx-backend#1560 deterministic governed exports",
+                    "orchid-calyx-backend#1561 reusable-workflow review",
                     "app/data_intelligence",
                 ),
                 public_entry_point="/api/brain/data",
@@ -224,7 +226,8 @@ def canonical_brain_registry() -> CapabilityRegistry:
                 ),
                 api=(
                     "authenticated CSV/XLSX ingest, deterministic profile, "
-                    "typed-plan execution, manifest read, and exact-version rerun"
+                    "typed-plan execution, manifest read, exact-version rerun, "
+                    "CSV/XLSX/SVG export, and reusable-workflow review submission"
                 ),
                 tests=("tests/test_calyx_data_001.py",),
                 upstream_dependencies=(
@@ -232,14 +235,9 @@ def canonical_brain_registry() -> CapabilityRegistry:
                     "reasoning_ledger",
                 ),
                 downstream_consumers=("executive_planning",),
-                blockers=(
-                    "full export and reusable-workflow review flow are incomplete",
-                ),
-                next_executable_slice=(
-                    "add governed CSV/XLSX result export and saved workflow "
-                    "review contracts"
-                ),
-                last_verified_commit="fa3954fd04dee0015ee5afe166c1bb7402d9b981",
+                blockers=(),
+                next_executable_slice=None,
+                last_verified_commit="9bd4e836d257ff34ee5b9628f0d3784fa3cc0656",
                 last_verified_date="2026-09-20",
             ),
             Capability(
