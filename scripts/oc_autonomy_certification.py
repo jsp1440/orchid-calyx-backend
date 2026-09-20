@@ -135,6 +135,15 @@ def evaluate(
     seen_merge_shas: set[str] = set()
     seen_verification_bases: set[str] = set()
     for cycle in cycle_list:
+        expected_cycle_id = str(streak + 1)
+        if cycle.cycle_id != expected_cycle_id:
+            return Certification(
+                False,
+                streak,
+                target,
+                recovery_proven,
+                f"cycle identity must be {expected_cycle_id}",
+            )
         if not cycle.accepted:
             return Certification(
                 False,
