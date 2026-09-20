@@ -139,6 +139,33 @@ def test_append_refuses_identity_reuse_with_changed_evidence(tmp_path: Path):
         append_cycle(path, good(2, lease_identity="lease:1"))
 
 
+def test_writer_refuses_failed_aggregate_and_excess_cycles(tmp_path: Path):
+    path = tmp_path / "certification.json"
+    with pytest.raises(ValueError, match="failed aggregate"):
+        write_ledger(path, [good(1), good(2, lease_identity="lease:1")])
+
+    cycles = [good(i) for i in range(1, 12)]
+    cycles[4] = good(5, recoverable_fault_seen=True, recoverable_fault_healed=True)
+    with pytest.raises(ValueError, match="exceeds"):
+        write_ledger(path, cycles)
+
+
+def test_reader_refuses_persisted_failed_aggregate(tmp_path: Path):
+    path = tmp_path / "certification.json"
+    write_ledger(path, [good(1), good(2)])
+    data = json.loads(path.read_text())
+    data["cycles"][1]["lease_identity"] = "lease:1"
+    data["result"].update(
+        certified=False,
+        accepted_streak=1,
+        recovery_proven=False,
+        reason="cycle 2 reused lease identity",
+    )
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError, match="failed aggregate"):
+        read_ledger(path)
+
+
 @pytest.mark.parametrize(
     "mutation",
     (

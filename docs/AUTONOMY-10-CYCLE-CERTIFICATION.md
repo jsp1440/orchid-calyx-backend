@@ -19,6 +19,11 @@ acceptance, or a result that does not match the stored evidence. Appending is
 atomic; replaying the identical cycle is a no-op, while reusing any durable
 identity with changed evidence is refused.
 
+Individual records are insufficient: ledger read and write also validate the
+aggregate streak. A duplicate or otherwise rejected cycle cannot be persisted
+merely by storing the evaluator's failed result beside it, and evidence beyond
+the ten-cycle target is refused instead of silently ignored.
+
 At least one of the ten cycles must encounter a recoverable fault and heal it
 without manual intervention. A genuine owner gate parks that item and the
 scheduler should select other eligible work; an owner gate is never healed by

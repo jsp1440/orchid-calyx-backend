@@ -149,8 +149,18 @@ def evaluate(
     )
 
 
+def _require_valid_aggregate(
+    cycles: list[CycleEvidence], result: Certification
+) -> None:
+    if len(cycles) > result.target_streak:
+        raise ValueError("certification ledger exceeds the target streak")
+    if result.accepted_streak != len(cycles):
+        raise ValueError("certification ledger contains a failed aggregate streak")
+
+
 def write_ledger(path: Path, cycles: list[CycleEvidence]) -> Certification:
     result = evaluate(cycles)
+    _require_valid_aggregate(cycles, result)
     payload = {
         "schema": LEDGER_SCHEMA,
         "target_streak": TARGET_STREAK,
@@ -203,6 +213,7 @@ def read_ledger(path: Path) -> list[CycleEvidence]:
         cycles.append(cycle)
 
     result = evaluate(cycles)
+    _require_valid_aggregate(cycles, result)
     raw_result = payload.get("result")
     if raw_result != asdict(result):
         raise ValueError("certification result does not match cycle evidence")
