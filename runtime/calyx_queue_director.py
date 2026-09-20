@@ -14,12 +14,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
-from scripts.oc_backlog_refiller import plan_refill
-
 from runtime.brain_capability_registry import (
     CapabilityRegistry,
     canonical_brain_registry,
 )
+from scripts.oc_backlog_refiller import plan_refill
 
 _SCHEMA = "oc.calyx-development-intent.v1"
 _PROTECTED = frozenset(
