@@ -281,9 +281,19 @@ def evaluate_factory_gate(
         )
 
     if evidence.head_sha != intent.head_sha:
+        # Named, not bare. `EXACT_HEAD_VALIDATION_REQUIRED` was replaced for
+        # exactly this: a refusal that cannot say which commit it is about
+        # reads as "nobody checked" when the truth is "somebody checked
+        # something else", and this whole lineage exists because of that
+        # confusion. A new gate gets the same treatment as the ones it stands
+        # beside.
         return FactoryDecision(
             action=FactoryAction.REQUIRE_CHECKER,
-            reason="INTENT_HEAD_MISMATCH",
+            reason=(
+                "INTENT_HEAD_MISMATCH: authorized for "
+                f"{intent.head_sha[:12] or 'no recorded head'}, evidence is about "
+                f"{evidence.head_sha[:12] or 'no recorded head'}"
+            ),
             fingerprint=fingerprint,
         )
 

@@ -426,7 +426,44 @@ def test_a_pull_request_head_that_moved_is_not_authorized_by_the_old_review(mate
 
     assert decision.integration_authorized is False
     assert decision.action.value == "require_checker"
-    # And it says which commit the evidence was actually about.
+    # And it says which commits are involved. TWO gates now refuse this, and
+    # both are right: the work was authorized for one commit and the pull
+    # request head is another (`INTENT_HEAD_MISMATCH`, added by #1550), and the
+    # review is about a third (`EVIDENCE_IS_ABOUT_ANOTHER_HEAD`). Asserting on
+    # whichever happens to fire first would pin an ordering neither gate
+    # promises, so this asserts the property both share: the refusal is bound
+    # to commits and names them.
+    assert assignment.head_sha[:12] in decision.reason
+    assert decision.reason.startswith(
+        ("EVIDENCE_IS_ABOUT_ANOTHER_HEAD", "INTENT_HEAD_MISMATCH")
+    )
+
+
+def test_and_the_staleness_gate_is_still_the_one_that_speaks_when_it_is_alone(
+    material,
+):
+    """The other gate must not hide this one.
+
+    Relaxing the assertion above to "either refusal" would let a regression
+    that deleted the staleness check pass, because `INTENT_HEAD_MISMATCH`
+    would answer in its place. So here everything that tracks the live head
+    tracks the MOVED head: the pull request, the authorized intent, and the
+    completion event. Those gates are satisfied and silent. The one record
+    still about the old commit is the checker's -- which is the whole point,
+    because nobody reviewed `ffff...`. The staleness check is the only thing
+    left to refuse, so if it is gone this test fails.
+    """
+    state, checked, assignment, evidence = factory_state(material)
+    moved = copy.deepcopy(material)
+    moved["pr"]["head"]["sha"] = "f" * 40
+    moved_state = copy.deepcopy(state)
+    moved_state["intent"]["head_sha"] = "f" * 40
+    moved_state["context"]["head"] = "f" * 40
+
+    decision = hosted.decide(moved_state, moved, checked, assignment, evidence)
+
+    assert decision.integration_authorized is False
+    assert decision.action.value == "require_checker"
     assert decision.reason.startswith("EVIDENCE_IS_ABOUT_ANOTHER_HEAD")
     assert assignment.head_sha[:12] in decision.reason
 

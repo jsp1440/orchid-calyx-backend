@@ -64,14 +64,19 @@ def test_safe_non_main_change_can_auto_integrate_after_independent_check() -> No
     assert len(decision.fingerprint) == 64
 
 
-def test_evidence_for_another_head_cannot_authorize_when_gate_is_called_directly() -> None:
+def test_evidence_for_another_head_cannot_authorize_at_the_gate_itself() -> None:
     decision = evaluate_factory_gate(
         _intent(head_sha=OTHER_HEAD),
         _passing_evidence(head_sha=HEAD, checker_head_sha=HEAD, checks_head_sha=HEAD),
     )
 
     assert decision.action is FactoryAction.REQUIRE_CHECKER
-    assert decision.reason == "INTENT_HEAD_MISMATCH"
+    assert decision.reason.startswith("INTENT_HEAD_MISMATCH")
+    # And it names both commits. A refusal that cannot say which commit it is
+    # about is the defect this lineage replaced `EXACT_HEAD_VALIDATION_REQUIRED`
+    # to fix; a gate added later should not reintroduce it one line down.
+    assert OTHER_HEAD[:12] in decision.reason
+    assert HEAD[:12] in decision.reason
     assert decision.integration_authorized is False
 
 
