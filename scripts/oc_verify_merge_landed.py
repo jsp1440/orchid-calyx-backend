@@ -159,15 +159,52 @@ def _changed_paths(base: str, head: str) -> tuple[int, dict[str, str]]:
 
     `-z` because a status record and its path are NUL-separated here; a rename
     carries two paths, so the fields are consumed as a stream rather than split
-    per line.
+    per line. It also turns off `core.quotePath`, so a non-ASCII path arrives as
+    its bytes rather than as an escaped spelling nothing else here would match.
+
+    EVERY option that decides WHICH paths are listed is passed explicitly, and
+    none is left to `git config`. Round 10 replaced a declared set with a derived
+    one on the premise that the operator can no longer choose it. Configuration
+    is another way of choosing, and two settings a person may perfectly
+    reasonably have are changing the answer:
+
+    * `diff.ignoreSubmodules=all` drops gitlinks from the listing. The derived
+      set then omits a submodule the change bumped, so the declaration need not
+      mention it, and a merge that dropped the bump reported `landed` with exit
+      0. Reproduced against shipped code. `--ignore-submodules=none` says so
+      outright.
+    * `diff.relative=true` makes the listing relative to the CURRENT DIRECTORY,
+      while `_entry` reads paths with `ls-tree --full-tree` from the repository
+      root. Run from a subdirectory the two halves then disagree about what a
+      path is called -- the derived set empties out, or shrinks to the paths
+      under that directory. That is fail-closed rather than a false pass, and it
+      is still the set depending on where someone stood. `--no-relative`.
+
+    `--no-renames` was already explicit for the same reason, and is the reason to
+    look for the rest: one option pinned against config while its neighbours are
+    not is a rule that holds by luck.
     """
+    # Bytes, decoded here rather than by `subprocess`. A path that is not UTF-8
+    # is legal in git, and `text=True` raised `UnicodeDecodeError` out of
+    # `communicate()` -- an unhandled traceback and exit 1, which is this tool's
+    # code for "the integration ref does not hold the verified result". A crash
+    # must not be spelled the same way as a verdict, even a refusing one.
     done = subprocess.run(
-        ["git", "diff", "--name-status", "--no-renames", "-z", "--end-of-options", f"{base}..{head}"],
-        capture_output=True, text=True, check=False,
+        [
+            "git", "diff", "--name-status", "--no-renames", "--no-relative",
+            "--ignore-submodules=none", "-z", "--end-of-options", f"{base}..{head}",
+        ],
+        capture_output=True, check=False,
     )
     if done.returncode != 0:
         return done.returncode, {}
-    fields = [field for field in done.stdout.split("\0") if field]
+    try:
+        stdout = done.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # 2, not 1: this is an evidence failure, and the caller must be able to
+        # tell "I cannot read this" from "the merge dropped your work".
+        return 2, {}
+    fields = [field for field in stdout.split("\0") if field]
     changed: dict[str, str] = {}
     index = 0
     while index + 1 < len(fields) + 1 and index < len(fields):
@@ -218,12 +255,26 @@ def _entry(ref: str, path: str) -> str | None:
     done = subprocess.run(
         ["git", "ls-tree", "--full-tree", "-z", "--end-of-options", ref, "--", f":(literal){path}"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if done.returncode != 0:
         return UNKNOWN
-    records = [record for record in done.stdout.split("\0") if record]
+    # Decoded here rather than by `subprocess`, for the same reason as
+    # `_changed_paths`, and it has to be BOTH: this call site runs first, so
+    # fixing only the other one left the identical traceback reachable by
+    # declaring the undecodable path instead of merely having it in the range.
+    # The comment saying "a crash must not be spelled the same way as a verdict"
+    # is sixty-five lines above where that crash was, in the same file. (An
+    # earlier version of this comment said "two hundred lines", a figure nobody
+    # measured -- and an invented magnitude in a change about unverified
+    # assertions is the shape this whole lineage is about.)
+    try:
+        stdout = done.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # UNKNOWN, not a comparison. `inspect_merge` refuses to read UNKNOWN as
+        # agreement, so an unreadable path cannot witness anything either way.
+        return UNKNOWN
+    records = [record for record in stdout.split("\0") if record]
     if not records:
         return ABSENT
     if len(records) != 1:
@@ -297,14 +348,60 @@ def main(argv: list[str] | None = None) -> int:
     # Absence is not evidence: comparing "not there" with "not there" reports
     # agreement on a comparison that never happened, which is how each of this
     # tool's false passes has been manufactured.
-    missing = [path for path in args.paths if verified_entries[path] in (ABSENT, UNKNOWN)]
-    if missing:
+    # ABSENT and UNKNOWN both refuse, and they are DIFFERENT refusals. "It is
+    # not there" and "the lookup did not resolve to one file" are not the same
+    # fact, and an undecodable path was being told to "correct the spelling"
+    # when the spelling was already right -- advice nobody can act on. This file
+    # already records that a refusal instructing the operator to do the thing it
+    # refuses has become the defect three times.
+    #
+    # This message enumerates nothing, and that is the fix rather than a gap.
+    #
+    # Three attempts were made to explain WHICH cause of UNKNOWN the operator
+    # hit, and every one shipped a false statement:
+    #
+    #   "the spelling is not the problem"  -- false for a trailing-slash
+    #       multi-match, where it is exactly the problem.
+    #   "three things land here and only one is a spelling you can correct"
+    #       -- false for `--path ..`, which IS correctable, and a miscount:
+    #       there are four `return UNKNOWN` sites.
+    #   "...when git refuses the pathspec outright (`..` and absolute paths
+    #       do it) ... when the record comes back malformed"  -- false for an
+    #       absolute path INSIDE the worktree, which resolves to a real entry
+    #       and never reaches here, and the malformed case is unreachable from
+    #       any input at all.
+    #
+    # Each was written to correct its predecessor. The common factor is not the
+    # wording; it is that this code does not know the cause, and every sentence
+    # explaining it was invented at the point of writing.
+    #
+    # The fourth attempt was to say what it DOES know, and that failed the same
+    # way: "It is not absent there" is true in the --deleted-path branch, where
+    # `still_present` has already intercepted every git-refusal input, and false
+    # here, where nothing has -- `--path ..` is refused by git, so the tool holds
+    # no information about presence either way. It was carried from the branch
+    # where it happens to be true into the one where it is not.
+    #
+    # So this message asserts nothing beyond the refusal itself. An explanation
+    # nobody can verify is worth less than silence, and so is a reassurance.
+    absent = [path for path in args.paths if verified_entries[path] is ABSENT]
+    unresolved = [path for path in args.paths if verified_entries[path] == UNKNOWN]
+    if absent:
         print("REFUSED: these --path arguments do not exist at the verified head:")
-        for path in missing:
+        for path in absent:
             print(f"  {path}")
         print("Correct the spelling. You do not need to work the set out yourself: declare")
         print("anything real and this tool prints the exact set it derived, which is also")
         print("the only set it accepts.")
+        return 2
+    if unresolved:
+        print("REFUSED: these --path arguments did not resolve to one file at the")
+        print("verified head:")
+        for path in unresolved:
+            print(f"  {path}")
+        print("The lookup did not produce one comparable entry.")
+        print("Declare anything real and this tool prints the exact set it derived, which")
+        print("is also the only set it accepts.")
         return 2
     # `git ls-tree <ref> -- :(literal)src/lib` returns ONE record,
     # `040000 tree <sha> src/lib`, so a directory looked like present evidence
@@ -442,8 +539,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.deleted_paths:
         # A path must have existed at EVERY pre-change revision. Accepting it at
         # one of several would make the verdict depend on which base git named.
+        # Split for the same reason as the `--path` branch above, and found the
+        # same way: an independent check ran the undecodable case through THIS
+        # branch and got "do not exist at every pre-change revision" for a path
+        # that does exist. The same false sentence, one branch over, in the
+        # commit whose subject was that sentence.
         never_there = sorted({path for base in before for path in args.deleted_paths
-                              if _entry(base, path) in (ABSENT, UNKNOWN)})
+                              if _entry(base, path) is ABSENT})
+        unresolved_deleted = sorted({path for base in before for path in args.deleted_paths
+                                     if _entry(base, path) == UNKNOWN})
         # Only a TREE. A gitlink is one object id and compares like a blob, and
         # refusing it made a submodule removal unverifiable BY CONSTRUCTION:
         # `git diff` reports `D vendor`, the tool printed it under "Declare
@@ -469,6 +573,14 @@ def main(argv: list[str] | None = None) -> int:
                 print("--verified-head is an ancestor of --integration-ref, so that revision is the")
                 print("verified head itself, where a deleted path is absent by definition. Pass")
                 print("--base-ref <the branch this change forked off> to derive it properly.")
+            return 2
+        if unresolved_deleted:
+            named = ", ".join(base[:12] for base in before)
+            print("REFUSED: these --deleted-path arguments did not resolve to one file at")
+            print(f"every pre-change revision ({named}):")
+            for path in unresolved_deleted:
+                print(f"  {path}")
+            print("The lookup did not produce one comparable entry.")
             return 2
 
     # THE DECLARED SET MUST BE THE SET THIS CHANGE ACTUALLY TOUCHED.
@@ -496,6 +608,10 @@ def main(argv: list[str] | None = None) -> int:
         code, changed = _changed_paths(base, verified_ids[0])
         if code != 0:
             print(f"REFUSED: could not derive the changed paths between {base[:12]} and the verified head.")
+            if code == 2:
+                print("A path in this range is not valid UTF-8. Every other spelling here --")
+                print("`--path`, `ls-tree` output, this message -- is text, so the tool cannot")
+                print("compare it honestly and says so rather than reporting on the rest.")
             return 2
         for path, status in changed.items():
             derived[path] = "D" if derived.get(path) == "D" or status == "D" else status
