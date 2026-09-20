@@ -184,7 +184,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", "does/not/exist.txt",
         )
         assert done.returncode == 2
@@ -197,7 +197,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", UNTOUCHED,
             "--path", "does/not/exist.txt",
         )
@@ -222,7 +222,7 @@ class TestTheFalsePasses:
         done = run(
             history,
             "--verified-head", "0" * 40,
-            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
         )
         assert done.returncode == 2
@@ -245,7 +245,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", "never/was/a/file.txt",
         )
         assert done.returncode == 2
@@ -259,7 +259,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", near_miss,
             "--path", EDITED,
         )
@@ -276,7 +276,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -286,7 +286,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -310,7 +310,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--deleted-at", str(history["verified"]),
         )
@@ -327,7 +327,7 @@ class TestADeletionMustBeAnActualDeletion:
         provable = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -336,7 +336,7 @@ class TestADeletionMustBeAnActualDeletion:
         unprovable = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["from_the_base"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["from_the_base"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", LATER,
             "--path", EDITED,
         )
@@ -367,7 +367,7 @@ class TestADeletionMustBeAnActualDeletion:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", "gone.txt",
         )
         assert done.returncode == 2
@@ -397,7 +397,7 @@ class TestThePathspecIsLiteral:
         integration = _commit(repo, "it landed, alongside other work")
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, "--path", COLON_PREFIXED)
+                   "--base-ref", base, "--fork-point", base, "--path", COLON_PREFIXED)
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
@@ -409,7 +409,7 @@ class TestThePathspecIsLiteral:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", f"{EDITED[:-1]}*",
         )
         assert done.returncode == 2
@@ -482,7 +482,7 @@ class TestHowTheTreeIsRead:
         done = subprocess.run(
             [sys.executable, str(SCRIPT),
              "--verified-head", str(history["verified"]),
-             "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+             "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
              "--path", EDITED, "--path", LATER],
             cwd=str(nested), capture_output=True, text=True, check=False,
         )
@@ -511,7 +511,7 @@ class TestHowTheTreeIsRead:
         landed = _git(repo, "rev-parse", "HEAD")
 
         done = run(history, "--verified-head", head, "--integration-ref", landed,
-                   "--base-ref", str(history["base"]), "--path", odd)
+                   "--base-ref", str(history["base"]), "--fork-point", str(history["base"]), "--path", odd)
         assert done.returncode == 0
         assert "landed" in done.stdout
 
@@ -523,7 +523,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -535,7 +535,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["symlinked"]),
-            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", SYMLINKABLE,
             "--path", EDITED,
             "--path", LATER,
@@ -548,7 +548,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["chmodded"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -562,7 +562,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
         )
         assert done.returncode == 2
@@ -572,7 +572,7 @@ class TestModeAndType:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
         )
         assert done.returncode == 2
         assert "nothing to verify" in done.stdout
@@ -583,7 +583,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -596,7 +596,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -607,7 +607,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", UNTOUCHED,
             "--path", EDITED,
             "--path", LATER,
@@ -622,7 +622,7 @@ class TestTheContract:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
             "--no-merge-reported-success",
@@ -636,7 +636,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -646,7 +646,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["kept_the_removed_file"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["kept_the_removed_file"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", REMOVED,
             "--path", EDITED,
         )
@@ -657,7 +657,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["verified_landed"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--deleted-path", EDITED,
         )
         assert done.returncode == 2
@@ -667,7 +667,7 @@ class TestDeletions:
         done = run(
             history,
             "--verified-head", str(history["deletion"]),
-            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["integrated"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--deleted-path", EDITED,
         )
@@ -716,7 +716,7 @@ class TestAnUnresolvedLookup:
             [
                 sys.executable, str(SCRIPT),
                 "--verified-head", str(history["verified"]),
-                "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+                "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
                 "--path", EDITED,
                 "--path", LATER,
             ],
@@ -765,7 +765,7 @@ class TestADeletionCannotEvidenceAMerge:
         # exactly this set, so the operating memory's own prescribed workflow
         # produced it. It returned `landed`, exit 0, having read nothing.
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]), "--deleted-path", "leak.py")
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]), "--deleted-path", "leak.py")
 
         # Refused before anything is compared. The tool now derives the set
         # itself, so a deletions-only DECLARATION of a change that also edited a
@@ -780,7 +780,7 @@ class TestADeletionCannotEvidenceAMerge:
     def test_and_the_full_set_reaches_a_real_comparison(self, tmp_path):
         history = self._forked(tmp_path / "forked-full")
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]),
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
                    "--path", "core.py", "--deleted-path", "leak.py")
 
         # Whatever the verdict, it was reached by reading content rather than by
@@ -791,7 +791,7 @@ class TestADeletionCannotEvidenceAMerge:
     def test_the_same_refs_reveal_the_regression_once_a_kept_path_is_declared(self, tmp_path):
         history = self._forked(tmp_path / "forked2")
         done = run(history, "--verified-head", str(history["verified"]),
-                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]),
+                   "--integration-ref", str(history["integration"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
                    "--deleted-path", "leak.py", "--path", "core.py")
 
         assert done.returncode == 1
@@ -839,7 +839,7 @@ class TestTheMergeBaseIsNotATieBreak:
             pytest.skip("this git produced a single merge base; the tie-break is not exercised")
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", root, "--deleted-path", "F.py", "--path", "keep.txt")
+                   "--base-ref", root, "--fork-point", root, "--deleted-path", "F.py", "--path", "keep.txt")
 
         assert done.returncode == 2
         assert "do not exist at every pre-change revision" in done.stdout
@@ -896,7 +896,7 @@ class TestTheMergeBaseIsNotATieBreak:
         # `P.txt` still matches one base and differs from the other, which is
         # exactly the case the quantifier decides.
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", crisscross_base, "--path", "P.txt", "--path", "other.txt")
+                   "--base-ref", crisscross_base, "--fork-point", left, "--path", "P.txt", "--path", "other.txt")
 
         assert done.returncode == 2, done.stdout
         assert "do not differ from EVERY pre-change revision" in done.stdout
@@ -919,7 +919,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", UNTOUCHED,
         )
 
@@ -931,7 +931,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -943,7 +943,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", EDITED,
             "--path", LATER,
         )
@@ -981,7 +981,7 @@ class TestOnlyAPathTheChangeTouchedIsEvidence:
         done = run(
             history,
             "--verified-head", str(history["verified"]),
-            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]),
+            "--integration-ref", str(history["diverged"]), "--base-ref", str(history["base"]), "--fork-point", str(history["base"]),
             "--path", "does/not/exist.txt",
         )
 
@@ -1035,7 +1035,7 @@ class TestAnUnresolvedBaseLookupIsNotADifference:
         # head, so the base lookup is UNKNOWN. That was read as a difference,
         # and the only object compared -- `src/lib/core` -- is byte-identical
         # everywhere, while the integration side reverted the locality fix.
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"], "--path", "src/lib/")
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "src/lib/")
 
         assert done.returncode == 2
         # Refused before the comparison, as a directory rather than as an
@@ -1045,7 +1045,7 @@ class TestAnUnresolvedBaseLookupIsNotADifference:
 
     def test_the_same_squash_is_caught_when_the_path_is_spelled_as_git_reports_it(self, tmp_path):
         lab = self._lab(tmp_path / "slash2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["bad"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "src/locality.ts", "--deleted-path", "src/lib/legacy/index.ts")
 
         assert done.returncode == 1, done.stdout
@@ -1102,7 +1102,7 @@ class TestAnOrdinaryMergeCanBeVerified:
     def test_a_merge_that_kept_the_verified_content_passes(self, tmp_path):
         lab = self._lab(tmp_path / "ff")
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "keep.ts")
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "keep.ts")
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
@@ -1130,7 +1130,7 @@ class TestAnOrdinaryMergeCanBeVerified:
         assert _git(repo, "cat-file", "-p", f"{lab['integration']}:keep.ts").strip() == "before"
 
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "untouched.txt")
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "untouched.txt")
 
         assert done.returncode == 2, done.stdout
         # Named as declared-but-untouched, and told what the real set is.
@@ -1142,7 +1142,7 @@ class TestAnOrdinaryMergeCanBeVerified:
         lab = self._lab(tmp_path / "ours2", strategy=("-s", "ours"))
         # The probative path tells the truth about the same merge.
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "keep.ts")
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "keep.ts")
 
         assert done.returncode == 1
         assert "DIVERGED keep.ts" in done.stdout
@@ -1152,7 +1152,7 @@ class TestAnOrdinaryMergeCanBeVerified:
         # why the path comparison still has to run.
         lab = self._lab(tmp_path / "ff-reverted", revert=True)
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "keep.ts")
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "keep.ts")
 
         assert done.returncode == 1
         assert "DIVERGED keep.ts" in done.stdout
@@ -1202,7 +1202,7 @@ class TestADirectoryCannotWitnessContent:
 
     def test_the_tool_refuses_a_pure_deletion_as_it_says_it_does(self, tmp_path):
         lab = self._lab(tmp_path / "delonly")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--deleted-path", "src/lib/legacy/index.ts")
 
         assert done.returncode == 2
@@ -1213,7 +1213,7 @@ class TestADirectoryCannotWitnessContent:
         # Both of these returned exit 0 `landed` for two lineages that never
         # merged, on the strength of a tree whose only change was a removal.
         lab = self._lab(tmp_path / f"dir-{directory.replace('/', '-')}")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", directory)
 
         assert done.returncode == 2, done.stdout
@@ -1225,7 +1225,7 @@ class TestADirectoryCannotWitnessContent:
         # It is still refused, by the gate that asks what the change could have
         # altered -- and the refusal has to be exit 2, not a pass.
         lab = self._lab(tmp_path / "dir-trailing")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
@@ -1236,7 +1236,7 @@ class TestADirectoryCannotWitnessContent:
 
     def test_a_file_under_it_reports_what_actually_happened(self, tmp_path):
         lab = self._lab(tmp_path / "dir-file")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "README.md")
 
         # Untouched by the change, so it cannot witness the merge -- and the
@@ -1296,7 +1296,7 @@ class TestTheMergeBaseAllFlagIsPinnedWithoutATieBreak:
         # `never.txt` existed at neither base, so the verdict is a refusal under
         # either reading -- no tie-break is involved. What differs is the list.
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", crisscross_base, "--path", "keep.txt", "--deleted-path", "never.txt")
+                   "--base-ref", crisscross_base, "--fork-point", left, "--path", "keep.txt", "--deleted-path", "never.txt")
 
         assert done.returncode == 2
         for base in bases:
@@ -1351,7 +1351,7 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
         assert len(records.splitlines()) > 1
         assert "REDACTED" not in _git(repo, "cat-file", "-p", f"{lab['integration']}:src/lib/locality.ts")
 
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
@@ -1359,7 +1359,7 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
 
     def test_and_the_file_that_was_reverted_is_reported_when_it_is_declared(self, tmp_path):
         lab = self._lab(tmp_path / "ambiguous2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "src/lib/a.ts", "--path", "src/lib/locality.ts")
 
         assert done.returncode == 1
@@ -1432,7 +1432,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
         assert _git(repo, "cat-file", "-p", f"{lab['integration']}:x.txt").strip() == "x1"
 
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["ancient"], "--path", "f.txt")
+                   "--base-ref", lab["ancient"], "--fork-point", lab["fork"], "--path", "f.txt")
 
         assert done.returncode == 2, done.stdout
         assert "not the paths this change touched" in done.stdout
@@ -1442,7 +1442,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
         # declaration from that same base includes the path that tells the truth.
         lab = self._lab(tmp_path / "ours-full", strategy=("-s", "ours"))
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["ancient"], "--path", "f.txt", "--path", "x.txt")
+                   "--base-ref", lab["ancient"], "--fork-point", lab["fork"], "--path", "f.txt", "--path", "x.txt")
 
         assert done.returncode == 1, done.stdout
         assert "DIVERGED x.txt" in done.stdout
@@ -1450,7 +1450,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
     def test_the_honest_base_catches_it_with_one_path(self, tmp_path):
         lab = self._lab(tmp_path / "ours-honest", strategy=("-s", "ours"))
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["fork"], "--path", "x.txt")
+                   "--base-ref", lab["fork"], "--fork-point", lab["fork"], "--path", "x.txt")
 
         assert done.returncode == 1, done.stdout
         assert "DIVERGED x.txt" in done.stdout
@@ -1458,7 +1458,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
     def test_an_ours_strategy_conflict_resolution_is_caught_too(self, tmp_path):
         lab = self._lab(tmp_path / "x-ours", strategy=("-X", "ours"))
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["ancient"], "--path", "f.txt")
+                   "--base-ref", lab["ancient"], "--fork-point", lab["fork"], "--path", "f.txt")
 
         assert done.returncode == 2, done.stdout
         assert "not the paths this change touched" in done.stdout
@@ -1466,12 +1466,12 @@ class TestTheDeclaredSetIsDerivedNotChosen:
     def test_a_merge_then_revert_is_caught_too(self, tmp_path):
         lab = self._lab(tmp_path / "revert", revert=True)
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["ancient"], "--path", "f.txt")
+                   "--base-ref", lab["ancient"], "--fork-point", lab["fork"], "--path", "f.txt")
 
         assert done.returncode == 2, done.stdout
 
         honest = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                     "--base-ref", lab["fork"], "--path", "x.txt")
+                     "--base-ref", lab["fork"], "--fork-point", lab["fork"], "--path", "x.txt")
         assert honest.returncode == 1, honest.stdout
         assert "DIVERGED x.txt" in honest.stdout
 
@@ -1503,13 +1503,13 @@ class TestTheDeclaredSetIsDerivedNotChosen:
         lab = {"repo": repo, "ancient": ancient, "fork": fork, "verified": verified, "integration": integration}
 
         done = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", ancient, "--path", "f.txt", "--deleted-path", "ancient.txt")
+                   "--base-ref", ancient, "--fork-point", fork, "--path", "f.txt", "--deleted-path", "ancient.txt")
 
         # `ancient.txt` IS in the set derived from that distant base, so the
         # refusal is not about the declaration -- the point is that it no longer
         # buys a pass on its own, and the honest base rejects it outright.
         honest = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                     "--base-ref", fork, "--path", "f.txt", "--deleted-path", "ancient.txt")
+                     "--base-ref", fork, "--fork-point", fork, "--path", "f.txt", "--deleted-path", "ancient.txt")
         assert honest.returncode == 2, honest.stdout
         # The deletion gate speaks first: against the real fork point the file
         # was already gone, so there is no deletion of it to verify here.
@@ -1571,12 +1571,12 @@ class TestTheDeclaredSetIsDerivedNotChosen:
         # With the real fork point, the locality file is in the derived set and
         # the regression is reported instead of being called untouched.
         honest = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                     "--base-ref", base, "--path", "docs.md")
+                     "--base-ref", base, "--fork-point", base, "--path", "docs.md")
         assert honest.returncode == 2, honest.stdout
         assert "src/locality.py" in honest.stdout
 
         caught = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                     "--base-ref", base, "--path", "docs.md", "--path", "src/locality.py")
+                     "--base-ref", base, "--fork-point", base, "--path", "docs.md", "--path", "src/locality.py")
         assert caught.returncode == 0, caught.stdout
         # C1 did land here, so this one passes -- the point is that the path was
         # COMPARED rather than declared untouchable.
@@ -1607,7 +1607,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
 
         lab = {"repo": repo}
         done = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, "--path", "docs.md", "--path", "src/locality.py")
+                   "--base-ref", base, "--fork-point", base, "--path", "docs.md", "--path", "src/locality.py")
 
         assert done.returncode == 1, done.stdout
         assert "DIVERGED src/locality.py" in done.stdout
@@ -1693,7 +1693,7 @@ class TestTheDeclaredSetIsDerivedNotChosen:
 
         lab = {"repo": repo}
         done = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", crisscross_base, "--path", "P.txt", "--path", "Q.txt")
+                   "--base-ref", crisscross_base, "--fork-point", left, "--path", "P.txt", "--path", "Q.txt")
 
         assert done.returncode == 2, done.stdout
         assert "do not differ from EVERY pre-change revision" in done.stdout
@@ -1770,7 +1770,7 @@ class TestARenameIsTwoPathsNotOne:
         lab = self._lab(tmp_path / "rename")
         # A real path, but an incomplete set, so the refusal prints the whole
         # derived set rather than stopping at a spelling mistake.
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "new-name.ts")
 
         assert done.returncode == 2
@@ -1782,7 +1782,7 @@ class TestARenameIsTwoPathsNotOne:
 
     def test_and_the_derived_set_catches_what_the_squash_dropped(self, tmp_path):
         lab = self._lab(tmp_path / "rename2")
-        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"],
+        done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"], "--base-ref", lab["base"], "--fork-point", lab["base"],
                    "--path", "new-name.ts", "--path", "beside.ts", "--deleted-path", "old-name.ts")
 
         assert done.returncode == 1, done.stdout
@@ -1845,7 +1845,7 @@ class TestASubmoduleIsVerifiableLikeAnythingElse:
 
         lab = {"repo": repo}
         refused = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                      "--base-ref", base, "--path", "app.txt")
+                      "--base-ref", base, "--fork-point", base, "--path", "app.txt")
         assert refused.returncode == 2
         assert "--deleted-path vendor" in refused.stdout
 
@@ -1860,7 +1860,7 @@ class TestASubmoduleIsVerifiableLikeAnythingElse:
                     break
 
         done = run(lab, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, *instructed)
+                   "--base-ref", base, "--fork-point", base, *instructed)
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
 
@@ -1896,7 +1896,7 @@ class TestASubmoduleIsVerifiableLikeAnythingElse:
         assert at_verified != at_integration, (at_verified, at_integration)
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, "--path", "vendor")
+                   "--base-ref", base, "--fork-point", base, "--path", "vendor")
 
         assert done.returncode == 1, done.stdout
         assert "DIVERGED vendor" in done.stdout
@@ -1934,7 +1934,7 @@ class TestTheDeletedPathTypeGateIsReachable:
         integration = _commit(repo, "other work")
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, "--path", "keep.txt", "--deleted-path", "gone")
+                   "--base-ref", base, "--fork-point", base, "--path", "keep.txt", "--deleted-path", "gone")
 
         assert done.returncode == 2, done.stdout
         assert "name a directory" in done.stdout
@@ -1976,7 +1976,7 @@ class TestBothHalvesOfTheSetGate:
     def test_an_undeclared_deletion_is_refused_not_ignored(self, tmp_path):
         lab = self._lab(tmp_path / "half-set")
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "kept.txt", "--deleted-path", "dropped-a.txt")
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "kept.txt", "--deleted-path", "dropped-a.txt")
 
         assert done.returncode == 2, done.stdout
         assert "not the paths this change touched" in done.stdout
@@ -1985,7 +1985,7 @@ class TestBothHalvesOfTheSetGate:
     def test_and_the_full_set_catches_the_deletion_that_did_not_land(self, tmp_path):
         lab = self._lab(tmp_path / "half-set-full")
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "kept.txt",
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "kept.txt",
                    "--deleted-path", "dropped-a.txt", "--deleted-path", "dropped-b.txt")
 
         assert done.returncode == 1, done.stdout
@@ -1994,7 +1994,7 @@ class TestBothHalvesOfTheSetGate:
     def test_a_surplus_deletion_is_refused_too(self, tmp_path):
         lab = self._lab(tmp_path / "half-set-surplus")
         done = run(lab, "--verified-head", lab["verified"], "--integration-ref", lab["integration"],
-                   "--base-ref", lab["base"], "--path", "kept.txt",
+                   "--base-ref", lab["base"], "--fork-point", lab["base"], "--path", "kept.txt",
                    "--deleted-path", "dropped-a.txt", "--deleted-path", "dropped-b.txt",
                    "--deleted-path", "never-existed.txt")
 
@@ -2052,7 +2052,318 @@ class TestTheDerivationReadsWhatGitActuallyPrinted:
         integration = _commit(repo, "both landed")
 
         done = run({"repo": repo}, "--verified-head", verified, "--integration-ref", integration,
-                   "--base-ref", base, "--path", odd, "--path", "plain.txt")
+                   "--base-ref", base, "--fork-point", base, "--path", odd, "--path", "plain.txt")
 
         assert done.returncode == 0, done.stdout
         assert "landed" in done.stdout
+
+
+class TestInstanceTwelveTheBaseBranchAbsorbedPartOfTheChange:
+    """The base branch is not a pre-change revision once it carries the change.
+
+    Reproduced against the code that shipped in #1532, by following this file's
+    OWN documented derivation: `git diff --name-status <merge-base>..<verified>`
+    with `--base-ref` taken from the pull request's base branch. A reverted
+    locality fix reported `landed`, exit 0.
+
+    The shape: the change forks at F and commits C1 then C2. The base branch
+    then acquires C1 -- an earlier partial merge of the same lineage, a
+    cherry-pick, a branch merged from behind its head. `merge-base(C2, base)` is
+    now C1, which is INSIDE the change, so the derived set is the tail of the
+    change and every path it touched at C1 is dropped -- with the tool stating
+    as fact that the change "does not touch" them.
+    """
+
+    def _lab(self, tmp_path: Path) -> dict[str, str | Path]:
+        repo = tmp_path
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "locality.txt").write_text("coordinate withheld: no\n")
+        (repo / "seed.txt").write_text("seed\n")
+        fork = _commit(repo, "F: the fork point")
+
+        (repo / "locality.txt").write_text("coordinate withheld: yes\n")
+        c1 = _commit(repo, "C1: withhold the coordinate")
+        (repo / "added.txt").write_text("b\n")
+        verified = _commit(repo, "C2: add a file")
+
+        # The base branch acquires C1 and moves on. It is now a descendant of a
+        # commit of this change.
+        _git(repo, "checkout", "-q", "--force", "main")
+        _git(repo, "reset", "-q", "--hard", c1)
+        (repo / "unrelated.txt").write_text("the base branch moved on\n")
+        base = _commit(repo, "base branch moves on, carrying C1")
+
+        # The merge lands C2 but silently reverts the locality fix.
+        _git(repo, "checkout", "-q", "-b", "integration", base)
+        _git(repo, "merge", "-q", "--no-commit", "--no-ff", verified)
+        _git(repo, "checkout", "-q", fork, "--", "locality.txt")
+        integration = _commit(repo, "merge, with the locality fix reverted")
+
+        assert _git(repo, "merge-base", verified, base) == c1, "the lab does not reproduce the shape"
+        return {"repo": repo, "fork": fork, "c1": c1, "verified": verified,
+                "base": base, "integration": integration}
+
+    def test_the_merge_base_derivation_omits_the_path_that_was_reverted(self, tmp_path):
+        """The premise, asserted rather than described."""
+        lab = self._lab(tmp_path / "absorbed-premise")
+        repo = Path(str(lab["repo"]))
+
+        from_merge_base = _git(repo, "diff", "--name-status", "--no-renames",
+                               f"{lab['c1']}..{lab['verified']}")
+        from_fork = _git(repo, "diff", "--name-status", "--no-renames",
+                         f"{lab['fork']}..{lab['verified']}")
+
+        assert "locality.txt" not in from_merge_base
+        assert "locality.txt" in from_fork
+        # And the revert is real: the integration side does not hold what was
+        # verified there.
+        assert _git(repo, "ls-tree", str(lab["verified"]), "--", "locality.txt") != \
+               _git(repo, "ls-tree", str(lab["integration"]), "--", "locality.txt")
+
+    def test_nothing_is_verified_without_a_fork_point(self, tmp_path):
+        lab = self._lab(tmp_path / "absorbed-required")
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--path", "added.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "--fork-point is required" in done.stdout
+        assert "verdict" not in done.stdout
+
+    def test_the_fork_point_restores_the_path_the_merge_base_dropped(self, tmp_path):
+        lab = self._lab(tmp_path / "absorbed-set")
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--fork-point", str(lab["fork"]),
+                   "--path", "added.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "not the paths this change touched" in done.stdout
+        assert "--path locality.txt" in done.stdout
+
+    def test_and_the_full_declaration_catches_the_reverted_fix(self, tmp_path):
+        lab = self._lab(tmp_path / "absorbed-caught")
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--fork-point", str(lab["fork"]),
+                   "--path", "added.txt", "--path", "locality.txt")
+
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED locality.txt" in done.stdout
+        assert "STOP THIS MERGE LANE" in done.stdout
+
+    def test_the_contamination_is_stated_not_absorbed_silently(self, tmp_path):
+        """A tool that quietly corrects a hazard teaches nobody it exists."""
+        lab = self._lab(tmp_path / "absorbed-note")
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--fork-point", str(lab["fork"]),
+                   "--path", "added.txt", "--path", "locality.txt")
+
+        assert "already carries part of this change" in done.stdout
+        assert str(lab["c1"])[:12] in done.stdout
+
+    def test_a_fork_point_that_is_not_an_ancestor_is_refused(self, tmp_path):
+        lab = self._lab(tmp_path / "absorbed-stranger")
+        repo = Path(str(lab["repo"]))
+        _git(repo, "checkout", "-q", "--force", "-b", "stranger", str(lab["fork"]))
+        (repo / "stranger.txt").write_text("not on the change's line\n")
+        stranger = _commit(repo, "a commit the verified head never saw")
+
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--fork-point", stranger,
+                   "--path", "added.txt", "--path", "locality.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "not an ancestor of --verified-head" in done.stdout
+
+    def test_the_verified_head_is_not_its_own_fork_point(self, tmp_path):
+        lab = self._lab(tmp_path / "absorbed-self")
+        done = run(lab, "--verified-head", str(lab["verified"]),
+                   "--integration-ref", str(lab["integration"]),
+                   "--base-ref", str(lab["base"]), "--fork-point", str(lab["verified"]),
+                   "--path", "added.txt", "--path", "locality.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "is not the state before" in done.stdout
+
+    def test_an_unresolvable_fork_point_is_an_evidence_failure(self, tmp_path):
+        """And refused for THAT reason, named.
+
+        Asserting only "exit 2, no verdict" was too weak to be a test: a
+        mutation that skipped resolution entirely and carried the raw string
+        forward still refused -- later, for the wrong reason -- and the suite
+        stayed green. A refusal that cannot say which fact is missing is the
+        shape this whole lineage is about.
+        """
+        lab = self._lab(tmp_path / "absorbed-unresolvable")
+        # Not `--not-a-ref`: argparse reads a leading dash as the next FLAG, so
+        # that spelling never reached the tool at all and the test was passing
+        # on an argparse usage error. The dash case is exercised below, where
+        # `=` forces it through as a value.
+        for spelling in ("no/such/ref", "=-not-a-ref"):
+            done = run(lab, "--verified-head", str(lab["verified"]),
+                       "--integration-ref", str(lab["integration"]),
+                       "--base-ref", str(lab["base"]),
+                       *(["--fork-point" + spelling] if spelling.startswith("=")
+                         else ["--fork-point", spelling]),
+                       "--path", "added.txt", "--path", "locality.txt")
+
+            assert done.returncode == 2, done.stdout
+            assert "--fork-point" in done.stdout, spelling
+            assert "does not resolve to a commit in this checkout" in done.stdout
+            assert "verdict" not in done.stdout
+            # ONE refusal, naming the earliest missing fact. A mutation that
+            # skipped the bail and carried the raw string forward still refused
+            # -- later, with "is not an ancestor of --verified-head", which is a
+            # statement about a commit that does not exist. Asserting only that
+            # SOMETHING refused could not tell the two apart, and the mutant
+            # survived a sweep because of it.
+            assert "not an ancestor" not in done.stdout, spelling
+
+    def test_a_path_that_is_not_utf8_is_refused_rather_than_raised(self, tmp_path):
+        """A crash must not be spelled the same way as a verdict.
+
+        A non-UTF-8 path is legal in git. `subprocess(text=True)` raised
+        `UnicodeDecodeError` out of `communicate()` -- an unhandled traceback
+        and exit 1, which is this tool's code for "the integration ref does not
+        hold the verified result". Fail-closed, and indistinguishable to a
+        caller from a real dropped commit.
+        """
+        repo = tmp_path / "not-utf8"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("a\n")
+        fork = _commit(repo, "M0")
+
+        # Raw bytes. Writing `b"bad-\xff-name.txt".decode("latin-1")` through a
+        # str path re-encodes it as valid UTF-8 and the premise evaporates.
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        (repo / "plain.txt").write_text("a2\n")
+        verified = _commit(repo, "a path that is not utf-8")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        done = run({"repo": repo}, "--verified-head", verified,
+                   "--integration-ref", integration, "--base-ref", fork,
+                   "--fork-point", fork, "--path", "plain.txt")
+
+        assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "could not derive the changed paths" in done.stdout
+        # The reason, named: 2 is "I cannot read this", 1 is "the merge dropped
+        # your work", and a caller has to be able to tell them apart.
+        assert "not valid UTF-8" in done.stdout
+
+
+class TestTheDerivedSetDoesNotDependOnGitConfig:
+    """Configuration is another way of choosing the set.
+
+    Round 10 replaced a declared path set with a derived one on the premise
+    that the operator can no longer choose it. Two ordinary `git config`
+    settings were still choosing it, and the first is a false pass reproduced
+    against shipped code.
+    """
+
+    def test_ignore_submodules_can_hide_a_dropped_submodule_bump(self, tmp_path):
+        """`diff.ignoreSubmodules=all` dropped the gitlink from the derived set,
+        so the declaration did not have to mention it, and a merge that dropped
+        the bump returned exit 0 `landed`."""
+        repo = tmp_path / "ignored-submodule"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "keep.txt").write_text("keep\n")
+        _git(repo, "update-index", "--add", "--cacheinfo",
+             f"160000,{'0' * 39}1,vendor")
+        _git(repo, "add", "keep.txt")
+        fork = _commit(repo, "M0", stage=False)
+
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}2,vendor")
+        (repo / "keep.txt").write_text("keep2\n")
+        _git(repo, "add", "keep.txt")
+        verified = _commit(repo, "bump the submodule and touch keep", stage=False)
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "update-index", "--cacheinfo", f"160000,{'0' * 39}1,vendor")
+        integration = _commit(repo, "merge but drop the submodule bump", stage=False)
+
+        # The premise, asserted: this setting really does change what git lists.
+        _git(repo, "config", "diff.ignoreSubmodules", "all")
+        listed = _git(repo, "diff", "--name-status", "--no-renames", f"{fork}..{verified}")
+        assert "vendor" not in listed, listed
+
+        lab = {"repo": repo}
+        # Declaring only what the CONFIGURED listing shows must not pass.
+        done = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                   "--base-ref", fork, "--fork-point", fork, "--path", "keep.txt")
+        assert done.returncode == 2, done.stdout
+        assert "not the paths this change touched" in done.stdout
+        assert "--path vendor" in done.stdout
+
+        # And the set the tool derives catches the dropped bump.
+        caught = run(lab, "--verified-head", verified, "--integration-ref", integration,
+                     "--base-ref", fork, "--fork-point", fork,
+                     "--path", "keep.txt", "--path", "vendor")
+        assert caught.returncode == 1, caught.stdout
+        assert "DIVERGED vendor" in caught.stdout
+
+    def test_diff_relative_does_not_move_the_set_with_the_working_directory(self, tmp_path):
+        """`diff.relative=true` lists paths relative to the CURRENT directory
+        while `_entry` reads them with `ls-tree --full-tree` from the root, so
+        the two halves stop agreeing about what a path is called.
+
+        Fail-closed rather than a false pass -- the set empties or shrinks and
+        the refusal follows -- and still the set depending on where someone
+        stood when they ran it.
+        """
+        repo = tmp_path / "relative"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        _git(repo, "config", "diff.relative", "true")
+
+        (repo / "sub").mkdir()
+        (repo / "root.txt").write_text("v1\n")
+        (repo / "sub" / "inner.txt").write_text("s0\n")
+        fork = _commit(repo, "M0")
+
+        (repo / "root.txt").write_text("v2\n")
+        (repo / "sub" / "inner.txt").write_text("s1\n")
+        verified = _commit(repo, "the change touches both")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        _git(repo, "checkout", "-q", verified, "--", ".")
+        _git(repo, "checkout", "-q", fork, "--", "root.txt")
+        integration = _commit(repo, "merge, reverting the root file")
+
+        # Run from the subdirectory, which is what the setting reacts to.
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", verified, "--integration-ref", integration,
+             "--base-ref", fork, "--fork-point", fork,
+             "--path", "root.txt", "--path", "sub/inner.txt"],
+            cwd=str(repo / "sub"), capture_output=True, text=True, check=False,
+        )
+
+        # Repo-root spellings, derived identically from anywhere, and the
+        # reverted root file is caught rather than lost with the directory.
+        assert done.returncode == 1, done.stdout
+        assert "DIVERGED root.txt" in done.stdout

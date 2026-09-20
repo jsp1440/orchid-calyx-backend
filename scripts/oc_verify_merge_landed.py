@@ -59,6 +59,17 @@ verified head, and a revision cannot be the pre-change state of a change it
 already contains. Pass `--base-ref <the branch the change forked off>` and it is
 derived from there instead.
 
+`--base-ref` alone is not enough, and an earlier version of this paragraph said
+it was. A merge base is the fork point only while the base branch carries NO
+commit of this change. Once it carries one -- an earlier partial merge of the
+same lineage, a cherry-pick, a branch merged from behind its head -- the merge
+base is a commit INSIDE the change, the derived set is that change's tail, and
+every path the change touched earlier is dropped while the tool states as fact
+that the change "does not touch" them. So `--fork-point` is required: the commit
+this change forked FROM, read from a record made BEFORE the base branch moved --
+the pull request's own recorded base sha is the usual source. When it and the
+merge base disagree, the tool says so and derives from the fork point.
+
 Containment is NOT an answer to this, and an earlier version of this tool
 treating it as one is how the class reopened. It proves the COMMIT is in the
 history; it says nothing about the resulting tree. `git merge -s ours` makes the
@@ -85,8 +96,10 @@ than a pair of matching nonsense strings.
 Scope, stated plainly: this proves the integration side holds what was verified
 at the declared paths, and only those. It says nothing about content the merge
 *added* at paths nobody declared, and nothing about paths the caller forgot --
-derive the set mechanically with `git diff --name-status <base>..<verified-head>`
-rather than by hand. It is built for the dropped-commit failure class of #706,
+derive the set mechanically with
+`git diff --name-status <fork-point>..<verified-head>` rather than by hand, and
+note `<fork-point>` rather than `<merge-base>`: see above for why they are not
+the same commit once the base branch has absorbed part of the change. It is built for the dropped-commit failure class of #706,
 not for injection.
 
 Collecting the evidence is a handful of read-only `git rev-parse`, `merge-base`
@@ -159,15 +172,52 @@ def _changed_paths(base: str, head: str) -> tuple[int, dict[str, str]]:
 
     `-z` because a status record and its path are NUL-separated here; a rename
     carries two paths, so the fields are consumed as a stream rather than split
-    per line.
+    per line. It also turns off `core.quotePath`, so a non-ASCII path arrives as
+    its bytes rather than as an escaped spelling nothing else here would match.
+
+    EVERY option that decides WHICH paths are listed is passed explicitly, and
+    none is left to `git config`. Round 10 replaced a declared set with a derived
+    one on the premise that the operator can no longer choose it. Configuration
+    is another way of choosing, and two settings a person may perfectly
+    reasonably have set were changing the answer:
+
+    * `diff.ignoreSubmodules=all` drops gitlinks from the listing. The derived
+      set then omits a submodule the change bumped, so the declaration need not
+      mention it, and a merge that dropped the bump reported `landed` with exit
+      0. Reproduced against shipped code. `--ignore-submodules=none` says so
+      outright.
+    * `diff.relative=true` makes the listing relative to the CURRENT DIRECTORY,
+      while `_entry` reads paths with `ls-tree --full-tree` from the repository
+      root. Run from a subdirectory the two halves then disagree about what a
+      path is called -- the derived set empties out, or shrinks to the paths
+      under that directory. That is fail-closed rather than a false pass, and it
+      is still the set depending on where someone stood. `--no-relative`.
+
+    `--no-renames` was already explicit for the same reason, and is the reason to
+    look for the rest: one option pinned against config while its neighbours are
+    not is a rule that holds by luck.
     """
+    # Bytes, decoded here rather than by `subprocess`. A path that is not UTF-8
+    # is legal in git, and `text=True` raised `UnicodeDecodeError` out of
+    # `communicate()` -- an unhandled traceback and exit 1, which is this tool's
+    # code for "the integration ref does not hold the verified result". A crash
+    # must not be spelled the same way as a verdict, even a refusing one.
     done = subprocess.run(
-        ["git", "diff", "--name-status", "--no-renames", "-z", "--end-of-options", f"{base}..{head}"],
-        capture_output=True, text=True, check=False,
+        [
+            "git", "diff", "--name-status", "--no-renames", "--no-relative",
+            "--ignore-submodules=none", "-z", "--end-of-options", f"{base}..{head}",
+        ],
+        capture_output=True, check=False,
     )
     if done.returncode != 0:
         return done.returncode, {}
-    fields = [field for field in done.stdout.split("\0") if field]
+    try:
+        stdout = done.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # 2, not 1: this is an evidence failure, and the caller must be able to
+        # tell "I cannot read this" from "the merge dropped your work".
+        return 2, {}
+    fields = [field for field in stdout.split("\0") if field]
     changed: dict[str, str] = {}
     index = 0
     while index + 1 < len(fields) + 1 and index < len(fields):
@@ -261,6 +311,16 @@ def main(argv: list[str] | None = None) -> int:
             "the branch this change forked off, e.g. the pull request's base. Required when "
             "the verified head is already an ancestor of --integration-ref, because their "
             "merge base is then the verified head and cannot say which paths the change touched"
+        ),
+    )
+    parser.add_argument(
+        "--fork-point",
+        default=None,
+        help=(
+            "the commit this change forked FROM, taken from a record made before the "
+            "base branch moved -- the pull request's own recorded base sha is the usual "
+            "source. Required, because the merge base of --verified-head and --base-ref "
+            "is NOT the fork point once the base branch has absorbed part of this change"
         ),
     )
     parser.add_argument(
@@ -420,6 +480,75 @@ def main(argv: list[str] | None = None) -> int:
         print("REFUSED: --verified-head and --base-ref share no common ancestor.")
         return 2
 
+    # INSTANCE TWELVE. `merge-base(verified, base-ref)` is the fork point only
+    # while the base branch has not acquired any commit OF THIS CHANGE. Once it
+    # has -- a branch merged from behind its head, a cherry-pick, an earlier
+    # partial merge of the same lineage -- the merge base is a commit INSIDE the
+    # change, the derived set shrinks to that change's tail, and every path the
+    # change touched before it is dropped with the tool stating as fact that the
+    # change "does not touch" them. Reproduced against the code that shipped in
+    # #1532: a reverted locality fix reported `landed`, exit 0, with the path set
+    # derived exactly as this file's own docstring prescribed.
+    #
+    # So the fork point is an input, from a record made BEFORE the base branch
+    # moved, and it is UNIONED with the merge bases rather than replacing them.
+    # Union, specifically, because it makes the choosing monotone: naming an
+    # earlier commit can only grow the set, and naming a later one cannot shrink
+    # it below what the merge bases already give. The one thing a caller would
+    # want from this input -- a smaller set -- is unreachable through it. That is
+    # the difference between this input and `--base-ref`, which every previous
+    # round got wrong by leaving a way to choose DOWNWARD.
+    if args.fork_point is None:
+        print("REFUSED: --fork-point is required. It names the commit this change forked")
+        print("FROM, read from a record made before the base branch moved -- the pull")
+        print("request's own recorded base sha is the usual source.")
+        print("The merge base of --verified-head and --base-ref cannot stand in for it:")
+        print("once the base branch has absorbed any commit of this change, that merge")
+        print("base is inside the change, and the set derived from it silently omits")
+        print("every path the change touched before that point.")
+        return 2
+
+    fork_ids = _resolve_ref("--fork-point", args.fork_point)
+    if fork_ids is None:
+        return 2
+    if fork_ids[0] == verified_ids[0]:
+        print("REFUSED: --fork-point is --verified-head. A commit is not the state before")
+        print("itself, and the set derived from it is empty.")
+        return 2
+    if not _is_ancestor(fork_ids[0], verified_ids[0]):
+        print("REFUSED: --fork-point is not an ancestor of --verified-head, so it is not a")
+        print("commit this change forked from. Nothing derived from it describes this change.")
+        return 2
+
+    # A merge base STRICTLY AFTER the fork point is a commit of this change that
+    # the base branch has acquired. It is not a state before the change, so it is
+    # not a pre-change revision and it is dropped rather than unioned in.
+    #
+    # Dropping, not keeping, because the probative gate asks a declared path to
+    # differ from EVERY pre-change revision. Keep such a base and the gate reads
+    # a path the change altered BEFORE that commit as unchanged -- it is
+    # identical there, because that is where the change put it -- and refuses the
+    # one path that would catch the regression. Keeping it and unioning was tried
+    # here first and did exactly that.
+    #
+    # Dropping can only move the derived set earlier, which can only make it
+    # larger, so this cannot be used to hide a path.
+    inside = [base for base in before if base != fork_ids[0] and _is_ancestor(fork_ids[0], base)]
+    if inside:
+        print(f"NOTE: the base branch already carries part of this change: {', '.join(b[:12] for b in sorted(inside))}")
+        print(f"{'is' if len(inside) == 1 else 'are'} descended from --fork-point ({fork_ids[0][:12]}), so the merge base with --base-ref is")
+        print("inside the change rather than before it. Deriving from the fork point instead;")
+        print("the set below is the wider, correct one.")
+    # Only when contamination was actually found. Adding the fork point
+    # unconditionally looks harmless -- it is always at or before the merge base
+    # -- and is not: the probative gate asks a declared path to differ from EVERY
+    # pre-change revision, so a second, later revision in that set turns paths
+    # the change genuinely touched into non-probative ones and refuses an honest
+    # distant-base check that works today. The fork point replaces what it
+    # corrects; it does not accumulate.
+    if inside:
+        before = sorted({fork_ids[0], *(base for base in before if base not in inside)})
+
     # WHAT THIS DOES AND DOES NOT ESTABLISH, stated because the alternative is
     # a claim that keeps turning out to be false.
     #
@@ -435,10 +564,19 @@ def main(argv: list[str] | None = None) -> int:
     # Refusing every ancestor is not the answer either -- a base branch that has
     # not moved since the fork IS an ancestor, and that is the ordinary case.
     #
-    # So: derive `--base-ref` from the pull request's own base branch,
-    # mechanically. Do not pick a commit. The same rule as every other input
-    # here -- a fact you choose is not a check -- applies to this one, and this
-    # is the one place the tool cannot enforce it for you.
+    # That advice used to end here, with "so: derive `--base-ref` from the pull
+    # request's own base branch, mechanically". Following it exactly is how
+    # instance twelve was produced: the base branch had absorbed a commit of the
+    # change, so the mechanical derivation returned a revision inside it. The
+    # mechanical instruction was the delivery vector, for the third time in this
+    # lineage.
+    #
+    # `--fork-point`, read from a record made BEFORE the base branch moved,
+    # replaces any merge base that turns out to be inside the change. It is
+    # still a fact the caller supplies -- the tool cannot derive it from these
+    # refs, which is the honest statement of the limit -- but it is one the
+    # caller cannot use to SHRINK the set, because the only thing it can do is
+    # move the pre-change revision earlier.
     if args.deleted_paths:
         # A path must have existed at EVERY pre-change revision. Accepting it at
         # one of several would make the verdict depend on which base git named.
@@ -496,6 +634,10 @@ def main(argv: list[str] | None = None) -> int:
         code, changed = _changed_paths(base, verified_ids[0])
         if code != 0:
             print(f"REFUSED: could not derive the changed paths between {base[:12]} and the verified head.")
+            if code == 2:
+                print("A path in this range is not valid UTF-8. Every other spelling here --")
+                print("`--path`, `ls-tree` output, this message -- is text, so the tool cannot")
+                print("compare it honestly and says so rather than reporting on the rest.")
             return 2
         for path, status in changed.items():
             derived[path] = "D" if derived.get(path) == "D" or status == "D" else status
