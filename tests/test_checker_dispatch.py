@@ -574,3 +574,82 @@ def test_the_checker_head_binding_is_the_checker_head() -> None:
     assert validation.checker_head_sha == MOVED_HEAD
     assert validation.exact_head_verified is False
     assert any("checker verified" in entry for entry in validation.stale_evidence)
+
+
+class TestOneIdentityPerActorHereToo:
+    """The dispatch side compared identities as raw strings.
+
+    `head_bound_integration` and `factory_policy` normalized; this module did
+    not, and the disagreement was not cosmetic. `assign_checker` would SELECT
+    the maker as their own checker under any respelling -- `"maker-a "`,
+    `"MAKER-A"`, `"maker-a\\n"` -- and `CheckerAssignment` would then record,
+    durably, that an independent checker existed. The gate downstream refused
+    that record, so the loop stalled on an assignment asserting the opposite of
+    why it was stuck.
+
+    An independent check of #1544 raised this as a follow-up. All three sites
+    now go through `head_bound_integration.same_actor`, which is public for
+    that reason. Not "three copies of one rule" -- this module held a DIFFERENT
+    rule, which is the whole defect; `factory_policy` held a separate
+    implementation that agreed, which is a different hazard and still one.
+    """
+
+    RESPELLINGS = (MAKER + " ", " " + MAKER, MAKER.upper(), MAKER + "\n", MAKER.title())
+
+    def test_a_respelled_maker_is_not_an_available_checker(self) -> None:
+        for spelling in self.RESPELLINGS:
+            with pytest.raises(
+                CheckerDispatchError, match="NO_INDEPENDENT_CHECKER_AVAILABLE"
+            ):
+                assign_checker(_intent(), 2, MAKER, [spelling])
+
+    def test_a_genuinely_different_checker_is_still_selected(self) -> None:
+        assignment = assign_checker(_intent(), 2, MAKER, [MAKER + " ", CHECKER])
+        assert assignment.checker_id == CHECKER
+
+    def test_an_assignment_naming_a_respelled_maker_cannot_be_constructed(self) -> None:
+        for spelling in self.RESPELLINGS:
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _assignment(checker_id=spelling)
+
+    def test_nor_can_the_evidence_record(self) -> None:
+        """The guard this class originally left unpinned.
+
+        `CheckerAssignment` and `CheckerEvidence` carry the same rule, and only
+        the assignment half was tested. Reverting `CheckerEvidence`'s guard
+        alone left the ENTIRE repository suite green -- 29 failed / 7616 passed,
+        identical to the unmutated head -- so this change added exactly the
+        thing it argues against: a second copy of a rule with nothing holding it
+        to the first.
+
+        `CheckerEvidence` is the record `parse_evidence` reconstructs durable
+        GitHub receipts into, and the one #1544's follow-up named first.
+        """
+        for spelling in self.RESPELLINGS:
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _evidence(checker_id=spelling)
+
+    def test_and_the_three_modules_now_agree(self) -> None:
+        """The property that was actually missing: one answer, not three."""
+        from app.calyx_orchestrator.factory_policy import ValidationEvidence
+        from app.calyx_orchestrator.head_bound_integration import same_actor
+
+        for spelling in self.RESPELLINGS:
+            evidence = ValidationEvidence(
+                maker_id=MAKER,
+                checker_id=spelling,
+                checker_verdict=CheckerVerdict.PASS,
+                required_checks_passed=True,
+                head_sha=HEAD_SHA,
+                checker_head_sha=HEAD_SHA,
+                checks_head_sha=HEAD_SHA,
+            )
+            assert same_actor(spelling, MAKER) is True, spelling
+            assert evidence.independent_checker is False, spelling
+            # `match=`, because a bare `pytest.raises(ValueError)` here would be
+            # satisfied by any unrelated constructor error -- FINGERPRINT_REQUIRED,
+            # say -- and pass while proving nothing about identity.
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _assignment(checker_id=spelling)
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _evidence(checker_id=spelling)

@@ -9,6 +9,7 @@ from app.calyx_orchestrator.factory_policy import (
     ValidationEvidence,
     WorkIntent,
 )
+from app.calyx_orchestrator.head_bound_integration import same_actor
 
 CHECKER_ASSIGNMENT_TAG = "OC-CHECKER-ASSIGNMENT-V1"
 CHECKER_EVIDENCE_TAG = "OC-CHECKER-EVIDENCE-V1"
@@ -45,7 +46,7 @@ class CheckerAssignment:
             raise ValueError("CHECKER_ID_REQUIRED")
         if not self.material_fingerprint.strip():
             raise ValueError("FINGERPRINT_REQUIRED")
-        if self.checker_id == self.maker_id:
+        if same_actor(self.checker_id, self.maker_id):
             raise ValueError("CHECKER_MUST_DIFFER_FROM_MAKER")
 
 
@@ -94,7 +95,7 @@ class CheckerEvidence:
             raise ValueError("REASON_REQUIRED")
         if not self.material_fingerprint.strip():
             raise ValueError("FINGERPRINT_REQUIRED")
-        if self.checker_id == self.maker_id:
+        if same_actor(self.checker_id, self.maker_id):
             raise ValueError("CHECKER_MUST_DIFFER_FROM_MAKER")
 
 
@@ -116,8 +117,13 @@ def assign_checker(
     if not available_checkers:
         raise CheckerDispatchError("NO_CHECKERS_AVAILABLE")
 
+    # `!=` here let the MAKER be selected as their own checker under any
+    # respelling -- "maker-a ", "MAKER-A", "maker-a\n" -- and the assignment
+    # then recorded, durably, that an independent checker existed. The gate
+    # downstream refused it, so the loop stalled on a record asserting the
+    # opposite of why it was stuck.
     for candidate in available_checkers:
-        if candidate and candidate.strip() and candidate != maker_id:
+        if candidate and candidate.strip() and not same_actor(candidate, maker_id):
             return CheckerAssignment(
                 repository=intent.repository,
                 issue_number=intent.issue_number,

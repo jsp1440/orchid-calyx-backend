@@ -9,6 +9,7 @@ from app.calyx_orchestrator.head_bound_integration import (
     EvidenceSource,
     IntegrationEvidence,
     Observation,
+    same_actor,
 )
 from app.calyx_orchestrator.head_bound_integration import (
     exact_head_verified as head_bound_exact_head_verified,
@@ -45,9 +46,14 @@ class MissionStatus(StrEnum):
     DONE = "done"
 
 
-def _same_actor(left: str, right: str) -> bool:
-    """Whether two identity strings name the same actor."""
-    return " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
+#: One rule, imported rather than restated. What stood here was a SEPARATE
+#: implementation that happened to agree -- a `(str, str) -> bool` predicate
+#: beside the module's `(str) -> str` normaliser -- and agreeing is exactly the
+#: problem, because nothing made it keep agreeing. (Not "identical": an
+#: independent check diffed them, and this comment asserted the same falsehood
+#: its sibling in `head_bound_integration` had already been corrected for, in
+#: the same commit.)
+_same_actor = same_actor
 
 
 def _head_bound_verified(
