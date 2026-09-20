@@ -112,3 +112,64 @@ def test_unknown_protected_boundary_fails_closed_to_owner_gate():
     assert result["candidates"] == []
     assert result["parked"][0]["reason"] == "owner_gate"
     assert result["parked"][0]["unknown_boundaries"] == ["future-sensitive-boundary"]
+
+
+
+def test_operational_brain_capability_allows_intent_admission():
+    result = normalize_intents(
+        [intent(required_capabilities=("reasoning_ledger",))]
+    )
+
+    assert result["parked"] == []
+    assert result["candidates"][0]["required_capabilities"] == [
+        "reasoning_ledger"
+    ]
+
+
+def test_unknown_brain_capability_parks_intent_fail_closed():
+    result = normalize_intents(
+        [intent(required_capabilities=("missing_capability",))]
+    )
+
+    assert result["candidates"] == []
+    assert result["parked"] == [
+        {
+            "source_key": "frontend-660",
+            "reason": "brain_capability_ineligible",
+            "capability_results": [
+                {
+                    "capability_id": "missing_capability",
+                    "eligible": False,
+                    "reasons": [
+                        "capability is absent from the verified registry"
+                    ],
+                }
+            ],
+        }
+    ]
+
+
+def test_incomplete_brain_capability_parks_without_blocking_other_work():
+    result = normalize_intents(
+        [
+            intent(
+                source_key="blocked",
+                required_capabilities=("executive_planning",),
+            ),
+            intent(source_key="ready", issue_number=661),
+        ]
+    )
+
+    assert [item["source_key"] for item in result["parked"]] == ["blocked"]
+    assert [item["source_ref"] for item in result["candidates"]] == ["#661"]
+    assert result["parked"][0]["reason"] == "brain_capability_ineligible"
+    assert result["parked"][0]["capability_results"][0]["eligible"] is False
+
+
+def test_capability_requirements_are_part_of_material_identity():
+    baseline = normalize_intents([intent()])["candidates"][0]
+    governed = normalize_intents(
+        [intent(required_capabilities=("reasoning_ledger",))]
+    )["candidates"][0]
+
+    assert baseline["material_fingerprint"] != governed["material_fingerprint"]

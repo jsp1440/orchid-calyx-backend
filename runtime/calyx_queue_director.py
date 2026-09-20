@@ -14,6 +14,10 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Any
 
+from runtime.brain_capability_registry import (
+    CapabilityRegistry,
+    canonical_brain_registry,
+)
 from scripts.oc_backlog_refiller import plan_refill
 
 _SCHEMA = "oc.calyx-development-intent.v1"
@@ -51,6 +55,7 @@ class DevelopmentIntent:
     repo: str
     objective: str
     acceptance_criteria: tuple[str, ...]
+    required_capabilities: tuple[str, ...] = ()
     dependencies: tuple[str, ...] = ()
     priority: int = 2
     protected_boundaries: tuple[str, ...] = ()
@@ -66,6 +71,7 @@ def _fingerprint(intent: DevelopmentIntent) -> str:
         "repo": intent.repo,
         "objective": intent.objective,
         "acceptance_criteria": list(intent.acceptance_criteria),
+        "required_capabilities": sorted(set(intent.required_capabilities)),
         "dependencies": list(intent.dependencies),
         "priority": intent.priority,
         "protected_boundaries": sorted(intent.protected_boundaries),
@@ -77,12 +83,17 @@ def _fingerprint(intent: DevelopmentIntent) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def normalize_intents(intents: Iterable[DevelopmentIntent]) -> dict[str, Any]:
+def normalize_intents(
+    intents: Iterable[DevelopmentIntent],
+    *,
+    registry: CapabilityRegistry | None = None,
+) -> dict[str, Any]:
     """Normalize Calyx reasoning into Queue Bridge candidates, fail closed."""
     candidates: list[dict[str, Any]] = []
     parked: list[dict[str, Any]] = []
     rejected: list[dict[str, Any]] = []
     seen: set[str] = set()
+    capability_registry = registry or canonical_brain_registry()
 
     for intent in intents:
         if intent.source_key in seen:
@@ -118,6 +129,19 @@ def normalize_intents(intents: Iterable[DevelopmentIntent]) -> dict[str, Any]:
                 {"source_key": intent.source_key, "reason": "runtime_backoff_no_api"}
             )
             continue
+        capability_results = [
+            capability_registry.eligibility(capability_id)
+            for capability_id in sorted(set(intent.required_capabilities))
+        ]
+        if any(not result["eligible"] for result in capability_results):
+            parked.append(
+                {
+                    "source_key": intent.source_key,
+                    "reason": "brain_capability_ineligible",
+                    "capability_results": capability_results,
+                }
+            )
+            continue
         candidates.append(
             {
                 "source_kind": "issue",
@@ -129,6 +153,7 @@ def normalize_intents(intents: Iterable[DevelopmentIntent]) -> dict[str, Any]:
                 "material_fingerprint": _fingerprint(intent),
                 "semantic_key": f"calyx-director:{intent.source_key}",
                 "priority": max(0, min(5, int(intent.priority))),
+                "required_capabilities": sorted(set(intent.required_capabilities)),
                 "dependencies": list(intent.dependencies),
                 "protected_boundaries": [],
             }
@@ -152,9 +177,10 @@ def plan_calyx_refill(
     *,
     reserve_depth: int = 2,
     planner_ok: bool = True,
+    registry: CapabilityRegistry | None = None,
 ) -> dict[str, Any]:
     """Send safe Calyx intents through the canonical reserve planner."""
-    normalized = normalize_intents(intents)
+    normalized = normalize_intents(intents, registry=registry)
     result = plan_refill(
         snapshot,
         normalized["candidates"],
