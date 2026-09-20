@@ -436,12 +436,12 @@ def test_the_provider_payload_carries_no_submitter_or_task_identity():
 @pytest.mark.parametrize(
     "credential",
     [
-        "ghp_abcdefghijklmnopqrstuvwxyz0123456789",
-        "github_pat_11ABCDEFG0123456789_abcdefghijklmnop",
+        "ghp_" + "abcdefghijklmnopqrstuvwxyz0123456789",
+        "github_" + "pat_11ABCDEFG0123456789_abcdefghijklmnop",
         "sk-abcdefghijklmnopqrstuvwxyz012345",
         "Bearer abcdefghijklmnopqrstuvwxyz0123456789",
-        "-----BEGIN RSA PRIVATE KEY-----",
-        "AKIAIOSFODNN7EXAMPLE",
+        "-----BEGIN " + "RSA PRIVATE KEY-----",
+        "AKIA" + "IOSFODNN7EXAMPLE",
     ],
 )
 def test_a_credential_is_refused_entry_to_a_persisted_intent(credential):
@@ -452,7 +452,7 @@ def test_a_credential_is_refused_entry_to_a_persisted_intent(credential):
 
 def test_a_credential_in_an_alternative_is_refused_too():
     with pytest.raises(ValueError, match="credential-shaped"):
-        intent(alternatives_considered=["use ghp_abcdefghijklmnopqrstuvwxyz0123456789"])
+        intent(alternatives_considered=["use ghp_" + "abcdefghijklmnopqrstuvwxyz0123456789"])
 
 
 def test_redaction_leaves_ordinary_scientific_text_alone():
