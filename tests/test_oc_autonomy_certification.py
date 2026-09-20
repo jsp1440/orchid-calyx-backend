@@ -79,7 +79,6 @@ def test_malformed_exact_head_or_merge_identity_fails_closed():
 
 def test_reused_durable_identity_stops_the_streak():
     duplicate_cases = (
-        {"cycle_id": "1"},
         {"work_identity": "issue:1"},
         {"lease_identity": "lease:1"},
         {"pr_number": 1501},
@@ -276,6 +275,7 @@ def test_generator_evaluation_does_not_hide_excess_evidence():
     [
         [good(2)],
         [good(1), good(3)],
+        [good(1), good(2, cycle_id="1")],
         [good(1), good(2, cycle_id="02")],
         [good(1), good(2, cycle_id="cycle-2")],
     ],
