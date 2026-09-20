@@ -45,7 +45,7 @@ def _translate(exc: Exception) -> None:
 async def ingest_dataset(
     project_id: str,
     auth: Auth,
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File()],
     logical_name: str | None = Query(default=None, min_length=1, max_length=200),
 ):
     owner = _subject(auth)
