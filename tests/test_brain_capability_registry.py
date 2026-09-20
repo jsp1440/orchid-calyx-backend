@@ -16,7 +16,8 @@ def test_seed_exposes_only_verified_operational_work_as_eligible():
 
     assert decisions["literature_candidate_handoff"]["eligible"] is True
     assert decisions["scientific_language_intake"]["eligible"] is True
-    assert decisions["reasoning_ledger"]["eligible"] is False
+    assert decisions["reasoning_ledger"]["eligible"] is True
+    assert decisions["executive_planning"]["eligible"] is False
     assert view["read_only"] is True
     assert view["execution_authority"] is False
     assert view["publication_authority"] is False
@@ -88,3 +89,24 @@ def test_dependency_cycles_fail_closed_without_recursion_error():
 
     assert result["eligible"] is False
     assert "dependency cycle: first -> second -> first" in str(result["reasons"])
+
+
+def test_reasoning_ledger_registry_metadata_is_pinned_and_non_authoritative():
+    view = canonical_brain_registry().orchestrator_view()
+    reasoning = next(
+        item
+        for item in view["capabilities"]
+        if item["capability_id"] == "reasoning_ledger"
+    )
+
+    assert reasoning["canonical_issue"] == "orchid-calyx-backend#142"
+    assert reasoning["status"] == "OPERATIONAL"
+    assert reasoning["public_entry_point"] == "/api/reasoning-ledgers"
+    assert reasoning["next_executable_slice"] is None
+    assert reasoning["blockers"] == ()
+    assert "migrations/103_reasoning_ledger.sql" in reasoning["repository_evidence"]
+    assert reasoning["last_verified_commit"] == (
+        "a379045af226c3c700e201d3da1c4028822f778b"
+    )
+    assert view["execution_authority"] is False
+    assert view["publication_authority"] is False
