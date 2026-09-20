@@ -39,6 +39,7 @@ class CycleEvidence:
     recoverable_fault_seen: bool = False
     recoverable_fault_healed: bool = False
     manual_intervention: bool = False
+    verification_base_sha: str = ""
 
     @property
     def accepted(self) -> bool:
@@ -47,6 +48,10 @@ class CycleEvidence:
         if self.pr_number <= 0:
             return False
         if not _is_full_sha(self.exact_head_sha) or not _is_full_sha(self.merged_sha):
+            return False
+        if not _is_full_sha(self.verification_base_sha):
+            return False
+        if self.verification_base_sha in {self.exact_head_sha, self.merged_sha}:
             return False
         if not (
             self.exact_head_ci_green and self.landed_verified and self.lease_released
@@ -89,6 +94,7 @@ def evaluate(
     seen_pr_numbers: set[int] = set()
     seen_exact_heads: set[str] = set()
     seen_merge_shas: set[str] = set()
+    seen_verification_bases: set[str] = set()
     for cycle in cycles:
         if not cycle.accepted:
             return Certification(
@@ -105,6 +111,7 @@ def evaluate(
             ("PR identity", cycle.pr_number, seen_pr_numbers),
             ("exact head", cycle.exact_head_sha, seen_exact_heads),
             ("merge identity", cycle.merged_sha, seen_merge_shas),
+            ("verification base", cycle.verification_base_sha, seen_verification_bases),
         )
         for name, value, seen in identities:
             if value in seen:
@@ -215,6 +222,7 @@ def append_cycle(path: Path, cycle: CycleEvidence) -> Certification:
         "pr_number",
         "exact_head_sha",
         "merged_sha",
+        "verification_base_sha",
     )
     for existing in cycles:
         for name in identity_fields:

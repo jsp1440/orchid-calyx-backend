@@ -12,14 +12,19 @@ from scripts.oc_autonomy_certification import (
 )
 
 
+def _sha(value: int) -> str:
+    return f"{value:040x}"
+
+
 def good(i, **kw):
     base = {
         "cycle_id": str(i),
         "work_identity": f"issue:{i}",
         "lease_identity": f"lease:{i}",
         "pr_number": 1500 + i,
-        "exact_head_sha": f"{i:040x}",
-        "merged_sha": f"{i + 100:040x}",
+        "exact_head_sha": _sha(1000 + i),
+        "merged_sha": _sha(2000 + i),
+        "verification_base_sha": _sha(3000 + i),
         "exact_head_ci_green": True,
         "landed_verified": True,
         "lease_released": True,
@@ -78,8 +83,8 @@ def test_reused_durable_identity_stops_the_streak():
         {"work_identity": "issue:1"},
         {"lease_identity": "lease:1"},
         {"pr_number": 1501},
-        {"exact_head_sha": f"{1:040x}"},
-        {"merged_sha": f"{101:040x}"},
+        {"exact_head_sha": _sha(1001)},
+        {"merged_sha": _sha(2001)},
     )
     for duplicate in duplicate_cases:
         result = evaluate([good(1), good(2, **duplicate)])
@@ -154,3 +159,19 @@ def test_reader_fails_closed_on_corrupt_or_inconsistent_ledger(
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):
         read_ledger(path)
+
+
+def test_verification_base_is_required_and_distinct():
+    assert not good(1, verification_base_sha="").accepted
+    assert not good(1, verification_base_sha=_sha(1001)).accepted
+    assert not good(1, verification_base_sha=_sha(2001)).accepted
+
+
+def test_verification_base_identity_cannot_be_reused():
+    base = _sha(3999)
+    first = good(1, verification_base_sha=base)
+    second = good(2, verification_base_sha=base)
+    result = evaluate([first, second])
+    assert not result.certified
+    assert result.accepted_streak == 1
+    assert "verification base" in result.reason
