@@ -116,8 +116,10 @@ class Certification:
 def evaluate(
     cycles: Iterable[CycleEvidence], target: int = TARGET_STREAK
 ) -> Certification:
-    if target <= 0:
-        return Certification(False, 0, target, False, "target must be positive")
+    if isinstance(target, bool) or not isinstance(target, int) or target <= 0:
+        return Certification(
+            False, 0, target, False, "target must be a positive integer"
+        )
 
     streak = 0
     recovery_proven = False

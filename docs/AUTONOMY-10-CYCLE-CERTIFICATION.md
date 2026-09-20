@@ -1,6 +1,8 @@
 # Autonomous 10-cycle certification
 
 The engineering loop is certified only after ten consecutive accepted cycles.
+The evaluator accepts only a positive integer target; booleans, numeric-looking
+strings, floats, nulls, and non-positive integers fail closed.
 
 Each cycle must carry durable work identity and lease identity, an exact PR number
 and exact head SHA, exact-head green CI, a merge SHA, independent landed-result
