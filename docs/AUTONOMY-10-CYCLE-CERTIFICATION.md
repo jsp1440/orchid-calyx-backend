@@ -13,6 +13,12 @@ Cycle, work, lease, PR, exact-head, and merge identities must each be unique
 across the streak, and commit identities must be complete lowercase 40-character
 Git SHAs. Caller-supplied “no duplicate” assertions are never sufficient.
 
+The JSON ledger can be reconstructed after interruption. Loading fails closed on
+unknown schemas, changed targets, malformed cycle shapes, inconsistent derived
+acceptance, or a result that does not match the stored evidence. Appending is
+atomic; replaying the identical cycle is a no-op, while reusing any durable
+identity with changed evidence is refused.
+
 At least one of the ten cycles must encounter a recoverable fault and heal it
 without manual intervention. A genuine owner gate parks that item and the
 scheduler should select other eligible work; an owner gate is never healed by

@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from scripts.oc_autonomy_certification import CycleEvidence, evaluate, write_ledger
+import pytest
+
+from scripts.oc_autonomy_certification import (
+    CycleEvidence,
+    append_cycle,
+    evaluate,
+    read_ledger,
+    write_ledger,
+)
 
 
 def good(i, **kw):
@@ -96,3 +104,53 @@ def test_ledger_is_machine_readable_and_atomic_shape(tmp_path: Path):
     assert data["schema"] == "oc.autonomy.certification.v1"
     assert data["cycles"][0]["accepted"] is True
     assert data["result"]["certified"] is result.certified
+
+
+def test_ledger_round_trip_preserves_cycle_evidence(tmp_path: Path):
+    path = tmp_path / "certification.json"
+    cycles = [good(1, recoverable_fault_seen=True, recoverable_fault_healed=True)]
+    write_ledger(path, cycles)
+    assert read_ledger(path) == cycles
+
+
+def test_append_is_restart_safe_and_identical_replay_is_a_no_op(tmp_path: Path):
+    path = tmp_path / "certification.json"
+    first = good(1)
+    append_cycle(path, first)
+    before = path.read_bytes()
+
+    result = append_cycle(path, first)
+
+    assert path.read_bytes() == before
+    assert result.accepted_streak == 1
+    append_cycle(path, good(2))
+    assert read_ledger(path) == [first, good(2)]
+
+
+def test_append_refuses_identity_reuse_with_changed_evidence(tmp_path: Path):
+    path = tmp_path / "certification.json"
+    append_cycle(path, good(1))
+    with pytest.raises(ValueError, match="reuses lease_identity"):
+        append_cycle(path, good(2, lease_identity="lease:1"))
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda data: data.update(schema="unknown"),
+        lambda data: data.update(target_streak=9),
+        lambda data: data["cycles"][0].update(accepted=False),
+        lambda data: data["cycles"][0].update(extra="untrusted"),
+        lambda data: data["result"].update(accepted_streak=99),
+    ),
+)
+def test_reader_fails_closed_on_corrupt_or_inconsistent_ledger(
+    tmp_path: Path, mutation
+):
+    path = tmp_path / "certification.json"
+    write_ledger(path, [good(1)])
+    data = json.loads(path.read_text())
+    mutation(data)
+    path.write_text(json.dumps(data))
+    with pytest.raises(ValueError):
+        read_ledger(path)
