@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 
 from app.security import verify_owner_or_api_key
 
@@ -31,7 +31,14 @@ def _translate(exc: Exception) -> None:
     if isinstance(exc, DataIntelligenceError):
         status = (
             404
-            if exc.code in {"DATASET_VERSION_NOT_FOUND", "ANALYSIS_NOT_FOUND"}
+            if exc.code
+            in {
+                "ANALYSIS_NOT_FOUND",
+                "ARTIFACT_NOT_FOUND",
+                "DATASET_VERSION_NOT_FOUND",
+            }
+            else 409
+            if exc.code == "ARTIFACT_INTEGRITY_FAILURE"
             else 422
         )
         raise HTTPException(
@@ -146,6 +153,42 @@ def get_analysis(
             dataset_id,
             version_id,
             analysis_id,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@router.get(
+    "/projects/{project_id}/datasets/{dataset_id}/versions/{version_id}/"
+    "analyses/{analysis_id}/export/{export_format}"
+)
+def export_analysis(
+    project_id: str,
+    dataset_id: str,
+    version_id: str,
+    analysis_id: str,
+    export_format: str,
+    auth: Auth,
+):
+    owner = _subject(auth)
+    try:
+        content, media_type, filename, content_hash = _service().export_result(
+            owner=owner,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            analysis_id=analysis_id,
+            export_format=export_format,
+        )
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+                "ETag": f'"{content_hash}"',
+                "X-Content-SHA256": content_hash,
+            },
         )
     except Exception as exc:
         _translate(exc)
