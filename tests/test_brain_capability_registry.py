@@ -18,7 +18,7 @@ def test_seed_exposes_only_verified_operational_work_as_eligible():
     assert decisions["scientific_language_intake"]["eligible"] is True
     assert decisions["reasoning_ledger"]["eligible"] is True
     assert decisions["epistemic_memory"]["eligible"] is True
-    assert decisions["data_intelligence"]["eligible"] is False
+    assert decisions["data_intelligence"]["eligible"] is True
     assert decisions["executive_planning"]["eligible"] is True
     assert view["read_only"] is True
     assert view["execution_authority"] is False
@@ -147,14 +147,12 @@ def test_memory_and_data_registry_metadata_are_evidence_pinned():
     assert memory["upstream_dependencies"] == ("reasoning_ledger",)
 
     data = by_id["data_intelligence"]
-    assert data["status"] == "PARTIAL"
-    assert data["eligibility"]["eligible"] is False
-    assert data["next_executable_slice"]
-    assert data["blockers"] == (
-        "full export and reusable-workflow review flow are incomplete",
-    )
+    assert data["status"] == "OPERATIONAL"
+    assert data["eligibility"]["eligible"] is True
+    assert data["next_executable_slice"] is None
+    assert data["blockers"] == ()
     assert data["last_verified_commit"] == (
-        "fa3954fd04dee0015ee5afe166c1bb7402d9b981"
+        "9bd4e836d257ff34ee5b9628f0d3784fa3cc0656"
     )
     assert view["execution_authority"] is False
     assert view["publication_authority"] is False
