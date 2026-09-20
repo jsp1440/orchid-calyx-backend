@@ -20,6 +20,10 @@ from .glossary_candidates import (
     GlossaryCandidateRecord,
     JsonGlossaryCandidateRepository,
 )
+from .glossary_projection import (
+    GlossaryProjectionNotReviewedError,
+    project_canonical_glossary_entry,
+)
 from .language import (
     BOTANICAL_LATIN_BACKGROUND,
     BotanicalLanguageService,
@@ -233,6 +237,40 @@ def get_glossary_candidate(
     return record
 
 
+@router.get("/glossary/{concept_id}")
+def get_canonical_glossary_entry(
+    concept_id: str,
+    service: Annotated[ConceptRegistryService, Depends(get_concept_service)],
+    language: Annotated[str | None, Query(min_length=2, max_length=35)] = None,
+):
+    try:
+        return project_canonical_glossary_entry(
+            service,
+            concept_id,
+            language=language,
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": str(exc)},
+        ) from exc
+    except GlossaryProjectionNotReviewedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": str(exc)},
+        ) from exc
+    except (RuntimeError, psycopg.Error) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "CONCEPT_DATABASE_UNAVAILABLE"},
+        ) from exc
+
+
 @router.get("/health")
 def health():
     return {
@@ -243,4 +281,5 @@ def health():
         "botanical_latin_background": True,
         "automatic_concept_promotion": False,
         "durable_candidate_intake": True,
+        "reviewed_canonical_glossary_projection": True,
     }
