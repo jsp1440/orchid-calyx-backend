@@ -304,6 +304,22 @@ def test_two_heads_sharing_a_twelve_hex_prefix_are_different_heads() -> None:
     assert decision.action is FactoryAction.REQUIRE_CHECKER
 
 
+def test_stale_evidence_names_colliding_heads_in_full() -> None:
+    evidence = _passing_evidence(
+        head_sha=PREFIX_A,
+        checker_head_sha=PREFIX_B,
+        checks_head_sha=PREFIX_B,
+    )
+
+    assert evidence.stale_evidence == (
+        f"checker verified {PREFIX_B}",
+        f"checks ran against {PREFIX_B}",
+    )
+    decision = evaluate_factory_gate(_intent(head_sha=PREFIX_A), evidence)
+    assert PREFIX_A in decision.reason or PREFIX_B in decision.reason
+    assert decision.integration_authorized is False
+
+
 def test_and_the_same_holds_for_the_checks_head() -> None:
     decision = evaluate_factory_gate(
         _intent(),

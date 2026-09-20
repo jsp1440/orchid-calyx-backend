@@ -213,9 +213,9 @@ class ValidationEvidence:
         """Which facts are about some other commit, for a refusal that can say so."""
         stale: list[str] = []
         if self.checker_head_sha and self.checker_head_sha != self.head_sha:
-            stale.append(f"checker verified {self.checker_head_sha[:12]}")
+            stale.append(f"checker verified {self.checker_head_sha}")
         if self.checks_head_sha and self.checks_head_sha != self.head_sha:
-            stale.append(f"checks ran against {self.checks_head_sha[:12]}")
+            stale.append(f"checks ran against {self.checks_head_sha}")
         return tuple(stale)
 
 
