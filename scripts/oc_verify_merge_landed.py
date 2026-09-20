@@ -263,9 +263,11 @@ def _entry(ref: str, path: str) -> str | None:
     # `_changed_paths`, and it has to be BOTH: this call site runs first, so
     # fixing only the other one left the identical traceback reachable by
     # declaring the undecodable path instead of merely having it in the range.
-    # A comment saying "a crash must not be spelled the same way as a verdict"
-    # sitting two hundred lines above a crash spelled exactly that way is the
-    # shape this whole lineage is about.
+    # The comment saying "a crash must not be spelled the same way as a verdict"
+    # is sixty-five lines above where that crash was, in the same file. (An
+    # earlier version of this comment said "two hundred lines", a figure nobody
+    # measured -- and an invented magnitude in a change about unverified
+    # assertions is the shape this whole lineage is about.)
     try:
         stdout = done.stdout.decode("utf-8")
     except UnicodeDecodeError:
@@ -346,14 +348,40 @@ def main(argv: list[str] | None = None) -> int:
     # Absence is not evidence: comparing "not there" with "not there" reports
     # agreement on a comparison that never happened, which is how each of this
     # tool's false passes has been manufactured.
-    missing = [path for path in args.paths if verified_entries[path] in (ABSENT, UNKNOWN)]
-    if missing:
+    # ABSENT and UNKNOWN both refuse, and they are DIFFERENT refusals. "It is
+    # not there" and "the lookup did not resolve to one file" are not the same
+    # fact, and an undecodable path was being told to "correct the spelling"
+    # when the spelling was already right -- advice nobody can act on. This file
+    # already records that a refusal instructing the operator to do the thing it
+    # refuses has become the defect three times.
+    #
+    # The UNKNOWN message does NOT claim the spelling is fine, because UNKNOWN
+    # has more than one cause: a trailing slash matching several entries IS a
+    # spelling problem, and undecodable bytes are not. Splitting the message and
+    # asserting "the spelling is not the problem" turned the directory case into
+    # a second false statement -- caught by an existing test, which is what it
+    # was there for.
+    absent = [path for path in args.paths if verified_entries[path] is ABSENT]
+    unresolved = [path for path in args.paths if verified_entries[path] == UNKNOWN]
+    if absent:
         print("REFUSED: these --path arguments do not exist at the verified head:")
-        for path in missing:
+        for path in absent:
             print(f"  {path}")
         print("Correct the spelling. You do not need to work the set out yourself: declare")
         print("anything real and this tool prints the exact set it derived, which is also")
         print("the only set it accepts.")
+        return 2
+    if unresolved:
+        print("REFUSED: these --path arguments did not resolve to one file at the")
+        print("verified head:")
+        for path in unresolved:
+            print(f"  {path}")
+        print("Three things land here and only one of them is a spelling you can correct:")
+        print("the pathspec matched SEVERAL entries (a trailing slash does that, and")
+        print("resolves to nothing usable); the lookup failed; or it returned bytes this")
+        print("tool cannot compare, which is what a path that is not valid UTF-8 does.")
+        print("Declare anything real and this tool prints the exact set it derived, which")
+        print("is also the only set it accepts.")
         return 2
     # `git ls-tree <ref> -- :(literal)src/lib` returns ONE record,
     # `040000 tree <sha> src/lib`, so a directory looked like present evidence

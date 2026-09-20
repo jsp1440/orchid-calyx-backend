@@ -1355,7 +1355,16 @@ class TestAnAmbiguousPathspecComparesNothingItClaimsTo:
                    "--path", "src/lib/")
 
         assert done.returncode == 2, done.stdout
-        assert "do not exist at the verified head" in done.stdout
+        # A multi-match is UNKNOWN, not ABSENT, and those are now separate
+        # refusals: "it is not there" and "that did not resolve to one file"
+        # are different facts. This one is the second, it names the pathspec,
+        # and it does not claim the spelling is fine -- a trailing slash IS the
+        # spelling problem here, even though the sibling cause (undecodable
+        # bytes) is not.
+        assert "did not resolve to one file" in done.stdout
+        assert "src/lib/" in done.stdout
+        assert "the spelling is not the problem" not in done.stdout.lower()
+        assert "verdict" not in done.stdout
 
     def test_and_the_file_that_was_reverted_is_reported_when_it_is_declared(self, tmp_path):
         lab = self._lab(tmp_path / "ambiguous2")
@@ -2228,10 +2237,21 @@ class TestTheDerivedSetDoesNotDependOnGitConfig:
         _git(repo, "merge", "-q", "--no-edit", verified)
         integration = _git(repo, "rev-parse", "HEAD")
 
-        # The undecodable path named directly, as a `--path`. Python hands argv
-        # through as surrogate-escaped text, which is a spelling no tree lookup
-        # can match -- so the only acceptable outcomes are a refusal or a
-        # divergence, never a pass and never a traceback.
+        # The undecodable path named directly, as a `--path`.
+        #
+        # An earlier version of this comment said argv's surrogate-escaped
+        # spelling is "a spelling no tree lookup can match". That is FALSE --
+        # `surrogateescape` round-trips to the original bytes, so `:(literal)`
+        # matches the entry exactly; `git ls-tree` returns the record. It also
+        # mattered: had it been true this test would have been VACUOUS, because
+        # a non-matching lookup is ABSENT, which also refuses with exit 2 and no
+        # traceback, so the test would have passed against unfixed code. It
+        # discriminates only because the premise was wrong.
+        #
+        # It is the same error as the one this test's sibling already had to
+        # fix -- a fixture whose stated premise had quietly evaporated -- which
+        # is why the assertion below is on the ABSENCE OF A CRASH, a fact the
+        # lookup's behaviour cannot make vacuous.
         done = subprocess.run(
             [sys.executable, str(SCRIPT),
              "--verified-head", verified, "--integration-ref", integration,
@@ -2245,3 +2265,60 @@ class TestTheDerivedSetDoesNotDependOnGitConfig:
         assert "UnicodeDecodeError" not in done.stderr, done.stderr
         assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
         assert "verdict      : landed" not in done.stdout
+        # And the premise, asserted rather than described: the lookup really
+        # does match, so this path reaches the tool as a resolvable entry and
+        # the refusal is about reading it, not about finding it.
+        record = subprocess.run(
+            ["git", "ls-tree", "--full-tree", "-z", "--end-of-options", verified,
+             "--", ":(literal)" + os.fsdecode(b"bad-\xff-name.txt")],
+            cwd=str(repo), capture_output=True, check=False,
+        )
+        assert record.returncode == 0
+        assert record.stdout, "the pathspec matched nothing; this test would be vacuous"
+
+
+class TestWhatAnUnreadableLookupReturns:
+    """`_entry`'s contract, which only a comment asserted.
+
+    An independent check mutated the new guard two ways -- `return ABSENT`
+    instead of `UNKNOWN`, and `errors="replace"` instead of refusing -- and both
+    left the whole suite green. Neither can produce a wrong verdict, because the
+    gates downstream absorb them, so they are equivalent at the verdict level.
+    They are not equivalent in what the tool SAYS: ABSENT routes an unreadable
+    path to "does not exist at the verified head", which is untrue of a path
+    that is sitting right there.
+    """
+
+    def _repo_with_an_undecodable_path(self, tmp_path):
+        repo = tmp_path / "unreadable-entry"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+        (repo / "plain.txt").write_text("a\n")
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        head = _commit(repo, "a path that is not utf-8")
+        return repo, head
+
+    def test_an_unreadable_lookup_is_unknown_and_not_absent(self, tmp_path):
+        import importlib.util
+
+        repo, head = self._repo_with_an_undecodable_path(tmp_path)
+        spec = importlib.util.spec_from_file_location("verifier_under_test", SCRIPT)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+
+        cwd = os.getcwd()
+        try:
+            os.chdir(repo)
+            entry = module._entry(head, os.fsdecode(b"bad-\xff-name.txt"))
+        finally:
+            os.chdir(cwd)
+
+        # The distinction the comment claimed and nothing checked.
+        assert entry == module.UNKNOWN
+        assert entry is not module.ABSENT
+        # And it is not a fabricated entry either: nothing that could be
+        # compared against the integration side as though it were read.
+        assert entry == ""
