@@ -397,6 +397,39 @@ def test_existing_factory_admits_independent_exact_head_pass(material):
     assert decision.integration_authorized is True
 
 
+def test_a_pull_request_head_that_moved_is_not_authorized_by_the_old_review(material):
+    """The merge path, and the failure that motivated all of this.
+
+    #1524 merged at `657b2f1` while its review was at `6a57183`; #1526 at
+    `85bb2b2` while its review was at `9acced7`; #1530 six minutes after it was
+    opened. Each was authorized by evidence that was TRUE -- of another commit.
+
+    `decide()` used to convert the checker's evidence without ever asking what
+    the pull request head is now, so the only head comparison was
+    `checked == assignment`, which a moved head satisfies.
+    """
+    state, checked, assignment, evidence = factory_state(material)
+    moved = copy.deepcopy(material)
+    moved["pr"]["head"]["sha"] = "f" * 40
+
+    decision = hosted.decide(state, moved, checked, assignment, evidence)
+
+    assert decision.integration_authorized is False
+    assert decision.action.value == "require_checker"
+    # And it says which commit the evidence was actually about.
+    assert decision.reason.startswith("EVIDENCE_IS_ABOUT_ANOTHER_HEAD")
+    assert assignment.head_sha[:12] in decision.reason
+
+
+def test_and_the_unmoved_head_is_still_authorized(material):
+    state, checked, assignment, evidence = factory_state(material)
+    unmoved = copy.deepcopy(material)
+
+    decision = hosted.decide(state, unmoved, checked, assignment, evidence)
+
+    assert decision.integration_authorized is True
+
+
 @pytest.mark.parametrize("field", hosted.RISK_FIELDS)
 def test_checker_owner_boundary_always_prevents_auto_integration(material, field):
     state, checked, assignment, evidence = factory_state(material, **{field: True})

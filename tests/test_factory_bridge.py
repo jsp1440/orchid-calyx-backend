@@ -44,13 +44,20 @@ def _intent(**overrides: object) -> WorkIntent:
     return WorkIntent(**values)  # type: ignore[arg-type]
 
 
+HEAD = "6a57183395c29f0a47b4a11cd86fabe34ac10d95"
+
+
 def _evidence(**overrides: object) -> ValidationEvidence:
     values: dict[str, object] = {
         "maker_id": "maker-a",
         "checker_id": "checker-b",
         "checker_verdict": CheckerVerdict.PASS,
-        "exact_head_verified": True,
         "required_checks_passed": True,
+        # `exact_head_verified` is derived from these, not asserted: evidence
+        # that cannot name the commit it is about is not evidence.
+        "head_sha": HEAD,
+        "checker_head_sha": HEAD,
+        "checks_head_sha": HEAD,
     }
     values.update(overrides)
     return ValidationEvidence(**values)  # type: ignore[arg-type]

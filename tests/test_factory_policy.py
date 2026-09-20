@@ -27,13 +27,24 @@ def _intent(**overrides: object) -> WorkIntent:
     return WorkIntent(**values)  # type: ignore[arg-type]
 
 
+#: Two real commits from this repository's merge-verifier lineage. #1524 was
+#: merged at the first while its review was at the second.
+HEAD = "6a57183395c29f0a47b4a11cd86fabe34ac10d95"
+OTHER_HEAD = "657b2f183c35852af10ca290730b03a23dd1d64e"
+
+
 def _passing_evidence(**overrides: object) -> ValidationEvidence:
     values: dict[str, object] = {
         "maker_id": "maker-a",
         "checker_id": "checker-b",
         "checker_verdict": CheckerVerdict.PASS,
-        "exact_head_verified": True,
         "required_checks_passed": True,
+        # `exact_head_verified` is derived, not asserted: the three heads are
+        # recorded and the gate compares them. Passing evidence is evidence in
+        # which all three name the same commit.
+        "head_sha": HEAD,
+        "checker_head_sha": HEAD,
+        "checks_head_sha": HEAD,
     }
     values.update(overrides)
     return ValidationEvidence(**values)  # type: ignore[arg-type]
@@ -98,16 +109,43 @@ def test_provider_required_work_parks_in_no_api_mode() -> None:
 
 def test_exact_head_and_required_checks_are_mandatory() -> None:
     stale = evaluate_factory_gate(
-        _intent(), _passing_evidence(exact_head_verified=False)
+        _intent(), _passing_evidence(checker_head_sha=OTHER_HEAD)
     )
     unproven = evaluate_factory_gate(
         _intent(), _passing_evidence(required_checks_passed=False)
     )
 
     assert stale.action is FactoryAction.REQUIRE_CHECKER
-    assert stale.reason == "EXACT_HEAD_VALIDATION_REQUIRED"
+    # The refusal names the commit the evidence was actually about. The old
+    # message said only that validation was "required", which reads as "nobody
+    # checked" when the truth is "somebody checked something else".
+    assert stale.reason.startswith("EVIDENCE_IS_ABOUT_ANOTHER_HEAD")
+    assert OTHER_HEAD[:12] in stale.reason
     assert unproven.action is FactoryAction.REQUIRE_CHECKER
     assert unproven.reason == "REQUIRED_CHECKS_NOT_PROVEN"
+
+
+def test_an_unrecorded_head_is_never_verification() -> None:
+    # Absence is not agreement. A record that cannot say which commit it is
+    # about must not satisfy a check named "exact head".
+    for missing in ({"head_sha": ""}, {"checker_head_sha": ""}, {"checks_head_sha": ""}):
+        decision = evaluate_factory_gate(_intent(), _passing_evidence(**missing))
+        assert decision.action is FactoryAction.REQUIRE_CHECKER
+        assert decision.integration_authorized is False
+
+
+def test_an_abbreviated_head_is_not_a_head() -> None:
+    # Two commits can share a prefix, so a 12-hex "head" is a string that could
+    # name something else later.
+    decision = evaluate_factory_gate(
+        _intent(),
+        _passing_evidence(
+            head_sha=HEAD[:12], checker_head_sha=HEAD[:12], checks_head_sha=HEAD[:12]
+        ),
+    )
+
+    assert decision.action is FactoryAction.REQUIRE_CHECKER
+    assert decision.integration_authorized is False
 
 
 @pytest.mark.parametrize("risk", [RiskTier.HIGH, RiskTier.OWNER_GATED])
