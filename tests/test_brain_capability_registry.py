@@ -145,7 +145,6 @@ def test_memory_and_data_registry_metadata_are_evidence_pinned():
     assert memory["status"] == "OPERATIONAL"
     assert memory["eligibility"]["eligible"] is True
     assert memory["upstream_dependencies"] == ("reasoning_ledger",)
-    assert memory["publication_authority"] if False else True
 
     data = by_id["data_intelligence"]
     assert data["status"] == "PARTIAL"
