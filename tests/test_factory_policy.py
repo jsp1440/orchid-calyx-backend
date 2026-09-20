@@ -110,14 +110,23 @@ def test_the_refusal_names_the_commits_in_full_not_by_a_colliding_prefix() -> No
 
     assert decision.reason.startswith("INTENT_HEAD_MISMATCH")
     assert decision.integration_authorized is False
-    # Both commits, whole, AND each on its own side. Membership alone is not
-    # enough: an independent check swapped the two names and the whole suite
-    # stayed green, which means the sentence could say the exact opposite of
-    # the truth -- naming the reviewed commit as the authorized one -- and
-    # nothing objected. Truncating either name to any shared width would also
-    # collapse these two assertions into one.
-    assert f"authorized for {PREFIX_A}" in decision.reason
-    assert f"evidence is about {PREFIX_B}" in decision.reason
+    # The WHOLE sentence, not two substrings of it. Three assertion shapes
+    # have now failed here in turn, each weaker than it looked:
+    #
+    #   `PREFIX_A in reason`            -- blind to which side each name is on,
+    #                                      so swapping them stayed green.
+    #   `f"authorized for {PREFIX_A}"`  -- blind to what ELSE the sentence says,
+    #      ` in reason`                    so prepending a clause that leads
+    #                                      with the false claim and then
+    #                                      contradicts itself stayed green too.
+    #
+    # Equality is the only shape that cannot be satisfied by adding text. The
+    # wording of this refusal IS the contract -- it is what a person reads when
+    # deciding whether a commit was reviewed -- so pinning it exactly is the
+    # point, not brittleness.
+    assert decision.reason == (
+        f"INTENT_HEAD_MISMATCH: authorized for {PREFIX_A}, evidence is about {PREFIX_B}"
+    )
 
 
 def test_an_absent_head_is_refused_rather_than_raised() -> None:
@@ -139,8 +148,9 @@ def test_an_absent_head_is_refused_rather_than_raised() -> None:
 
         assert decision.action is FactoryAction.REQUIRE_CHECKER
         assert decision.integration_authorized is False
-        assert f"authorized for no recorded head, evidence is about {HEAD}" in (
-            decision.reason
+        assert decision.reason == (
+            f"INTENT_HEAD_MISMATCH: authorized for no recorded head, "
+            f"evidence is about {HEAD}"
         )
 
         # And absent on the evidence side. Both sides need their own case:
@@ -155,8 +165,9 @@ def test_an_absent_head_is_refused_rather_than_raised() -> None:
 
         assert decision.action is FactoryAction.REQUIRE_CHECKER
         assert decision.integration_authorized is False
-        assert f"authorized for {HEAD}, evidence is about no recorded head" in (
-            decision.reason
+        assert decision.reason == (
+            f"INTENT_HEAD_MISMATCH: authorized for {HEAD}, "
+            f"evidence is about no recorded head"
         )
 
 
