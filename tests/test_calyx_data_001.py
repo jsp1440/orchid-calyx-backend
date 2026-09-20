@@ -27,7 +27,7 @@ def _csv_bytes() -> bytes:
         "Cattleya,14,5\n"
         "Dendrobium,8,7\n"
         "Dendrobium,12,9\n"
-    ).encode("utf-8")
+    ).encode()
 
 
 def _xlsx_bytes() -> bytes:
