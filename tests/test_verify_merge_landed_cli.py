@@ -2196,3 +2196,52 @@ class TestTheDerivedSetDoesNotDependOnGitConfig:
         # The reason, named: 2 is "I cannot read this", 1 is "the merge dropped
         # your work", and a caller has to be able to tell them apart.
         assert "not valid UTF-8" in done.stdout
+
+    def test_and_declaring_the_undecodable_path_does_not_raise_either(self, tmp_path):
+        """The other call site, which runs FIRST.
+
+        `_changed_paths` was fixed and `_entry` was not, so the identical
+        traceback stayed reachable by DECLARING the undecodable path rather
+        than merely having it in the range -- `main` builds the verified
+        entries through `_entry` before it ever derives the set. An independent
+        check found it two hundred lines under a comment saying a crash must
+        not be spelled the same way as a verdict.
+        """
+        repo = tmp_path / "not-utf8-declared"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("a\n")
+        fork = _commit(repo, "M0")
+
+        bad = os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt")
+        with open(bad, "wb") as handle:
+            handle.write(b"x")
+        (repo / "plain.txt").write_text("a2\n")
+        verified = _commit(repo, "a path that is not utf-8")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+
+        # The undecodable path named directly, as a `--path`. Python hands argv
+        # through as surrogate-escaped text, which is a spelling no tree lookup
+        # can match -- so the only acceptable outcomes are a refusal or a
+        # divergence, never a pass and never a traceback.
+        done = subprocess.run(
+            [sys.executable, str(SCRIPT),
+             "--verified-head", verified, "--integration-ref", integration,
+             "--base-ref", fork,
+             "--path", os.fsdecode(b"bad-\xff-name.txt"), "--path", "plain.txt"],
+            cwd=str(repo), capture_output=True, text=True, check=False,
+            errors="surrogateescape",
+        )
+
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "UnicodeDecodeError" not in done.stderr, done.stderr
+        assert done.returncode == 2, (done.returncode, done.stdout, done.stderr)
+        assert "verdict      : landed" not in done.stdout

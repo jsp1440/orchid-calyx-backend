@@ -255,12 +255,24 @@ def _entry(ref: str, path: str) -> str | None:
     done = subprocess.run(
         ["git", "ls-tree", "--full-tree", "-z", "--end-of-options", ref, "--", f":(literal){path}"],
         capture_output=True,
-        text=True,
         check=False,
     )
     if done.returncode != 0:
         return UNKNOWN
-    records = [record for record in done.stdout.split("\0") if record]
+    # Decoded here rather than by `subprocess`, for the same reason as
+    # `_changed_paths`, and it has to be BOTH: this call site runs first, so
+    # fixing only the other one left the identical traceback reachable by
+    # declaring the undecodable path instead of merely having it in the range.
+    # A comment saying "a crash must not be spelled the same way as a verdict"
+    # sitting two hundred lines above a crash spelled exactly that way is the
+    # shape this whole lineage is about.
+    try:
+        stdout = done.stdout.decode("utf-8")
+    except UnicodeDecodeError:
+        # UNKNOWN, not a comparison. `inspect_merge` refuses to read UNKNOWN as
+        # agreement, so an unreadable path cannot witness anything either way.
+        return UNKNOWN
+    records = [record for record in stdout.split("\0") if record]
     if not records:
         return ABSENT
     if len(records) != 1:
