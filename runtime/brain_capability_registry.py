@@ -188,6 +188,61 @@ def canonical_brain_registry() -> CapabilityRegistry:
                 last_verified_date="2026-09-20",
             ),
             Capability(
+                capability_id="epistemic_memory",
+                canonical_issue="orchid-calyx-backend#142",
+                status="OPERATIONAL",
+                repository_evidence=(
+                    "app/reasoning_ledger/epistemic_memory.py",
+                    "orchid-calyx-backend#172 reasoning ledger",
+                ),
+                public_entry_point=(
+                    "app.reasoning_ledger.epistemic_memory."
+                    "project_epistemic_corpus"
+                ),
+                persistence="immutable, versioned Reasoning Ledger revisions",
+                api="deterministic read-only project memory projection",
+                tests=("tests/test_epistemic_memory_projection.py",),
+                upstream_dependencies=("reasoning_ledger",),
+                downstream_consumers=("executive_planning",),
+                blockers=(),
+                next_executable_slice=None,
+                last_verified_commit="fa3954fd04dee0015ee5afe166c1bb7402d9b981",
+                last_verified_date="2026-09-20",
+            ),
+            Capability(
+                capability_id="data_intelligence",
+                canonical_issue="orchid-calyx-backend#143",
+                status="PARTIAL",
+                repository_evidence=(
+                    "orchid-calyx-backend#1558 governed vertical path",
+                    "app/data_intelligence",
+                ),
+                public_entry_point="/api/brain/data",
+                persistence=(
+                    "tenant/project-scoped content-addressed file repository; "
+                    "production persistence activation remains owner-gated"
+                ),
+                api=(
+                    "authenticated CSV/XLSX ingest, deterministic profile, "
+                    "typed-plan execution, manifest read, and exact-version rerun"
+                ),
+                tests=("tests/test_calyx_data_001.py",),
+                upstream_dependencies=(
+                    "scientific_language_intake",
+                    "reasoning_ledger",
+                ),
+                downstream_consumers=("executive_planning",),
+                blockers=(
+                    "full export and reusable-workflow review flow are incomplete",
+                ),
+                next_executable_slice=(
+                    "add governed CSV/XLSX result export and saved workflow "
+                    "review contracts"
+                ),
+                last_verified_commit="fa3954fd04dee0015ee5afe166c1bb7402d9b981",
+                last_verified_date="2026-09-20",
+            ),
+            Capability(
                 capability_id="executive_planning",
                 canonical_issue="orchid-calyx-backend#1024",
                 status="OPERATIONAL",
