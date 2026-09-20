@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import json
 
 import pytest
 from openpyxl import Workbook, load_workbook
@@ -161,6 +162,106 @@ def test_result_export_rejects_unsupported_format(service):
             version_id="0" * 64,
             analysis_id="0" * 40,
             export_format="pdf",
+        )
+
+
+def test_reusable_workflow_submission_is_durable_and_idempotent(service):
+    ingested = service.ingest(
+        owner="owner",
+        project_id="project-1",
+        logical_name="workflow-source",
+        filename="orchids.csv",
+        data=_csv_bytes(),
+    )
+    dataset = ingested["dataset"]
+    plan = service.compile_intent(
+        dataset_id=dataset["dataset_id"],
+        version_id=dataset["version_id"],
+        intent="mean height by genus",
+    )
+    analysis = service.execute(
+        owner="owner",
+        project_id="project-1",
+        plan=plan,
+    )
+    arguments = {
+        "owner": "owner",
+        "project_id": "project-1",
+        "name": "Mean height by genus",
+        "dataset_id": dataset["dataset_id"],
+        "version_id": dataset["version_id"],
+        "analysis_id": analysis["analysis_id"],
+    }
+
+    first = service.save_workflow(**arguments)
+    second = service.save_workflow(**arguments)
+    assert first["created"] is True
+    assert second["created"] is False
+    assert first["workflow"]["workflow_id"] == second["workflow"]["workflow_id"]
+    assert first["workflow"]["review_state"] == "draft"
+
+    workflow_id = first["workflow"]["workflow_id"]
+    submitted = service.submit_workflow(
+        owner="owner",
+        project_id="project-1",
+        workflow_id=workflow_id,
+    )
+    replayed = service.submit_workflow(
+        owner="owner",
+        project_id="project-1",
+        workflow_id=workflow_id,
+    )
+    assert submitted["review_state"] == "submitted"
+    assert submitted == replayed
+    assert len(submitted["review_events"]) == 1
+    assert submitted["plan_fingerprint"] == plan.fingerprint
+
+    with pytest.raises(DataIntelligenceError, match="WORKFLOW_NOT_FOUND"):
+        service.repository.get_workflow(
+            "other-owner",
+            "project-1",
+            workflow_id,
+        )
+
+
+def test_reusable_workflow_rejects_mismatched_source_identity(service):
+    ingested = service.ingest(
+        owner="owner",
+        project_id="project-1",
+        logical_name="workflow-mismatch",
+        filename="orchids.csv",
+        data=_csv_bytes(),
+    )
+    dataset = ingested["dataset"]
+    plan = service.compile_intent(
+        dataset_id=dataset["dataset_id"],
+        version_id=dataset["version_id"],
+        intent="sort by height",
+    )
+    analysis = service.execute(
+        owner="owner",
+        project_id="project-1",
+        plan=plan,
+    )
+    manifest_path = service.repository.analysis_dir(
+        "owner",
+        "project-1",
+        dataset["dataset_id"],
+        dataset["version_id"],
+        analysis["analysis_id"],
+    ) / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["analysis_id"] = "0" * 40
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+    with pytest.raises(DataIntelligenceError, match="WORKFLOW_SOURCE_MISMATCH"):
+        service.save_workflow(
+            owner="owner",
+            project_id="project-1",
+            name="Mismatched",
+            dataset_id=dataset["dataset_id"],
+            version_id=dataset["version_id"],
+            analysis_id=analysis["analysis_id"],
         )
 
 

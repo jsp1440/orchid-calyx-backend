@@ -290,6 +290,140 @@ class FileDatasetRepository:
             raise DataIntelligenceError("ANALYSIS_NOT_FOUND")
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def save_workflow(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        name: str,
+        source_analysis_id: str,
+        dataset_id: str,
+        version_id: str,
+        plan: dict[str, Any],
+        plan_fingerprint: str,
+    ) -> tuple[dict[str, Any], bool]:
+        normalized_name = name.strip()
+        if not normalized_name:
+            raise DataIntelligenceError("WORKFLOW_NAME_REQUIRED")
+        identity = (
+            f"{owner}\x1f{project_id}\x1f{normalized_name.casefold()}\x1f"
+            f"{source_analysis_id}\x1f{plan_fingerprint}"
+        ).encode()
+        workflow_id = hashlib.sha256(identity).hexdigest()[:40]
+        directory = (
+            self._scope(owner, project_id)
+            / "workflows"
+            / self._digest_part(
+                workflow_id,
+                "INVALID_WORKFLOW_ID",
+                lengths={40},
+            )
+        )
+        path = directory / "workflow.json"
+        with self._lock:
+            if path.is_file():
+                return self.get_workflow(
+                    owner,
+                    project_id,
+                    workflow_id,
+                ), False
+            directory.mkdir(parents=True, exist_ok=True)
+            payload: dict[str, Any] = {
+                "schema_version": "calyx-data-workflow-001.1",
+                "workflow_id": workflow_id,
+                "owner": owner,
+                "project_id": project_id,
+                "name": normalized_name,
+                "source_analysis_id": source_analysis_id,
+                "dataset": {
+                    "dataset_id": dataset_id,
+                    "version_id": version_id,
+                },
+                "plan": plan,
+                "plan_fingerprint": plan_fingerprint,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            }
+            self._write_json(path, payload)
+            return {**payload, "review_state": "draft", "review_events": []}, True
+
+    def get_workflow(
+        self,
+        owner: str,
+        project_id: str,
+        workflow_id: str,
+    ) -> dict[str, Any]:
+        directory = (
+            self._scope(owner, project_id)
+            / "workflows"
+            / self._digest_part(
+                workflow_id,
+                "INVALID_WORKFLOW_ID",
+                lengths={40},
+            )
+        )
+        path = directory / "workflow.json"
+        if not path.is_file():
+            raise DataIntelligenceError("WORKFLOW_NOT_FOUND")
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("owner") != owner or payload.get("project_id") != project_id:
+            raise DataIntelligenceError("WORKFLOW_SCOPE_MISMATCH")
+        events_path = directory / "review-events.json"
+        events = (
+            json.loads(events_path.read_text(encoding="utf-8"))
+            if events_path.is_file()
+            else []
+        )
+        if not isinstance(events, list):
+            raise DataIntelligenceError("WORKFLOW_REVIEW_LEDGER_INVALID")
+        state = "submitted" if any(
+            event.get("action") == "submitted"
+            for event in events
+            if isinstance(event, dict)
+        ) else "draft"
+        return {
+            **payload,
+            "review_state": state,
+            "review_events": events,
+        }
+
+    def submit_workflow(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        workflow_id: str,
+        actor: str,
+    ) -> dict[str, Any]:
+        self.get_workflow(owner, project_id, workflow_id)
+        directory = (
+            self._scope(owner, project_id)
+            / "workflows"
+            / workflow_id
+        )
+        path = directory / "review-events.json"
+        event_id = hashlib.sha256(
+            f"{workflow_id}\x1fsubmitted\x1f{actor}".encode()
+        ).hexdigest()
+        with self._lock:
+            current = self.get_workflow(owner, project_id, workflow_id)
+            if any(
+                event.get("event_id") == event_id
+                for event in current["review_events"]
+                if isinstance(event, dict)
+            ):
+                return current
+            events = [
+                *current["review_events"],
+                {
+                    "event_id": event_id,
+                    "action": "submitted",
+                    "actor": actor,
+                    "recorded_at": datetime.now(timezone.utc).isoformat(),
+                },
+            ]
+            self._write_json(path, events)
+        return self.get_workflow(owner, project_id, workflow_id)
+
     def read_artifact(
         self,
         *,
@@ -350,7 +484,11 @@ class FileDatasetRepository:
         return hashlib.sha256(data).hexdigest()
 
     @classmethod
-    def _write_json(cls, path: Path, payload: dict[str, Any]) -> None:
+    def _write_json(
+        cls,
+        path: Path,
+        payload: dict[str, Any] | list[dict[str, Any]],
+    ) -> None:
         data = (
             json.dumps(
                 payload,
