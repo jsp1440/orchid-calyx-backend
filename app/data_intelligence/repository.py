@@ -290,6 +290,58 @@ class FileDatasetRepository:
             raise DataIntelligenceError("ANALYSIS_NOT_FOUND")
         return json.loads(path.read_text(encoding="utf-8"))
 
+    def read_artifact(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        analysis_id: str,
+        artifact_name: str,
+    ) -> bytes:
+        manifest = self.get_analysis(
+            owner,
+            project_id,
+            dataset_id,
+            version_id,
+            analysis_id,
+        )
+        artifact_hashes = manifest.get("artifact_hashes")
+        if not isinstance(artifact_hashes, dict):
+            raise DataIntelligenceError("ARTIFACT_MANIFEST_INVALID")
+        expected_hash = artifact_hashes.get(artifact_name)
+        if not isinstance(expected_hash, str):
+            raise DataIntelligenceError(
+                "ARTIFACT_NOT_FOUND", {"artifact_name": artifact_name}
+            )
+        path = (
+            self.analysis_dir(
+                owner,
+                project_id,
+                dataset_id,
+                version_id,
+                analysis_id,
+            )
+            / artifact_name
+        )
+        if not path.is_file():
+            raise DataIntelligenceError(
+                "ARTIFACT_NOT_FOUND", {"artifact_name": artifact_name}
+            )
+        data = path.read_bytes()
+        actual_hash = self._hash(data)
+        if actual_hash != expected_hash:
+            raise DataIntelligenceError(
+                "ARTIFACT_INTEGRITY_FAILURE",
+                {
+                    "artifact_name": artifact_name,
+                    "expected_hash": expected_hash,
+                    "actual_hash": actual_hash,
+                },
+            )
+        return data
+
     @staticmethod
     def _write_bytes(path: Path, data: bytes) -> str:
         temp = path.with_suffix(path.suffix + ".tmp")
