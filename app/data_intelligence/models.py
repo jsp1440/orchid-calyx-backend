@@ -109,6 +109,12 @@ class CompileIntentIn(BaseModel):
     intent: str = Field(min_length=1, max_length=1000)
 
 
+class SaveWorkflowIn(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    dataset: DatasetRef
+    analysis_id: str = Field(min_length=40, max_length=40)
+
+
 class RerunResult(BaseModel):
     analysis_id: str
     equivalent_artifacts: bool
