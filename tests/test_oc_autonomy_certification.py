@@ -154,3 +154,19 @@ def test_reader_fails_closed_on_corrupt_or_inconsistent_ledger(
     path.write_text(json.dumps(data))
     with pytest.raises(ValueError):
         read_ledger(path)
+
+
+def test_verification_base_is_required_and_distinct():
+    assert not good(1, verification_base_sha="").accepted
+    assert not good(1, verification_base_sha=_sha(1001)).accepted
+    assert not good(1, verification_base_sha=_sha(2001)).accepted
+
+
+def test_verification_base_identity_cannot_be_reused():
+    base = _sha(3999)
+    first = good(1, verification_base_sha=base)
+    second = good(2, verification_base_sha=base)
+    result = evaluate([first, second])
+    assert not result.certified
+    assert result.accepted_streak == 1
+    assert "verification base" in result.reason
