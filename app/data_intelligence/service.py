@@ -1,16 +1,21 @@
 from __future__ import annotations
 
+import csv
 import hashlib
 import html
+import io
 import json
 import math
 import platform
 import re
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from statistics import fmean
 from typing import Any
+
+from openpyxl import Workbook
 
 from .models import AnalysisOperation, AnalysisPlan, ChartSpec, DataIntelligenceError
 from .repository import DatasetVersion, FileDatasetRepository
@@ -223,6 +228,102 @@ class DataIntelligenceService:
             stable,
         )
         return stable
+
+    def export_result(
+        self,
+        *,
+        owner: str,
+        project_id: str,
+        dataset_id: str,
+        version_id: str,
+        analysis_id: str,
+        export_format: str,
+    ) -> tuple[bytes, str, str, str]:
+        normalized = export_format.strip().casefold()
+        if normalized not in {"csv", "xlsx", "svg"}:
+            raise DataIntelligenceError(
+                "UNSUPPORTED_EXPORT_FORMAT", {"format": export_format}
+            )
+        artifact_name = "chart.svg" if normalized == "svg" else "table.json"
+        artifact = self.repository.read_artifact(
+            owner=owner,
+            project_id=project_id,
+            dataset_id=dataset_id,
+            version_id=version_id,
+            analysis_id=analysis_id,
+            artifact_name=artifact_name,
+        )
+        if normalized == "svg":
+            content = artifact
+            media_type = "image/svg+xml"
+        else:
+            try:
+                rows = json.loads(artifact)
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise DataIntelligenceError("RESULT_TABLE_INVALID") from exc
+            if not isinstance(rows, list) or any(
+                not isinstance(row, dict) for row in rows
+            ):
+                raise DataIntelligenceError("RESULT_TABLE_INVALID")
+            columns = sorted(
+                {
+                    str(column)
+                    for row in rows
+                    for column in row
+                }
+            )
+            if normalized == "csv":
+                text = io.StringIO(newline="")
+                writer = csv.DictWriter(
+                    text,
+                    fieldnames=columns,
+                    extrasaction="ignore",
+                    lineterminator="\n",
+                )
+                writer.writeheader()
+                writer.writerows(rows)
+                content = text.getvalue().encode("utf-8")
+                media_type = "text/csv; charset=utf-8"
+            else:
+                content = self._xlsx_export(columns, rows)
+                media_type = (
+                    "application/vnd.openxmlformats-officedocument."
+                    "spreadsheetml.sheet"
+                )
+        filename = f"{analysis_id}.{normalized}"
+        return content, media_type, filename, hashlib.sha256(content).hexdigest()
+
+    @staticmethod
+    def _xlsx_export(
+        columns: list[str],
+        rows: list[dict[str, Any]],
+    ) -> bytes:
+        workbook = Workbook()
+        workbook.properties.created = datetime(1980, 1, 1)
+        workbook.properties.modified = datetime(1980, 1, 1)
+        sheet = workbook.active
+        sheet.title = "result"
+        sheet.append(columns)
+        for row in rows:
+            sheet.append([row.get(column) for column in columns])
+        raw = io.BytesIO()
+        workbook.save(raw)
+        workbook.close()
+
+        deterministic = io.BytesIO()
+        with zipfile.ZipFile(raw, "r") as source:
+            with zipfile.ZipFile(
+                deterministic,
+                "w",
+                compression=zipfile.ZIP_DEFLATED,
+                compresslevel=9,
+            ) as target:
+                for name in sorted(source.namelist()):
+                    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                    info.compress_type = zipfile.ZIP_DEFLATED
+                    info.external_attr = 0o600 << 16
+                    target.writestr(info, source.read(name))
+        return deterministic.getvalue()
 
     def compile_intent(
         self,
