@@ -100,7 +100,18 @@ class Refusal(StrEnum):
 def same_actor(left: str, right: str) -> bool:
     """Whether two identity strings name the same actor.
 
-    Public, and the one every caller in this package now reaches for.
+    Public, and the rule every INDEPENDENCE decision in this package asks --
+    "is this reviewer the maker" -- rather than every identity comparison.
+    `checker_dispatch.validate_checker_evidence` still compares `checker_id`
+    and `maker_id` byte-for-byte, deliberately: it is matching a record against
+    the assignment it must correspond to, exact equality is strictly stricter
+    there, and it fails closed. That is a different question, so it is not
+    this rule and is not widened to it.
+
+    The claim here said "the only one", was corrected to "the one every caller
+    reaches for", and both were false -- the second by the lines just named.
+    Two sweeping claims, two rounds, two independent checks to catch them. The
+    scope is now stated as narrowly as it is true.
 
     Before this, `factory_policy` held a separate `(str, str) -> bool` predicate
     beside this module's `(str) -> str` normaliser. The two agreed, which is the

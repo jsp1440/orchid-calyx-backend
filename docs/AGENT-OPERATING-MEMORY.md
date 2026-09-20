@@ -116,6 +116,12 @@ An absent result and a passing result are the same shape on the way out: both ar
 
 **A local gate is only evidence about CI if it is the same tool.** These workflows `pip install ruff` unpinned, so CI runs the newest release. This container has two ruff binaries and `/root/.local/bin/ruff` (0.15.8) shadows `/usr/local/bin/ruff` (0.16.8) on `PATH`, so a local "ruff clean" was a statement about an older rule set and CI failed on a rule the local run does not have. Check `ruff --version` against what the workflow installs — `python -m ruff` reaches the installed package rather than whatever is first on `PATH` — and say which version a clean result came from.
 
+## Scope claims and names in durable records
+
+**Do not write a universal claim you have not enumerated, and prefer not to write one at all.** "The only one", "every caller", "all three sites": each is a promise about code you did not read. Three were shipped false in one lineage and each took a separate independent check to catch — including one written to *replace* the previous false one. State the scope as narrowly as what you actually verified, and if the narrow version is uninteresting, say nothing.
+
+**A name in a durable record is a claim too.** A commit message and pull request body in this lineage referred to `Observation.is_by`; the method is `Observation.by`, and `is_by` exists nowhere in the repository. It propagated into a checker's own brief before anyone noticed, which is the specific harm: a record that names something the codebase does not have gets repeated by the next reader as though it did. Grep for the identifier before you write it down.
+
 ## Stuck-repair protection
 
 After three unsuccessful attempts on the same deterministic failure class, stop speculative repair commits. Read the exact failing output, run the exact formatter/linter/test command locally where possible, compare it with workflow behavior, and make one deliberate correction. If accumulated branch churn obscures intent, reconstruct cleanly from current integration and preserve only intentional changes.
