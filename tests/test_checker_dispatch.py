@@ -610,6 +610,23 @@ class TestOneIdentityPerActorHereToo:
             with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
                 _assignment(checker_id=spelling)
 
+    def test_nor_can_the_evidence_record(self) -> None:
+        """The guard this class originally left unpinned.
+
+        `CheckerAssignment` and `CheckerEvidence` carry the same rule, and only
+        the assignment half was tested. Reverting `CheckerEvidence`'s guard
+        alone left the ENTIRE repository suite green -- 29 failed / 7616 passed,
+        identical to the unmutated head -- so this change added exactly the
+        thing it argues against: a second copy of a rule with nothing holding it
+        to the first.
+
+        `CheckerEvidence` is the record `parse_evidence` reconstructs durable
+        GitHub receipts into, and the one #1544's follow-up named first.
+        """
+        for spelling in self.RESPELLINGS:
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _evidence(checker_id=spelling)
+
     def test_and_the_three_modules_now_agree(self) -> None:
         """The property that was actually missing: one answer, not three."""
         from app.calyx_orchestrator.factory_policy import ValidationEvidence
@@ -627,5 +644,10 @@ class TestOneIdentityPerActorHereToo:
             )
             assert same_actor(spelling, MAKER) is True, spelling
             assert evidence.independent_checker is False, spelling
-            with pytest.raises(ValueError):
+            # `match=`, because a bare `pytest.raises(ValueError)` here would be
+            # satisfied by any unrelated constructor error -- FINGERPRINT_REQUIRED,
+            # say -- and pass while proving nothing about identity.
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
                 _assignment(checker_id=spelling)
+            with pytest.raises(ValueError, match="CHECKER_MUST_DIFFER_FROM_MAKER"):
+                _evidence(checker_id=spelling)

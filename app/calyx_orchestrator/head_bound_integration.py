@@ -100,12 +100,21 @@ class Refusal(StrEnum):
 def same_actor(left: str, right: str) -> bool:
     """Whether two identity strings name the same actor.
 
-    Public, and the only one. Three private copies of this rule existed --
-    here, in `factory_policy`, and as a bare `==` in `checker_dispatch` -- and
-    they disagreed: the bare comparison let a maker be selected as their own
-    checker by adding a space, while the gate downstream refused the record
-    that selection produced. Two rules that disagree about who someone is will
-    eventually disagree about whether anyone checked.
+    Public, and the only one. Before this there were two implementations that
+    AGREED -- `_identity` here and `factory_policy._same_actor`, different in
+    name, signature and body but semantically the same -- and three sites in
+    `checker_dispatch` doing a bare `==`, which is a DIFFERENT rule and the
+    reason this exists: it let a maker be selected as their own checker by
+    adding a space, while the gate downstream refused the record that selection
+    produced. Two rules that disagree about who someone is will eventually
+    disagree about whether anyone checked.
+
+    (An earlier version of this docstring called the `factory_policy` copy
+    "byte-identical". It was not -- different name, signature, arity, docstring
+    and body -- and calling a bare `==` a "copy of this rule" contradicted the
+    point being made about it. An independent check diffed them. In a change
+    about records asserting things that are not so, the docstring asserted
+    something that was not so.)
     """
     return _identity(left) == _identity(right)
 
