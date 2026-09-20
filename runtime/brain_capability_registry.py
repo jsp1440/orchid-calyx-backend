@@ -190,18 +190,25 @@ def canonical_brain_registry() -> CapabilityRegistry:
             Capability(
                 capability_id="executive_planning",
                 canonical_issue="orchid-calyx-backend#1024",
-                status="IMPLEMENTED_NOT_INTEGRATED",
-                repository_evidence=("existing autonomous orchestrator #1024",),
-                public_entry_point="existing Calyx orchestration",
-                persistence="existing orchestrator persistence",
-                api=None,
-                tests=(),
+                status="OPERATIONAL",
+                repository_evidence=(
+                    "orchid-calyx-backend#1556 capability-gated intent bridge",
+                    "runtime/calyx_queue_director.py",
+                    "scripts/oc_backlog_refiller.py",
+                ),
+                public_entry_point="runtime.calyx_queue_director.plan_calyx_refill",
+                persistence="canonical deterministic Queue Bridge reserve planner",
+                api=(
+                    "provider-free DevelopmentIntent normalization with Brain "
+                    "capability admission"
+                ),
+                tests=("tests/test_calyx_queue_director.py",),
                 upstream_dependencies=("reasoning_ledger",),
                 downstream_consumers=(),
-                blockers=("verified Brain dependency state is incomplete",),
-                next_executable_slice="consume this read-only eligibility view",
-                last_verified_commit="unverified",
-                last_verified_date="2026-09-19",
+                blockers=(),
+                next_executable_slice=None,
+                last_verified_commit="38f83c7e5dd415417ed74eae5a29362472338cd8",
+                last_verified_date="2026-09-20",
             ),
         )
     )

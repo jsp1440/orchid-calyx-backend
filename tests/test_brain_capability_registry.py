@@ -17,7 +17,7 @@ def test_seed_exposes_only_verified_operational_work_as_eligible():
     assert decisions["literature_candidate_handoff"]["eligible"] is True
     assert decisions["scientific_language_intake"]["eligible"] is True
     assert decisions["reasoning_ledger"]["eligible"] is True
-    assert decisions["executive_planning"]["eligible"] is False
+    assert decisions["executive_planning"]["eligible"] is True
     assert view["read_only"] is True
     assert view["execution_authority"] is False
     assert view["publication_authority"] is False
@@ -107,6 +107,29 @@ def test_reasoning_ledger_registry_metadata_is_pinned_and_non_authoritative():
     assert "migrations/103_reasoning_ledger.sql" in reasoning["repository_evidence"]
     assert reasoning["last_verified_commit"] == (
         "a379045af226c3c700e201d3da1c4028822f778b"
+    )
+    assert view["execution_authority"] is False
+    assert view["publication_authority"] is False
+
+
+
+def test_executive_planning_registry_metadata_is_pinned_and_non_authoritative():
+    view = canonical_brain_registry().orchestrator_view()
+    planning = next(
+        item
+        for item in view["capabilities"]
+        if item["capability_id"] == "executive_planning"
+    )
+
+    assert planning["status"] == "OPERATIONAL"
+    assert planning["eligibility"]["eligible"] is True
+    assert planning["next_executable_slice"] is None
+    assert planning["blockers"] == ()
+    assert planning["last_verified_commit"] == (
+        "38f83c7e5dd415417ed74eae5a29362472338cd8"
+    )
+    assert "orchid-calyx-backend#1556 capability-gated intent bridge" in (
+        planning["repository_evidence"]
     )
     assert view["execution_authority"] is False
     assert view["publication_authority"] is False
