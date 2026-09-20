@@ -100,21 +100,29 @@ class Refusal(StrEnum):
 def same_actor(left: str, right: str) -> bool:
     """Whether two identity strings name the same actor.
 
-    Public, and the only one. Before this there were two implementations that
-    AGREED -- `_identity` here and `factory_policy._same_actor`, different in
-    name, signature and body but semantically the same -- and three sites in
-    `checker_dispatch` doing a bare `==`, which is a DIFFERENT rule and the
-    reason this exists: it let a maker be selected as their own checker by
-    adding a space, while the gate downstream refused the record that selection
-    produced. Two rules that disagree about who someone is will eventually
-    disagree about whether anyone checked.
+    Public, and the one every caller in this package now reaches for.
 
-    (An earlier version of this docstring called the `factory_policy` copy
-    "byte-identical". It was not -- different name, signature, arity, docstring
-    and body -- and calling a bare `==` a "copy of this rule" contradicted the
-    point being made about it. An independent check diffed them. In a change
-    about records asserting things that are not so, the docstring asserted
-    something that was not so.)
+    Before this, `factory_policy` held a separate `(str, str) -> bool` predicate
+    beside this module's `(str) -> str` normaliser. The two agreed, which is the
+    hazard rather than the comfort: nothing made them keep agreeing. And
+    `checker_dispatch` did not hold a copy of this rule at all -- it held a
+    DIFFERENT rule, a bare `==` at two sites and a `!=` at a third, which is
+    why it let a maker be selected as their own checker by adding a space while
+    the gate downstream refused the record that selection produced.
+
+    Two rules that disagree about who someone is will eventually disagree about
+    whether anyone checked.
+
+    Three corrections are recorded here rather than quietly applied, because
+    this lineage's subject is records that assert what is not so:
+
+    * An earlier version called the `factory_policy` predicate "byte-identical".
+      It was not -- different name, signature, arity, docstring and body.
+    * The correction then over-shot, calling the two "semantically the same".
+      They are not the same FUNCTION; a normaliser and a predicate are different
+      shapes. What agreed was the expression `_identity(a) == _identity(b)`
+      against `_same_actor(a, b)`.
+    * It said "three sites doing a bare `==`". Two did `==`; the third did `!=`.
     """
     return _identity(left) == _identity(right)
 
@@ -159,7 +167,7 @@ class Observation:
 
     def by(self, actor_id: str) -> bool:
         """Whether the same actor produced this, however they spelled it."""
-        return _identity(self.observer_id) == _identity(actor_id)
+        return same_actor(self.observer_id, actor_id)
 
 
 @dataclass(frozen=True, slots=True)

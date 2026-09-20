@@ -589,7 +589,9 @@ class TestOneIdentityPerActorHereToo:
 
     An independent check of #1544 raised this as a follow-up. All three sites
     now go through `head_bound_integration.same_actor`, which is public for
-    that reason: three private copies of one rule is three rules.
+    that reason. Not "three copies of one rule" -- this module held a DIFFERENT
+    rule, which is the whole defect; `factory_policy` held a separate
+    implementation that agreed, which is a different hazard and still one.
     """
 
     RESPELLINGS = (MAKER + " ", " " + MAKER, MAKER.upper(), MAKER + "\n", MAKER.title())

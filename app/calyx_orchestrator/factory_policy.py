@@ -46,9 +46,13 @@ class MissionStatus(StrEnum):
     DONE = "done"
 
 
-#: One rule, imported rather than restated. The copy that stood here was
-#: identical to the module's and that is exactly the problem: nothing made it
-#: stay identical.
+#: One rule, imported rather than restated. What stood here was a SEPARATE
+#: implementation that happened to agree -- a `(str, str) -> bool` predicate
+#: beside the module's `(str) -> str` normaliser -- and agreeing is exactly the
+#: problem, because nothing made it keep agreeing. (Not "identical": an
+#: independent check diffed them, and this comment asserted the same falsehood
+#: its sibling in `head_bound_integration` had already been corrected for, in
+#: the same commit.)
 _same_actor = same_actor
 
 
