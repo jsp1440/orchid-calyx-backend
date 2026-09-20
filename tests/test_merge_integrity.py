@@ -15,6 +15,7 @@ from __future__ import annotations
 import pytest
 
 from app.calyx_orchestrator.merge_integrity import (
+    UNKNOWN,
     IntegrationResult,
     MergeVerdict,
     VerifiedResult,
@@ -251,3 +252,33 @@ class TestTheGoodCase:
     def test_a_verified_result_without_identity_is_refused(self, head, tree):
         with pytest.raises(ValueError):
             VerifiedResult(head_sha=head, tree_sha=tree)
+
+
+
+class TestWhyTheIdenticalTreeGuardsCannotBeExercised:
+    """`identical_tree`'s two `!= UNKNOWN` conjuncts are unreachable, and this
+    says so rather than asserting coverage that does not exist.
+
+    An attempt to pin them failed on its own premise: UNKNOWN is the empty
+    string, `VerifiedResult` refuses an empty `tree_sha` in `__post_init__`, and
+    identity needs BOTH sides equal -- so no input reaching `inspect_merge` can
+    make the guarded comparison true. (The attempt used `"?"` as a stand-in for
+    UNKNOWN, which is not UNKNOWN, and the test was red before any mutant ran.)
+
+    The conjuncts stay: they are correct, they are free, and `identical_tree` is
+    reported to a reader as the stronger proof. But they are a survivor, and the
+    survivor list names them.
+    """
+
+    def test_the_verified_side_can_never_carry_an_unresolved_tree(self):
+        with pytest.raises(ValueError):
+            VerifiedResult(head_sha=VERIFIED_HEAD, tree_sha=UNKNOWN)
+
+    def test_so_an_unresolved_integration_tree_is_never_identical_either(self):
+        result = inspect_merge(
+            verified(**{TOUCHED[0]: "blob"}),
+            IntegrationResult(head_sha="abc", tree_sha=UNKNOWN, blobs={TOUCHED[0]: "blob"},
+                              merge_api_reported_success=True),
+        )
+        assert result.verdict is MergeVerdict.LANDED
+        assert result.identical_tree is False

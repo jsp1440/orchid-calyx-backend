@@ -27,32 +27,51 @@ absence is not evidence and comparing "not there" with "not there" is how a
 vacuous pass is manufactured. So:
 
 * `--path P` must resolve at the verified head.
-* `--deleted-path P` must resolve at every `git merge-base --all <verified-head>
-  <integration-ref>`, which is what makes it a deletion rather than a name nobody
-  ever used. `--all`, because a criss-cross history has more than one base and a
-  gate whose answer turns on which one git's tie-break prints is not a gate. That base is derived from the two refs being compared, never
-  supplied by the caller.
+* `--deleted-path P` must resolve at every pre-change revision (see below),
+  which is what makes it a deletion rather than a name nobody ever used.
+  `--all`, because a criss-cross history has more than one base and a gate whose
+  answer turns on which one git's tie-break prints is not a gate.
 
-**Only a path this change could have altered is evidence.** Two ways to fail that
-and both have been live in this tool:
+**Only a path this change could have altered is evidence.** Three ways to fail
+that, and all three have been live in this tool:
 
 * Absence is symmetric, so a declared set made only of deletions is
   `evidence_incomplete`, never `landed`. Two lineages that both lack a file agree
   about it for reasons that have nothing to do with this merge.
 * Identity is equally symmetric when it predates the change. A file untouched by
-  the change is identical at the merge base and on both sides, so declaring it
-  satisfies any "declare a surviving path" rule while witnessing nothing.
+  the change is identical at the pre-change revision and on both sides, so
+  declaring it satisfies any "declare a surviving path" rule while witnessing
+  nothing.
+* A directory is neither. `git ls-tree <ref> -- :(literal)src/lib` returns one
+  record, `040000 tree <sha> src/lib`, whose identity changes when a child is
+  DELETED -- so a directory turns absence into presence and walks past both of
+  the rules above. Only files are accepted.
 
-So at least one `--path` must resolve unambiguously at every merge base and
-differ from it there -- an unresolved lookup is not a difference. A change that
-only removes files cannot be verified here at all, and this says so rather than
-sending you to find a path that makes the check pass.
+So at least one `--path` must resolve unambiguously at every pre-change revision
+and differ from it there -- an unresolved lookup is not a difference. A change
+that only removes files cannot be verified here at all, and this says so rather
+than sending you to find a path that makes the check pass.
 
-That requirement is dropped in the one case where it would be impossible and is
-not needed: when the verified head is itself a merge base, it is an ancestor of
-the integration ref, the commit is in that history, and containment is stronger
-evidence than any comparison. The declared paths are still compared, because a
-later commit can revert content that genuinely merged.
+The pre-change revision is normally `git merge-base --all <verified-head>
+<integration-ref>`. When the verified head is already an ancestor of the
+integration ref -- an ordinary merge or a fast-forward -- that base IS the
+verified head, and a revision cannot be the pre-change state of a change it
+already contains. Pass `--base-ref <the branch the change forked off>` and it is
+derived from there instead.
+
+Containment is NOT an answer to this, and an earlier version of this tool
+treating it as one is how the class reopened. It proves the COMMIT is in the
+history; it says nothing about the resulting tree. `git merge -s ours` makes the
+verified head a parent and lands not one byte of it. So does `-X ours` on a real
+conflict, and so does a merge followed by a commit reverting it. All three were
+reported as `landed` for an untouched declared path.
+
+`--base-ref` is a ref used to DERIVE which paths are probative, validated before
+it is used: it must resolve, it must share an ancestor with the verified head,
+and it must not already contain the verified head. It is not a verdict and not
+an assertion that anything landed. What it cannot do is stop you naming a
+needlessly distant base; like `--integration-ref`, it is only as honest as the
+person running this, which is why the paths are derived mechanically.
 
 Paths are compared as `mode type id`, not blob id alone, so a file that becomes
 a symlink or gains the executable bit without changing a byte is a divergence
@@ -131,6 +150,19 @@ def _merge_bases(left: str, right: str) -> tuple[int, list[str]]:
     return done.returncode, [line.strip() for line in done.stdout.splitlines() if line.strip()]
 
 
+def _is_ancestor(maybe_ancestor: str, descendant: str) -> bool:
+    """Whether the first commit is reachable from the second.
+
+    Both arguments are 40-hex ids `_resolve_ref` has already produced, so neither
+    can be read as an option.
+    """
+    done = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", maybe_ancestor, descendant],
+        capture_output=True, text=True, check=False,
+    )
+    return done.returncode == 0
+
+
 def _resolve_ref(label: str, ref: str) -> tuple[str, str] | None:
     """The commit and tree ids for `ref`, or None with a message already printed."""
     commit_rc, commit = _rev_parse(f"{ref}^{{commit}}")
@@ -194,6 +226,15 @@ def main(argv: list[str] | None = None) -> int:
         help="a path the change removed; it must exist at the merge base and be absent after the merge",
     )
     parser.add_argument(
+        "--base-ref",
+        default=None,
+        help=(
+            "the branch this change forked off, e.g. the pull request's base. Required when "
+            "the verified head is already an ancestor of --integration-ref, because their "
+            "merge base is then the verified head and cannot say which paths the change touched"
+        ),
+    )
+    parser.add_argument(
         "--merge-reported-success",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -238,6 +279,26 @@ def main(argv: list[str] | None = None) -> int:
         print("--deleted-path. Do not substitute a path the change did not touch to get")
         print("past this: an untouched path is identical on both sides and proves nothing.")
         return 2
+    # `git ls-tree <ref> -- :(literal)src/lib` returns ONE record,
+    # `040000 tree <sha> src/lib`, so a directory looked like present evidence
+    # whose identity changed because a child was DELETED. That let a pure
+    # deletion -- which this tool refuses outright -- be certified by declaring
+    # its parent directory, and let `--path src/lib` pass the very squash that
+    # `--path src/lib/` was fixed to catch. Only files can witness content.
+    def _is_tree(entry: str | None) -> bool:
+        # UNKNOWN is the empty string, which splits to one field, not three.
+        fields = entry.split(" ") if isinstance(entry, str) else []
+        return len(fields) == 3 and fields[1] == "tree"
+
+    directories = [path for path in declared if _is_tree(verified_entries[path])]
+    if directories:
+        print("REFUSED: these arguments name a directory, which cannot witness content:")
+        for path in directories:
+            print(f"  {path}")
+        print("A tree's identity changes when any child changes, including when one is")
+        print("deleted, so a directory turns absence into presence. Declare the files.")
+        return 2
+
     still_present = [path for path in args.deleted_paths if verified_entries[path] is not ABSENT]
     if still_present:
         print("REFUSED: these --deleted-path arguments still exist at the verified head:")
@@ -258,53 +319,92 @@ def main(argv: list[str] | None = None) -> int:
         print("so no merge between them can have happened and there is nothing to verify.")
         return 2
 
+    # Which revision represents the state BEFORE this change. Normally that is
+    # the merge base of the two refs. But when the verified head is already an
+    # ancestor of the integration ref -- an ordinary merge or a fast-forward --
+    # the merge base IS the verified head, and a revision cannot be the
+    # pre-change state of a change it already contains.
+    #
+    # Round 7 handled that by treating containment as sufficient on its own and
+    # skipping the probative check, on the stated grounds that "containment is
+    # stronger evidence than any comparison". That was false, and it reopened
+    # the class. Containment proves the COMMIT is in the history; it proves
+    # nothing about the resulting tree. `git merge -s ours` makes the verified
+    # head a parent and lands not one byte of it, and the tool reported
+    # `landed` for an untouched path. So did `-X ours`, and so did a merge
+    # followed by a commit reverting it.
+    #
+    # There is no way to derive the pre-change revision from these two refs
+    # alone in that case, so the caller names the branch the change forked off
+    # and the tool refuses until they do. That is a REF used to derive which
+    # paths are probative, checked before it is used -- not a verdict, and not
+    # an assertion that anything landed.
+    contained = verified_ids[0] in bases
+    if args.base_ref is None:
+        before = bases
+    else:
+        base_ids = _resolve_ref("--base-ref", args.base_ref)
+        if base_ids is None:
+            return 2
+        # A base that already contains the change is not a state before it.
+        if _is_ancestor(verified_ids[0], base_ids[0]):
+            print("REFUSED: --base-ref already contains --verified-head, so it is not a state")
+            print("before this change and the paths derived from it would be empty.")
+            return 2
+        code, before = _merge_bases(verified_ids[0], base_ids[0])
+        if code != 0 or not before:
+            print("REFUSED: --verified-head and --base-ref share no common ancestor.")
+            return 2
+
     if args.deleted_paths:
-        # A path must have existed at EVERY common ancestor. Accepting it at one
-        # of several would make the verdict depend on which base git named.
-        never_there = sorted({path for base in bases for path in args.deleted_paths
+        # A path must have existed at EVERY pre-change revision. Accepting it at
+        # one of several would make the verdict depend on which base git named.
+        never_there = sorted({path for base in before for path in args.deleted_paths
                               if _entry(base, path) in (ABSENT, UNKNOWN)})
         if never_there:
-            named = ", ".join(base[:12] for base in bases)
-            print(f"REFUSED: these --deleted-path arguments do not exist at every merge base ({named}),")
+            named = ", ".join(base[:12] for base in before)
+            print(f"REFUSED: these --deleted-path arguments do not exist at every pre-change revision ({named}),")
             print("so there is no deletion to verify and their absence proves nothing:")
             for path in never_there:
                 print(f"  {path}")
+            if contained and args.base_ref is None:
+                print("--verified-head is an ancestor of --integration-ref, so that revision is the")
+                print("verified head itself, where a deleted path is absent by definition. Pass")
+                print("--base-ref <the branch this change forked off> to derive it properly.")
             return 2
 
-    # When the verified head is itself a merge base, it is an ancestor of the
-    # integration ref: the commit is in that history, which is stronger evidence
-    # than any path comparison can be. Requiring a path to differ from the base
-    # would then be requiring it to differ from the verified head, which is
-    # impossible -- so an ordinary merge or fast-forward could never be verified
-    # at all. The path comparison still runs, because a later commit can revert
-    # content that was genuinely merged.
-    contained = verified_ids[0] in bases
-
-    # Otherwise at least one declared path must be one this change could have
-    # altered. A file identical at the ancestor, the verified head and the
-    # integration ref proves nothing: comparing identity with identity, where the
-    # identity predates the change, is the same vacuous pass as comparing absence
-    # with absence.
+    # At least one declared path must be one this change could have altered. A
+    # file identical at the pre-change revision, the verified head and the
+    # integration ref proves nothing: comparing identity with identity, where
+    # the identity predates the change, is the same vacuous pass as comparing
+    # absence with absence.
     #
-    # An unresolved lookup at a base is not a difference. `_entry` returns
-    # UNKNOWN for one, and `UNKNOWN != <entry>` is true, so an ambiguous pathspec
-    # -- a trailing slash matching several children, say -- would otherwise be
-    # read as evidence that the change touched the path. Every other gate here
+    # An unresolved lookup is not a difference. `_entry` returns UNKNOWN for one,
+    # and `UNKNOWN != <entry>` is true, so an ambiguous pathspec would otherwise
+    # be read as evidence that the change touched the path. Every other gate here
     # refuses UNKNOWN; this one was counting it as proof.
     def _differs_from_every_base(path: str) -> bool:
-        entries = [_entry(base, path) for base in bases]
+        entries = [_entry(base, path) for base in before]
         if any(entry == UNKNOWN for entry in entries):
             return False
         return all(entry != verified_entries[path] for entry in entries)
 
     touched = [path for path in args.paths if _differs_from_every_base(path)]
-    if not contained and not touched:
-        named = ", ".join(base[:12] for base in bases)
+    if not touched:
+        named = ", ".join(base[:12] for base in before)
+        if contained and args.base_ref is None:
+            print("REFUSED: --verified-head is an ancestor of --integration-ref, so their merge")
+            print(f"base is the verified head itself ({named}) and no path can differ from it.")
+            print("That is what an ordinary merge looks like, and it is not a pass: a merge can")
+            print("keep the verified head as a parent and land none of its content.")
+            print("Pass --base-ref <the branch this change forked off> so the paths this change")
+            print("touched can be derived. Do NOT substitute a path instead.")
+            return 2
         if args.deleted_paths and not args.paths:
             print("REFUSED: a change that only removes files cannot be verified by this tool.")
             print("Absence is symmetric, so there is nothing whose content can witness the merge.")
             return 2
-        print(f"REFUSED: no declared --path resolves unambiguously at the merge base ({named})")
+        print(f"REFUSED: no declared --path resolves unambiguously at the pre-change revision ({named})")
         print("and differs from it there, so none of them can witness what this merge did.")
         print("Declare the paths this change modified or added, spelled exactly as git")
         print("reports them -- a trailing slash matches several entries and resolves to nothing.")
