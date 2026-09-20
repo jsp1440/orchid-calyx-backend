@@ -6,6 +6,8 @@ strings, floats, nulls, and non-positive integers fail closed. It materializes
 all supplied evidence and refuses records beyond the target, so an eleventh
 record cannot be hidden by returning certification after the first ten.
 
+Cycle identities are the canonical consecutive strings `1` through `10` in
+ledger order; unique but skipped, reordered, padded, or descriptive IDs fail.
 Each cycle must carry durable work identity and lease identity, an exact PR number
 and exact head SHA, exact-head green CI, a merge SHA, independent landed-result
 verification, and lease release. Duplicate ownership/lineage, false-green
