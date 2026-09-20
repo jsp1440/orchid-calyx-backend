@@ -22,12 +22,12 @@ def service(tmp_path):
 
 def _csv_bytes() -> bytes:
     return (
-        "genus,height,flowers\n"
-        "Cattleya,10,3\n"
-        "Cattleya,14,5\n"
-        "Dendrobium,8,7\n"
-        "Dendrobium,12,9\n"
-    ).encode()
+        b"genus,height,flowers\n"
+        b"Cattleya,10,3\n"
+        b"Cattleya,14,5\n"
+        b"Dendrobium,8,7\n"
+        b"Dendrobium,12,9\n"
+    )
 
 
 def _xlsx_bytes() -> bytes:
