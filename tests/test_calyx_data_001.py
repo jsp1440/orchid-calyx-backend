@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 
 import pytest
-from openpyxl import Workbook
+from openpyxl import Workbook, load_workbook
 from pydantic import ValidationError
 
 from app.data_intelligence.models import (
@@ -89,6 +89,79 @@ def test_csv_ingest_profile_execute_and_rerun_are_deterministic(service):
     )
     assert rerun["equivalent_artifacts"] is True
     assert rerun["previous_artifact_hashes"] == rerun["current_artifact_hashes"]
+
+
+def test_result_exports_are_deterministic_and_integrity_checked(service):
+    ingested = service.ingest(
+        owner="owner",
+        project_id="project-1",
+        logical_name="exports",
+        filename="orchids.csv",
+        data=_csv_bytes(),
+    )
+    dataset = ingested["dataset"]
+    plan = service.compile_intent(
+        dataset_id=dataset["dataset_id"],
+        version_id=dataset["version_id"],
+        intent="mean height by genus chart",
+    )
+    result = service.execute(owner="owner", project_id="project-1", plan=plan)
+    arguments = {
+        "owner": "owner",
+        "project_id": "project-1",
+        "dataset_id": dataset["dataset_id"],
+        "version_id": dataset["version_id"],
+        "analysis_id": result["analysis_id"],
+    }
+
+    csv_first = service.export_result(**arguments, export_format="csv")
+    csv_second = service.export_result(**arguments, export_format="CSV")
+    assert csv_first == csv_second
+    assert csv_first[0].decode("utf-8") == (
+        "genus,mean_height\nCattleya,12.0\nDendrobium,10.0\n"
+    )
+
+    xlsx_first = service.export_result(**arguments, export_format="xlsx")
+    xlsx_second = service.export_result(**arguments, export_format="xlsx")
+    assert xlsx_first == xlsx_second
+    workbook = load_workbook(io.BytesIO(xlsx_first[0]), read_only=True)
+    assert list(workbook.active.values) == [
+        ("genus", "mean_height"),
+        ("Cattleya", 12),
+        ("Dendrobium", 10),
+    ]
+    workbook.close()
+
+    svg_first = service.export_result(**arguments, export_format="svg")
+    svg_second = service.export_result(**arguments, export_format="svg")
+    assert svg_first == svg_second
+    assert svg_first[0].startswith(b"<svg ")
+
+    table = service.repository.analysis_dir(
+        arguments["owner"],
+        arguments["project_id"],
+        arguments["dataset_id"],
+        arguments["version_id"],
+        arguments["analysis_id"],
+    ) / "table.json"
+    table.write_bytes(b"[]")
+    with pytest.raises(
+        DataIntelligenceError,
+        match="ARTIFACT_INTEGRITY_FAILURE",
+    ):
+        service.export_result(**arguments, export_format="csv")
+
+
+def test_result_export_rejects_unsupported_format(service):
+    with pytest.raises(DataIntelligenceError, match="UNSUPPORTED_EXPORT_FORMAT"):
+        service.export_result(
+            owner="owner",
+            project_id="project-1",
+            dataset_id="0" * 32,
+            version_id="0" * 64,
+            analysis_id="0" * 40,
+            export_format="pdf",
+        )
 
 
 def test_xlsx_ingest_and_profile(service):
