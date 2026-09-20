@@ -2230,7 +2230,7 @@ class TestTheDerivedSetDoesNotDependOnGitConfig:
         be spelled the same way as a verdict. (An earlier version of THIS line
         said "two hundred", and the commit that corrected that figure in the
         source and the operating memory missed this copy of it -- one commit
-        after writing "grep for the pattern, not the symptom you reproduced"
+        after writing "grep for the pattern, not for the symptom you reproduced"
         into that same memory file.)
         """
         repo = tmp_path / "not-utf8-declared"
@@ -2339,3 +2339,96 @@ class TestWhatAnUnreadableLookupReturns:
         # And it is not a fabricated entry either: nothing that could be
         # compared against the integration side as though it were read.
         assert entry == ""
+
+
+class TestTheDeletedPathSplitIsPinned:
+    """The `--deleted-path` half of the ABSENT/UNKNOWN split.
+
+    The `--path` half got a test when a check found its message false. The
+    `--deleted-path` half was fixed in the same commit and got none, and two
+    mutations of it survived the whole focused suite: restoring
+    `in (ABSENT, UNKNOWN)` -- which puts back the exact false message the split
+    removed -- and disabling the unresolved branch entirely.
+
+    The operating memory says to claim a guard covered only after watching a
+    named test go red without it. This is that test.
+    """
+
+    def _run(self, repo, *args):
+        """`run()` uses `text=True`, which cannot read stdout that echoes an
+        undecodable path -- the helper hit the very crash these tests are about,
+        one level up. Surrogate-escape here so the assertions can see it."""
+        return subprocess.run(
+            [sys.executable, str(SCRIPT), *args],
+            cwd=str(repo), capture_output=True, text=True,
+            errors="surrogateescape", check=False,
+        )
+
+    def _lab(self, tmp_path):
+        repo = tmp_path / "deleted-split"
+        repo.mkdir(parents=True, exist_ok=True)
+        _git(repo, "init", "-q", "-b", "main")
+        _git(repo, "config", "user.email", "checker@example.invalid")
+        _git(repo, "config", "user.name", "checker")
+
+        (repo / "plain.txt").write_text("v1\n")
+        with open(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"), "wb") as handle:
+            handle.write(b"x")
+        fork = _commit(repo, "F: both present")
+
+        os.unlink(os.path.join(os.fsencode(str(repo)), b"bad-\xff-name.txt"))
+        (repo / "plain.txt").write_text("v2\n")
+        verified = _commit(repo, "the change removes the undecodable path")
+
+        _git(repo, "checkout", "-q", "-b", "integration", fork)
+        (repo / "other.txt").write_text("other\n")
+        _commit(repo, "integration moves on")
+        _git(repo, "merge", "-q", "--no-edit", verified)
+        integration = _git(repo, "rev-parse", "HEAD")
+        return {"repo": repo}, fork, verified, integration
+
+    def test_an_undecodable_deleted_path_is_not_called_absent(self, tmp_path):
+        """It is sitting right there at the pre-change revision.
+
+        `in (ABSENT, UNKNOWN)` reported "do not exist at every pre-change
+        revision" for a path that does exist -- the same false sentence the
+        `--path` branch had already been corrected for, one branch over.
+        """
+        lab, fork, verified, integration = self._lab(tmp_path)
+        undecodable = os.fsdecode(b"bad-\xff-name.txt")
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", undecodable)
+
+        assert done.returncode == 2, done.stdout
+        assert "Traceback" not in done.stderr, done.stderr
+        assert "did not resolve to one file" in done.stdout
+        assert "do not exist at every pre-change revision" not in done.stdout
+        assert "verdict" not in done.stdout
+
+    def test_a_genuinely_absent_deleted_path_still_says_absent(self, tmp_path):
+        """The other half of the split, so the fix cannot be a blanket rename."""
+        lab, fork, verified, integration = self._lab(tmp_path)
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", "never-existed.txt")
+
+        assert done.returncode == 2, done.stdout
+        assert "do not exist at every pre-change revision" in done.stdout
+        assert "did not resolve to one file" not in done.stdout
+
+    def test_the_unresolved_branch_is_reachable_at_all(self, tmp_path):
+        """Disabling it entirely left the suite green, which is how it was
+        found. If nothing can reach this branch the refusal above is a claim of
+        protection rather than protection."""
+        lab, fork, verified, integration = self._lab(tmp_path)
+        undecodable = os.fsdecode(b"bad-\xff-name.txt")
+
+        done = self._run(lab["repo"], "--verified-head", verified,
+                         "--integration-ref", integration, "--base-ref", fork,
+                         "--path", "plain.txt", "--deleted-path", undecodable)
+
+        assert undecodable in done.stdout or "bad-" in done.stdout
+        assert "the lookup did not produce one comparable" in done.stdout

@@ -355,18 +355,27 @@ def main(argv: list[str] | None = None) -> int:
     # already records that a refusal instructing the operator to do the thing it
     # refuses has become the defect three times.
     #
-    # The UNKNOWN message claims NOTHING about which cause applies, because
-    # `_entry` has four `return UNKNOWN` sites and they do not agree about
-    # whether the operator can fix the input: a trailing slash and a `..` are
-    # correctable spellings, undecodable bytes and a malformed record are not.
+    # This message enumerates nothing, and that is the fix rather than a gap.
     #
-    # Two false statements were written here before this one. "The spelling is
-    # not the problem" broke the directory case; an existing test caught it.
-    # "Three things land here and only one of them is a spelling you can
-    # correct" then broke the `--path ..` case -- git refuses that pathspec
-    # outright, which IS a correctable spelling -- and miscounted four causes
-    # as three. Both were attempts to be helpful about a fact this code does
-    # not have. It has the refusal; it does not have the cause.
+    # Three attempts were made to explain WHICH cause of UNKNOWN the operator
+    # hit, and every one shipped a false statement:
+    #
+    #   "the spelling is not the problem"  -- false for a trailing-slash
+    #       multi-match, where it is exactly the problem.
+    #   "three things land here and only one is a spelling you can correct"
+    #       -- false for `--path ..`, which IS correctable, and a miscount:
+    #       there are four `return UNKNOWN` sites.
+    #   "...when git refuses the pathspec outright (`..` and absolute paths
+    #       do it) ... when the record comes back malformed"  -- false for an
+    #       absolute path INSIDE the worktree, which resolves to a real entry
+    #       and never reaches here, and the malformed case is unreachable from
+    #       any input at all.
+    #
+    # Each was written to correct its predecessor. The common factor is not the
+    # wording; it is that this code does not know the cause, and every sentence
+    # explaining it was invented at the point of writing. So it says the one
+    # thing it does know -- the lookup produced no single comparable entry --
+    # and stops. An explanation nobody can verify is worth less than silence.
     absent = [path for path in args.paths if verified_entries[path] is ABSENT]
     unresolved = [path for path in args.paths if verified_entries[path] == UNKNOWN]
     if absent:
@@ -382,12 +391,8 @@ def main(argv: list[str] | None = None) -> int:
         print("verified head:")
         for path in unresolved:
             print(f"  {path}")
-        print("The lookup returned no single entry. That happens when the pathspec")
-        print("matches SEVERAL entries (a trailing slash does it), when git refuses the")
-        print("pathspec outright (`..` and absolute paths do it), when the entry it")
-        print("returned is not readable as text, and when the record comes back")
-        print("malformed. Some of those are spellings you can correct and some are not,")
-        print("and this tool does not know which one you hit.")
+        print("It is not absent there; the lookup did not produce one comparable entry,")
+        print("which is a different fact and the only one this tool has.")
         print("Declare anything real and this tool prints the exact set it derived, which")
         print("is also the only set it accepts.")
         return 2
@@ -568,9 +573,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"every pre-change revision ({named}):")
             for path in unresolved_deleted:
                 print(f"  {path}")
-            print("They are not absent there -- the lookup returned no single entry, which")
-            print("is a different fact and this tool does not know which of its causes you")
-            print("hit. See the --path refusal above for the list.")
+            print("They are not absent there; the lookup did not produce one comparable")
+            print("entry, which is a different fact and the only one this tool has.")
             return 2
 
     # THE DECLARED SET MUST BE THE SET THIS CHANGE ACTUALLY TOUCHED.

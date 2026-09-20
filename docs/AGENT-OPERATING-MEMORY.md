@@ -82,7 +82,7 @@ The same enumeration applies to a fix's own blast radius. A non-UTF-8 path made 
 
 That sentence first said "two hundred lines", a figure nobody measured, and an independent check caught it here — in the file whose purpose is to stop unverified assertions being carried forward. **Do not write a magnitude into this document that you have not counted.** A number that sounds right is the same failure as a coverage claim reached by reading.
 
-And the correction itself then missed a copy: the figure survived in a test docstring, one commit after "grep for the pattern, not the symptom you reproduced" was written immediately above. **A false statement is a pattern too.** When you retract one, grep the tree for its words — source, tests, docs and the pull request body — before claiming it is retracted.
+And the correction itself then missed a copy: the figure survived in a test docstring, one commit after "grep for the pattern, not for the symptom you reproduced" was written two paragraphs above. (Both details wrong in the first telling — "immediately above", and the rule misquoted by a word. A retraction is a claim like any other.) **A false statement is a pattern too.** When you retract one, grep the tree for its words — source, tests, docs and the pull request body — before claiming it is retracted.
 
 Absence is not evidence, and a fact the caller supplies is not a check. If you find yourself declaring a path, or naming a ref, to make a check go green, you are manufacturing the failure this rule exists to prevent.
 
