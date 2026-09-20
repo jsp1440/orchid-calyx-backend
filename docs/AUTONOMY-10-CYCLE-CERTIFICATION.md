@@ -8,6 +8,11 @@ verification, and lease release. Duplicate ownership/lineage, false-green
 evidence, abandoned leases, manual intervention, or an unauthorized owner-gate
 crossing fails the streak.
 
+The evaluator derives duplicate detection from the persisted evidence itself.
+Cycle, work, lease, PR, exact-head, and merge identities must each be unique
+across the streak, and commit identities must be complete lowercase 40-character
+Git SHAs. Caller-supplied “no duplicate” assertions are never sufficient.
+
 At least one of the ten cycles must encounter a recoverable fault and heal it
 without manual intervention. A genuine owner gate parks that item and the
 scheduler should select other eligible work; an owner gate is never healed by

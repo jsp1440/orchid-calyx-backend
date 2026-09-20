@@ -10,8 +10,8 @@ def good(i, **kw):
         "work_identity": f"issue:{i}",
         "lease_identity": f"lease:{i}",
         "pr_number": 1500 + i,
-        "exact_head_sha": f"head{i}",
-        "merged_sha": f"merge{i}",
+        "exact_head_sha": f"{i:040x}",
+        "merged_sha": f"{i + 100:040x}",
         "exact_head_ci_green": True,
         "landed_verified": True,
         "lease_released": True,
@@ -57,6 +57,33 @@ def test_missing_exact_head_or_merge_evidence_fails():
     assert not good(1, merged_sha="").accepted
     assert not good(1, exact_head_ci_green=False).accepted
     assert not good(1, landed_verified=False).accepted
+
+
+def test_malformed_exact_head_or_merge_identity_fails_closed():
+    assert not good(1, exact_head_sha="abc123").accepted
+    assert not good(1, merged_sha="g" * 40).accepted
+
+
+def test_reused_durable_identity_stops_the_streak():
+    duplicate_cases = (
+        {"cycle_id": "1"},
+        {"work_identity": "issue:1"},
+        {"lease_identity": "lease:1"},
+        {"pr_number": 1501},
+        {"exact_head_sha": f"{1:040x}"},
+        {"merged_sha": f"{101:040x}"},
+    )
+    for duplicate in duplicate_cases:
+        result = evaluate([good(1), good(2, **duplicate)])
+        assert not result.certified
+        assert result.accepted_streak == 1
+        assert "reused" in result.reason
+
+
+def test_non_positive_target_fails_closed():
+    result = evaluate([good(1)], target=0)
+    assert not result.certified
+    assert result.reason == "target must be positive"
 
 
 def test_ledger_is_machine_readable_and_atomic_shape(tmp_path: Path):
