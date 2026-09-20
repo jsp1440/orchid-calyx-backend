@@ -157,19 +157,35 @@ def canonical_brain_registry() -> CapabilityRegistry:
             ),
             Capability(
                 capability_id="reasoning_ledger",
-                canonical_issue="Orchid-Continuum-Brain#142",
-                status="PARTIAL",
-                repository_evidence=("canonical owner issue #142",),
-                public_entry_point=None,
-                persistence=None,
-                api=None,
-                tests=(),
+                canonical_issue="orchid-calyx-backend#142",
+                status="OPERATIONAL",
+                repository_evidence=(
+                    "orchid-calyx-backend#172 reasoning ledger",
+                    "orchid-calyx-backend#188 inference bridge",
+                    "orchid-calyx-backend#189 governed publication adapter",
+                    "migrations/103_reasoning_ledger.sql",
+                ),
+                public_entry_point="/api/reasoning-ledgers",
+                persistence=(
+                    "immutable SQLAlchemy/PostgreSQL revisions and append-only "
+                    "audit events; production schema activation remains owner-gated"
+                ),
+                api=(
+                    "authenticated create, append, exact/current/history retrieval, "
+                    "validation, conflict disposition, review, and epistemic-memory projection"
+                ),
+                tests=(
+                    "tests/test_calyx_brain_002_operational.py",
+                    "tests/test_calyx_brain_002_migration.py",
+                    "tests/test_calyx_brain_integration.py",
+                    "tests/test_calyx_brain_integration_acceptance.py",
+                ),
                 upstream_dependencies=("scientific_language_intake",),
                 downstream_consumers=("executive_planning",),
                 blockers=(),
-                next_executable_slice="verify ledger against governed evidence and concepts",
-                last_verified_commit="unverified",
-                last_verified_date="2026-09-19",
+                next_executable_slice=None,
+                last_verified_commit="a379045af226c3c700e201d3da1c4028822f778b",
+                last_verified_date="2026-09-20",
             ),
             Capability(
                 capability_id="executive_planning",
