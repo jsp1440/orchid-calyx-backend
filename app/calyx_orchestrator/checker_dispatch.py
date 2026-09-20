@@ -277,6 +277,12 @@ def serialize_evidence(evidence: CheckerEvidence) -> str:
         "issue_number": evidence.issue_number,
         "pr_number": evidence.pr_number,
         "checked_head_sha": evidence.checked_head_sha,
+        # Persisted, because it is the field that distinguishes a green run on
+        # an older commit from a green run on this one. Dropping it here made a
+        # refusal disappear on the round trip: `evidence_to_validation` falls
+        # back to `checked_head_sha`, so a record that had said "the checks ran
+        # elsewhere" came back saying they ran here, and the gate authorized.
+        "checks_head_sha": evidence.checks_head_sha,
         "checker_id": evidence.checker_id,
         "maker_id": evidence.maker_id,
         "verdict": evidence.verdict.value,
@@ -326,6 +332,10 @@ def parse_evidence(comment_body: str) -> CheckerEvidence | None:
             reason=str(payload["reason"]),
             material_fingerprint=str(payload["material_fingerprint"]),
             repair_lineage=payload.get("repair_lineage"),
+            # Absent in a record written before this field existed, which is a
+            # genuine "not separately observed" rather than a claim about this
+            # head; `evidence_to_validation` treats it as such.
+            checks_head_sha=str(payload.get("checks_head_sha") or ""),
         )
     except (json.JSONDecodeError, KeyError, TypeError, ValueError):
         return None

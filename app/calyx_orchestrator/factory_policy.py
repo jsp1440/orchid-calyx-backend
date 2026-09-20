@@ -3,10 +3,16 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-import re
 from enum import StrEnum
 
-_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+from app.calyx_orchestrator.head_bound_integration import (
+    EvidenceSource,
+    IntegrationEvidence,
+    Observation,
+)
+from app.calyx_orchestrator.head_bound_integration import (
+    exact_head_verified as head_bound_exact_head_verified,
+)
 
 
 class RiskTier(StrEnum):
@@ -39,11 +45,52 @@ class MissionStatus(StrEnum):
     DONE = "done"
 
 
-def _is_full_sha(value: str) -> bool:
-    """A commit id, not an abbreviation. `git rev-parse` resolves a 7-hex
-    prefix and two commits can share one, so "the head I checked" must not be a
-    string that could name something else later."""
-    return bool(_FULL_SHA.match(value))
+def _same_actor(left: str, right: str) -> bool:
+    """Whether two identity strings name the same actor."""
+    return " ".join(left.split()).casefold() == " ".join(right.split()).casefold()
+
+
+def _head_bound_verified(
+    *,
+    head_sha: str,
+    checker_head_sha: str,
+    checks_head_sha: str,
+    maker_id: str,
+    checker_id: str | None,
+) -> bool:
+    """Ask `head_bound_integration` whether these heads verify this one.
+
+    Built as observations so the single rule applies: a head that is not a full
+    commit id cannot be CONSTRUCTED into one, and a checker who is the maker is
+    not independent.
+
+    There is deliberately no local `_is_full_sha` pre-filter. One stood here and
+    a mutation sweep showed it could be degraded to `bool(value)` -- accepting
+    any string at all -- with the whole suite still green, because every head it
+    screened is screened again, harder, by the constructors below. A guard whose
+    removal changes no outcome is not a second line of defence; it is a second
+    copy of a rule, free to drift from the one that is actually enforced.
+    """
+    try:
+        evidence = IntegrationEvidence(
+            head_sha=head_sha,
+            maker_id=maker_id,
+            checks=Observation(
+                source=EvidenceSource.REQUIRED_CHECKS,
+                head_sha=checks_head_sha,
+                passed=True,
+                observer_id="required-checks",
+            ),
+            review=Observation(
+                source=EvidenceSource.INDEPENDENT_CHECKER,
+                head_sha=checker_head_sha,
+                passed=True,
+                observer_id=checker_id or "",
+            ),
+        )
+    except ValueError:
+        return False
+    return head_bound_exact_head_verified(evidence)
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,21 +160,46 @@ class ValidationEvidence:
 
     @property
     def independent_checker(self) -> bool:
-        return bool(self.checker_id) and self.checker_id != self.maker_id
+        """One actor, one identity, however they spelled it.
+
+        This compared raw strings, so `"maker-a "` counted as a different actor
+        from `"maker-a"` and a maker could certify their own work by adding a
+        space. The head-bound rule normalizes, and two rules that disagree about
+        who someone is will eventually disagree about whether anyone checked.
+
+        `strip()` on the emptiness test for the same reason: `bool("   ")` is
+        true, so a checker id of three spaces reported an independent checker
+        here while `decide_next_step` -- which does strip -- refused the very
+        same record. Whitespace is not a person.
+
+        `checker_id` is `str | None`, and the first version of that fix called
+        `.strip()` on it directly -- which turns "nobody has checked this yet",
+        the commonest state a pending record is in, into an AttributeError
+        inside the gate. Absence is not an error; it is a no.
+        """
+        checker_id = self.checker_id or ""
+        return bool(checker_id.strip()) and not _same_actor(checker_id, self.maker_id)
 
     @property
     def exact_head_verified(self) -> bool:
         """Whether the checker and the required checks both name this exact head.
 
+        Delegated to `head_bound_integration`, which is the rule. Two copies of
+        one rule drift: an independent check found this property degradable to a
+        7-hex prefix comparison with the whole suite green, because the prefix
+        test had been written against the module and this was the copy the merge
+        path actually read.
+
         Absence is not agreement: an unrecorded head is the empty string, which
         equals no commit, so a record that cannot say which commit it is about
         can never satisfy this.
         """
-        if not _is_full_sha(self.head_sha):
-            return False
-        return (
-            self.checker_head_sha == self.head_sha
-            and self.checks_head_sha == self.head_sha
+        return _head_bound_verified(
+            head_sha=self.head_sha,
+            checker_head_sha=self.checker_head_sha,
+            checks_head_sha=self.checks_head_sha,
+            maker_id=self.maker_id,
+            checker_id=self.checker_id,
         )
 
     @property

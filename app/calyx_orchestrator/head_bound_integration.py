@@ -1,10 +1,17 @@
 """Bind every piece of integration evidence to the commit it was produced against.
 
 Three pull requests in this repository's merge-verifier lineage were merged
-before their reviews finished -- #1524 at `657b2f1`, #1526 at `85bb2b2`, #1530
-six minutes after it was opened. Each merge was authorized by evidence that was
-true of *some* commit. None of them was authorized by evidence true of the
-commit that actually merged.
+before the review of the head being merged had returned:
+
+    #1524  merged `657b2f1`   opened 19:12, merged 22:07
+    #1526  merged `85bb2b2`   opened 23:50, merged 00:06 -- the review of that
+                              head returned at `6a57183`, 00:46, forty minutes
+                              after the merge
+    #1530  merged `9acced7`   opened 02:40, merged 02:47; no review ran
+
+Each merge was authorized by evidence that was true of *some* commit, or by no
+evidence at all. None was authorized by evidence true of the commit that
+actually merged.
 
 The existing gate could not tell the difference. `ValidationEvidence` carried
 `exact_head_verified: bool` -- a fact the CALLER asserts -- and
@@ -36,7 +43,7 @@ from enum import StrEnum
 #: A full commit id. Abbreviations are refused on purpose: `git rev-parse`
 #: happily resolves a 7-hex prefix, two commits can share one, and "the head
 #: I checked" must not be a string that could name something else later.
-_FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
+_FULL_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
 class EvidenceSource(StrEnum):
@@ -82,6 +89,17 @@ class Refusal(StrEnum):
     LANDED_RESULT_STALE = "landed_result_stale"
 
 
+def _identity(value: str) -> str:
+    """One spelling for one actor.
+
+    The emptiness test stripped and the equality test did not, so `"M "`
+    counted as a different actor from `"M"` and a maker could review their own
+    work by adding a space. Case folds too: an actor id is a label, not a
+    password.
+    """
+    return " ".join(value.split()).casefold()
+
+
 @dataclass(frozen=True, slots=True)
 class Observation:
     """One fact, and the commit it is a fact about.
@@ -97,12 +115,21 @@ class Observation:
     detail: str = ""
 
     def __post_init__(self) -> None:
-        if not _FULL_SHA.match(self.head_sha):
+        if not _FULL_SHA.fullmatch(self.head_sha):
             raise ValueError(f"HEAD_SHA_MUST_BE_40_HEX: {self.head_sha!r}")
 
     def is_about(self, head_sha: str) -> bool:
-        """Whether this observation is about exactly that commit."""
+        """Whether this observation is about exactly that commit.
+
+        Whole id, not a prefix: `git rev-parse` resolves a 7-hex prefix and two
+        commits can share one, so a prefix comparison lets evidence about
+        `abc1234fff…` authorize the integration of `abc1234000…`.
+        """
         return self.head_sha == head_sha
+
+    def by(self, actor_id: str) -> bool:
+        """Whether the same actor produced this, however they spelled it."""
+        return _identity(self.observer_id) == _identity(actor_id)
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,10 +148,29 @@ class IntegrationEvidence:
     landed: Observation | None = None
 
     def __post_init__(self) -> None:
-        if not _FULL_SHA.match(self.head_sha):
+        if not _FULL_SHA.fullmatch(self.head_sha):
             raise ValueError(f"HEAD_SHA_MUST_BE_40_HEX: {self.head_sha!r}")
         if not self.maker_id.strip():
             raise ValueError("MAKER_ID_REQUIRED")
+        # Nothing checked that an observation was filed in the slot it belongs
+        # to, so a check run placed in `review` satisfied "an independent
+        # review happened" -- an observation naming the right commit while
+        # reporting on nothing. And the SAME observation could fill both slots,
+        # so one check run counted as checks AND review.
+        for slot, allowed in (
+            ("checks", EvidenceSource.REQUIRED_CHECKS),
+            ("review", EvidenceSource.INDEPENDENT_CHECKER),
+            ("landed", EvidenceSource.LANDED_RESULT),
+        ):
+            observation = getattr(self, slot)
+            if observation is not None and observation.source is not allowed:
+                raise ValueError(
+                    f"OBSERVATION_IN_WRONG_SLOT: {slot} holds {observation.source.value}"
+                )
+        # No separate "the same observation cannot fill both slots" guard: the
+        # slot rule above already makes it impossible, because the two slots
+        # require different sources. A guard that cannot fire is not protection,
+        # it is a claim of protection.
 
     def stale(self) -> tuple[Observation, ...]:
         """Observations that are about some other commit.
@@ -211,7 +257,7 @@ def decide_next_step(evidence: IntegrationEvidence) -> IntegrationDecision:
         )
     # A maker reviewing their own work is one identity wearing two labels, and
     # the whole value of the review is that it is not the same judgement twice.
-    if not evidence.review.observer_id.strip() or evidence.review.observer_id == evidence.maker_id:
+    if not evidence.review.observer_id.strip() or evidence.review.by(evidence.maker_id):
         return IntegrationDecision(
             step=IntegrationStep.REQUEST_INDEPENDENT_REVIEW,
             reason="REVIEW_NOT_INDEPENDENT_OF_THE_MAKER",
@@ -265,17 +311,24 @@ def may_integrate(evidence: IntegrationEvidence) -> bool:
 
 
 def exact_head_verified(evidence: IntegrationEvidence) -> bool:
-    """Whether checks AND review both name this exact head, and both passed.
+    """Whether this exact head is verified: checks and an independent review
+    both name it, both passed, and no landed result recorded for it says the
+    integration did not produce what was verified.
+
+    That last clause is not decoration. Saying only "checks and review passed"
+    would describe a function that returns False after a landing failure, and a
+    reader who trusted the sentence would reach for this helper in exactly the
+    case it refuses.
 
     This is what `ValidationEvidence.exact_head_verified` was asking a caller to
     assert. It is derived here instead, from observations that had to name their
     commit in order to exist at all.
     """
-    return (
-        evidence.checks is not None
-        and evidence.review is not None
-        and evidence.checks.is_about(evidence.head_sha)
-        and evidence.review.is_about(evidence.head_sha)
-        and evidence.checks.passed
-        and evidence.review.passed
-    )
+    # Independence is part of it. A helper that omitted it accepted a maker
+    # certifying their own head, while the gate beside it refused -- and its own
+    # docstring invited a reader to substitute one for the other.
+    return decide_next_step(evidence).step in {
+        IntegrationStep.INTEGRATE,
+        IntegrationStep.VERIFY_LANDED_RESULT,
+        IntegrationStep.RETIRE_LEASE,
+    }

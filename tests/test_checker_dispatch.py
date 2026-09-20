@@ -458,7 +458,9 @@ def test_a_head_that_moved_after_the_assignment_is_not_verified() -> None:
     assignment = _assignment(head_sha=HEAD_SHA)
     evidence = _evidence(checked_head_sha=HEAD_SHA)
 
-    validation = evidence_to_validation(assignment, evidence, current_head_sha=MOVED_HEAD)
+    validation = evidence_to_validation(
+        assignment, evidence, current_head_sha=MOVED_HEAD
+    )
 
     assert validation.exact_head_verified is False
     assert validation.stale_evidence  # and it can say which fact is stale
@@ -500,4 +502,75 @@ def test_the_unmoved_case_still_authorizes_integration() -> None:
 
     assert validation.exact_head_verified is True
     assert validation.stale_evidence == ()
-    assert evaluate_factory_gate(_intent(), validation).action is FactoryAction.AUTO_INTEGRATE
+    assert (
+        evaluate_factory_gate(_intent(), validation).action
+        is FactoryAction.AUTO_INTEGRATE
+    )
+
+
+# ---------------------------------------------------------------------------
+# A refusal that disappears when the record is written down is not a refusal.
+# ---------------------------------------------------------------------------
+
+
+def test_the_checks_head_survives_the_round_trip() -> None:
+    """`checks_head_sha` was not serialized and not parsed.
+
+    `evidence_to_validation` falls back to `checked_head_sha` when it is empty,
+    so a record saying "the checks ran on another commit" came back saying they
+    ran on this one, and a refusal became AUTO_INTEGRATE purely by being
+    persisted and re-read. `settle()`'s body-integrity guard could not catch it
+    because both sides dropped the field identically.
+    """
+    evidence = _evidence(checked_head_sha=HEAD_SHA, checks_head_sha=MOVED_HEAD)
+
+    before = evidence_to_validation(
+        _assignment(head_sha=HEAD_SHA), evidence, current_head_sha=HEAD_SHA
+    )
+    assert before.exact_head_verified is False
+
+    round_tripped = parse_evidence(serialize_evidence(evidence))
+    assert round_tripped is not None
+    assert round_tripped.checks_head_sha == MOVED_HEAD
+
+    after = evidence_to_validation(
+        _assignment(head_sha=HEAD_SHA), round_tripped, current_head_sha=HEAD_SHA
+    )
+    assert after.exact_head_verified is False
+    assert any("checks ran against" in entry for entry in after.stale_evidence)
+
+
+def test_a_record_written_before_the_field_existed_still_parses() -> None:
+    # Absent is "not separately observed", not a claim about this head.
+    import json as _json
+    import re as _re
+
+    body = serialize_evidence(_evidence(checked_head_sha=HEAD_SHA))
+    block = _re.search(r"<!-- [^\n]*\n(.*?)\n-->", body, _re.S)
+    assert block is not None
+    payload = _json.loads(block.group(1))
+    payload.pop("checks_head_sha")
+    stripped = body.replace(
+        block.group(1), _json.dumps(payload, indent=2, sort_keys=True)
+    )
+    assert "checks_head_sha" not in stripped
+
+    parsed = parse_evidence(stripped)
+
+    assert parsed is not None
+    assert parsed.checks_head_sha == ""
+
+
+def test_the_checker_head_binding_is_the_checker_head() -> None:
+    """Binding `checker_head_sha` to the current head instead of the checked one
+    survived a whole sweep: the other field still carried the real head, so the
+    two mutations only showed up together. Pinned separately now."""
+    evidence = _evidence(checked_head_sha=MOVED_HEAD, checks_head_sha=HEAD_SHA)
+
+    validation = evidence_to_validation(
+        _assignment(head_sha=MOVED_HEAD), evidence, current_head_sha=HEAD_SHA
+    )
+
+    assert validation.checker_head_sha == MOVED_HEAD
+    assert validation.exact_head_verified is False
+    assert any("checker verified" in entry for entry in validation.stale_evidence)

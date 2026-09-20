@@ -72,7 +72,17 @@ Absence is not evidence, and a fact the caller supplies is not a check. If you f
 
 ## Evidence is about a commit, or it is not evidence
 
-Three pull requests in the merge-verifier lineage were merged before their reviews finished: #1524 at `657b2f1` while its review was at `6a57183`; #1526 at `85bb2b2` while its review was at `9acced7`; #1530 six minutes after it was opened. In every case the evidence on file was **true** — of a commit that was not the one being merged. The result was that a defect fixed two rounds earlier was live on `oc-autonomous-integration` while the fix sat in a branch.
+Three pull requests in the merge-verifier lineage were merged before the review of the head being merged had returned:
+
+| PR | merged head | opened → merged | the review of that head |
+|---|---|---|---|
+| #1524 | `657b2f1` | 19:12 → 22:07 | returned after the merge; its findings became #1526 |
+| #1526 | `85bb2b2` | 23:50 → 00:06 (16 min) | returned after the merge, at `6a57183`, 00:46 |
+| #1530 | `9acced7` | 02:40 → 02:47 (6 min) | never ran |
+
+In every case the evidence on file was **true** — of a commit that was not the one being merged — or did not exist yet. The result was that a defect fixed two rounds earlier was live on `oc-autonomous-integration` while the fix sat in a branch.
+
+Check that table against the API and the commit dates, not against an earlier retelling of it: the first version of this paragraph paired #1526 with `9acced7`, which is #1530's merged head, and called `6a57183` "#1524's review", which it is not. A note about evidence naming the wrong commit had named the wrong commits.
 
 Verification that finishes after a merge cannot function as a gate. So:
 
@@ -93,6 +103,10 @@ An unknown current head is recorded as unknown and refused. Defaulting it to the
 A mutation "kill", a red suite and a failing check are only evidence while the baseline is valid. This environment's global commit-signing helper began returning `too many open files` partway through a sweep, so every fixture `git commit` returned 128, the suite went red for a reason unrelated to the code, and six mutants were recorded as KILLED while proving nothing.
 
 So: establish a green baseline, run an **unmutated control through the same pipeline**, and assert byte-for-byte restoration afterwards. If the baseline goes red mid-sweep, discard the sweep. Do not count an environmental failure as a mutation kill or a code failure, and do not report a count measured over a surface you chose as a measurement of the code.
+
+The same rule applies in the other direction, to a **green** result. A comparison script ran the full suite on two heads with a plugin flag this environment does not have; pytest exited before collecting anything, both runs produced zero failing node ids, and "zero new failures" was arithmetically true of two runs that never executed a test. A harness must **refuse to report** a comparison whose inputs contain no pytest summary line, rather than quietly comparing two empty sets. A worktree added with a relative path lands inside the tree it was added from, and 763 collection errors from duplicated test basenames are also not a result — check `git worktree list` before trusting a suite.
+
+An absent result and a passing result are the same shape on the way out: both are "nothing to report". Only one of them is evidence.
 
 ## Stuck-repair protection
 
