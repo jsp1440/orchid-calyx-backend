@@ -299,8 +299,8 @@ class DataIntelligenceService:
         rows: list[dict[str, Any]],
     ) -> bytes:
         workbook = Workbook()
-        workbook.properties.created = datetime(1980, 1, 1)
-        workbook.properties.modified = datetime(1980, 1, 1)
+        workbook.properties.created = datetime(1980, 1, 1, tzinfo=timezone.utc)
+        workbook.properties.modified = datetime(1980, 1, 1, tzinfo=timezone.utc)
         sheet = workbook.active
         sheet.title = "result"
         sheet.append(columns)
@@ -311,18 +311,17 @@ class DataIntelligenceService:
         workbook.close()
 
         deterministic = io.BytesIO()
-        with zipfile.ZipFile(raw, "r") as source:
-            with zipfile.ZipFile(
-                deterministic,
-                "w",
-                compression=zipfile.ZIP_DEFLATED,
-                compresslevel=9,
-            ) as target:
-                for name in sorted(source.namelist()):
-                    info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
-                    info.compress_type = zipfile.ZIP_DEFLATED
-                    info.external_attr = 0o600 << 16
-                    target.writestr(info, source.read(name))
+        with zipfile.ZipFile(raw, "r") as source, zipfile.ZipFile(
+            deterministic,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=9,
+        ) as target:
+            for name in sorted(source.namelist()):
+                info = zipfile.ZipInfo(name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                info.external_attr = 0o600 << 16
+                target.writestr(info, source.read(name))
         return deterministic.getvalue()
 
     def compile_intent(
