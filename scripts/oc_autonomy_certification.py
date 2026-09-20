@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Provider-free acceptance ledger for Orchid Continuum autonomous cycles.
 
 This module records and evaluates evidence; it grants no execution, merge,
@@ -6,12 +5,13 @@ deployment, publication, credential, spending, or production authority.
 """
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
 import json
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Iterable
 
 TARGET_STREAK = 10
+
 
 @dataclass(frozen=True)
 class CycleEvidence:
@@ -35,20 +35,35 @@ class CycleEvidence:
 
     @property
     def accepted(self) -> bool:
-        if not all((self.cycle_id, self.work_identity, self.lease_identity,
-                    self.exact_head_sha, self.merged_sha)):
+        if not all(
+            (
+                self.cycle_id,
+                self.work_identity,
+                self.lease_identity,
+                self.exact_head_sha,
+                self.merged_sha,
+            )
+        ):
             return False
         if self.pr_number <= 0:
             return False
-        if not (self.exact_head_ci_green and self.landed_verified and self.lease_released):
+        if not (
+            self.exact_head_ci_green and self.landed_verified and self.lease_released
+        ):
             return False
-        if any((self.duplicate_ownership, self.duplicate_lineage,
-                self.unauthorized_owner_gate_crossing, self.abandoned_lease,
-                self.false_green, self.manual_intervention)):
+        if any(
+            (
+                self.duplicate_ownership,
+                self.duplicate_lineage,
+                self.unauthorized_owner_gate_crossing,
+                self.abandoned_lease,
+                self.false_green,
+                self.manual_intervention,
+            )
+        ):
             return False
-        if self.recoverable_fault_seen and not self.recoverable_fault_healed:
-            return False
-        return True
+        return not self.recoverable_fault_seen or self.recoverable_fault_healed
+
 
 @dataclass(frozen=True)
 class Certification:
@@ -58,24 +73,46 @@ class Certification:
     recovery_proven: bool
     reason: str
 
-def evaluate(cycles: Iterable[CycleEvidence], target: int = TARGET_STREAK) -> Certification:
+
+def evaluate(
+    cycles: Iterable[CycleEvidence], target: int = TARGET_STREAK
+) -> Certification:
     streak = 0
     recovery_proven = False
     for cycle in cycles:
         if not cycle.accepted:
-            return Certification(False, streak, target, recovery_proven,
-                                 f"cycle {cycle.cycle_id} failed acceptance")
+            return Certification(
+                False,
+                streak,
+                target,
+                recovery_proven,
+                f"cycle {cycle.cycle_id} failed acceptance",
+            )
         streak += 1
         recovery_proven = recovery_proven or (
             cycle.recoverable_fault_seen and cycle.recoverable_fault_healed
         )
         if streak == target:
             if not recovery_proven:
-                return Certification(False, streak, target, False,
-                                     "ten clean cycles completed but no self-healing recovery was proven")
+                return Certification(
+                    False,
+                    streak,
+                    target,
+                    False,
+                    (
+                        "ten clean cycles completed but no self-healing recovery "
+                        "was proven"
+                    ),
+                )
             return Certification(True, streak, target, True, "certified")
-    return Certification(False, streak, target, recovery_proven,
-                         f"need {target - streak} more accepted consecutive cycles")
+    return Certification(
+        False,
+        streak,
+        target,
+        recovery_proven,
+        f"need {target - streak} more accepted consecutive cycles",
+    )
+
 
 def write_ledger(path: Path, cycles: list[CycleEvidence]) -> Certification:
     result = evaluate(cycles)
@@ -87,6 +124,8 @@ def write_ledger(path: Path, cycles: list[CycleEvidence]) -> Certification:
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tmp.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     tmp.replace(path)
     return result
