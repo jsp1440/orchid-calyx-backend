@@ -6,11 +6,17 @@ deployment, publication, credential, spending, or production authority.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
 TARGET_STREAK = 10
+FULL_SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
+
+
+def _is_full_sha(value: str) -> bool:
+    return bool(FULL_SHA_PATTERN.fullmatch(value))
 
 
 @dataclass(frozen=True)
@@ -35,17 +41,11 @@ class CycleEvidence:
 
     @property
     def accepted(self) -> bool:
-        if not all(
-            (
-                self.cycle_id,
-                self.work_identity,
-                self.lease_identity,
-                self.exact_head_sha,
-                self.merged_sha,
-            )
-        ):
+        if not all((self.cycle_id, self.work_identity, self.lease_identity)):
             return False
         if self.pr_number <= 0:
+            return False
+        if not _is_full_sha(self.exact_head_sha) or not _is_full_sha(self.merged_sha):
             return False
         if not (
             self.exact_head_ci_green and self.landed_verified and self.lease_released
@@ -77,8 +77,17 @@ class Certification:
 def evaluate(
     cycles: Iterable[CycleEvidence], target: int = TARGET_STREAK
 ) -> Certification:
+    if target <= 0:
+        return Certification(False, 0, target, False, "target must be positive")
+
     streak = 0
     recovery_proven = False
+    seen_cycle_ids: set[str] = set()
+    seen_work_identities: set[str] = set()
+    seen_lease_identities: set[str] = set()
+    seen_pr_numbers: set[int] = set()
+    seen_exact_heads: set[str] = set()
+    seen_merge_shas: set[str] = set()
     for cycle in cycles:
         if not cycle.accepted:
             return Certification(
@@ -88,6 +97,24 @@ def evaluate(
                 recovery_proven,
                 f"cycle {cycle.cycle_id} failed acceptance",
             )
+        identities = (
+            ("cycle identity", cycle.cycle_id, seen_cycle_ids),
+            ("work identity", cycle.work_identity, seen_work_identities),
+            ("lease identity", cycle.lease_identity, seen_lease_identities),
+            ("PR identity", cycle.pr_number, seen_pr_numbers),
+            ("exact head", cycle.exact_head_sha, seen_exact_heads),
+            ("merge identity", cycle.merged_sha, seen_merge_shas),
+        )
+        for name, value, seen in identities:
+            if value in seen:
+                return Certification(
+                    False,
+                    streak,
+                    target,
+                    recovery_proven,
+                    f"cycle {cycle.cycle_id} reused {name}",
+                )
+            seen.add(value)
         streak += 1
         recovery_proven = recovery_proven or (
             cycle.recoverable_fault_seen and cycle.recoverable_fault_healed
