@@ -205,6 +205,7 @@ jobs:
         env:
           LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
           DENIAL_REASON: ${{ steps.governor.outputs.reason || 'GOVERNOR_ADMISSION_UNCONFIRMED' }}
+          BLOCKER_FINGERPRINT: ${{ steps.governor.outputs.blocker_fingerprint }}
         run: |
           set -euo pipefail
           # A verified Swarm claim is required for unattended state mutation.
@@ -213,7 +214,8 @@ jobs:
           python3 -m scripts.oc_swarm_claim \
             --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
             --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT" --park-denied "$DENIAL_REASON"
+            --run-attempt "$GITHUB_RUN_ATTEMPT" --park-denied "$DENIAL_REASON" \
+            --blocker-fingerprint "$BLOCKER_FINGERPRINT"
 
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'
