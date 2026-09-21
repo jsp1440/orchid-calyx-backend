@@ -95,8 +95,31 @@ class PostgresSpeciesRepository:
             graph = self._graph(cur, taxon["id"])
             related = self._related(cur, taxon["id"], identity.genus)
             generated_at = _now()
+            unavailable_sections = [
+                "nomenclature",
+                "protologue",
+                "type_material",
+                "historical_media",
+                "morphology",
+                "distribution",
+                "ecology",
+                "phenology",
+                "pollinators",
+                "mycorrhizae",
+                "conservation",
+                "literature",
+                "cultivation",
+                "calyx_narrative",
+                "research_gaps",
+                "atlas_summary",
+                "identification_matrix",
+            ]
             return SpeciesDossierEnvelope(
                 generated_at=generated_at,
+                taxon_id=identity.taxon_id,
+                display_name=identity.display_name,
+                full_scientific_name=identity.full_scientific_name,
+                accepted_name=identity.accepted_name,
                 identity=identity,
                 nomenclature=_unavailable(),
                 protologue=_unavailable(),
@@ -121,6 +144,14 @@ class PostgresSpeciesRepository:
                 ),
                 research_gaps=_unavailable(),
                 atlas=self._atlas_envelope(str(taxon["id"]), generated_at),
+                atlas_summary=_unavailable(
+                    "Atlas layers are not assembled from a verified occurrence source in this path."
+                ),
+                identification_matrix=_unavailable(
+                    "The identification matrix is not assembled from verified diagnostic evidence in this path."
+                ),
+                freshness={"state": "unknown", "as_of": None, "source": None},
+                unavailable_sections=unavailable_sections,
                 related_species=related,
                 matrix_url=f"{self._matrix_path}?taxon_id={taxon['id']}",
                 partner_references=[],
@@ -231,6 +262,7 @@ class PostgresSpeciesRepository:
             FROM {IMAGES_TABLE}
             WHERE taxonomy_id = %s
               AND image_url IS NOT NULL
+              AND NULLIF(BTRIM(image_license), '') IS NOT NULL
               AND COALESCE(is_duplicate, false) = false
             ORDER BY id
             LIMIT %s
@@ -291,6 +323,9 @@ class PostgresSpeciesRepository:
             JOIN oc_graph.kg_edges e ON e.from_node_id = n1.kg_node_id
             JOIN oc_graph.kg_nodes n2 ON n2.kg_node_id = e.to_node_id
             WHERE n1.canonical_key = %s
+              AND n1.is_active IS TRUE
+              AND e.is_active IS TRUE
+              AND n2.is_active IS TRUE
             ORDER BY e.kg_edge_id
             LIMIT %s
             """,
