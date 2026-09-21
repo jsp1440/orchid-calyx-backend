@@ -13,6 +13,7 @@ import re
 import subprocess
 
 from runtime.swarm.work_packet import build_work_packet
+from scripts.oc_budget_blocker import is_budget_denial
 from scripts.oc_health_contract import evaluate
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 
@@ -161,8 +162,16 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     """Release only our confirmed claim after denial; never restore paid eligibility."""
     if not re.fullmatch(r"[A-Z_]+", reason):
         raise ValueError("invalid governor denial reason")
-    if not BLOCKER_FINGERPRINT.fullmatch(str(blocker_fingerprint or "")):
+    budget_denial = is_budget_denial(reason)
+    if budget_denial and not BLOCKER_FINGERPRINT.fullmatch(
+        str(blocker_fingerprint or "")
+    ):
         raise ValueError("budget blocker fingerprint unavailable")
+    durable_blocker = (
+        f"budget:{blocker_fingerprint}"
+        if budget_denial
+        else f"governor:{reason}"
+    )
     args = ["issue", "view", str(issue_number), "--repo", repository,
             "--json", "number,title,body,state,labels"]
     issue = call(args)
@@ -185,11 +194,13 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     release = {"schema": "oc.swarm-denied-release.v1", "issue_number": issue_number,
                "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
                "lease_comment_id": comment_id, "material_fingerprint": packet.fingerprint,
-               "reason": reason, "blocker_fingerprint": blocker_fingerprint,
+               "reason": reason,
+               "blocker_fingerprint": blocker_fingerprint if budget_denial else None,
+               "blocker": durable_blocker,
                "state": "oc-blocked", "provider_called": False}
     body = ("[OC-SWARM-V4] Provider admission denied; execution lease released: `"
             + json.dumps(release, sort_keys=True) + "`.\n"
-            + f"OC-BLOCKED-ON: budget:{blocker_fingerprint}")
+            + f"OC-BLOCKED-ON: {durable_blocker}")
     saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments",
                   "--input", "-"], {"body": body})
     if not saved or saved.get("body") != body or not saved.get("id"):
