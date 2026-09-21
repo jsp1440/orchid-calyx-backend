@@ -10,6 +10,11 @@ from typing import Any
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.security import verify_owner_or_api_key
+from runtime.hassler_release_lifecycle import (
+    active_release_id_from_env,
+    build_hassler_release_status,
+    observe_release_state,
+)
 from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 from runtime.world_plants_release_store import WorldPlantsReleaseStore
 
@@ -316,6 +321,50 @@ def create_taxonomy_release_router(
                 status_code=503,
                 detail="taxonomy activation decision evidence is unavailable",
             ) from exc
+
+    @router.get("/api/mission-control/taxonomy/hassler-release-status")
+    def hassler_release_status(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Report where the one exact acceptance-target release stands.
+
+        Read-only and incapable of promotion. Unlike the other endpoints here,
+        an unreachable evidence source is not a 503: the frontend distinguishes
+        "the pipeline looked and could not establish this" from "the backend
+        did not answer", and only the first can be expressed in the body. A 503
+        would be read as the second and lose that distinction.
+        """
+        durable = _try_durable_store(get_durable_store)
+        local = get_store()
+        backend = "postgresql" if durable is not None else "local_compatibility"
+
+        def list_releases() -> Any:
+            if durable is not None:
+                try:
+                    return durable.list_reports()
+                except Exception as exc:
+                    if not _is_sqlalchemy_error(exc):
+                        raise
+            return local.list_reports()
+
+        def read_staging(release_id: str) -> Any:
+            if durable is None:
+                raise RuntimeError("durable staging unavailable")
+            checkpoint = durable.checkpoint(release_id)
+            # Flatten the checkpoint so a `complete` flag it carries is visible
+            # to the classifier rather than buried a level down.
+            flat: dict[str, Any] = dict(checkpoint) if isinstance(checkpoint, dict) else {}
+            flat["checkpoint"] = checkpoint
+            flat["counts"] = durable.counts(release_id)
+            return flat
+
+        observation = observe_release_state(
+            list_releases=list_releases,
+            read_staging=read_staging,
+            read_active_release_id=active_release_id_from_env,
+            storage_backend=backend,
+        )
+        return build_hassler_release_status(observation)
 
     router.include_router(releases)
     return router
