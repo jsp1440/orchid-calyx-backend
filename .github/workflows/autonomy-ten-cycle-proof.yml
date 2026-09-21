@@ -1,6 +1,7 @@
 name: Autonomy 10-Cycle Proof
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - test/autonomy-10-cycle-proof
