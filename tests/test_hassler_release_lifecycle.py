@@ -59,21 +59,22 @@ def test_matches_the_acceptance_target_by_filename():
 
 def test_matches_by_version_label_when_the_filename_was_tidied():
     """A renamed file is still the same release; ABSENT would be wrong."""
-    assert matches_expected_release(
-        release(filename="worldorchids-26-08.csv")
-    ) is True
+    assert matches_expected_release(release(filename="worldorchids-26-08.csv")) is True
 
 
 def test_matching_ignores_case_and_surrounding_whitespace():
-    assert matches_expected_release(
-        release(filename=f"  {EXPECTED_FILENAME.upper()}  ")
-    ) is True
+    assert (
+        matches_expected_release(release(filename=f"  {EXPECTED_FILENAME.upper()}  "))
+        is True
+    )
 
 
 def test_a_different_release_does_not_match():
     assert (
         matches_expected_release(
-            release(filename="WorldOrchids 25-01.csv", version_label="WorldOrchids 25-01")
+            release(
+                filename="WorldOrchids 25-01.csv", version_label="WorldOrchids 25-01"
+            )
         )
         is False
     )
@@ -102,8 +103,12 @@ def test_unreadable_inventory_reports_unavailable_never_absent():
     assert lifecycle["lifecycle_state"] == "UNAVAILABLE"
     assert lifecycle["lifecycle_state"] != "ABSENT"
     assert lifecycle["evidence_complete"] is False
-    assert any("release_inventory" in item for item in lifecycle["unavailable_evidence"])
-    assert "not the same as the release being absent" in lifecycle["lifecycle_rationale"]
+    assert any(
+        "release_inventory" in item for item in lifecycle["unavailable_evidence"]
+    )
+    assert (
+        "not the same as the release being absent" in lifecycle["lifecycle_rationale"]
+    )
 
 
 def test_readable_but_empty_inventory_reports_absent():
@@ -118,7 +123,10 @@ def test_inventory_without_the_target_reports_absent_and_says_what_it_saw():
     lifecycle = classify_lifecycle(
         ReleaseObservation(
             releases=(
-                release(filename="WorldOrchids 25-01.csv", version_label="WorldOrchids 25-01"),
+                release(
+                    filename="WorldOrchids 25-01.csv",
+                    version_label="WorldOrchids 25-01",
+                ),
             )
         )
     )
@@ -206,7 +214,13 @@ def test_present_but_unrecognized_state_is_unavailable_not_inspected():
     """Do not assert an inspection that was never observed."""
     lifecycle = classify_lifecycle(
         ReleaseObservation(
-            releases=({"release_id": "x", "state": "???", "snapshot": {"filename": EXPECTED_FILENAME}},)
+            releases=(
+                {
+                    "release_id": "x",
+                    "state": "???",
+                    "snapshot": {"filename": EXPECTED_FILENAME},
+                },
+            )
         )
     )
     assert lifecycle["lifecycle_state"] == "UNAVAILABLE"
@@ -272,7 +286,9 @@ def test_an_observed_zero_is_preserved():
     impact = build_downstream_relink_impact(
         ReleaseObservation(releases=(), relink_counts=counts)
     )
-    assert all(d["count"] == 0 and d["count_evidence"] == "observed" for d in impact["domains"])
+    assert all(
+        d["count"] == 0 and d["count_evidence"] == "observed" for d in impact["domains"]
+    )
     assert impact["counts_complete"] is True
 
 
@@ -317,7 +333,9 @@ def test_staging_is_only_probed_for_the_expected_release():
 
     observe_release_state(
         list_releases=lambda: [
-            release(filename="other.csv", version_label="other", release_id="sha-other"),
+            release(
+                filename="other.csv", version_label="other", release_id="sha-other"
+            ),
             release(release_id="sha-target"),
         ],
         read_staging=read_staging,

@@ -247,7 +247,9 @@ def classify_lifecycle(observation: ReleaseObservation) -> dict[str, Any]:
 
     if activated:
         state = "ACTIVATED"
-        rationale = f"The canonical active taxonomy pointer names this release ({release_id})."
+        rationale = (
+            f"The canonical active taxonomy pointer names this release ({release_id})."
+        )
     elif superseded_by:
         state = "SUPERSEDED"
         rationale = (
@@ -278,7 +280,10 @@ def classify_lifecycle(observation: ReleaseObservation) -> dict[str, Any]:
             "The release is present in the inventory but carries no recognized "
             "lifecycle state, so its position cannot be established."
         )
-        unavailable = [*unavailable, f"release_state:unrecognized:{report.get('state')!r}"]
+        unavailable = [
+            *unavailable,
+            f"release_state:unrecognized:{report.get('state')!r}",
+        ]
 
     return {
         "lifecycle_state": state,
@@ -398,7 +403,11 @@ def observe_release_state(
         releases = None
     elif isinstance(raw_releases, dict):
         inner = raw_releases.get("releases")
-        releases = tuple(r for r in inner if isinstance(r, dict)) if isinstance(inner, list) else ()
+        releases = (
+            tuple(r for r in inner if isinstance(r, dict))
+            if isinstance(inner, list)
+            else ()
+        )
     elif isinstance(raw_releases, list):
         releases = tuple(r for r in raw_releases if isinstance(r, dict))
     else:
@@ -407,7 +416,9 @@ def observe_release_state(
     active_id = None
     if read_active_release_id is not None:
         raw_active = probe.read("active", read_active_release_id)
-        active_id = str(raw_active) if isinstance(raw_active, str) and raw_active else None
+        active_id = (
+            str(raw_active) if isinstance(raw_active, str) and raw_active else None
+        )
 
     staging = None
     if read_staging is not None and releases:

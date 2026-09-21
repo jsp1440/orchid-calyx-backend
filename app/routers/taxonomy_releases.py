@@ -353,7 +353,9 @@ def create_taxonomy_release_router(
             checkpoint = durable.checkpoint(release_id)
             # Flatten the checkpoint so a `complete` flag it carries is visible
             # to the classifier rather than buried a level down.
-            flat: dict[str, Any] = dict(checkpoint) if isinstance(checkpoint, dict) else {}
+            flat: dict[str, Any] = (
+                dict(checkpoint) if isinstance(checkpoint, dict) else {}
+            )
             flat["checkpoint"] = checkpoint
             flat["counts"] = durable.counts(release_id)
             return flat
