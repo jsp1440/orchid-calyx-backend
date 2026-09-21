@@ -298,6 +298,33 @@ def test_blocked_reconciliation_holds_unknown_and_owner_gated_work():
     assert by_number[201]["release_authorized"] is False
 
 
+def test_blocked_budget_observations_are_scoped_by_issue_number():
+    snapshot = {
+        "issues": [
+            {
+                "number": 200,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + "a" * 24}],
+            },
+            {
+                "number": 201,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + "a" * 24}],
+            },
+        ],
+        "budget_fingerprints": {"200": "b" * 24, "201": "a" * 24},
+    }
+
+    report = swarm.blocked_reconciliation_report(snapshot)
+    by_number = {row["issue_number"]: row for row in report["results"]}
+    assert by_number[200]["disposition"] == "release"
+    assert by_number[201]["disposition"] == "hold"
+
+
 def test_swarm_plan_carries_blocked_report_without_relabelling(monkeypatch):
     snapshot = _snapshot()
     snapshot["issues"].append(
