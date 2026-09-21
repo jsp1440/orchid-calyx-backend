@@ -117,6 +117,8 @@ def test_reconcile_admits_and_executes_prepared_issues():
     assert report.rejected_count == 0
     assert report.provider_launch_authorized is False
     assert report.no_api_mode is True
+    assert report.canonical_context_schema == "oc.autonomy-context.v1"
+    assert report.canonical_context_version == "1.0.0"
 
 
 def test_reconcile_filters_done_and_blocked_before_bridge():
