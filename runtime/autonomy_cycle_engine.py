@@ -90,6 +90,31 @@ DEFAULT_MAX_BACKOFF_RECOVERIES_PER_CYCLE = 4
 
 _OWNER_GATE_RISK = "high"
 
+# Which part of this engine implements each step of the canonical loop the
+# Brain declares in the autonomy context.
+#
+# This mapping is the drift guard between the Brain's contract and the
+# backend's behaviour. The contract is the authority on what the loop is; if
+# the Brain adds, renames, or reorders a step, ``validate_loop_coverage``
+# refuses to run until this engine implements it. Without that check the two
+# repositories can disagree about what a cycle even consists of while every
+# test still passes -- which is exactly the silent drift the contract exists
+# to prevent.
+CANONICAL_LOOP_IMPLEMENTATION: dict[str, str] = {
+    "discover": "WorkSource.discover() polled once per cycle in _discover_and_admit",
+    "prioritize": "DecisionEngine.decide() ranks candidates in _decide",
+    "queue": "DurableOrchestrate.register() persists admitted work",
+    "reconcile": "_reconcile recovers stale leases and repair-backoff work",
+    "admit": "normalize_work() plus fingerprint deduplication in _discover_and_admit",
+    "lease": "DurableOrchestrate.lease() under a conditional UPDATE",
+    "execute": "_execute_with_recovery drives the executor with bounded retries",
+    "test": "validate_execution() checks execution status and task identity",
+    "validate": "validate_execution() enforces the required_evidence contract",
+    "evidence": "CycleRecord.evidence plus the evidence written through settle()",
+    "complete": "DurableOrchestrate.settle() with lease ownership enforced",
+    "replenish": "_replenish reports ready, backoff, and starvation state",
+}
+
 
 class AutonomyEngineError(RuntimeError):
     """Base class for engine-level faults."""
@@ -169,6 +194,33 @@ def validate_context(context: dict[str, Any]) -> None:
         raise ContextVersionError("CONTEXT_MUST_REQUIRE_COMPLETION_EVIDENCE")
     if not context.get("required_evidence"):
         raise ContextVersionError("CONTEXT_MISSING_REQUIRED_EVIDENCE")
+    validate_loop_coverage(context)
+
+
+def validate_loop_coverage(context: dict[str, Any]) -> tuple[str, ...]:
+    """Refuse to operate unless every canonical loop step is implemented.
+
+    ``fail_closed_on_unknown_capability`` in the operating rules is what this
+    enforces. A step the Brain declares but this engine does not implement is
+    an unknown capability, and quietly skipping it would let the backend
+    report successful cycles for a loop it is not actually running.
+
+    Returns the canonical loop as declared, so callers can record it.
+    """
+    declared = context.get("loop")
+    if not isinstance(declared, list) or not declared:
+        raise ContextVersionError("CONTEXT_LOOP_MISSING")
+    if not all(isinstance(step, str) and step for step in declared):
+        raise ContextVersionError("CONTEXT_LOOP_MALFORMED")
+
+    unimplemented = [
+        step for step in declared if step not in CANONICAL_LOOP_IMPLEMENTATION
+    ]
+    if unimplemented:
+        raise ContextVersionError(
+            f"LOOP_STEP_NOT_IMPLEMENTED:{','.join(unimplemented)}"
+        )
+    return tuple(declared)
 
 
 # ---------------------------------------------------------------------------

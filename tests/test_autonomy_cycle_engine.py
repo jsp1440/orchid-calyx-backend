@@ -31,6 +31,7 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from runtime.autonomy_cycle_engine import (
+    CANONICAL_LOOP_IMPLEMENTATION,
     AutonomyCycleEngine,
     BrainDecisionEngine,
     ContextVersionError,
@@ -45,6 +46,7 @@ from runtime.autonomy_cycle_engine import (
     load_canonical_context,
     normalize_work,
     validate_context,
+    validate_loop_coverage,
 )
 
 # ---------------------------------------------------------------------------
@@ -803,6 +805,108 @@ def test_i_context_missing_completion_evidence_rule_is_refused():
     context["operating_rules"]["require_evidence_for_completion"] = False
     with pytest.raises(ContextVersionError, match="CONTEXT_MUST_REQUIRE_COMPLETION_EVIDENCE"):
         validate_context(context)
+
+
+# ---------------------------------------------------------------------------
+# Brain contract alignment: the canonical loop governs the engine
+# ---------------------------------------------------------------------------
+
+
+def test_engine_implements_every_canonical_loop_step():
+    """The Brain declares the loop; the engine must implement all of it.
+
+    This is the drift guard. The contract is shared byte-for-byte with the
+    Brain and frontend repositories, so if the Brain adds or renames a loop
+    step and the backend is not updated, this test fails rather than letting
+    the two sides silently disagree about what a cycle consists of.
+    """
+    context = load_canonical_context()
+    declared = validate_loop_coverage(context)
+
+    assert len(declared) == 12
+    for step in declared:
+        assert step in CANONICAL_LOOP_IMPLEMENTATION
+        assert CANONICAL_LOOP_IMPLEMENTATION[step].strip()
+
+
+def test_unknown_loop_step_fails_closed():
+    """An unimplemented capability stops the engine; it is never skipped."""
+    context = load_canonical_context()
+    context["loop"] = [*context["loop"], "teleport"]
+    with pytest.raises(ContextVersionError, match="LOOP_STEP_NOT_IMPLEMENTED:teleport"):
+        validate_loop_coverage(context)
+
+
+@pytest.mark.parametrize("bad", [None, [], "discover", [1, 2], [""]])
+def test_malformed_loop_declaration_is_refused(bad):
+    context = load_canonical_context()
+    context["loop"] = bad
+    with pytest.raises(ContextVersionError, match="CONTEXT_LOOP_"):
+        validate_loop_coverage(context)
+
+
+def test_engine_refuses_to_start_when_a_loop_step_is_unimplemented(tmp_path):
+    context = load_canonical_context()
+    context["loop"] = [*context["loop"], "negotiate-with-owner"]
+    config = EngineConfig(
+        run_id="loop-drift",
+        db_url=f"sqlite:///{tmp_path / 'r.db'}",
+        journal_path=tmp_path / "j.json",
+    )
+    with pytest.raises(ContextVersionError, match="LOOP_STEP_NOT_IMPLEMENTED"):
+        AutonomyCycleEngine(
+            config, work_source=StaticWorkSource(backlog=[]), context=context
+        )
+
+
+def test_canonical_context_declares_the_operating_rules_the_engine_honours():
+    """Guard the rules this engine actively enforces, not just the schema."""
+    rules = load_canonical_context()["operating_rules"]
+    assert rules["provider_free_first"] is True
+    assert rules["fail_closed_on_unknown_capability"] is True
+    assert rules["require_evidence_for_completion"] is True
+    assert rules["persist_failure_memory"] is True
+
+
+def test_failure_memory_is_actually_persisted_across_restart(tmp_path):
+    """persist_failure_memory is a contract rule, so prove it survives restart."""
+
+    class AlwaysEmpty:
+        def execute(self, task_leaf):
+            from app.calyx_orchestrator.leaf_worker import TaskExecutionResult
+
+            return TaskExecutionResult(
+                task_key=task_leaf.key,
+                worker_id="empty",
+                status="completed",
+                started_at="2026-09-21T00:00:00+00:00",
+                completed_at="2026-09-21T00:00:01+00:00",
+                duration_seconds=1.0,
+                output={},
+            )
+
+    db_url = f"sqlite:///{tmp_path / 'r.db'}"
+    journal = tmp_path / "j.json"
+
+    first = AutonomyCycleEngine(
+        EngineConfig(run_id="memory", db_url=db_url, journal_path=journal),
+        work_source=StaticWorkSource(backlog=[work(640)]),
+        executor=AlwaysEmpty(),
+    )
+    try:
+        record = first.run_cycle()
+        assert record.status == "validation-failed"
+    finally:
+        first.close()
+
+    second = AutonomyCycleEngine(
+        EngineConfig(run_id="memory", db_url=db_url, journal_path=journal),
+        work_source=StaticWorkSource(backlog=[]),
+    )
+    try:
+        assert second.journal.failure_memory["issue-640:retrieve-evidence"] == 1
+    finally:
+        second.close()
 
 
 # ---------------------------------------------------------------------------

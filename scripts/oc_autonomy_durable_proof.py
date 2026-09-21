@@ -38,6 +38,7 @@ from typing import Any
 
 from app.calyx_orchestrator.deep_orchestrate import TaskState
 from runtime.autonomy_cycle_engine import (
+    CANONICAL_LOOP_IMPLEMENTATION,
     AutonomyCycleEngine,
     EngineConfig,
     ProviderIsolatedExecutor,
@@ -45,6 +46,7 @@ from runtime.autonomy_cycle_engine import (
     StaticWorkSource,
     TransientExecutionError,
     load_canonical_context,
+    validate_loop_coverage,
 )
 
 PROOF_SCHEMA = "oc.autonomy-durable-proof.v1"
@@ -445,6 +447,7 @@ def run_adversarial_phase(storage: Path, run_id: str) -> list[dict[str, Any]]:
 def run_proof(storage: Path, run_id: str) -> dict[str, Any]:
     context = load_canonical_context()
     target = int(context["evaluation"]["autonomy_proof_target"])
+    canonical_loop = validate_loop_coverage(context)
 
     adversarial = run_adversarial_phase(storage, f"{run_id}-adversarial")
 
@@ -552,6 +555,13 @@ def run_proof(storage: Path, run_id: str) -> dict[str, Any]:
         "canonical_context": {
             "schema": context["schema"],
             "version": context["version"],
+            "loop_steps_declared": len(canonical_loop),
+            "loop_steps_implemented": len(
+                [s for s in canonical_loop if s in CANONICAL_LOOP_IMPLEMENTATION]
+            ),
+            "loop_coverage": {
+                step: CANONICAL_LOOP_IMPLEMENTATION[step] for step in canonical_loop
+            },
         },
         "adversarial_scenarios": {
             "total": len(adversarial),
