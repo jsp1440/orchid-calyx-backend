@@ -139,6 +139,18 @@ def _labels(issue: dict[str, Any]) -> set[str]:
     return names
 
 
+def _latest_blocker_ref(text: str) -> str | None:
+    """Return the most recently recorded machine-readable blocker.
+
+    Blockers evolve. Using the first historical marker would make a cleared
+    dependency permanent even after a later comment records the replacement
+    blocker. GitHub comment order is chronological, so the last marker is the
+    current durable blocker declaration.
+    """
+    matches = list(BLOCKED_ON.finditer(text))
+    return matches[-1].group("ref") if matches else None
+
+
 def _blocker_text(issue: dict[str, Any]) -> str:
     """The issue body plus its comments, which is where the record may live.
 
@@ -179,8 +191,8 @@ def reconcile_issue(issue: dict[str, Any], world: WorldState) -> Reconciliation:
             "labelled as waiting on the owner; not this module's to clear",
         )
 
-    match = BLOCKED_ON.search(text)
-    if not match:
+    ref = _latest_blocker_ref(text)
+    if ref is None:
         return Reconciliation(
             number,
             Disposition.UNVERIFIABLE,
@@ -190,7 +202,6 @@ def reconcile_issue(issue: dict[str, Any], world: WorldState) -> Reconciliation:
             ),
         )
 
-    ref = match.group("ref")
     lowered = ref.lower()
 
     if lowered in OWNER_FORMS:
