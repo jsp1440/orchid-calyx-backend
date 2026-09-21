@@ -48,10 +48,19 @@ def install_service(monkeypatch, *, revisions=None, raises=None):
         def __init__(self, _db):
             pass
 
-        def history(self, ledger_id, owner):
+        def exact_revision(self, ledger_id, owner, version):
             if raises is not None:
                 raise raises
-            return {"revisions": list(revisions or []), "audit_events": []}
+            matching = next(
+                (item for item in revisions or [] if item.version == version), None
+            )
+            return matching, sorted(item.version for item in revisions or [])
+
+        def history(self, *_args):
+            raise AssertionError("exact retrieval must not load full history")
+
+        def audit_history(self, *_args):
+            raise AssertionError("exact retrieval must not load audit history")
 
     monkeypatch.setattr(routes, "OperationalReasoningLedgerService", FakeService)
 
@@ -197,23 +206,54 @@ def test_returns_only_the_canonical_projection(monkeypatch):
 
 
 def test_enforces_the_owner_boundary_through_the_shared_path(monkeypatch):
-    # history() calls current() first, so ownership is checked by the same code
-    # path as every other ledger read rather than by a second rule here.
+    # The repository's exact query receives the authenticated owner, so the
+    # owner boundary remains part of the retrieval path rather than a second
+    # unscoped lookup.
     calls = []
 
     class RecordingService:
         def __init__(self, _db):
             pass
 
-        def history(self, ledger_id, owner):
-            calls.append((ledger_id, owner))
-            return {"revisions": [revision(1)], "audit_events": []}
+        def exact_revision(self, ledger_id, owner, version):
+            calls.append((ledger_id, owner, version))
+            return revision(1), []
+
+        def history(self, *_args):
+            raise AssertionError("exact retrieval must not load full history")
+
+        def audit_history(self, *_args):
+            raise AssertionError("exact retrieval must not load audit history")
 
     monkeypatch.setattr(routes, "OperationalReasoningLedgerService", RecordingService)
 
     call(ledger_id="ledger-9", version=1)
 
-    assert calls == [("ledger-9", "owner@example.com")]
+    assert calls == [("ledger-9", "owner@example.com", 1)]
+
+
+def test_exact_retrieval_never_calls_full_history_or_audit_history(monkeypatch):
+    calls = []
+
+    class ExactOnlyService:
+        def __init__(self, _db):
+            pass
+
+        def exact_revision(self, ledger_id, owner, version):
+            calls.append((ledger_id, owner, version))
+            return revision(version), []
+
+        def history(self, *_args):
+            raise AssertionError("history path called")
+
+        def audit_history(self, *_args):
+            raise AssertionError("audit path called")
+
+    monkeypatch.setattr(routes, "OperationalReasoningLedgerService", ExactOnlyService)
+    body = call(version=7)
+
+    assert calls == [("ledger-1", "owner@example.com", 7)]
+    assert body["revision"]["version"] == 7
 
 
 def test_withheld_evidence_keeps_its_reference_identity_and_hash(monkeypatch):
