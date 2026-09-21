@@ -389,6 +389,34 @@ class SqlAlchemyReasoningLedgerRepository:
         ).all()
         return [dict_to_ledger(row.canonical_payload) for row in rows]
 
+    def exact_revision(
+        self, ledger_id: str, owner: str, version: int
+    ) -> tuple[ReasoningLedger | None, list[int]]:
+        """Read one owned revision without materializing history or audit rows."""
+
+        # Resolve the owner-scoped head first so an unknown ledger and a missing
+        # revision cannot be confused, including across tenants.
+        self._head(ledger_id, owner)
+        payload = self.db.scalar(
+            select(ReasoningLedgerRevision.canonical_payload).where(
+                ReasoningLedgerRevision.ledger_id == ledger_id,
+                ReasoningLedgerRevision.owner_subject == owner,
+                ReasoningLedgerRevision.version == version,
+            )
+        )
+        if payload is not None:
+            return dict_to_ledger(payload), []
+
+        available = self.db.scalars(
+            select(ReasoningLedgerRevision.version)
+            .where(
+                ReasoningLedgerRevision.ledger_id == ledger_id,
+                ReasoningLedgerRevision.owner_subject == owner,
+            )
+            .order_by(ReasoningLedgerRevision.version)
+        ).all()
+        return None, [int(item) for item in available]
+
     def audit_history(self, ledger_id: str, owner: str) -> list[dict[str, Any]]:
         self._head(ledger_id, owner)
         rows = self.db.scalars(
