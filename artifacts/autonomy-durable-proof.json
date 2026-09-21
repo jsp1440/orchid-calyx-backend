@@ -138,7 +138,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9101:retrieve-evidence:8764a962",
+      "lease_id": "autonomy-durable-proof:issue-9101:retrieve-evidence:7f9382fd",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -152,7 +152,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.5863000044191722e-05,
+        "duration_seconds": 1.4996000118117081e-05,
         "error": null
       },
       "validation": {
@@ -181,8 +181,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.197857+00:00",
-      "ended_at": "2026-09-21T02:11:30.222768+00:00"
+      "started_at": "2026-09-21T02:16:19.711535+00:00",
+      "ended_at": "2026-09-21T02:16:19.733604+00:00"
     },
     {
       "cycle": 7,
@@ -197,7 +197,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9102:retrieve-evidence:54741bf0",
+      "lease_id": "autonomy-durable-proof:issue-9102:retrieve-evidence:f08e4cb6",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -211,7 +211,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.52779998643382e-05,
+        "duration_seconds": 1.4868999642203562e-05,
         "error": null
       },
       "validation": {
@@ -240,8 +240,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.224529+00:00",
-      "ended_at": "2026-09-21T02:11:30.240863+00:00"
+      "started_at": "2026-09-21T02:16:19.734924+00:00",
+      "ended_at": "2026-09-21T02:16:19.749877+00:00"
     },
     {
       "cycle": 8,
@@ -256,7 +256,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9103:retrieve-evidence:ac6fb000",
+      "lease_id": "autonomy-durable-proof:issue-9103:retrieve-evidence:8140ea77",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -270,7 +270,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.784999994924874e-05,
+        "duration_seconds": 1.595799994902336e-05,
         "error": null
       },
       "validation": {
@@ -299,8 +299,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.242655+00:00",
-      "ended_at": "2026-09-21T02:11:30.259669+00:00"
+      "started_at": "2026-09-21T02:16:19.751331+00:00",
+      "ended_at": "2026-09-21T02:16:19.766869+00:00"
     },
     {
       "cycle": 9,
@@ -315,7 +315,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9104:retrieve-evidence:4a26935d",
+      "lease_id": "autonomy-durable-proof:issue-9104:retrieve-evidence:70ee126d",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -329,7 +329,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.2655000091399415e-05,
+        "duration_seconds": 1.250100012839539e-05,
         "error": null
       },
       "validation": {
@@ -358,8 +358,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.261584+00:00",
-      "ended_at": "2026-09-21T02:11:30.278057+00:00"
+      "started_at": "2026-09-21T02:16:19.768404+00:00",
+      "ended_at": "2026-09-21T02:16:19.783344+00:00"
     },
     {
       "cycle": 10,
@@ -374,7 +374,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9105:retrieve-evidence:51c3e02d",
+      "lease_id": "autonomy-durable-proof:issue-9105:retrieve-evidence:4192effb",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -388,7 +388,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.2644999969779747e-05,
+        "duration_seconds": 1.212799998029368e-05,
         "error": null
       },
       "validation": {
@@ -417,8 +417,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.280682+00:00",
-      "ended_at": "2026-09-21T02:11:30.296562+00:00"
+      "started_at": "2026-09-21T02:16:19.785076+00:00",
+      "ended_at": "2026-09-21T02:16:19.800704+00:00"
     },
     {
       "cycle": 11,
@@ -433,7 +433,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9106:retrieve-evidence:ebc4cf35",
+      "lease_id": "autonomy-durable-proof:issue-9106:retrieve-evidence:69e8dff1",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -447,7 +447,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.2610999874596018e-05,
+        "duration_seconds": 1.235999980053748e-05,
         "error": null
       },
       "validation": {
@@ -476,8 +476,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.298800+00:00",
-      "ended_at": "2026-09-21T02:11:30.315251+00:00"
+      "started_at": "2026-09-21T02:16:19.802492+00:00",
+      "ended_at": "2026-09-21T02:16:19.817894+00:00"
     },
     {
       "cycle": 12,
@@ -492,7 +492,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9107:retrieve-evidence:bc4ad292",
+      "lease_id": "autonomy-durable-proof:issue-9107:retrieve-evidence:6a824bc0",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -506,7 +506,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.1728000117727788e-05,
+        "duration_seconds": 1.2587999663082883e-05,
         "error": null
       },
       "validation": {
@@ -535,8 +535,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.317902+00:00",
-      "ended_at": "2026-09-21T02:11:30.333549+00:00"
+      "started_at": "2026-09-21T02:16:19.819772+00:00",
+      "ended_at": "2026-09-21T02:16:19.835575+00:00"
     },
     {
       "cycle": 13,
@@ -551,7 +551,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9108:retrieve-evidence:d8767b0f",
+      "lease_id": "autonomy-durable-proof:issue-9108:retrieve-evidence:057c469b",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -565,7 +565,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.2117000096623087e-05,
+        "duration_seconds": 1.1984999673586572e-05,
         "error": null
       },
       "validation": {
@@ -594,8 +594,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.336423+00:00",
-      "ended_at": "2026-09-21T02:11:30.352672+00:00"
+      "started_at": "2026-09-21T02:16:19.837688+00:00",
+      "ended_at": "2026-09-21T02:16:19.853680+00:00"
     },
     {
       "cycle": 14,
@@ -610,7 +610,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9109:retrieve-evidence:283e1c90",
+      "lease_id": "autonomy-durable-proof:issue-9109:retrieve-evidence:fdf948e7",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -624,7 +624,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.257000008081377e-05,
+        "duration_seconds": 1.23310001072241e-05,
         "error": null
       },
       "validation": {
@@ -653,8 +653,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.355355+00:00",
-      "ended_at": "2026-09-21T02:11:30.371004+00:00"
+      "started_at": "2026-09-21T02:16:19.855741+00:00",
+      "ended_at": "2026-09-21T02:16:19.871700+00:00"
     },
     {
       "cycle": 15,
@@ -669,7 +669,7 @@
         "rejected": 0,
         "deduplicated": 0
       },
-      "lease_id": "autonomy-durable-proof:issue-9110:retrieve-evidence:cb3f1988",
+      "lease_id": "autonomy-durable-proof:issue-9110:retrieve-evidence:d411bfbb",
       "lease_owner": "autonomy-cycle-engine-v1",
       "decision": {
         "decider": "brain-priority-decision-engine-v1",
@@ -683,7 +683,7 @@
         "classification": "executed",
         "status": "completed",
         "worker_id": "deterministic-research-worker-v1",
-        "duration_seconds": 1.2333999848124222e-05,
+        "duration_seconds": 1.1862000064866152e-05,
         "error": null
       },
       "validation": {
@@ -712,8 +712,8 @@
         "starved": true
       },
       "recovery_used": [],
-      "started_at": "2026-09-21T02:11:30.373737+00:00",
-      "ended_at": "2026-09-21T02:11:30.391066+00:00"
+      "started_at": "2026-09-21T02:16:19.873847+00:00",
+      "ended_at": "2026-09-21T02:16:19.889619+00:00"
     }
   ],
   "scope_note": "Proves the deterministic provider-free autonomy core on durable storage. Does not prove paid-provider execution, GitHub credentialed dispatch, external scheduling, or Render deployment health; those require production evidence of their own."

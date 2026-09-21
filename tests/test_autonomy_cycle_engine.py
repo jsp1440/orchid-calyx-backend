@@ -80,16 +80,16 @@ def make_engine(tmp_path: Path, backlog: list, *, run_id: str = "test-run", **kw
 
 
 def leaf(key: str = "issue-1:retrieve-evidence", **kwargs) -> TaskLeaf:
-    defaults = dict(
-        title="t",
-        repo="r",
-        module="m",
-        priority=Priority.P2,
-        authority_class=AUTH_WORKSPACE,
-        consequence_risk="low",
-        issue_number=1,
-        acceptance_criteria=["a"],
-    )
+    defaults = {
+        "title": "t",
+        "repo": "r",
+        "module": "m",
+        "priority": Priority.P2,
+        "authority_class": AUTH_WORKSPACE,
+        "consequence_risk": "low",
+        "issue_number": 1,
+        "acceptance_criteria": ["a"],
+    }
     defaults.update(kwargs)
     return TaskLeaf(key=key, **defaults)
 
@@ -232,7 +232,12 @@ def test_b_concurrent_workers_cannot_both_win_the_same_lease(tmp_path):
         outcomes: list[str] = []
         guard = threading.Lock()
 
-        def contend() -> None:
+        def contend(
+            run_id: str = run_id,
+            barrier: threading.Barrier = barrier,
+            guard: threading.Lock = guard,
+            outcomes: list[str] = outcomes,
+        ) -> None:
             session = session_factory()
             local = DurableOrchestrate.from_db(session, run_id)
             barrier.wait()
@@ -241,7 +246,7 @@ def test_b_concurrent_workers_cannot_both_win_the_same_lease(tmp_path):
                 result = "won"
             except (ValueError, LookupError):
                 result = "lost"
-            except Exception as exc:  # must never surface an unhandled fault
+            except Exception as exc:  # noqa: BLE001 - must never surface unhandled
                 result = f"error:{type(exc).__name__}"
             finally:
                 session.close()

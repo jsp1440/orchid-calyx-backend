@@ -41,7 +41,10 @@ jobs:
           cache: pip
 
       - name: Install dependencies
-        run: pip install --quiet pytest ruff sqlalchemy
+        # ruff is pinned: an unpinned lint floats to whatever version is
+        # current, so the same commit can pass today and fail tomorrow on rules
+        # that did not exist when it was written.
+        run: pip install --quiet pytest 'ruff==0.16.8' sqlalchemy
 
       - name: Lint changed autonomy modules
         run: |

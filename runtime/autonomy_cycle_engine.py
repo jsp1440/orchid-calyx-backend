@@ -46,10 +46,11 @@ import logging
 import os
 import tempfile
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Protocol, Self
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -280,11 +281,17 @@ def normalize_work(payload: Any, *, source: str = "unspecified") -> WorkItem:
     place, rather than reaching the reservoir and corrupting queue state.
     """
     if not isinstance(payload, dict):
-        raise ValueError(f"MALFORMED_WORK:not_a_mapping:{type(payload).__name__}")
+        # ValueError, not TypeError: this validates untrusted external work
+        # payloads, and every caller catches one exception type for "this item
+        # cannot be admitted". Splitting the contract by Python type would make
+        # a malformed payload escape the admission handler.
+        raise ValueError(  # noqa: TRY004
+            f"MALFORMED_WORK:not_a_mapping:{type(payload).__name__}"
+        )
 
     number = payload.get("number", payload.get("issue_number"))
     if isinstance(number, bool) or not isinstance(number, int):
-        raise ValueError(f"MALFORMED_WORK:issue_number_not_int:{number!r}")
+        raise ValueError(f"MALFORMED_WORK:issue_number_not_int:{number!r}")  # noqa: TRY004
     if number <= 0:
         raise ValueError(f"MALFORMED_WORK:issue_number_not_positive:{number}")
 
@@ -303,7 +310,7 @@ def normalize_work(payload: Any, *, source: str = "unspecified") -> WorkItem:
 
     priority = payload.get("priority", int(Priority.P2))
     if isinstance(priority, bool) or not isinstance(priority, int):
-        raise ValueError(f"MALFORMED_WORK:priority_not_int:{priority!r}")
+        raise ValueError(f"MALFORMED_WORK:priority_not_int:{priority!r}")  # noqa: TRY004
     if priority not in _VALID_PRIORITIES:
         raise ValueError(f"MALFORMED_WORK:priority_out_of_range:{priority}")
 
@@ -738,40 +745,27 @@ class EngineJournal:
             "cycles": self.cycles,
         }
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        handle = tempfile.NamedTemporaryFile(
-            "w",
-            encoding="utf-8",
+        descriptor, temp_name = tempfile.mkstemp(
             dir=str(self.path.parent),
             prefix=f".{self.path.name}.",
             suffix=".tmp",
-            delete=False,
         )
         try:
-            with handle as fh:
-                json.dump(payload, fh, indent=2)
-                fh.write("\n")
-                fh.flush()
-                os.fsync(fh.fileno())
-            os.replace(handle.name, self.path)
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+                handle.write("\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temp_name, self.path)
         except BaseException:
-            with contextlib_suppress():
-                os.unlink(handle.name)
+            with suppress(OSError):
+                os.unlink(temp_name)
             raise
 
     def record_failure(self, task_key: str) -> int:
         count = self.failure_memory.get(task_key, 0) + 1
         self.failure_memory[task_key] = count
         return count
-
-
-class contextlib_suppress:
-    """Minimal always-suppressing context manager for cleanup paths."""
-
-    def __enter__(self) -> None:
-        return None
-
-    def __exit__(self, *exc: object) -> bool:
-        return True
 
 
 # ---------------------------------------------------------------------------
@@ -851,7 +845,7 @@ class AutonomyCycleEngine:
         self._session.close()
         self._engine.dispose()
 
-    def __enter__(self) -> AutonomyCycleEngine:
+    def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc: object) -> None:
@@ -915,7 +909,7 @@ class AutonomyCycleEngine:
         record.work_source = self.work_source.name
         try:
             raw_items = self.work_source.discover(record.cycle)
-        except Exception as exc:  # a broken source must not kill the loop
+        except Exception as exc:  # noqa: BLE001 - a broken source must not kill the loop
             record.admission = {
                 "discovered": 0,
                 "admitted": 0,
@@ -1026,7 +1020,7 @@ class AutonomyCycleEngine:
                     }
                 )
                 continue
-            except Exception as exc:  # unexpected: classify, never crash the loop
+            except Exception as exc:  # noqa: BLE001 - classify, never crash the loop
                 last_error = f"UNCLASSIFIED:{type(exc).__name__}:{exc}"
                 record.execution = {
                     "attempts": attempts,
@@ -1188,7 +1182,7 @@ class AutonomyCycleEngine:
             record.status = "completed"
             return self._finish(record)
 
-        except Exception as exc:  # last-resort guard: a cycle never crashes the run
+        except Exception as exc:  # a cycle never crashes the whole run
             log.exception("autonomy cycle %s raised", cycle_number)
             record.status = "engine-error"
             record.failure_reason = f"ENGINE_ERROR:{type(exc).__name__}:{exc}"
