@@ -8,6 +8,19 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
+BUDGET_DENIAL_REASONS = frozenset(
+    {
+        "BLOCKED_PER_RUN_BUDGET_EXCEEDED",
+        "BLOCKED_DAILY_BUDGET_EXCEEDED",
+        "BLOCKED_MONTHLY_BUDGET_EXCEEDED",
+    }
+)
+
+
+def is_budget_denial(reason: str) -> bool:
+    """Return whether a denial is a releasable budget exhaustion condition."""
+    return reason.upper() in BUDGET_DENIAL_REASONS
+
 
 def _env(name: str) -> str:
     return os.environ.get(name, "").strip()
