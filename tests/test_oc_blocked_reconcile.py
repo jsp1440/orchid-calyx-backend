@@ -327,3 +327,21 @@ def test_budget_denial_releases_only_after_an_observed_condition_change() -> Non
     assert same.disposition is Disposition.HOLD
     assert changed.disposition is Disposition.RELEASE
     assert "condition fingerprint changed" in changed.reason
+
+
+def test_budget_observation_is_scoped_to_the_blocked_issue() -> None:
+    fingerprint = "d" * 24
+    issue_one = issue(1401, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])
+    issue_two = issue(1402, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])
+    world = WorldState(budget_fingerprints={1401: "e" * 24})
+    assert reconcile_issue(issue_one, world).disposition is Disposition.RELEASE
+    assert reconcile_issue(issue_two, world).disposition is Disposition.HOLD
+
+
+def test_non_budget_governor_denial_is_a_permanent_policy_hold() -> None:
+    result = reconcile_issue(
+        issue(1401, comments=["OC-BLOCKED-ON: governor:BLOCKED_KILL_SWITCH"]),
+        WorldState(budget_fingerprints={1401: "f" * 24}),
+    )
+    assert result.disposition is Disposition.OWNER_GATE
+    assert not result.releases
