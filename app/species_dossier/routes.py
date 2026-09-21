@@ -50,7 +50,9 @@ Service = Annotated[SpeciesDossierService, Depends(get_service)]
 def _guard(call: Any) -> Any:
     try:
         return call()
-    except HTTPException:
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE) from exc
         raise
     except (
         Exception
@@ -86,16 +88,20 @@ def resolve_species(
     name: Annotated[str | None, Query(max_length=300)] = None,
     taxon_id: Annotated[str | None, Query(max_length=200)] = None,
     source_url: Annotated[str | None, Query(max_length=2000)] = None,
+    partner: Annotated[str | None, Query(max_length=100)] = None,
+    slug: Annotated[str | None, Query(max_length=300)] = None,
     partner_slug: Annotated[str | None, Query(max_length=100)] = None,
     partner_species_slug: Annotated[str | None, Query(max_length=300)] = None,
 ) -> FederationResolveResult:
+    effective_partner = partner if partner is not None else partner_slug
+    effective_slug = slug if slug is not None else partner_species_slug
     try:
         request = FederationResolveRequest(
             name=name,
             taxon_id=taxon_id,
             source_url=source_url,  # type: ignore[arg-type]
-            partner_slug=partner_slug,
-            partner_species_slug=partner_species_slug,
+            partner_slug=effective_partner,
+            partner_species_slug=effective_slug,
         )
     except ValidationError as exc:
         detail = [
