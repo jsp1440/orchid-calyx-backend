@@ -23,7 +23,11 @@ from .models import (
     ReasoningLedger,
     ReviewDecision,
 )
-from .persistence import SqlAlchemyReasoningLedgerRepository
+from .persistence import (
+    LedgerRevisionNotFoundError,
+    SqlAlchemyReasoningLedgerRepository,
+)
+from .serialization import dict_to_ledger
 from .service import _assign_sequence
 
 
@@ -203,6 +207,19 @@ class OperationalReasoningLedgerService:
 
     def current(self, ledger_id: str, owner: str) -> ReasoningLedger:
         ledger = self.repository.current(ledger_id, owner)
+        self.projects.require_owned(ledger.project_id, owner)
+        return ledger
+
+    def revision(self, ledger_id: str, owner: str, version: int) -> ReasoningLedger:
+        """Retrieve one exact owned revision without loading ledger history."""
+        payload = self.repository.revision_payload(ledger_id, owner, version)
+        if payload is None:
+            raise LedgerRevisionNotFoundError(
+                ledger_id,
+                version,
+                self.repository.available_versions(ledger_id, owner),
+            )
+        ledger = dict_to_ledger(payload)
         self.projects.require_owned(ledger.project_id, owner)
         return ledger
 
