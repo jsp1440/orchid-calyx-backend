@@ -1,11 +1,11 @@
 {
   "schema": "oc.api-contract-drift.v1",
-  "total_findings": 62,
+  "total_findings": 61,
   "unparsed_call_sites": 0,
-  "actionable_here": 6,
+  "actionable_here": 5,
   "by_kind": {
     "relative_origin": 0,
-    "missing_producer": 62
+    "missing_producer": 61
   },
   "findings": [
     {
@@ -20,21 +20,6 @@
           "file": "/home/user/orchid-continuum-frontend/src/lib/missionListSignup.ts",
           "line": 30,
           "raw_path": "/api/crm/${CRM_WORKSPACE_ID}/subscribe"
-        }
-      ]
-    },
-    {
-      "kind": "missing_producer",
-      "path": "/api/literature-extraction/papers",
-      "target": "calyx",
-      "severity": "medium",
-      "detail": "The frontend calls this path and no backend route serves it.",
-      "actionable_here": true,
-      "call_sites": [
-        {
-          "file": "/home/user/orchid-continuum-frontend/src/lib/literatureIndex.ts",
-          "line": 99,
-          "raw_path": "/api/literature-extraction/papers"
         }
       ]
     },
@@ -1074,18 +1059,11 @@
       ]
     }
   ],
-  "backend_routes": 863,
+  "backend_routes": 864,
   "work_items": [
     {
       "number": 92755,
       "title": "contract drift (missing_producer): /api/crm/{*}/subscribe",
-      "repo": "orchid-calyx-backend",
-      "priority": 1,
-      "consequence_risk": "low"
-    },
-    {
-      "number": 98489,
-      "title": "contract drift (missing_producer): /api/literature-extraction/papers",
       "repo": "orchid-calyx-backend",
       "priority": 1,
       "consequence_risk": "low"

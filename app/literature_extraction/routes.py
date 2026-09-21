@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -74,6 +74,39 @@ def _raw_source_or_error(
     return raw_bytes
 
 
+@router.get("/papers")
+def list_papers(
+    repository: Annotated[
+        LiteratureResultRepository, Depends(get_literature_repository)
+    ],
+    limit: Annotated[int, Query(ge=1, le=200)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Page through the literature corpus.
+
+    Discovery was the missing half of this API: papers could be fetched by id
+    and nothing could learn which ids existed, so the /literature page had no
+    way to show what the Continuum actually holds.
+
+    Two distinctions the response preserves:
+
+    ``total`` is the size of the whole corpus, not of this page, so a caller
+    can tell "no more results" from "no results".
+
+    An unreadable extraction is returned as a row with ``readable: false`` and
+    a reason, not omitted. Skipping it would make the corpus look smaller than
+    it is and would hide a damaged record instead of surfacing it for repair.
+    """
+    summaries, total = repository.list_summaries(limit=limit, offset=offset)
+    return {
+        "papers": [summary.as_dict() for summary in summaries],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "unreadable_count": sum(1 for s in summaries if not s.readable),
+    }
+
+
 @router.get("/papers/{paper_id}")
 def get_paper(
     paper_id: str,
@@ -138,7 +171,9 @@ def get_source_binding(
             status_code=422, detail={"code": exc.code, "details": exc.details}
         ) from exc
     if binding is None:
-        raise HTTPException(status_code=404, detail="Canonical source binding not found")
+        raise HTTPException(
+            status_code=404, detail="Canonical source binding not found"
+        )
     return binding.to_dict()
 
 
@@ -214,7 +249,8 @@ def handoff_candidates(
     except LiteratureSourceBindingError as exc:
         raise HTTPException(
             status_code=409
-            if exc.code in {"CONFLICTING_SOURCE_REBIND", "PERSISTED_BINDING_IS_AUTHORITATIVE"}
+            if exc.code
+            in {"CONFLICTING_SOURCE_REBIND", "PERSISTED_BINDING_IS_AUTHORITATIVE"}
             else 422,
             detail={"code": exc.code, "details": exc.details},
         ) from exc
