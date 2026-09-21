@@ -145,8 +145,8 @@ jobs:
                    end)' \
             "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
 
-          gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 200 \
-            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft > "$RUNNER_TEMP/prs.json"
+          gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
+            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
           jq -n \
             --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
             --slurpfile prs "$RUNNER_TEMP/prs.json" \
@@ -167,6 +167,22 @@ jobs:
             "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"
+
+      - name: Apply demonstrably cleared blocked-work releases
+        shell: bash
+        env:
+          CONTROLLER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq '.blocked_reconciliation.release_plan' "$RUNNER_TEMP/swarm-plan.json" \
+            > "$RUNNER_TEMP/blocked-release-plan.json"
+          python3 scripts/oc_blocked_release_apply.py \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/blocked-release-plan.json" \
+            --controller-run-url "$CONTROLLER_RUN_URL" \
+            --apply \
+            | tee "$RUNNER_TEMP/blocked-release-apply.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/blocked-release-apply.json")" -eq 0
 
       - name: Claim selected worker leases
         id: claim
