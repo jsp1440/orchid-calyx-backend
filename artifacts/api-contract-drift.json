@@ -1,0 +1,1122 @@
+{
+  "schema": "oc.api-contract-drift.v1",
+  "total_findings": 62,
+  "unparsed_call_sites": 0,
+  "actionable_here": 6,
+  "by_kind": {
+    "relative_origin": 0,
+    "missing_producer": 62
+  },
+  "findings": [
+    {
+      "kind": "missing_producer",
+      "path": "/api/crm/{*}/subscribe",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/missionListSignup.ts",
+          "line": 30,
+          "raw_path": "/api/crm/${CRM_WORKSPACE_ID}/subscribe"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/literature-extraction/papers",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/literatureIndex.ts",
+          "line": 99,
+          "raw_path": "/api/literature-extraction/papers"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/platform/federation/resolve-species",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesDossier.ts",
+          "line": 195,
+          "raw_path": "/api/platform/federation/resolve-species"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/platform/species/{*}/atlas",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesDossier.ts",
+          "line": 172,
+          "raw_path": "/api/platform/species/${encodeURIComponent(taxonId)}/atlas"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/platform/species/{*}/dossier",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesDossier.ts",
+          "line": 161,
+          "raw_path": "/api/platform/species/${encodeURIComponent(taxonId)}/dossier"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/reasoning-ledgers/{*}/revisions/{*}",
+      "target": "calyx",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": true,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/reasoningLedger.ts",
+          "line": 163,
+          "raw_path": "/api/reasoning-ledgers/${encodeURIComponent(id)}/revisions/${version}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/genus/{*}/map",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/atlas.ts",
+          "line": 108,
+          "raw_path": "/api/atlas/genus/${encodeURIComponent(genus)}/map"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/genus/{genus}/map",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/atlas/AtlasLayerToggles.tsx",
+          "line": 30,
+          "raw_path": "/api/atlas/genus/{genus}/map"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/historical",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/atlas.ts",
+          "line": 149,
+          "raw_path": "/api/atlas/historical"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/occurrences",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/backendConfig.ts",
+          "line": 244,
+          "raw_path": "/api/atlas/occurrences"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/overlays/climate",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/atlas/AtlasLayerToggles.tsx",
+          "line": 48,
+          "raw_path": "/api/atlas/overlays/climate"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/overlays/mycorrhizal",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/atlas/AtlasLayerToggles.tsx",
+          "line": 42,
+          "raw_path": "/api/atlas/overlays/mycorrhizal"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/overlays/pollination",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/atlas/AtlasLayerToggles.tsx",
+          "line": 36,
+          "raw_path": "/api/atlas/overlays/pollination"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/overlays/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/atlas.ts",
+          "line": 128,
+          "raw_path": "/api/atlas/overlays/${kind}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/species/{*}/map",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/atlas.ts",
+          "line": 118,
+          "raw_path": "/api/atlas/species/${encodeURIComponent(taxonomyId)}/map"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/stats",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 115,
+          "raw_path": "/api/atlas/stats"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/atlas/temporal",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/atlas/AtlasLayerToggles.tsx",
+          "line": 54,
+          "raw_path": "/api/atlas/temporal"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/atlas.ts",
+          "line": 138,
+          "raw_path": "/api/atlas/temporal"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/campaign/stats",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/orchid/HumanStewardship.tsx",
+          "line": 98,
+          "raw_path": "/api/campaign/stats"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/endpointAudit.ts",
+          "line": 119,
+          "raw_path": "/api/campaign/stats"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/continuum/graph",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 187,
+          "raw_path": "/api/continuum/graph"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/ecology/neighbors",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesFeature.ts",
+          "line": 718,
+          "raw_path": "/api/ecology/neighbors"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/by-conservation",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 91,
+          "raw_path": "/api/explore/by-conservation"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/by-country",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 51,
+          "raw_path": "/api/explore/by-country"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/by-genus",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 61,
+          "raw_path": "/api/explore/by-genus"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/by-habitat",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 71,
+          "raw_path": "/api/explore/by-habitat"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/by-pollinator",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 81,
+          "raw_path": "/api/explore/by-pollinator"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/explore/orchid-of-the-day",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/Explore.tsx",
+          "line": 41,
+          "raw_path": "/api/explore/orchid-of-the-day"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/genus/daily",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/endpointAudit.ts",
+          "line": 52,
+          "raw_path": "/api/genus/daily"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 365,
+          "raw_path": "/api/genus/daily"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 2200,
+          "raw_path": "/api/genus/daily"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 2358,
+          "raw_path": "/api/genus/daily"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 36,
+          "raw_path": "/api/genus/daily"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 163,
+          "raw_path": "/api/genus/daily"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/genus/{*}/photos",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 493,
+          "raw_path": "/api/genus/${encodeURIComponent(genus)}/photos"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/interactions/{*}/badges",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/interactions.ts",
+          "line": 160,
+          "raw_path": "/api/interactions/${encodeURIComponent(taxonomyId)}/badges"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/interactions/{*}/panel",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/interactions.ts",
+          "line": 130,
+          "raw_path": "/api/interactions/${encodeURIComponent(taxonomyId)}/panel"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/interactions/{*}/partners",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/interactions.ts",
+          "line": 150,
+          "raw_path": "/api/interactions/${encodeURIComponent(taxonomyId)}/partners"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/interactions/{*}/summary",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/interactions.ts",
+          "line": 140,
+          "raw_path": "/api/interactions/${encodeURIComponent(taxonomyId)}/summary"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/interactions/{*}/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/interactions.ts",
+          "line": 172,
+          "raw_path": "/api/interactions/${encodeURIComponent(taxonomyId)}/${kind}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/mycorrhizal/stats",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 109,
+          "raw_path": "/api/mycorrhizal/stats"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/mycorrhizal/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 102,
+          "raw_path": "/api/mycorrhizal/${encodeURIComponent(taxonomyId)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/oacs/compare",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/oacs.ts",
+          "line": 109,
+          "raw_path": "/api/oacs/compare"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/oacs/sites",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/oacs.ts",
+          "line": 85,
+          "raw_path": "/api/oacs/sites"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/oacs/sites/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/oacs.ts",
+          "line": 90,
+          "raw_path": "/api/oacs/sites/${encodeURIComponent(siteId)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/oacs/sites/{*}/snapshot",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/oacs.ts",
+          "line": 100,
+          "raw_path": "/api/oacs/sites/${encodeURIComponent(siteId)}/snapshot"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/oacs/sites/{id}/snapshot",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/OACS.tsx",
+          "line": 273,
+          "raw_path": "/api/oacs/sites/{id}/snapshot"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/relationship-explorer/species/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/relationshipExplorer.ts",
+          "line": 265,
+          "raw_path": "/api/relationship-explorer/species/${encodeURIComponent(name)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/research/traits",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/researchTraits.ts",
+          "line": 95,
+          "raw_path": "/api/research/traits"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/scientific-observability/trace/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/mission-control/WorkflowIntelligencePanel.tsx",
+          "line": 10,
+          "raw_path": "/api/scientific-observability/trace/${encodeURIComponent(item.correlationId)}"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/scientificObservability.ts",
+          "line": 257,
+          "raw_path": "/api/scientific-observability/trace/${encodeURIComponent(correlationId)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/search",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 1996,
+          "raw_path": "/api/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesFeature.ts",
+          "line": 518,
+          "raw_path": "/api/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 169,
+          "raw_path": "/api/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 175,
+          "raw_path": "/api/search"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/by-name/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 422,
+          "raw_path": "/api/species/by-name/${encodeURIComponent(canonicalName)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/climate",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 209,
+          "raw_path": "/api/species/climate"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/conservation",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 214,
+          "raw_path": "/api/species/conservation"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/cultivation",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 219,
+          "raw_path": "/api/species/cultivation"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/featured",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 406,
+          "raw_path": "/api/species/featured"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/gaps",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 430,
+          "raw_path": "/api/species/gaps"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/literature",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 224,
+          "raw_path": "/api/species/literature"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/metrics",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 427,
+          "raw_path": "/api/species/metrics"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/mycorrhizal",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/scientific-intelligence/mycorrhiza/adapter.ts",
+          "line": 8,
+          "raw_path": "/api/species/mycorrhizal"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/scientific-intelligence/shared/endpointRegistry.ts",
+          "line": 54,
+          "raw_path": "/api/species/mycorrhizal"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 199,
+          "raw_path": "/api/species/mycorrhizal"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/pollinators",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/scientific-intelligence/pollinators/adapter.ts",
+          "line": 8,
+          "raw_path": "/api/species/pollinators"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/scientific-intelligence/shared/endpointRegistry.ts",
+          "line": 43,
+          "raw_path": "/api/species/pollinators"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 204,
+          "raw_path": "/api/species/pollinators"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/search",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/orchid/BackendHealthBadge.tsx",
+          "line": 45,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 409,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/endpointAudit.ts",
+          "line": 54,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/endpointAudit.ts",
+          "line": 109,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 1874,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 89,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesFeature.ts",
+          "line": 509,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/speciesFeature.ts",
+          "line": 554,
+          "raw_path": "/api/species/search"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/pages/DailyGenusDiagnostics.tsx",
+          "line": 181,
+          "raw_path": "/api/species/search"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/api.ts",
+          "line": 416,
+          "raw_path": "/api/species/${encodeURIComponent(taxonomyId)}"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/ocBackend.ts",
+          "line": 96,
+          "raw_path": "/api/species/${encodeURIComponent(taxonomyId)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/species/{*}/images",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/genusData.ts",
+          "line": 2063,
+          "raw_path": "/api/species/${encodeURIComponent(name)}/images"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/subscribers",
+      "target": "unknown",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/orchid/HumanStewardship.tsx",
+          "line": 158,
+          "raw_path": "/api/subscribers"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/components/orchid/NewsFromContinuum.tsx",
+          "line": 30,
+          "raw_path": "/api/subscribers"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/zoo/badges/{*}",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 92,
+          "raw_path": "/api/zoo/badges/${encodeURIComponent(taxonomyId)}"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/zoo/contribute",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 114,
+          "raw_path": "/api/zoo/contribute"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 127,
+          "raw_path": "/api/zoo/contribute"
+        },
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 140,
+          "raw_path": "/api/zoo/contribute"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/zoo/queue",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 84,
+          "raw_path": "/api/zoo/queue"
+        }
+      ]
+    },
+    {
+      "kind": "missing_producer",
+      "path": "/api/zoo/status",
+      "target": "public-api",
+      "severity": "medium",
+      "detail": "The frontend calls this path and no backend route serves it.",
+      "actionable_here": false,
+      "call_sites": [
+        {
+          "file": "/home/user/orchid-continuum-frontend/src/lib/zoo.ts",
+          "line": 80,
+          "raw_path": "/api/zoo/status"
+        }
+      ]
+    }
+  ],
+  "backend_routes": 863,
+  "work_items": [
+    {
+      "number": 92755,
+      "title": "contract drift (missing_producer): /api/crm/{*}/subscribe",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    },
+    {
+      "number": 98489,
+      "title": "contract drift (missing_producer): /api/literature-extraction/papers",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    },
+    {
+      "number": 90056,
+      "title": "contract drift (missing_producer): /api/platform/federation/resolve-species",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    },
+    {
+      "number": 98549,
+      "title": "contract drift (missing_producer): /api/platform/species/{*}/atlas",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    },
+    {
+      "number": 97720,
+      "title": "contract drift (missing_producer): /api/platform/species/{*}/dossier",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    },
+    {
+      "number": 90418,
+      "title": "contract drift (missing_producer): /api/reasoning-ledgers/{*}/revisions/{*}",
+      "repo": "orchid-calyx-backend",
+      "priority": 1,
+      "consequence_risk": "low"
+    }
+  ]
+}
