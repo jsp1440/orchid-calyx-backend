@@ -186,6 +186,7 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
         open_issues=open_issues,
         merged_prs=merged_prs,
         unmerged_prs=unmerged_prs,
+        budget_fingerprint=str(snapshot.get("budget_fingerprint") or "") or None,
     )
     results = _BLOCKED_RECONCILER.reconcile(issues, world)
     observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)
