@@ -70,3 +70,17 @@ def test_v4_reusable_workers_receive_the_completion_lane_permission_ceiling():
         "id-token: write",
     ):
         assert permission in workers
+
+
+def test_v4_observes_closed_and_merged_pr_blockers():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert 'gh pr list --repo "$REPO" --state all' in text
+    assert "mergedAt" in text
+
+
+def test_v4_applies_only_authorized_blocked_release_plan():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "Apply demonstrably cleared blocked-work releases" in text
+    assert "oc_blocked_release_apply.py" in text
+    assert "--apply" in text
+    assert "blocked_reconciliation.release_plan" in text
