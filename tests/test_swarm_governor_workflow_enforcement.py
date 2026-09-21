@@ -387,6 +387,7 @@ def test_precheck_emergency_kill_switch_blocks() -> None:
     )
     assert out.get("authorized") == "false"
     assert out.get("reason") == "BLOCKED_KILL_SWITCH"
+    assert out.get("blocker_fingerprint", "") == ""
 
 
 def test_precheck_kill_switch_case_insensitive() -> None:
@@ -458,6 +459,7 @@ def test_precheck_retry_limit_blocks() -> None:
     )
     assert out.get("authorized") == "false"
     assert out.get("reason") == "BLOCKED_RETRY_LIMIT_EXCEEDED"
+    assert out.get("blocker_fingerprint", "") == ""
 
 
 def test_precheck_daily_budget_blocks() -> None:
@@ -625,6 +627,13 @@ def test_completion_lane_exhausted_retry_parks_in_backoff() -> None:
     text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
     assert "Retry budget exhausted; issue parked in oc-runtime-backoff." in text
     assert "automatic refill remains disabled unless explicitly authorized." in text
+
+
+def test_swarm_controller_observes_issue_specific_budget_conditions() -> None:
+    text = (WORKFLOWS_DIR / "orchid-swarm-controller.yml").read_text()
+    assert "scripts/oc_budget_observe.py" in text
+    assert "budget_fingerprints" in text
+    assert "steps.budget_ledger.outputs.monthly_spend_usd" in text
 
 
 def test_completion_lane_uses_direct_anthropic_executor_after_governor() -> None:
