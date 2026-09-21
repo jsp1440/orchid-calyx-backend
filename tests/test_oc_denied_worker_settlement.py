@@ -17,6 +17,7 @@ NUMBER = 1371
 RUN = 1001
 ATTEMPT = 1
 NOW = datetime(2026, 9, 12, 8, tzinfo=timezone.utc)
+BLOCKER_FINGERPRINT = "a" * 24
 
 
 class DenialGitHub:
@@ -106,6 +107,7 @@ def park(transport, **overrides):
         "run_attempt": ATTEMPT,
         "comment_id": transport.comments[0]["id"],
         "reason": "BLOCKED_MONTHLY_BUDGET_EXCEEDED",
+        "blocker_fingerprint": BLOCKER_FINGERPRINT,
         "call": transport,
     }
     options.update(overrides)
@@ -121,6 +123,7 @@ def test_denied_claim_is_parked_with_confirmed_receipt_and_no_requeue(admitted):
     assert "BLOCKED_MONTHLY_BUDGET_EXCEEDED" in body
     assert str(admitted.comments[0]["id"]) in body
     assert f"{REPO}:{RUN}:{ATTEMPT}:{NUMBER}" in body
+    assert f"OC-BLOCKED-ON: budget:{BLOCKER_FINGERPRINT}" in body
     assert "oc-queued" not in admitted.issue["labels"]
     writes = [args for args, _ in admitted.calls if args[:2] == ["issue", "edit"]]
     assert len(writes) == 1
