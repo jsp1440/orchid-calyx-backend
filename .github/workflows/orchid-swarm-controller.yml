@@ -126,10 +126,29 @@ jobs:
           # portfolio. The canonical scheduler itself still ignores closed work.
           gh issue list --repo "$REPO" --state all --limit 1000 \
             --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+
+          # Blocked-work reconciliation reads machine-readable blocker lineage
+          # from issue bodies/comments. Fetch comments only for currently blocked
+          # issues so the planner can decide them without loading the full comment
+          # corpus for every repository issue.
+          gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
+            --json number,comments > "$RUNNER_TEMP/blocked-comments.json"
+
+          jq \
+            --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
+            'INDEX($blocked[0][]; (.number|tostring)) as $idx
+             | map(. as $issue
+                 | ($idx[($issue.number|tostring)] // null) as $blocked_issue
+                 | if $blocked_issue
+                   then . + {comments: ($blocked_issue.comments // [])}
+                   else .
+                   end)' \
+            "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
+
           gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 200 \
             --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft > "$RUNNER_TEMP/prs.json"
           jq -n \
-            --slurpfile issues "$RUNNER_TEMP/issues.json" \
+            --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
             --slurpfile prs "$RUNNER_TEMP/prs.json" \
             '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
 
