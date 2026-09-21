@@ -18,7 +18,7 @@ from .models import (
     UncertaintyMarker,
 )
 from .operational_service import OperationalReasoningLedgerService, ProjectNotFoundError
-from .persistence import StaleLedgerVersionError
+from .persistence import LedgerRevisionNotFoundError, StaleLedgerVersionError
 from .schemas import ConflictResolutionIn, LedgerCreateIn, LedgerEntryIn, ReviewIn
 from .serialization import ledger_to_dict
 from .service import LedgerNotFoundError
@@ -39,6 +39,17 @@ def _subject(auth: dict) -> str:
 def _invoke(db: Session, request: Request, operation):
     try:
         return operation()
+    except LedgerRevisionNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(
+            404,
+            detail={
+                "code": "LEDGER_REVISION_NOT_FOUND",
+                "ledger_id": exc.ledger_id,
+                "requested_version": exc.version,
+                "available_versions": list(exc.available_versions),
+            },
+        ) from exc
     except LedgerNotFoundError as exc:
         db.rollback()
         raise HTTPException(404, detail={"code": "LEDGER_NOT_FOUND"}) from exc
@@ -156,6 +167,37 @@ def get_history(ledger_id: str, request: Request, auth: Auth, db: Db):
     return {
         "revisions": [ledger_to_dict(item) for item in result["revisions"]],
         "audit_events": result["audit_events"],
+    }
+
+
+@router.get("/{ledger_id}/revisions/{version}")
+def get_ledger_revision(
+    ledger_id: str, version: str, request: Request, auth: Auth, db: Db
+):
+    """Retrieve one exact reasoning-ledger revision, read-only."""
+    if not version.isascii() or not version.isdigit() or int(version) < 1:
+        raise HTTPException(
+            422,
+            detail={
+                "code": "LEDGER_REVISION_INVALID",
+                "message": "version must be a positive integer",
+            },
+        )
+
+    owner = _subject(auth)
+    revision = _invoke(
+        db,
+        request,
+        lambda: OperationalReasoningLedgerService(db).revision(
+            ledger_id, owner, int(version)
+        ),
+    )
+    return {
+        "ledger_id": ledger_id,
+        "requested_version": int(version),
+        "revision": ledger_to_dict(revision),
+        "inspectable": True,
+        "reasoning_certified": False,
     }
 
 

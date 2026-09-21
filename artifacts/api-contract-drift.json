@@ -1,11 +1,11 @@
 {
   "schema": "oc.api-contract-drift.v1",
-  "total_findings": 61,
+  "total_findings": 60,
   "unparsed_call_sites": 0,
-  "actionable_here": 5,
+  "actionable_here": 4,
   "by_kind": {
     "relative_origin": 0,
-    "missing_producer": 61
+    "missing_producer": 60
   },
   "findings": [
     {
@@ -65,21 +65,6 @@
           "file": "/home/user/orchid-continuum-frontend/src/lib/speciesDossier.ts",
           "line": 161,
           "raw_path": "/api/platform/species/${encodeURIComponent(taxonId)}/dossier"
-        }
-      ]
-    },
-    {
-      "kind": "missing_producer",
-      "path": "/api/reasoning-ledgers/{*}/revisions/{*}",
-      "target": "calyx",
-      "severity": "medium",
-      "detail": "The frontend calls this path and no backend route serves it.",
-      "actionable_here": true,
-      "call_sites": [
-        {
-          "file": "/home/user/orchid-continuum-frontend/src/lib/reasoningLedger.ts",
-          "line": 163,
-          "raw_path": "/api/reasoning-ledgers/${encodeURIComponent(id)}/revisions/${version}"
         }
       ]
     },
@@ -1059,7 +1044,7 @@
       ]
     }
   ],
-  "backend_routes": 864,
+  "backend_routes": 865,
   "work_items": [
     {
       "number": 92755,
@@ -1085,13 +1070,6 @@
     {
       "number": 97720,
       "title": "contract drift (missing_producer): /api/platform/species/{*}/dossier",
-      "repo": "orchid-calyx-backend",
-      "priority": 1,
-      "consequence_risk": "low"
-    },
-    {
-      "number": 90418,
-      "title": "contract drift (missing_producer): /api/reasoning-ledgers/{*}/revisions/{*}",
       "repo": "orchid-calyx-backend",
       "priority": 1,
       "consequence_risk": "low"
