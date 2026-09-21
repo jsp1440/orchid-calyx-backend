@@ -181,6 +181,8 @@ def run_reconciliation(
         "bridge_status": report.bridge_result.get("status"),
         "evidence_count": len(report.evidence),
         "executed_count": report.executed_count,
+        "canonical_context_schema": report.canonical_context_schema,
+        "canonical_context_version": report.canonical_context_version,
         "report": report.as_dict(),
     }
 
