@@ -134,6 +134,19 @@ def test_denied_claim_is_parked_with_confirmed_receipt_and_no_requeue(admitted):
     )
 
 
+def test_non_budget_governor_denial_uses_policy_hold_without_budget_fingerprint(admitted):
+    result = park(
+        admitted,
+        reason="BLOCKED_KILL_SWITCH",
+        blocker_fingerprint=None,
+    )
+    assert result["blocker_fingerprint"] is None
+    assert result["blocker"] == "governor:BLOCKED_KILL_SWITCH"
+    body = admitted.comments[-1]["body"]
+    assert "OC-BLOCKED-ON: governor:BLOCKED_KILL_SWITCH" in body
+    assert "OC-BLOCKED-ON: budget:" not in body
+
+
 @pytest.mark.parametrize(
     "change",
     [
