@@ -1,0 +1,118 @@
+name: Autonomy Durable Proof
+
+# Runs the durable ten-cycle autonomy proof and the adversarial recovery suite.
+# Provider-free by construction: no paid model API is ever invoked.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "runtime/autonomy_cycle_engine.py"
+      - "app/calyx_orchestrator/durable_reservoir.py"
+      - "app/calyx_orchestrator/deep_orchestrate.py"
+      - "app/calyx_orchestrator/leaf_worker.py"
+      - "contracts/oc-autonomy-context.v1.json"
+      - "scripts/oc_autonomy_durable_proof.py"
+      - "tests/test_autonomy_cycle_engine.py"
+      - ".github/workflows/autonomy-durable-proof.yml"
+
+env:
+  NO_API_MODE: "true"
+  PROVIDER_LAUNCH_AUTHORIZED: "false"
+  PYTHONPATH: ${{ github.workspace }}
+
+jobs:
+  durable-autonomy-proof:
+    name: Durable ten-cycle proof
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install --quiet pytest ruff sqlalchemy
+
+      - name: Lint changed autonomy modules
+        run: |
+          ruff check \
+            runtime/autonomy_cycle_engine.py \
+            app/calyx_orchestrator/durable_reservoir.py \
+            scripts/oc_autonomy_durable_proof.py \
+            tests/test_autonomy_cycle_engine.py
+
+      - name: Adversarial and behavioural test suite
+        run: pytest tests/test_autonomy_cycle_engine.py -v
+
+      - name: Durable reservoir regression suite
+        run: pytest tests/test_durable_reservoir.py tests/test_deep_orchestrate.py -q
+
+      - name: Run the durable ten-cycle proof
+        run: python scripts/oc_autonomy_durable_proof.py --output artifacts/autonomy-durable-proof.json
+
+      - name: Verify the proof artifact
+        run: |
+          python - <<'PYEOF'
+          import json
+          import sys
+
+          with open("artifacts/autonomy-durable-proof.json", encoding="utf-8") as fh:
+              proof = json.load(fh)
+
+          failures = []
+          target = proof["target"]
+
+          if proof["status"] != "PASS":
+              failures.append(f"status is {proof['status']}, expected PASS")
+          if proof["consecutive_completed_cycles"] != target:
+              failures.append(
+                  f"{proof['consecutive_completed_cycles']}/{target} consecutive cycles"
+              )
+          if proof["distinct_work_items"] != target:
+              failures.append(
+                  f"{proof['distinct_work_items']} distinct work items, expected {target}"
+              )
+          if proof["provider_calls"]:
+              failures.append(f"{proof['provider_calls']} provider calls in a NO-API run")
+          if proof["missing_completion_evidence"]:
+              failures.append(
+                  f"{proof['missing_completion_evidence']} cycles completed without evidence"
+              )
+          if proof["unsettled_completions"]:
+              failures.append(f"{proof['unsettled_completions']} unsettled completions")
+          if proof["durable_storage"]["state_reset_between_cycles"]:
+              failures.append("state was reset between cycles; the proof is not durable")
+          adversarial = proof["adversarial_scenarios"]
+          if adversarial["failed"]:
+              failures.append(f"adversarial scenarios failed: {adversarial['failed']}")
+
+          if failures:
+              print("PROOF REJECTED:")
+              for item in failures:
+                  print(f"  - {item}")
+              sys.exit(1)
+
+          print(
+              f"PROOF ACCEPTED: {proof['consecutive_completed_cycles']}/{target} "
+              f"consecutive cycles, {adversarial['passed']}/{adversarial['total']} "
+              f"adversarial scenarios, {proof['provider_calls']} provider calls"
+          )
+          PYEOF
+
+      - name: Upload proof artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-durable-proof
+          path: artifacts/autonomy-durable-proof.json
+          if-no-files-found: warn

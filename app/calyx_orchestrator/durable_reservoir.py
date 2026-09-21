@@ -47,6 +47,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
@@ -68,6 +69,43 @@ from .durable_reservoir_models import (
 log = logging.getLogger(__name__)
 
 DURABLE_SCHEMA_VERSION = "calyx-durable-reservoir/v1"
+
+
+# SQLite has no server-side row locking and, when several sessions share one
+# connection, no support for concurrent transactions either. A lock held on the
+# DurableOrchestrate instance cannot help: competing workers hold *different*
+# instances and so never contend on it. Serializing non-PostgreSQL lease
+# acquisition process-wide is therefore the only correct option, and costs
+# nothing, because SQLite cannot execute those writes in parallel anyway.
+# PostgreSQL deployments skip this entirely and rely on the database.
+_SQLITE_LEASE_LOCK = threading.RLock()
+
+
+class _NullLock:
+    """No-op stand-in used where the database itself provides the guarantee."""
+
+    def __enter__(self) -> None:
+        return None
+
+    def __exit__(self, *exc: object) -> bool:
+        return False
+
+
+_NULL_LEASE_LOCK = _NullLock()
+
+
+@dataclass(frozen=True, slots=True)
+class SettlementResult:
+    """Outcome of a completion attempt.
+
+    ``settled`` is True exactly once per task, for the write that actually
+    moved it into COMPLETED. Every later replay reports ``duplicate`` so the
+    caller can record the suppression instead of counting it as new progress.
+    """
+
+    leaf: TaskLeaf
+    settled: bool
+    duplicate: bool
 
 
 # ---------------------------------------------------------------------------
@@ -363,6 +401,25 @@ class DurableOrchestrate:
         )
         return [_row_to_leaf(r) for r in rows]
 
+    def repair_backoff_tasks(self) -> list[TaskLeaf]:
+        """Tasks parked in REPAIR_BACKOFF awaiting reconciliation.
+
+        ``blocked_tasks()`` deliberately reports only BLOCKED work. Without a
+        lister of its own, work moved into repair backoff -- by a lease
+        expiry, a validation failure, or an unreachable provider -- is
+        invisible to every caller, so nothing can ever bring it back. A
+        reconciler needs to be able to see what it is meant to reconcile.
+        """
+        rows = (
+            self._session.query(DurableReservoirTask)
+            .filter(
+                DurableReservoirTask.run_id == self._run_id,
+                DurableReservoirTask.state == TaskState.REPAIR_BACKOFF,
+            )
+            .all()
+        )
+        return [_row_to_leaf(r) for r in rows]
+
     def get(self, key: str) -> TaskLeaf | None:
         row = self._get_row(key)
         return _row_to_leaf(row) if row is not None else None
@@ -378,16 +435,29 @@ class DurableOrchestrate:
     def lease(self, key: str, *, holder: str = "claude") -> TaskLeaf:
         """Atomically lease a task.
 
-        On PostgreSQL, uses SELECT ... FOR UPDATE SKIP LOCKED to prevent
-        two concurrent workers from leasing the same task. On SQLite, the
-        threading lock provides equivalent single-process protection.
+        Acquisition is a database-level compare-and-set: the UPDATE that takes
+        the lease is itself conditional on the task still being READY, and the
+        caller wins only if that UPDATE matched a row. Losing the race raises
+        ``ValueError`` exactly as an ineligible task does.
+
+        The conditional UPDATE, not the in-process lock, is what makes this
+        safe. ``self._lock`` is per-instance, so two DurableOrchestrate objects
+        -- two threads, two workers, two processes -- never contend on it, and
+        without a guarded write both could read the task as READY and both
+        believe they hold the lease. On PostgreSQL the row lock narrows the
+        window; on SQLite there is no row lock at all. Either way the guard on
+        the UPDATE is what actually prevents a double lease.
 
         Raises:
             LookupError: task not found.
-            ValueError: task not in READY state or deps unmet.
+            ValueError: task not in READY state, deps unmet, resource
+                conflict, or the lease race was lost to another holder.
         """
-        with self._lock:
-            dialect = self._dialect_name()
+        dialect = self._dialect_name()
+        serializer = (
+            _NULL_LEASE_LOCK if dialect == "postgresql" else _SQLITE_LEASE_LOCK
+        )
+        with serializer, self._lock:
             q = self._session.query(DurableReservoirTask).filter(
                 DurableReservoirTask.run_id == self._run_id,
                 DurableReservoirTask.task_key == key,
@@ -413,13 +483,38 @@ class DurableOrchestrate:
                     )
 
             now = _utcnow()
-            row.state = TaskState.LEASED
-            row.leased_at = now
-            row.lease_holder = holder
-            row.updated_at = now
-            self._session.flush()
+            # Conditional acquisition. The WHERE clause carries the precondition
+            # we just checked, so a competitor that leased this task between the
+            # check and here matches zero rows and we lose cleanly instead of
+            # overwriting their lease.
+            self._session.expire(row)
+            matched = (
+                self._session.query(DurableReservoirTask)
+                .filter(
+                    DurableReservoirTask.run_id == self._run_id,
+                    DurableReservoirTask.task_key == key,
+                    DurableReservoirTask.state == TaskState.READY,
+                )
+                .update(
+                    {
+                        DurableReservoirTask.state: TaskState.LEASED,
+                        DurableReservoirTask.leased_at: now,
+                        DurableReservoirTask.lease_holder: holder,
+                        DurableReservoirTask.updated_at: now,
+                    },
+                    synchronize_session=False,
+                )
+            )
+            if not matched:
+                self._session.rollback()
+                current = self._get_row(key)
+                state = current.state if current is not None else "missing"
+                raise ValueError(f"TASK_NOT_READY:{key}:state={state}:lease_race_lost")
             self._commit()
-            return _row_to_leaf(row)
+            leased = self._get_row(key)
+            if leased is None:  # pragma: no cover - row cannot vanish here
+                raise LookupError(f"TASK_NOT_FOUND:{key}")
+            return _row_to_leaf(leased)
 
     def advance(self, key: str, *, state: str) -> TaskLeaf:
         """Move a leased task to running or validating."""
@@ -435,6 +530,55 @@ class DurableOrchestrate:
             self._commit()
             return _row_to_leaf(row)
 
+    def settle(
+        self,
+        key: str,
+        *,
+        evidence: dict[str, Any] | None = None,
+        pr_number: int | None = None,
+        require_lease: bool = False,
+        holder: str | None = None,
+    ) -> SettlementResult:
+        """Complete a task and report whether this was the settling write.
+
+        This is the ownership-aware, replay-safe entry point to completion.
+        ``complete()`` remains the DeepOrchestrate-compatible surface; this
+        wrapper additionally tells the caller whether it actually settled the
+        task or merely replayed an already-settled one, which the autonomous
+        loop needs in order to distinguish real progress from a duplicate
+        completion request.
+
+        Args:
+            require_lease: when True, refuse to settle a task that is not
+                currently held under an active lease. Completion is an
+                ownership-bearing act; a caller that never took the lease has
+                no standing to declare the work done.
+            holder: when given alongside ``require_lease``, the lease must be
+                held by exactly this holder.
+
+        Raises:
+            LookupError: task not found.
+            PermissionError: ``require_lease`` set and the caller does not
+                hold an active lease on the task.
+        """
+        with self._lock:
+            row = self._get_row(key)
+            if row is None:
+                raise LookupError(f"TASK_NOT_FOUND:{key}")
+            already = row.state == TaskState.COMPLETED
+            if require_lease and not already:
+                if row.state not in _ACTIVE:
+                    raise PermissionError(
+                        f"COMPLETION_WITHOUT_LEASE:{key}:state={row.state}"
+                    )
+                if holder is not None and row.lease_holder != holder:
+                    raise PermissionError(
+                        f"COMPLETION_BY_NON_HOLDER:{key}"
+                        f":holder={row.lease_holder}:claimed={holder}"
+                    )
+        leaf = self.complete(key, evidence=evidence, pr_number=pr_number)
+        return SettlementResult(leaf=leaf, settled=not already, duplicate=already)
+
     def complete(
         self,
         key: str,
@@ -442,11 +586,20 @@ class DurableOrchestrate:
         evidence: dict[str, Any] | None = None,
         pr_number: int | None = None,
     ) -> TaskLeaf:
-        """Mark a task completed and expose its dependents."""
+        """Mark a task completed and expose its dependents.
+
+        Idempotent, first-writer-wins: a task that is already COMPLETED is
+        returned unchanged. A replayed or duplicate completion request must
+        never rewrite the evidence of work that has already been settled —
+        settled evidence is the audit record of what actually happened, and
+        a later writer overwriting it would silently corrupt provenance.
+        """
         with self._lock:
             row = self._get_row(key)
             if row is None:
                 raise LookupError(f"TASK_NOT_FOUND:{key}")
+            if row.state == TaskState.COMPLETED:
+                return _row_to_leaf(row)
             row.state = TaskState.COMPLETED
             row.updated_at = _utcnow()
             if evidence:
