@@ -213,6 +213,9 @@ class OperationalReasoningLedgerService:
             "audit_events": self.repository.audit_history(ledger_id, owner),
         }
 
+    def exact_revision(self, ledger_id: str, owner: str, version: int):
+        return self.repository.exact_revision(ledger_id, owner, version)
+
     def validate(self, ledger_id: str, owner: str) -> list[dict[str, str]]:
         ledger = self.current(ledger_id, owner)
         return [
