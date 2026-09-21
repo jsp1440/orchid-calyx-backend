@@ -43,6 +43,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import oc_no_api_guard
+from oc_budget_blocker import fingerprint_from_environment
 
 
 def _env(name: str) -> str | None:
@@ -84,6 +85,7 @@ def main() -> None:
     def block(reason: str, *, is_warning: bool = False) -> None:
         _write_output("authorized", "false")
         _write_output("reason", reason)
+        _write_output("blocker_fingerprint", fingerprint_from_environment(reason))
         lvl = "warning" if is_warning else "error"
         print(f"::{lvl}::[OC-GOVERNOR-PRECHECK] BLOCKED: {reason}", flush=True)
 
