@@ -417,6 +417,10 @@ class SqlAlchemyReasoningLedgerRepository:
         ).all()
         return None, [int(item) for item in available]
 
+    def project_id(self, ledger_id: str, owner: str) -> str:
+        """Return the owner-scoped project without loading a revision payload."""
+        return str(self._head(ledger_id, owner).project_id)
+
     def audit_history(self, ledger_id: str, owner: str) -> list[dict[str, Any]]:
         self._head(ledger_id, owner)
         rows = self.db.scalars(
