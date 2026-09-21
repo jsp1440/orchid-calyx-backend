@@ -494,6 +494,7 @@ def test_precheck_monthly_budget_blocks() -> None:
     )
     assert out.get("authorized") == "false"
     assert out.get("reason") == "BLOCKED_MONTHLY_BUDGET_EXCEEDED"
+    assert out.get("blocker_fingerprint") and len(out["blocker_fingerprint"]) == 24
 
 
 def test_precheck_per_run_budget_blocks() -> None:
