@@ -38,7 +38,10 @@ class DossierSection(BaseModel):
 
     @model_validator(mode="after")
     def unavailable_requires_reason(self) -> DossierSection:
-        if self.state == DossierEvidenceState.UNAVAILABLE and not self.unavailable_reason:
+        if (
+            self.state == DossierEvidenceState.UNAVAILABLE
+            and not self.unavailable_reason
+        ):
             raise ValueError("unavailable dossier sections require unavailable_reason")
         return self
 
@@ -81,7 +84,10 @@ class AtlasLayer(BaseModel):
 
     @model_validator(mode="after")
     def unavailable_layer_requires_reason(self) -> AtlasLayer:
-        if self.state == DossierEvidenceState.UNAVAILABLE and not self.unavailable_reason:
+        if (
+            self.state == DossierEvidenceState.UNAVAILABLE
+            and not self.unavailable_reason
+        ):
             raise ValueError("unavailable Atlas layers require unavailable_reason")
         return self
 
@@ -186,7 +192,9 @@ class FederationResolveRequest(BaseModel):
 
     @model_validator(mode="after")
     def at_least_one_identifier(self) -> FederationResolveRequest:
-        if not any((self.name, self.taxon_id, self.source_url, self.partner_species_slug)):
+        if not any(
+            (self.name, self.taxon_id, self.source_url, self.partner_species_slug)
+        ):
             raise ValueError("at least one species identifier is required")
         return self
 
