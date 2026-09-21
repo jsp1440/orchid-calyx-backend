@@ -1,0 +1,71 @@
+name: Autonomy 10-Cycle Proof
+
+on:
+  push:
+    branches:
+      - test/autonomy-10-cycle-proof
+
+permissions:
+  contents: read
+
+jobs:
+  prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Compile proof path
+        run: |
+          python -m compileall -q app runtime scripts/oc_autonomy_ten_cycle_proof.py
+
+      - name: Run ten consecutive autonomous cycles
+        env:
+          PYTHONPATH: ${{ github.workspace }}
+        run: |
+          python scripts/oc_autonomy_ten_cycle_proof.py
+
+      - name: Validate proof artifact
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          proof = json.loads(Path("artifacts/autonomy-ten-cycle-proof.json").read_text())
+          assert proof["status"] == "PASS"
+          assert proof["consecutive_cycles"] == 10
+          assert proof["target"] == 10
+          assert proof["provider_calls"] == 0
+          assert proof["unhandled_blockages"] == 0
+          assert proof["duplicate_readmissions"] == 0
+          assert proof["missing_completion_evidence"] == 0
+          assert len(proof["cycles"]) == 10
+          for expected, cycle in enumerate(proof["cycles"], start=1):
+              assert cycle["cycle"] == expected
+              assert cycle["terminal_state"] == "completed"
+              assert cycle["admitted_count"] == 1
+              assert cycle["executed_count"] == 1
+              assert cycle["blocked_count"] == 0
+              assert cycle["provider_api_called"] is False
+              assert cycle["duplicate_probe_admitted_count"] == 0
+              assert cycle["canonical_context_schema"] == "oc.autonomy-context.v1"
+              assert cycle["canonical_context_version"] == "1.0.0"
+          print("AUTONOMY TEN-CYCLE PROOF: PASS")
+          PY
+
+      - name: Upload proof evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-ten-cycle-proof
+          path: artifacts/autonomy-ten-cycle-proof.json
+          if-no-files-found: error
