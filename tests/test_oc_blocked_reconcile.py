@@ -282,3 +282,18 @@ class TestDurableHandoff:
 
         after = [issue(1, labels=("oc-queued",), comments=["OC-BLOCKED-ON: #20"])]
         assert release_plan(reconcile(after, world))["action_count"] == 0
+
+
+def test_latest_machine_readable_blocker_supersedes_historical_marker() -> None:
+    result = reconcile_issue(
+        issue(
+            77,
+            comments=[
+                "OC-BLOCKED-ON: #10",
+                "repair landed; current gate changed\nOC-BLOCKED-ON: owner-decision",
+            ],
+        ),
+        WorldState(closed_issues={10}),
+    )
+    assert result.disposition is Disposition.OWNER_GATE
+    assert result.blocker == "owner-decision"
