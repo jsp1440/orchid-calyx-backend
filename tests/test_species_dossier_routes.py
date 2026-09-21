@@ -138,7 +138,9 @@ class FakeCursor:
         elif "FROM public.orchid_images" in compact:
             rows = list(IMAGES.get(params[0], []))
             if "NULLIF(BTRIM(image_license), '') IS NOT NULL" in compact:
-                rows = [row for row in rows if str(row.get("image_license") or "").strip()]
+                rows = [
+                    row for row in rows if str(row.get("image_license") or "").strip()
+                ]
             self._rows = rows
         elif "FROM oc_graph.kg_nodes n1" in compact:
             taxon_id = int(params[0].split(":", 1)[1])
@@ -431,7 +433,9 @@ def test_database_http_503_is_sanitized(monkeypatch):
     def _boom(callback):
         from fastapi import HTTPException
 
-        raise HTTPException(status_code=503, detail="connection refused at db.internal:5432")
+        raise HTTPException(
+            status_code=503, detail="connection refused at db.internal:5432"
+        )
 
     app = FastAPI()
     app.include_router(router)
