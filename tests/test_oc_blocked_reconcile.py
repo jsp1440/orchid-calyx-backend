@@ -348,6 +348,22 @@ def test_budget_marker_wins_when_github_returns_comments_newest_first() -> None:
     assert result.blocker == f"budget:{fingerprint}"
 
 
+def test_budget_marker_wins_for_hosted_graphql_comment_shape() -> None:
+    fingerprint = "f" * 24
+    # The hosted gh issue-list payload uses opaque GraphQL IDs and returns the
+    # newest comment first. It must not resurrect an older cleared dependency.
+    blocked = issue(
+        1401,
+        comments=[
+            {"id": "IC_kwDOnewer", "body": f"OC-BLOCKED-ON: budget:{fingerprint}"},
+            {"id": "IC_kwDOolder", "body": "OC-BLOCKED-ON: pr#1464"},
+        ],
+    )
+    result = reconcile_issue(blocked, WorldState(merged_prs={1464}))
+    assert result.disposition is Disposition.HOLD
+    assert result.blocker == f"budget:{fingerprint}"
+
+
 def test_budget_observation_is_scoped_to_the_blocked_issue() -> None:
     fingerprint = "d" * 24
     issue_one = issue(1401, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])

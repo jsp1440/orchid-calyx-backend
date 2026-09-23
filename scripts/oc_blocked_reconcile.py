@@ -156,21 +156,66 @@ def _latest_blocker_ref(text: str) -> str | None:
     return matches[-1].group("ref") if matches else None
 
 
-def _ordered_comments(comments: list[Any]) -> list[Any]:
-    """Put complete GitHub comment payloads in durable creation order.
+# Hosted GraphQL comment payloads expose an opaque node ID; REST-shaped
+# payloads expose a numeric database ID or a numeric issue-comment URL suffix.
+_COMMENT_URL_ID = re.compile(
+    r"(?:/issues/comments/|#issuecomment-)(?P<id>\d+)(?:[/?#]|$)"
+)
 
-    Comment IDs are monotonic within an issue. Sorting only when every row has
-    a usable ID avoids guessing when a caller supplied bare strings or partial
-    records. The latter retain their explicit input order for backwards
-    compatibility with fixtures and fail-closed callers.
+
+def _comment_sequence_number(comment: Any) -> int | None:
+    """Return a durable GitHub comment sequence when the payload exposes one."""
+    if not isinstance(comment, dict):
+        return None
+
+    for key in ("databaseId", "database_id", "id"):
+        value = comment.get(key)
+        if (
+            value is not None
+            and not isinstance(value, bool)
+            and str(value).isdigit()
+        ):
+            return int(value)
+
+    for key in ("url", "html_url"):
+        value = comment.get(key)
+        match = _COMMENT_URL_ID.search(str(value or ""))
+        if match:
+            return int(match.group("id"))
+    return None
+
+
+def _ordered_comments(comments: list[Any]) -> list[Any]:
+    """Put hosted GitHub comment payloads in durable creation order.
+
+    REST-shaped rows expose a numeric database ID, and GraphQL-shaped rows may
+    expose that ID only in the issue-comment URL. Both are sorted oldest-first.
+    The hosted gh issue list --json comments adapter otherwise returns full
+    GraphQL comment objects with opaque node IDs newest-first, so that known
+    shape is reversed. Bare strings and partial rows retain their explicit
+    order; they are test/fixture inputs, not a release authority.
     """
-    if len(comments) > 1 and all(
+    if len(comments) <= 1:
+        return list(comments)
+
+    sequence_numbers = [_comment_sequence_number(comment) for comment in comments]
+    if all(number is not None for number in sequence_numbers):
+        return [
+            comment
+            for _, comment in sorted(
+                zip(sequence_numbers, comments), key=lambda pair: pair[0]
+            )
+        ]
+
+    if all(
         isinstance(comment, dict)
-        and not isinstance(comment.get("id"), bool)
-        and str(comment.get("id") or "").isdigit()
+        and comment.get("body") is not None
+        and isinstance(comment.get("id"), str)
+        and comment["id"]
         for comment in comments
     ):
-        return sorted(comments, key=lambda comment: int(comment["id"]))
+        return list(reversed(comments))
+
     return list(comments)
 
 
