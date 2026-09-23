@@ -138,18 +138,17 @@ jobs:
           : > "$RUNNER_TEMP/blocked-comments.json"
           while read -r issue_number; do
             [[ -n "$issue_number" ]] || continue
-            if comments=$(
-              gh api --paginate \
-                "repos/$REPO/issues/$issue_number/comments?per_page=100" \
-                --jq '.[] | {id: .id, body: .body}' | jq -s '.'
-            ); then
+            comments_file="$RUNNER_TEMP/comments-$issue_number.json"
+            if gh api --paginate \
+              "repos/$REPO/issues/$issue_number/comments?per_page=100" \
+              --jq '.[] | {id: .id, body: .body}' | jq -s '.' > "$comments_file"; then
               :
             else
-              comments='[]'
+              echo '[]' > "$comments_file"
               echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
             fi
-            jq --argjson number "$issue_number" --argjson comments "$comments" \
-              '. + [{number: $number, comments: $comments}]' \
+            jq --argjson number "$issue_number" --slurpfile comments "$comments_file" \
+              '. + [{number: $number, comments: ($comments[0] // [])}]' \
               "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
             mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
           done < "$blocked_numbers"
