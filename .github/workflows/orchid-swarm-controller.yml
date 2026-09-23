@@ -135,7 +135,7 @@ jobs:
           blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
           gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
             --json number --jq '.[].number' > "$blocked_numbers"
-          : > "$RUNNER_TEMP/blocked-comments.json"
+          echo '[]' > "$RUNNER_TEMP/blocked-comments.json"
           while read -r issue_number; do
             [[ -n "$issue_number" ]] || continue
             comments_file="$RUNNER_TEMP/comments-$issue_number.json"
