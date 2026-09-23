@@ -129,10 +129,30 @@ jobs:
 
           # Blocked-work reconciliation reads machine-readable blocker lineage
           # from issue bodies/comments. Fetch comments only for currently blocked
-          # issues so the planner can decide them without loading the full comment
-          # corpus for every repository issue.
+          # issues. The REST endpoint supplies numeric comment IDs and its
+          # deterministic order; failures become an empty comment set so the
+          # reconciler holds the issue instead of releasing on incomplete state.
+          blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
           gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
-            --json number,comments > "$RUNNER_TEMP/blocked-comments.json"
+            --json number --jq '.[].number' > "$blocked_numbers"
+          : > "$RUNNER_TEMP/blocked-comments.json"
+          while read -r issue_number; do
+            [[ -n "$issue_number" ]] || continue
+            if comments=$(
+              gh api --paginate \
+                "repos/$REPO/issues/$issue_number/comments?per_page=100" \
+                --jq '.[] | {id: .id, body: .body}' | jq -s '.'
+            ); then
+              :
+            else
+              comments='[]'
+              echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
+            fi
+            jq --argjson number "$issue_number" --argjson comments "$comments" \
+              '. + [{number: $number, comments: $comments}]' \
+              "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
+            mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
+          done < "$blocked_numbers"
 
           jq \
             --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
