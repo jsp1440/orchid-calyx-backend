@@ -149,11 +149,29 @@ def _latest_blocker_ref(text: str) -> str | None:
 
     Blockers evolve. Using the first historical marker would make a cleared
     dependency permanent even after a later comment records the replacement
-    blocker. GitHub comment order is chronological, so the last marker is the
-    current durable blocker declaration.
+    blocker. The caller normalizes full GitHub comment payloads before building
+    the text because the API may return those rows newest-first.
     """
     matches = list(BLOCKED_ON.finditer(text))
     return matches[-1].group("ref") if matches else None
+
+
+def _ordered_comments(comments: list[Any]) -> list[Any]:
+    """Put complete GitHub comment payloads in durable creation order.
+
+    Comment IDs are monotonic within an issue. Sorting only when every row has
+    a usable ID avoids guessing when a caller supplied bare strings or partial
+    records. The latter retain their explicit input order for backwards
+    compatibility with fixtures and fail-closed callers.
+    """
+    if len(comments) > 1 and all(
+        isinstance(comment, dict)
+        and not isinstance(comment.get("id"), bool)
+        and str(comment.get("id") or "").isdigit()
+        for comment in comments
+    ):
+        return sorted(comments, key=lambda comment: int(comment["id"]))
+    return list(comments)
 
 
 def _blocker_text(issue: dict[str, Any]) -> str:
@@ -168,7 +186,7 @@ def _blocker_text(issue: dict[str, Any]) -> str:
     parts = [str(issue.get("body") or "")]
     comments = issue.get("comments")
     if isinstance(comments, (list, tuple)):
-        for comment in comments:
+        for comment in _ordered_comments(list(comments)):
             if isinstance(comment, dict):
                 parts.append(str(comment.get("body") or ""))
             elif isinstance(comment, str):

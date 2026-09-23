@@ -48,7 +48,10 @@ def issue(number: int, *, body: str = "", labels=("oc-blocked",), comments=()) -
         "state": "OPEN",
         "body": body,
         "labels": list(labels),
-        "comments": [{"body": c} for c in comments],
+        "comments": [
+            c if isinstance(c, dict) else {"body": c}
+            for c in comments
+        ],
     }
 
 
@@ -327,6 +330,22 @@ def test_budget_denial_releases_only_after_an_observed_condition_change() -> Non
     assert same.disposition is Disposition.HOLD
     assert changed.disposition is Disposition.RELEASE
     assert "condition fingerprint changed" in changed.reason
+
+
+def test_budget_marker_wins_when_github_returns_comments_newest_first() -> None:
+    fingerprint = "e" * 24
+    # GitHub can return full comment objects newest-first. The larger ID is the
+    # newer budget denial and must supersede the older cleared dependency.
+    blocked = issue(
+        1401,
+        comments=[
+            {"id": 200, "body": f"OC-BLOCKED-ON: budget:{fingerprint}"},
+            {"id": 100, "body": "OC-BLOCKED-ON: pr#1464"},
+        ],
+    )
+    result = reconcile_issue(blocked, WorldState(merged_prs={1464}))
+    assert result.disposition is Disposition.HOLD
+    assert result.blocker == f"budget:{fingerprint}"
 
 
 def test_budget_observation_is_scoped_to_the_blocked_issue() -> None:
