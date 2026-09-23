@@ -179,7 +179,7 @@ def get_ledger_revision(
 ):
     """Retrieve one exact reasoning-ledger revision, read-only.
 
-    CALYX-VERIFY-LEDGER-001 (#1135). The Verification Workbench can already see
+    CALYX-VERIFY-LEDGER-001 (#1142). The Verification Workbench can already see
     that a ledger *exists* — a mission carries ``ledger_id`` and ``version`` —
     and had no way to retrieve the revision being verified. Existence is not
     inspectability, and the frontend says so rather than implying the reasoning
@@ -212,18 +212,14 @@ def get_ledger_revision(
         )
 
     owner = _subject(auth)
-    # history() calls current() first, so ownership and existence are enforced
-    # by the same path as every other ledger read.
-    result = _invoke(
+    revision, available = _invoke(
         db,
         request,
-        lambda: OperationalReasoningLedgerService(db).history(ledger_id, owner),
+        lambda: OperationalReasoningLedgerService(db).exact_revision(
+            ledger_id, owner, version
+        ),
     )
-
-    revisions = result["revisions"]
-    match = next((item for item in revisions if item.version == version), None)
-    if match is None:
-        available = sorted(item.version for item in revisions)
+    if revision is None:
         raise HTTPException(
             404,
             detail={
@@ -239,7 +235,7 @@ def get_ledger_revision(
     return {
         "ledger_id": ledger_id,
         "requested_version": version,
-        "revision": ledger_to_dict(match),
+        "revision": ledger_to_dict(revision),
         # An explicit marker so a consumer never has to infer that a successful
         # retrieval is an inspectable revision rather than a certified one.
         "inspectable": True,

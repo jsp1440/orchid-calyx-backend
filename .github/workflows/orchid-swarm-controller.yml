@@ -152,6 +152,57 @@ jobs:
             --slurpfile prs "$RUNNER_TEMP/prs.json" \
             '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
 
+      - name: Read governed spend ledger for blocked-work observation
+        id: budget_ledger
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_governor_github_ledger.py \
+            --ledger-issue 1330 \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Observe current governed budget conditions
+        id: budget_observation
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+          OC_CLAUDE_DEFAULT_TIER: ${{ vars.OC_CLAUDE_DEFAULT_TIER }}
+          OC_CLAUDE_MAXIMUM_TIER: ${{ vars.OC_CLAUDE_MAXIMUM_TIER }}
+          OC_CLAUDE_CHEAP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_CHEAP_ESTIMATED_COST_USD }}
+          OC_CLAUDE_STANDARD_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_STANDARD_ESTIMATED_COST_USD }}
+          OC_CLAUDE_DEEP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_DEEP_ESTIMATED_COST_USD }}
+        run: |
+          set -euo pipefail
+          # The observer is deliberately allowed to produce an empty map. A
+          # missing ledger or malformed policy must keep blocked work parked,
+          # never turn an observation failure into permission to requeue.
+          echo '{}' > "$RUNNER_TEMP/budget-observation.json"
+          python3 scripts/oc_budget_observe.py \
+            --issues-json "$RUNNER_TEMP/issues-enriched.json" \
+            --output "$RUNNER_TEMP/budget-observation.json"
+
+      - name: Attach issue-specific budget observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile budget "$RUNNER_TEMP/budget-observation.json" \
+            '. + {budget_fingerprints: ($budget[0] // {})}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash

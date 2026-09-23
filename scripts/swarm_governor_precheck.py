@@ -43,6 +43,7 @@ if str(_SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(_SCRIPTS_DIR))
 
 import oc_no_api_guard
+from oc_budget_blocker import fingerprint_from_environment, is_budget_denial
 
 
 def _env(name: str) -> str | None:
@@ -84,6 +85,15 @@ def main() -> None:
     def block(reason: str, *, is_warning: bool = False) -> None:
         _write_output("authorized", "false")
         _write_output("reason", reason)
+        # Only an actual exhausted budget is a condition the blocked-work
+        # reconciler may later observe as changed. Kill switches, allowlist
+        # gates, malformed policy, and retry limits need an owner/policy hold;
+        # assigning them a budget fingerprint would let an unrelated budget
+        # change release work that is still unauthorized.
+        _write_output(
+            "blocker_fingerprint",
+            fingerprint_from_environment(reason) if is_budget_denial(reason) else "",
+        )
         lvl = "warning" if is_warning else "error"
         print(f"::{lvl}::[OC-GOVERNOR-PRECHECK] BLOCKED: {reason}", flush=True)
 

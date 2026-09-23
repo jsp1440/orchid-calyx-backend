@@ -181,11 +181,19 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
             merged = True
         (merged_prs if merged else unmerged_prs).add(number)
 
+    raw_budget_fingerprints = snapshot.get("budget_fingerprints") or {}
+    budget_fingerprints = {
+        int(number): str(fingerprint)
+        for number, fingerprint in raw_budget_fingerprints.items()
+        if str(number).isdigit() and fingerprint
+    }
     world = _BLOCKED_RECONCILER.WorldState(
         closed_issues=closed_issues,
         open_issues=open_issues,
         merged_prs=merged_prs,
         unmerged_prs=unmerged_prs,
+        budget_fingerprints=budget_fingerprints,
+        budget_fingerprint=str(snapshot.get("budget_fingerprint") or "") or None,
     )
     results = _BLOCKED_RECONCILER.reconcile(issues, world)
     observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)

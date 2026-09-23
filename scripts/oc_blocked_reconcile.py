@@ -56,6 +56,8 @@ NO_REQUEUE = re.compile(r"^OC-AUTO-REQUEUE:\s*false\s*$", re.IGNORECASE | re.MUL
 #: Blocker forms this module can check.
 ISSUE_REF = re.compile(r"^(?:issue)?#(?P<number>\d+)$", re.IGNORECASE)
 PR_REF = re.compile(r"^pr#(?P<number>\d+)$", re.IGNORECASE)
+BUDGET_REF = re.compile(r"^budget:(?P<fingerprint>[a-f0-9]{24})$", re.IGNORECASE)
+GOVERNOR_REF = re.compile(r"^governor:(?P<reason>[A-Z0-9_]+)$", re.IGNORECASE)
 
 #: Blocker forms that are a person's decision. Recognised so they are held
 #: deliberately and reported as owner-gated, rather than falling into the
@@ -128,6 +130,9 @@ class WorldState:
     open_issues: set[int] = field(default_factory=set)
     merged_prs: set[int] = field(default_factory=set)
     unmerged_prs: set[int] = field(default_factory=set)
+    budget_fingerprints: dict[int, str] = field(default_factory=dict)
+    # Kept for callers and fixtures predating issue-specific observations.
+    budget_fingerprint: str | None = None
 
 
 def _labels(issue: dict[str, Any]) -> set[str]:
@@ -203,6 +208,36 @@ def reconcile_issue(issue: dict[str, Any], world: WorldState) -> Reconciliation:
         )
 
     lowered = ref.lower()
+
+    budget_match = BUDGET_REF.match(lowered)
+    if budget_match:
+        observed = (
+            world.budget_fingerprints.get(number)
+            if world.budget_fingerprints
+            else world.budget_fingerprint
+        )
+        if observed and observed != budget_match.group("fingerprint"):
+            return Reconciliation(
+                number,
+                Disposition.RELEASE,
+                "the governed budget condition fingerprint changed",
+                blocker=ref,
+            )
+        return Reconciliation(
+            number,
+            Disposition.HOLD,
+            "the governed budget condition is unchanged or has not been observed as cleared",
+            blocker=ref,
+        )
+
+    governor_match = GOVERNOR_REF.match(ref)
+    if governor_match:
+        return Reconciliation(
+            number,
+            Disposition.OWNER_GATE,
+            f"governor policy hold {governor_match.group('reason').upper()} is not budget-releasable",
+            blocker=ref,
+        )
 
     if lowered in OWNER_FORMS:
         return Reconciliation(

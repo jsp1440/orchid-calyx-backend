@@ -13,11 +13,13 @@ import re
 import subprocess
 
 from runtime.swarm.work_packet import build_work_packet
+from scripts.oc_budget_blocker import is_budget_denial
 from scripts.oc_health_contract import evaluate
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 
 PARKED = {"oc-running", "oc-validating", "oc-blocked", "oc-owner-gate",
           "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
+BLOCKER_FINGERPRINT = re.compile(r"^[a-f0-9]{24}$")
 
 
 def _labels(issue):
@@ -156,10 +158,20 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
 
 
 def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
-                      comment_id, reason, call=github):
+                      comment_id, reason, blocker_fingerprint=None, call=github):
     """Release only our confirmed claim after denial; never restore paid eligibility."""
     if not re.fullmatch(r"[A-Z_]+", reason):
         raise ValueError("invalid governor denial reason")
+    budget_denial = is_budget_denial(reason)
+    if budget_denial and not BLOCKER_FINGERPRINT.fullmatch(
+        str(blocker_fingerprint or "")
+    ):
+        raise ValueError("budget blocker fingerprint unavailable")
+    durable_blocker = (
+        f"budget:{blocker_fingerprint}"
+        if budget_denial
+        else f"governor:{reason}"
+    )
     args = ["issue", "view", str(issue_number), "--repo", repository,
             "--json", "number,title,body,state,labels"]
     issue = call(args)
@@ -182,8 +194,13 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     release = {"schema": "oc.swarm-denied-release.v1", "issue_number": issue_number,
                "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
                "lease_comment_id": comment_id, "material_fingerprint": packet.fingerprint,
-               "reason": reason, "state": "oc-blocked", "provider_called": False}
-    body = "[OC-SWARM-V4] Provider admission denied; execution lease released: `" + json.dumps(release, sort_keys=True) + "`."
+               "reason": reason,
+               "blocker_fingerprint": blocker_fingerprint if budget_denial else None,
+               "blocker": durable_blocker,
+               "state": "oc-blocked", "provider_called": False}
+    body = ("[OC-SWARM-V4] Provider admission denied; execution lease released: `"
+            + json.dumps(release, sort_keys=True) + "`.\n"
+            + f"OC-BLOCKED-ON: {durable_blocker}")
     saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments",
                   "--input", "-"], {"body": body})
     if not saved or saved.get("body") != body or not saved.get("id"):
@@ -205,13 +222,15 @@ def main():
     parser.add_argument("--run-attempt", type=int, default=1)
     parser.add_argument("--github-output")
     parser.add_argument("--park-denied", help="Governor denial reason; release verified worker into blocked")
+    parser.add_argument("--blocker-fingerprint", help="Stable budget condition fingerprint")
     args = parser.parse_args()
     if args.verify_issue is not None:
         try:
             if args.park_denied:
                 result = park_denied_worker(repository=args.repository, issue_number=args.verify_issue,
                                             run_id=args.run_id, run_attempt=args.run_attempt,
-                                            comment_id=args.lease_comment_id, reason=args.park_denied)
+                                            comment_id=args.lease_comment_id, reason=args.park_denied,
+                                            blocker_fingerprint=args.blocker_fingerprint)
                 print(json.dumps(result, sort_keys=True))
                 return 0
             issue = github(["issue", "view", str(args.verify_issue), "--repo", args.repository,
