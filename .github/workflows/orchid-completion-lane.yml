@@ -199,7 +199,12 @@ jobs:
           OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.ledger.outputs.monthly_spend_usd }}
         run: python3 scripts/swarm_governor_precheck.py
 
-      - name: Park denied provider work without restoring paid eligibility
+      # A denial releases the lease either way. What it does with the work now
+      # depends on whether anything can run without a provider: deterministic
+      # work goes back to the queue for the lane that cannot spend, and
+      # everything else parks with its durable blocker. Paid eligibility is
+      # never restored by this step.
+      - name: Settle denied provider work without restoring paid eligibility
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
         shell: bash
         env:
@@ -215,7 +220,8 @@ jobs:
             --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
             --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT" --park-denied "$DENIAL_REASON" \
-            --blocker-fingerprint "$BLOCKER_FINGERPRINT"
+            --blocker-fingerprint "$BLOCKER_FINGERPRINT" \
+            --denied-provider anthropic
 
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'

@@ -14,6 +14,7 @@ import subprocess
 
 from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_budget_blocker import is_budget_denial
+from scripts.oc_budget_denial_route import decide_denial_route
 from scripts.oc_health_contract import evaluate
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 
@@ -158,20 +159,18 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
 
 
 def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
-                      comment_id, reason, blocker_fingerprint=None, call=github):
-    """Release only our confirmed claim after denial; never restore paid eligibility."""
-    if not re.fullmatch(r"[A-Z_]+", reason):
-        raise ValueError("invalid governor denial reason")
-    budget_denial = is_budget_denial(reason)
-    if budget_denial and not BLOCKER_FINGERPRINT.fullmatch(
-        str(blocker_fingerprint or "")
-    ):
-        raise ValueError("budget blocker fingerprint unavailable")
-    durable_blocker = (
-        f"budget:{blocker_fingerprint}"
-        if budget_denial
-        else f"governor:{reason}"
-    )
+                      comment_id, reason, blocker_fingerprint=None,
+                      denied_provider=None, providers=None, shared_budget=None,
+                      call=github):
+    """Settle a confirmed claim after denial, at the disposition the denial earns.
+
+    Releasing the lease is not in question — a denied worker never keeps one.
+    What changed is that the disposition is now decided rather than assumed. A
+    task with deterministic work an executor can run returns to ``oc-queued``,
+    where the planner hands it to the deterministic lane instead of back to the
+    provider that refused it. Everything else parks with its durable blocker
+    exactly as before, and nothing here ever restores paid eligibility.
+    """
     args = ["issue", "view", str(issue_number), "--repo", repository,
             "--json", "number,title,body,state,labels"]
     issue = call(args)
@@ -183,9 +182,28 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
         raise ValueError("denied worker claim origin invalid")
     verify_worker_claim(issue, receipt, repository=repository, run_id=run_id,
                         run_attempt=run_attempt, comment_id=comment_id)
-    expected = dict(issue, labels=sorted((_labels(issue) - {"oc-running", "oc-queued"}) | {"oc-blocked"}))
-    call(["issue", "edit", str(issue_number), "--repo", repository,
-          "--remove-label", "oc-running", "--remove-label", "oc-queued", "--add-label", "oc-blocked"])
+
+    # Decided from the issue GitHub is serving right now, not from the planner's
+    # snapshot: the body is what says whether a deterministic executor can take
+    # this, and settling on a stale copy of it would route on a claim nobody
+    # re-checked after the lease was taken.
+    route = decide_denial_route(
+        issue,
+        reason=reason,
+        blocker_fingerprint=blocker_fingerprint,
+        denied_provider=denied_provider,
+        providers=providers,
+        shared_budget=shared_budget,
+    )
+    budget_denial = is_budget_denial(reason)
+    durable_blocker = route.blocker
+    removed = ["oc-running"] if route.requeues else ["oc-running", "oc-queued"]
+
+    expected = dict(issue, labels=sorted((_labels(issue) - set(removed)) | {route.target_label}))
+    edit = ["issue", "edit", str(issue_number), "--repo", repository]
+    for label in removed:
+        edit += ["--remove-label", label]
+    call(edit + ["--add-label", route.target_label])
     current = call(args)
     if current["state"].upper() != "OPEN" or _material(current) != _material(expected):
         raise ValueError("denied worker parking unconfirmed")
@@ -195,12 +213,21 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
                "lease_comment_id": comment_id, "material_fingerprint": packet.fingerprint,
                "reason": reason,
-               "blocker_fingerprint": blocker_fingerprint if budget_denial else None,
-               "blocker": durable_blocker,
-               "state": "oc-blocked", "provider_called": False}
-    body = ("[OC-SWARM-V4] Provider admission denied; execution lease released: `"
-            + json.dumps(release, sort_keys=True) + "`.\n"
-            + f"OC-BLOCKED-ON: {durable_blocker}")
+               "blocker_fingerprint": (blocker_fingerprint
+                                       if budget_denial and route.records_blocker else None),
+               "blocker": durable_blocker if route.records_blocker else None,
+               "state": route.target_label, "provider_called": False,
+               "route": route.to_record()}
+    if route.requeues:
+        # No OC-BLOCKED-ON line: this task is not blocked on anything. Writing
+        # one would make the next reconciliation hold work that is running.
+        body = ("[OC-SWARM-V4] Provider admission denied; execution lease released and work "
+                "rerouted to the deterministic lane: `"
+                + json.dumps(release, sort_keys=True) + "`.")
+    else:
+        body = ("[OC-SWARM-V4] Provider admission denied; execution lease released: `"
+                + json.dumps(release, sort_keys=True) + "`.\n"
+                + f"OC-BLOCKED-ON: {durable_blocker}")
     saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments",
                   "--input", "-"], {"body": body})
     if not saved or saved.get("body") != body or not saved.get("id"):
@@ -221,8 +248,9 @@ def main():
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--run-attempt", type=int, default=1)
     parser.add_argument("--github-output")
-    parser.add_argument("--park-denied", help="Governor denial reason; release verified worker into blocked")
+    parser.add_argument("--park-denied", help="Governor denial reason; settle the verified worker")
     parser.add_argument("--blocker-fingerprint", help="Stable budget condition fingerprint")
+    parser.add_argument("--denied-provider", help="Provider the governor refused, for the route record")
     args = parser.parse_args()
     if args.verify_issue is not None:
         try:
@@ -230,7 +258,8 @@ def main():
                 result = park_denied_worker(repository=args.repository, issue_number=args.verify_issue,
                                             run_id=args.run_id, run_attempt=args.run_attempt,
                                             comment_id=args.lease_comment_id, reason=args.park_denied,
-                                            blocker_fingerprint=args.blocker_fingerprint)
+                                            blocker_fingerprint=args.blocker_fingerprint,
+                                            denied_provider=args.denied_provider)
                 print(json.dumps(result, sort_keys=True))
                 return 0
             issue = github(["issue", "view", str(args.verify_issue), "--repo", args.repository,
