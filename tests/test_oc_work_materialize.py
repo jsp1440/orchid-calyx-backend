@@ -250,3 +250,82 @@ class TestLabelsExistBeforeTheWrite:
             materialize.plan(report(candidate()), set()), REPO, call=transport
         )
         assert transport.calls == []
+
+
+class TestDedupeSurvivesASlowSearchIndex:
+    """The filing loop this module would otherwise run every five minutes.
+
+    `gh issue list --search` is served from GitHub's asynchronously maintained
+    search index; `--label` is served from the ordinary REST issue collection,
+    which is read-after-write consistent. The first implementation used the
+    search alone, so while an issue was unindexed every controller pass re-filed
+    its condition -- including the re-check immediately before the write, which
+    asked the same lagging index and therefore protected nothing. Four passes
+    produced four identical issues.
+    """
+
+    class LaggingSearch(FakeGitHub):
+        """Label listing is current; the search index never catches up."""
+
+        def __call__(self, args, payload=None):
+            if args[:2] == ["issue", "list"] and "--search" in args and "--label" not in args:
+                self.calls.append(copy.deepcopy(args))
+                return []
+            return super().__call__(args, payload)
+
+    def run_waves(self, transport, waves: int = 6) -> None:
+        for _ in range(waves):
+            known = materialize.existing_fingerprints(REPO, call=transport)
+            materialize.apply_plan(
+                materialize.plan(report(candidate()), known), REPO, dry_run=False, call=transport
+            )
+
+    def test_one_issue_across_many_waves_though_search_never_indexes_it(self) -> None:
+        transport = self.LaggingSearch()
+        self.run_waves(transport)
+        creations = [call for call in transport.calls if call[:2] == ["issue", "create"]]
+        assert len(creations) == 1
+
+    def test_the_lookup_asks_the_consistent_collection_not_only_the_index(self) -> None:
+        transport = FakeGitHub()
+        materialize.existing_fingerprints(REPO, call=transport)
+        listings = [call for call in transport.calls if call[:2] == ["issue", "list"]]
+        assert any("--label" in call for call in listings), "no read-after-write consistent lookup"
+        assert any("--search" in call for call in listings), "search fallback dropped"
+
+    def test_search_still_catches_an_issue_whose_label_was_removed(self) -> None:
+        """The label lookup cannot see it; that is why the search one stays."""
+
+        class LabelStripped(FakeGitHub):
+            def __call__(self, args, payload=None):
+                if args[:2] == ["issue", "list"] and "--label" in args:
+                    self.calls.append(copy.deepcopy(args))
+                    return []
+                return super().__call__(args, payload)
+
+        transport = LabelStripped(bodies=[materialize.issue_body(candidate())])
+        assert materialize.existing_fingerprints(REPO, call=transport) == {"a" * 16}
+
+    def test_both_lookups_read_closed_issues_too(self) -> None:
+        transport = FakeGitHub()
+        materialize.existing_fingerprints(REPO, call=transport)
+        listings = [call for call in transport.calls if call[:2] == ["issue", "list"]]
+        assert all("--state" in call and call[call.index("--state") + 1] == "all" for call in listings)
+
+    def test_an_unavailable_lookup_fails_closed_rather_than_narrowing(self) -> None:
+        """Narrowing the already-filed set is the direction that files duplicates."""
+
+        class Broken(FakeGitHub):
+            def __call__(self, args, payload=None):
+                if args[:2] == ["issue", "list"]:
+                    raise subprocess.SubprocessError("redacted")
+                return super().__call__(args, payload)
+
+        with pytest.raises(subprocess.SubprocessError):
+            materialize.existing_fingerprints(REPO, call=Broken())
+
+    def test_the_window_is_wide_enough_to_be_a_ceiling_not_a_page(self) -> None:
+        transport = FakeGitHub()
+        materialize.existing_fingerprints(REPO, call=transport)
+        for call in (c for c in transport.calls if c[:2] == ["issue", "list"]):
+            assert int(call[call.index("--limit") + 1]) >= 1000

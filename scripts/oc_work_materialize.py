@@ -32,6 +32,16 @@ from collections.abc import Callable
 from typing import Any
 
 FINGERPRINT_MARKER = "OC-DISCOVERY-FINGERPRINT"
+
+#: Every issue this module files carries it, which is what makes the
+#: read-after-write consistent lookup below possible.
+DISCOVERED_LABEL = "oc-discovered"
+
+#: Upper bound on each lookup. `gh` paginates beneath this, so it is a ceiling
+#: on how much history is considered rather than a page size. Set well above the
+#: number of discovered issues this repository could plausibly accumulate: a
+#: fingerprint that falls out of the window is one this module would re-file.
+FINGERPRINT_LOOKUP_LIMIT = 1000
 FINGERPRINT = re.compile(rf"^{FINGERPRINT_MARKER}:\s*(?P<value>[a-f0-9]{{16}})\s*$", re.MULTILINE)
 REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
@@ -61,29 +71,46 @@ def existing_fingerprints(repository: str, *, call: Transport = github) -> set[s
 
     Reads closed issues too. Restricting this to open issues is the obvious
     shortcut and it re-files everything anybody ever resolved.
+
+    Two lookups, unioned, because neither is sufficient alone and their failure
+    modes do not overlap:
+
+    * **By label**, which `gh` serves from ``GET /repos/{o}/{r}/issues`` — the
+      ordinary REST collection, read-after-write consistent. An issue filed
+      thirty seconds ago is in it.
+    * **By search**, which `gh` serves from ``GET /search/issues`` — a separate,
+      asynchronously maintained index.
+
+    The search alone was the first implementation and it is an uncontrolled
+    filing loop waiting for a slow index: the controller pulses every five
+    minutes, and while an issue is unindexed *every* pass re-files its
+    condition, including the re-check immediately before the write, which asks
+    the same lagging index and therefore protects nothing. Reproduced against
+    this module with a transport whose index lags: four passes, four identical
+    issues.
+
+    The label lookup closes that. The search lookup stays because it still
+    catches a discovered issue whose ``oc-discovered`` label somebody removed,
+    which the label lookup cannot see. A fingerprint either finds is a
+    fingerprint already filed.
     """
     found: set[str] = set()
-    rows = call(
-        [
-            "issue",
-            "list",
-            "--repo",
-            repository,
-            "--state",
-            "all",
-            "--search",
-            FINGERPRINT_MARKER,
-            "--limit",
-            "200",
-            "--json",
-            "number,body",
-        ],
-        None,
-    )
-    for row in rows or []:
-        match = FINGERPRINT.search(str(row.get("body") or ""))
-        if match:
-            found.add(match.group("value"))
+
+    def harvest(args: list[str]) -> None:
+        # Deliberately not wrapped: one lookup being unavailable must not
+        # silently narrow the set of things we consider already-filed, because
+        # that direction files duplicates. The exception propagates and the
+        # caller fails closed.
+        rows = call(args, None)
+        for row in rows or []:
+            match = FINGERPRINT.search(str(row.get("body") or ""))
+            if match:
+                found.add(match.group("value"))
+
+    base = ["issue", "list", "--repo", repository, "--state", "all",
+            "--limit", str(FINGERPRINT_LOOKUP_LIMIT), "--json", "number,body"]
+    harvest([*base, "--label", DISCOVERED_LABEL])
+    harvest([*base, "--search", FINGERPRINT_MARKER])
     return found
 
 
