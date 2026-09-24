@@ -34,6 +34,8 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from importlib.metadata import packages_distributions
 from pathlib import Path
 from typing import Any
 
@@ -401,6 +403,184 @@ def discover_failing_tests(report_text: str, root: Path) -> list[Candidate]:
     return candidates
 
 
+#: Trees whose imports are production dependencies. Tests are excluded: a test
+#: may legitimately import a dev-only distribution.
+RUNTIME_IMPORT_ROOTS = ("app", "runtime")
+
+
+def _imported_modules(source: str) -> set[str]:
+    """Top-level module names a file imports, parsed rather than matched."""
+    try:
+        tree = ast.parse(source)
+    except (SyntaxError, ValueError):
+        return set()
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names.update(alias.name.split(".", 1)[0] for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names.add(node.module.split(".", 1)[0])
+    return {name for name in names if name and not name.startswith("_")}
+
+
+def discover_undeclared_imports(root: Path, *, provided_by: dict[str, list[str]] | None = None) -> list[Candidate]:
+    """Production code importing a distribution no requirements file declares.
+
+    The repository runs on whatever `requirements*.txt` installs. A module that
+    arrives only as somebody else's transitive dependency works until that
+    somebody changes their pin, and then it does not -- in a deployment, not in
+    a test.
+
+    Which distribution provides a module is **asked, not guessed**:
+    ``importlib.metadata.packages_distributions()`` reports what is actually
+    installed. A first draft mapped module names to distributions by hand and
+    got two of three findings wrong -- ``googleapiclient`` read as undeclared
+    although ``google-api-python-client`` declares it, and a sibling script
+    imported by path read as a missing package. Both disappear here, because a
+    module no installed distribution provides is not reported at all, and
+    neither is one whose provider is ambiguous.
+
+    That makes this source fail closed on an incomplete environment: a
+    distribution that is not installed yields no finding. Silence is the safe
+    direction, and it is stated here so nobody reads silence as coverage.
+    """
+    provides = packages_distributions() if provided_by is None else provided_by
+    declared = declared_distributions(root)
+    standard = set(sys.stdlib_module_names)
+
+    users: dict[str, set[str]] = {}
+    for tree_root in RUNTIME_IMPORT_ROOTS:
+        base = root / tree_root
+        if not base.is_dir():
+            continue
+        for path in sorted(base.rglob("*.py")):
+            for module in _imported_modules(_read(path)):
+                if module in standard:
+                    continue
+                distributions = {name.lower().replace("_", "-") for name in provides.get(module, [])}
+                if len(distributions) != 1:
+                    # Unprovided (local, or not installed) or ambiguous. Both
+                    # are answers this module declines to turn into work.
+                    continue
+                distribution = distributions.pop()
+                if distribution in declared:
+                    continue
+                users.setdefault(distribution, set()).add(str(path.relative_to(root)))
+
+    candidates: list[Candidate] = []
+    for distribution, paths in sorted(users.items()):
+        relative = sorted(paths)
+        lanes = [lane_for_path(item) for item in relative]
+        placed = [lane for lane in lanes if lane is not None]
+        lane = min(placed, key=lambda item: item.rank) if placed else None
+        candidates.append(
+            Candidate(
+                source="undeclared-import",
+                title=f"Declare {distribution}, which {len(relative)} production file(s) import directly",
+                summary=(
+                    f"{len(relative)} file(s) under {'/'.join(RUNTIME_IMPORT_ROOTS)} import a module "
+                    f"that the installed {distribution} distribution provides, and no requirements "
+                    "file declares it. It is reaching the deployment only as another dependency's "
+                    "transitive install, which holds until that dependency changes its pin."
+                ),
+                lane=lane,
+                evidence=tuple(
+                    Evidence(
+                        kind="undeclared-direct-import",
+                        where=item,
+                        detail=f"imports a module provided by {distribution!r}, which no requirements file declares",
+                    )
+                    for item in relative
+                ),
+                semantic_key=f"undeclared-import:{distribution}:" + ",".join(relative),
+                proposed_remedy=(
+                    f"Add {distribution} to requirements.txt with a pin consistent with the "
+                    "dependency that currently supplies it, so the deployment declares what it imports."
+                ),
+                capabilities=("schema-validation",),
+                validation_command=covering_validation_command(relative),
+            )
+        )
+    return candidates
+
+
+#: The Brain's own gap record, produced by BUILD-016 knowledge-gap discovery.
+BRAIN_GAP_STORE = "runtime/knowledge_gaps/latest.json"
+
+#: How old the Brain's statement may be before this module stops presenting it
+#: as current. It is not a deadline for the Brain; it is a label on the reading.
+BRAIN_STALE_AFTER_DAYS = 30
+
+
+def brain_observations(root: Path, *, now: datetime | None = None) -> dict[str, Any]:
+    """What the Brain currently says is missing, and how old that statement is.
+
+    The Brain is part of prioritisation here, and deliberately not part of
+    materialisation. Its gaps are keyword-coverage statements over a runtime
+    snapshot -- the evidence on each one reads ``Matched runtime items: 0`` --
+    and its proposed actions are template sentences of the form "Add or connect
+    <domain> data sources, validators, and review-ready outputs". Filing those
+    as engineering tasks would be the invention this module exists to refuse:
+    the record says Taxonomy has zero matched items while ``app/`` plainly has
+    taxonomy modules, because the scan read discovery memory rather than the
+    tree.
+
+    So the Brain's reading is surfaced, with its age stated, and nothing is
+    filed from it. A stale reading presented as current is the same defect as
+    an unrun test presented as a failure.
+    """
+    path = root / BRAIN_GAP_STORE
+    try:
+        record = json.loads(_read(path))
+    except (ValueError, TypeError):
+        record = None
+    if not isinstance(record, dict):
+        return {
+            "available": False,
+            "source": BRAIN_GAP_STORE,
+            "reason": "no readable Brain knowledge-gap record",
+        }
+
+    generated_at = str(record.get("generated_at") or "")
+    age_days: int | None = None
+    try:
+        produced = datetime.fromisoformat(generated_at)
+        if produced.tzinfo is None:
+            produced = produced.replace(tzinfo=timezone.utc)
+        age_days = max(0, ((now or datetime.now(timezone.utc)) - produced).days)
+    except ValueError:
+        age_days = None
+
+    gaps = [gap for gap in (record.get("gaps") or []) if isinstance(gap, dict)]
+    return {
+        "available": True,
+        "source": BRAIN_GAP_STORE,
+        "build": record.get("build"),
+        "generated_at": generated_at or None,
+        "age_days": age_days,
+        # Unknown age is reported stale. "We could not tell how old this is" is
+        # not a reason to present it as current.
+        "stale": age_days is None or age_days > BRAIN_STALE_AFTER_DAYS,
+        "gap_count": len(gaps),
+        "domains": sorted(
+            {str(gap.get("domain")) for gap in gaps if gap.get("domain")}
+        ),
+        "critical_domains": sorted(
+            {
+                str(gap.get("domain"))
+                for gap in gaps
+                if gap.get("domain") and str(gap.get("priority", "")).upper() == "CRITICAL"
+            }
+        ),
+        "materialised": False,
+        "why_not_materialised": (
+            "each gap's evidence is a keyword-coverage count over a runtime snapshot "
+            "and its proposed action is a template sentence, neither of which names a "
+            "checkable engineering condition; filing them would be inventing work"
+        ),
+    }
+
+
 def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     """Turn every unplaced candidate into one bounded analysis task.
 
@@ -440,6 +620,7 @@ def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
 def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
     """Run every source and return a ranked, deduplicated report."""
     candidates = discover_dependency_gaps(root)
+    candidates.extend(discover_undeclared_imports(root))
     candidates.extend(discover_failing_tests(pytest_report, root))
 
     # A dependency gap explains the tests it stops from running, so a failing
@@ -467,6 +648,7 @@ def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
 
     return {
         "schema": REPORT_SCHEMA,
+        "brain": brain_observations(root),
         "candidate_count": len(deduplicated),
         "candidates": [candidate.to_record() for candidate in deduplicated],
         "suppressed_by_dependency_gap": sorted(suppressed),

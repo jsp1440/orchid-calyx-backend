@@ -7,7 +7,10 @@ one. So most of these tests are about refusals.
 
 from __future__ import annotations
 
+import json
+from datetime import datetime, timezone
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -292,3 +295,142 @@ class TestMarkersComeFromCodeNotText:
         root = Path(__file__).resolve().parents[1]
         for candidate in discovery.discover_dependency_gaps(root):
             assert "test_oc_work_discovery.py" not in {i.where for i in candidate.evidence}
+
+
+class TestTheBrainParticipatesWithoutInventing:
+    """The Brain's reading is surfaced; its template actions are not filed."""
+
+    def brain_store(self, tmp_path: Path, record: dict) -> Path:
+        directory = tmp_path / "runtime" / "knowledge_gaps"
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "latest.json").write_text(json.dumps(record), encoding="utf-8")
+        return tmp_path
+
+    def test_a_missing_record_is_reported_as_unavailable_not_as_no_gaps(self, tmp_path: Path) -> None:
+        observation = discovery.brain_observations(tmp_path)
+        assert observation["available"] is False
+        assert "no readable" in observation["reason"]
+
+    def test_the_reading_carries_its_age(self, tmp_path: Path) -> None:
+        root = self.brain_store(tmp_path, {
+            "build": "BUILD-016",
+            "generated_at": "2026-07-12T07:23:53+00:00",
+            "gaps": [{"domain": "Taxonomy", "priority": "CRITICAL"}],
+        })
+        observation = discovery.brain_observations(
+            root, now=datetime(2026, 9, 24, tzinfo=timezone.utc)
+        )
+        # 2026-07-12T07:23:53Z to 2026-09-24T00:00:00Z. Computed from the
+        # fixture's own inputs, not copied off a live run that used a later
+        # `now` and printed 74.
+        assert observation["age_days"] == 73
+        assert observation["stale"] is True
+        assert observation["critical_domains"] == ["Taxonomy"]
+
+    def test_a_fresh_reading_is_not_stale(self, tmp_path: Path) -> None:
+        root = self.brain_store(tmp_path, {
+            "generated_at": "2026-09-20T00:00:00+00:00",
+            "gaps": [{"domain": "Literature", "priority": "HIGH"}],
+        })
+        observation = discovery.brain_observations(
+            root, now=datetime(2026, 9, 24, tzinfo=timezone.utc)
+        )
+        assert observation["stale"] is False
+        assert observation["critical_domains"] == []
+
+    def test_an_unreadable_age_is_reported_stale(self, tmp_path: Path) -> None:
+        """"We could not tell how old this is" is not a reason to call it current."""
+        root = self.brain_store(tmp_path, {"generated_at": "not a timestamp", "gaps": []})
+        assert discovery.brain_observations(root)["stale"] is True
+
+    def test_corrupt_json_does_not_take_discovery_down(self, tmp_path: Path) -> None:
+        directory = tmp_path / "runtime" / "knowledge_gaps"
+        directory.mkdir(parents=True)
+        (directory / "latest.json").write_text("{not json", encoding="utf-8")
+        assert discovery.brain_observations(tmp_path)["available"] is False
+
+    def test_brain_gaps_never_become_candidates(self, tmp_path: Path) -> None:
+        root = self.brain_store(tmp_path, {
+            "generated_at": "2026-09-24T00:00:00+00:00",
+            "gaps": [
+                {"domain": "Taxonomy", "priority": "CRITICAL",
+                 "proposed_action": "Add or connect taxonomy data sources."},
+            ],
+        })
+        result = discovery.discover(root)
+        assert result["candidate_count"] == 0
+        assert result["brain"]["materialised"] is False
+        assert result["brain"]["gap_count"] == 1
+
+    def test_the_report_always_carries_a_brain_section(self, tmp_path: Path) -> None:
+        assert "brain" in discovery.discover(tmp_path)
+
+
+class TestUndeclaredImports:
+    """Which distribution provides a module is asked, never guessed."""
+
+    def repo_with(self, tmp_path: Path, source: str, *, requirements: str = "fastapi\n") -> Path:
+        (tmp_path / "requirements.txt").write_text(requirements, encoding="utf-8")
+        app = tmp_path / "app"
+        app.mkdir(exist_ok=True)
+        (app / "main.py").write_text(source, encoding="utf-8")
+        return tmp_path
+
+    PROVIDES: ClassVar[dict[str, list[str]]] = {
+        "starlette": ["starlette"],
+        "fastapi": ["fastapi"],
+    }
+
+    def test_a_direct_import_of_an_undeclared_distribution_is_reported(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "from starlette.responses import JSONResponse\n")
+        candidates = discovery.discover_undeclared_imports(root, provided_by=self.PROVIDES)
+        assert len(candidates) == 1
+        assert "starlette" in candidates[0].title
+        assert candidates[0].evidence[0].where == "app/main.py"
+
+    def test_a_declared_distribution_is_not_reported(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "import fastapi\n")
+        assert discovery.discover_undeclared_imports(root, provided_by=self.PROVIDES) == []
+
+    def test_a_module_no_installed_distribution_provides_is_not_reported(self, tmp_path: Path) -> None:
+        """A sibling script imported by path read as a missing package, once."""
+        root = self.repo_with(tmp_path, "import oc_no_api_guard\n")
+        assert discovery.discover_undeclared_imports(root, provided_by=self.PROVIDES) == []
+
+    def test_an_ambiguously_provided_module_is_refused(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "import shared\n")
+        provides = dict(self.PROVIDES, shared=["one-dist", "another-dist"])
+        assert discovery.discover_undeclared_imports(root, provided_by=provides) == []
+
+    def test_the_standard_library_is_never_a_missing_dependency(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "import json\nimport pathlib\n")
+        provides = dict(self.PROVIDES, json=["some-backport"])
+        assert discovery.discover_undeclared_imports(root, provided_by=provides) == []
+
+    def test_a_relative_import_is_not_a_distribution(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "from . import sibling\nfrom .deep import thing\n")
+        assert discovery.discover_undeclared_imports(root, provided_by=self.PROVIDES) == []
+
+    def test_test_files_are_not_production_imports(self, tmp_path: Path) -> None:
+        """A test may legitimately import a dev-only distribution."""
+        self.repo_with(tmp_path, "import fastapi\n")
+        tests = tmp_path / "tests"
+        tests.mkdir()
+        (tests / "test_x.py").write_text("import starlette\n", encoding="utf-8")
+        assert discovery.discover_undeclared_imports(tmp_path, provided_by=self.PROVIDES) == []
+
+    def test_a_file_that_does_not_parse_contributes_nothing(self, tmp_path: Path) -> None:
+        root = self.repo_with(tmp_path, "def broken(:\n")
+        assert discovery.discover_undeclared_imports(root, provided_by=self.PROVIDES) == []
+
+    def test_this_repositorys_finding_is_the_one_measured(self) -> None:
+        """A live check against the real tree, with the real resolver."""
+        root = Path(__file__).resolve().parents[1]
+        found = {
+            candidate.title.split()[1].rstrip(",")
+            for candidate in discovery.discover_undeclared_imports(root)
+        }
+        # Asserted as a subset relation, not an equality: a distribution this
+        # environment has not installed yields no finding, so the exact set is
+        # a property of the environment and pinning it would be a false claim.
+        assert "googleapiclient" not in found, "resolved by google-api-python-client"
