@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
@@ -17,6 +17,7 @@ from app.reasoning_ledger.models import (
 from app.reasoning_ledger.operational_service import OperationalReasoningLedgerService
 from app.reasoning_ledger.persistence import (
     TABLES,
+    LedgerRevisionUnreadableError,
     ReasoningLedgerRevision,
     SqlAlchemyReasoningLedgerRepository,
 )
@@ -206,3 +207,81 @@ def test_persistence_failure_is_503_not_an_empty_ledger(api, monkeypatch):
 
     assert response.status_code == 503
     assert response.json()["detail"] == {"code": "LEDGER_PERSISTENCE_UNAVAILABLE"}
+
+
+def _damage(db: Session, ledger_id: str, version: int) -> None:
+    """Corrupt one stored revision payload in place, as a bad write would."""
+    db.execute(
+        update(ReasoningLedgerRevision)
+        .where(
+            ReasoningLedgerRevision.ledger_id == ledger_id,
+            ReasoningLedgerRevision.version == version,
+        )
+        .values(canonical_payload={"not": "a ledger"})
+    )
+    db.commit()
+
+
+def test_a_damaged_revision_is_reported_as_damage_not_as_a_missing_one(api):
+    """Three failures that must not be confused, and previously were.
+
+    A payload that will not deserialize is not an absent revision, not a
+    persistence outage, and not an empty ledger. Before this it escaped
+    ``_invoke`` entirely and arrived as a bare 500 naming nothing, so an
+    operator could not tell corruption from a service being down.
+    """
+    _, client, db, ledger_id = api
+    _damage(db, ledger_id, 2)
+
+    response = client.get(f"/api/reasoning-ledgers/{ledger_id}/revisions/2")
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == {
+        "code": "LEDGER_REVISION_UNREADABLE",
+        "ledger_id": ledger_id,
+        "requested_version": 2,
+    }
+
+
+def test_a_damaged_revision_is_not_served_as_an_empty_or_partial_ledger(api):
+    """A 200 carrying a stub would let a claim be inspected against nothing."""
+    _, client, db, ledger_id = api
+    _damage(db, ledger_id, 2)
+
+    response = client.get(f"/api/reasoning-ledgers/{ledger_id}/revisions/2")
+
+    assert response.status_code != 200
+    assert "revision" not in response.json()
+
+
+def test_one_damaged_revision_does_not_make_the_rest_unreadable(api):
+    """Damage is scoped to the row that carries it, not to the ledger."""
+    _, client, db, ledger_id = api
+    _damage(db, ledger_id, 2)
+
+    for version in (1, 3):
+        response = client.get(f"/api/reasoning-ledgers/{ledger_id}/revisions/{version}")
+        assert response.status_code == 200
+        assert response.json()["revision"]["version"] == version
+
+
+def test_a_damaged_revision_still_counts_as_a_version_that_exists(api):
+    """Its absence from available_versions would report a shorter history."""
+    _, client, db, ledger_id = api
+    _damage(db, ledger_id, 2)
+
+    detail = client.get(f"/api/reasoning-ledgers/{ledger_id}/revisions/9").json()[
+        "detail"
+    ]
+    assert detail["available_versions"] == [1, 2, 3]
+
+
+def test_damage_is_raised_as_its_own_error_from_the_service(api):
+    """The distinction exists in the code, not only in the HTTP mapping."""
+    _, _, db, ledger_id = api
+    _damage(db, ledger_id, 2)
+
+    with pytest.raises(LedgerRevisionUnreadableError) as error:
+        OperationalReasoningLedgerService(db).revision(ledger_id, OWNER, 2)
+    assert error.value.version == 2
+    assert error.value.ledger_id == ledger_id
