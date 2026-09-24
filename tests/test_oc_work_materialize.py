@@ -60,6 +60,8 @@ class FakeGitHub:
 
     def __call__(self, args, payload=None):
         self.calls.append(copy.deepcopy(args))
+        if args[:2] == ["label", "create"]:
+            return None
         if args[:2] == ["issue", "list"]:
             return [{"number": index, "body": body} for index, body in enumerate(self.bodies, 1)]
         if args[:2] == ["issue", "create"]:
@@ -198,3 +200,53 @@ class TestFailClosed:
 
 def test_the_plan_is_json_serialisable_for_the_workflow() -> None:
     json.dumps(materialize.plan(report(candidate()), set()))
+
+
+class TestLabelsExistBeforeTheWrite:
+    def test_every_label_is_created_before_the_issue(self) -> None:
+        """A label the repository lacks fails `gh issue create` outright.
+
+        The first live pass filed nothing for this reason and reported success.
+        """
+        transport = FakeGitHub()
+        materialize.apply_plan(
+            materialize.plan(report(candidate()), set()), REPO, dry_run=False, call=transport
+        )
+        kinds = [call[:2] for call in transport.calls]
+        assert ["label", "create"] in kinds
+        assert kinds.index(["label", "create"]) < kinds.index(["issue", "create"])
+
+    def test_each_of_the_four_labels_is_ensured(self) -> None:
+        transport = FakeGitHub()
+        materialize.apply_plan(
+            materialize.plan(report(candidate()), set()), REPO, dry_run=False, call=transport
+        )
+        created = {call[2] for call in transport.calls if call[:2] == ["label", "create"]}
+        assert created == {"oc-queued", "oc-p1", "oc-discovered", "oc-lane:calyx"}
+
+    def test_creation_is_idempotent(self) -> None:
+        transport = FakeGitHub()
+        materialize.apply_plan(
+            materialize.plan(report(candidate()), set()), REPO, dry_run=False, call=transport
+        )
+        assert all(
+            "--force" in call for call in transport.calls if call[:2] == ["label", "create"]
+        )
+
+    def test_a_label_outside_this_modules_vocabulary_is_refused(self) -> None:
+        """Filing an issue is not authority to invent repository vocabulary."""
+        with pytest.raises(ValueError, match="outside this module's vocabulary"):
+            materialize.ensure_labels(REPO, ["something-someone-typoed"], call=FakeGitHub())
+
+    def test_any_lane_label_is_allowed_because_the_table_owns_that_shape(self) -> None:
+        transport = FakeGitHub()
+        assert materialize.ensure_labels(REPO, ["oc-lane:vision-lab"], call=transport) == [
+            "oc-lane:vision-lab"
+        ]
+
+    def test_a_dry_run_creates_no_labels_either(self) -> None:
+        transport = FakeGitHub()
+        materialize.apply_plan(
+            materialize.plan(report(candidate()), set()), REPO, call=transport
+        )
+        assert transport.calls == []

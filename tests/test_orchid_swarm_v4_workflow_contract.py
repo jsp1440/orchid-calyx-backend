@@ -149,3 +149,14 @@ def test_v4_intake_is_bounded_and_cannot_stop_the_controller():
     # Materialization must not run on a discovery pass that failed: the report
     # file would be stale or absent and the plan would be read from neither.
     assert "steps.discovery.outcome == 'success'" in materialize["if"]
+
+
+def test_v4_summary_reports_the_intake_outcome_not_its_conclusion():
+    """`continue-on-error` makes a failed step's conclusion `success`.
+
+    The first live intake pass failed and the summary said "work filed this
+    pass: 0" with nothing to indicate a failure had happened, which is an
+    absent result wearing a passing result's clothes.
+    """
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "steps.discovery.outcome }} materialize=${{ steps.materialize.outcome" in text

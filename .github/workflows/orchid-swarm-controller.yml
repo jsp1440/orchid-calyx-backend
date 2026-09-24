@@ -353,6 +353,12 @@ jobs:
             echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<"$PLAN")"
             echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<"$PLAN")"
             echo "- discovered candidates: $(jq -r '.candidate_count' "$RUNNER_TEMP/work-discovery.json" 2>/dev/null || echo unavailable)"
+            # The OUTCOME, not the conclusion. Both intake steps are
+            # continue-on-error, so their conclusion is success even when they
+            # failed -- the first live pass filed nothing and reported
+            # "0 filed" with no indication anything had gone wrong, which is an
+            # absent result wearing a passing result's clothes.
+            echo "- intake: discovery=${{ steps.discovery.outcome }} materialize=${{ steps.materialize.outcome }}"
             echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"

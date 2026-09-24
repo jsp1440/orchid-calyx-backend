@@ -87,6 +87,49 @@ def existing_fingerprints(repository: str, *, call: Transport = github) -> set[s
     return found
 
 
+#: Colour and description for every label this module may apply. A label the
+#: repository does not have makes `gh issue create` fail outright, which is how
+#: the first live pass filed nothing while reporting success -- the failure was
+#: masked by `continue-on-error` and the summary printed "0 filed".
+LABEL_DEFINITIONS: dict[str, tuple[str, str]] = {
+    "oc-queued": ("1d76db", "Eligible for autonomous Orchid Continuum execution"),
+    "oc-discovered": ("5319e7", "Filed by work discovery from repository evidence, not by a person"),
+    "oc-p0": ("b60205", "Portfolio priority P0"),
+    "oc-p1": ("d93f0b", "Portfolio priority P1"),
+    "oc-p2": ("e99695", "Portfolio priority P2"),
+    "oc-p3": ("1d76db", "Portfolio priority P3"),
+    "oc-p4": ("c5def5", "Portfolio priority P4"),
+    "oc-p5": ("ededed", "Portfolio priority P5"),
+}
+
+LANE_LABEL = re.compile(r"^oc-lane:[a-z0-9][a-z0-9-]*$")
+
+
+def ensure_labels(repository: str, labels: list[str], *, call: Transport = github) -> list[str]:
+    """Create any label this pass needs that the repository does not have.
+
+    ``gh label create --force`` is idempotent, so this is safe to run on every
+    pass. A label outside the two shapes this module owns is refused rather
+    than created: filing an issue is not authority to invent repository
+    vocabulary, and a typo'd label would otherwise become a permanent fixture.
+    """
+    ensured: list[str] = []
+    for label in labels:
+        if label in LABEL_DEFINITIONS:
+            colour, description = LABEL_DEFINITIONS[label]
+        elif LANE_LABEL.fullmatch(label):
+            colour, description = "0e8a16", f"Orchid Continuum product lane: {label.split(':', 1)[1]}"
+        else:
+            raise ValueError(f"refusing to create a label outside this module's vocabulary: {label!r}")
+        call(
+            ["label", "create", label, "--repo", repository, "--color", colour,
+             "--description", description, "--force"],
+            None,
+        )
+        ensured.append(label)
+    return ensured
+
+
 def issue_body(candidate: dict[str, Any]) -> str:
     """The issue text, including the machine-readable markers the lanes read."""
     lines = [
@@ -231,6 +274,9 @@ def apply_plan(
             if action["fingerprint"] in existing_fingerprints(repository, call=call):
                 results.append({"fingerprint": action["fingerprint"], "outcome": "already_filed"})
                 continue
+            # Before the write, not after: a missing label fails the create
+            # outright and the work is simply never filed.
+            ensure_labels(repository, list(action["labels"]), call=call)
             args = ["issue", "create", "--repo", repository,
                     "--title", action["title"], "--body", action["body"]]
             for label in action["labels"]:
