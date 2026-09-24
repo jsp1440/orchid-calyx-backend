@@ -18,7 +18,11 @@ from .models import (
     UncertaintyMarker,
 )
 from .operational_service import OperationalReasoningLedgerService, ProjectNotFoundError
-from .persistence import LedgerRevisionNotFoundError, StaleLedgerVersionError
+from .persistence import (
+    LedgerRevisionNotFoundError,
+    LedgerRevisionUnreadableError,
+    StaleLedgerVersionError,
+)
 from .schemas import ConflictResolutionIn, LedgerCreateIn, LedgerEntryIn, ReviewIn
 from .serialization import ledger_to_dict
 from .service import LedgerNotFoundError
@@ -48,6 +52,16 @@ def _invoke(db: Session, request: Request, operation):
                 "ledger_id": exc.ledger_id,
                 "requested_version": exc.version,
                 "available_versions": list(exc.available_versions),
+            },
+        ) from exc
+    except LedgerRevisionUnreadableError as exc:
+        db.rollback()
+        raise HTTPException(
+            500,
+            detail={
+                "code": "LEDGER_REVISION_UNREADABLE",
+                "ledger_id": exc.ledger_id,
+                "requested_version": exc.version,
             },
         ) from exc
     except LedgerNotFoundError as exc:
