@@ -48,11 +48,17 @@ OPTIONAL_MARKER = re.compile(
 #: possible. ``reconcile`` is ``scripts/oc_swarm_provider_free_worker.py``, which
 #: reconciles GitHub state and deliberately performs no repository writes.
 #:
+#: ``validate`` is ``scripts/oc_provider_free_validate.py``, which runs the
+#: bounded validation commands an issue names from the registry in
+#: ``scripts/oc_validation_commands.py`` and settles the issue from their exit
+#: codes. It exists because a lane whose only executor performs no commands can
+#: complete a cycle without producing any evidence about the revision.
+#:
 #: Adding a name here without adding the executor behind it re-creates the exact
 #: failure this constant was introduced to stop: the controller admits the task,
 #: the worker does not recognise it, and the issue is marked blocked for lacking
 #: a capability nothing ever had.
-DETERMINISTIC_EXECUTORS = frozenset({"reconcile"})
+DETERMINISTIC_EXECUTORS = frozenset({"reconcile", "validate"})
 
 
 @dataclass(frozen=True)

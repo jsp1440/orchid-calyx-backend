@@ -370,7 +370,22 @@ jobs:
             echo "execute=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Execute deterministic provider-free reconciliation
+      # Validation tasks run this repository's own checks, so the lane needs the
+      # interpreter and test dependencies. Reconcile-only tasks pay for the
+      # setup too; it is a bounded, cached cost and it keeps one lane
+      # definition rather than two that can drift.
+      - name: Prepare deterministic validation runtime
+        if: steps.lease.outputs.execute == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deterministic validation dependencies
+        if: steps.lease.outputs.execute == 'true'
+        run: python3 -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+
+      - name: Execute deterministic provider-free work
         if: steps.lease.outputs.execute == 'true'
         id: reconcile
         shell: bash
@@ -389,11 +404,41 @@ jobs:
             echo "Issue #$ISSUE_NUMBER has no durable Swarm lease receipt." >&2
             exit 2
           }
+
+          # One parser decides the mode and the declared command ids. Re-reading
+          # the markers in shell is how the job and the worker would come to
+          # disagree about what this task asked for.
+          python3 scripts/oc_swarm_provider_free_worker.py \
+            --plan --issue-json "$issue" > "$RUNNER_TEMP/provider-free-plan.json"
+          mode=$(jq -r '.mode' "$RUNNER_TEMP/provider-free-plan.json")
+
+          validation_args=()
+          if [[ "$mode" == "validate" ]]; then
+            command_args=()
+            while read -r command_id; do
+              [[ -n "$command_id" ]] || continue
+              command_args+=(--command "$command_id")
+            done < <(jq -r '.commands[]' "$RUNNER_TEMP/provider-free-plan.json")
+            # The executor exits non-zero when a command fails. That is a
+            # finding about the revision, not a broken job, so the receipt is
+            # still written and the worker settles the issue from it.
+            set +e
+            python3 scripts/oc_provider_free_validate.py "${command_args[@]}" \
+              > "$RUNNER_TEMP/provider-free-validation.json"
+            set -e
+            jq '{schema, passed, command_count, failed_command_ids,
+                 results: [.results[] | {command_id, exit_code, passed, timed_out,
+                                         duration_seconds, output_digest}]}' \
+              "$RUNNER_TEMP/provider-free-validation.json"
+            validation_args=(--validation-json "$(jq -c . "$RUNNER_TEMP/provider-free-validation.json")")
+          fi
+
           python3 scripts/oc_swarm_provider_free_worker.py \
             --issue-json "$issue" \
             --lease-comment "$lease" \
             --files-json '[]' \
             --integration-sha "$INTEGRATION_SHA" \
+            "${validation_args[@]}" \
             | tee "$RUNNER_TEMP/provider-free-result.json"
           disposition=$(jq -r '.disposition' "$RUNNER_TEMP/provider-free-result.json")
           echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
@@ -430,6 +475,18 @@ jobs:
           esac
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      - name: Retain deterministic execution evidence
+        if: always() && steps.lease.outputs.execute == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-free-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.issue_number }}
+          path: |
+            ${{ runner.temp }}/provider-free-plan.json
+            ${{ runner.temp }}/provider-free-validation.json
+            ${{ runner.temp }}/provider-free-result.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Fail closed and release lease after reconciliation error
         if: failure() && steps.lease.outputs.execute == 'true'

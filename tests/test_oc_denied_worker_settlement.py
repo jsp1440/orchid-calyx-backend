@@ -78,9 +78,16 @@ class DenialGitHub:
         return copy.deepcopy(receipt)
 
 
-@pytest.fixture
-def admitted():
-    transport = DenialGitHub()
+def admit(transport=None, *, body=None):
+    """Claim a lease the way the controller does, on the body under test.
+
+    The lease binds the issue's material fingerprint, so a body that changes
+    after admission is a different task. Tests that need a particular body must
+    set it before the claim, not after.
+    """
+    transport = transport or DenialGitHub()
+    if body is not None:
+        transport.issue["body"] = body
     worker = {
         "issue_number": NUMBER,
         "reads": [],
@@ -98,6 +105,11 @@ def admitted():
     assert result["launch_count"] == 1
     transport.calls.clear()
     return transport
+
+
+@pytest.fixture
+def admitted():
+    return admit()
 
 
 def park(transport, **overrides):
@@ -362,3 +374,49 @@ def test_modern_denial_with_changed_binding_preserves_claim(admitted, change):
         denial["body"] = denial["body"].replace(old, new)
     snapshot = observe(admitted.comments)
     assert [lease["id"] for lease in snapshot["leases"]] == [5000]
+
+
+def test_deterministic_work_is_rerouted_to_the_queue_instead_of_blocked():
+    """The denial loop's requeue half, closed from the settlement side.
+
+    #1401 was released from ``oc-blocked`` back to ``oc-queued`` by a stale
+    blocker marker and handed straight back to the same Claude route. Work that
+    a deterministic executor can run does not need that round trip: it goes to
+    the queue with no blocker recorded, and the planner routes it to a lane that
+    cannot spend.
+    """
+    admitted = admit(
+        body=(
+            "OC-SWARM-WRITES: control-plane\n"
+            "OC-SWARM-PROVIDER-FREE: validate\n"
+            "OC-SWARM-VALIDATE: control-plane-tests\n"
+            "OC-SWARM-DISPOSITION: done"
+        )
+    )
+    result = park(admitted)
+    assert set(admitted.issue["labels"]) == {"oc-queued", "oc-p4"}
+    assert result["state"] == "oc-queued"
+    assert result["route"]["disposition"] == "provider-free"
+    assert result["route"]["executor"] == "validate"
+    assert result["route"]["provider_called"] is False
+    assert result["blocker"] is None
+    assert result["blocker_fingerprint"] is None
+    body = admitted.comments[-1]["body"]
+    assert "rerouted to the deterministic lane" in body
+    # No blocker line: the next reconciliation must not hold work that is running.
+    assert "OC-BLOCKED-ON:" not in body
+
+
+def test_a_reroute_still_releases_the_lease_and_never_keeps_running():
+    admitted = admit(
+        body=(
+            "OC-SWARM-WRITES: control-plane\n"
+            "OC-SWARM-PROVIDER-FREE: reconcile\n"
+            "OC-SWARM-DISPOSITION: done"
+        )
+    )
+    park(admitted)
+    assert "oc-running" not in admitted.issue["labels"]
+    writes = [args for args, _ in admitted.calls if args[:2] == ["issue", "edit"]]
+    assert len(writes) == 1
+    assert "--remove-label" in writes[0] and "oc-running" in writes[0]
