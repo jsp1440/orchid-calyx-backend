@@ -126,6 +126,28 @@ _COMMANDS = (
         ),
     ),
     ValidationCommand(
+        command_id="calyx-async-acceptance",
+        argv=_pytest(
+            "tests/test_calyx_brain_001_literature_e2e.py",
+            "tests/test_calyx_brain_001a_literature_candidate_handoff.py",
+            "tests/test_calyx_brain_001b_canonical_source_binding.py",
+            "tests/test_calyx_brain_002_operational.py",
+            "tests/test_calyx_brain_integration_acceptance.py",
+            "tests/test_calyx_glossary_001_vocabulary_intake.py",
+            "tests/test_calyx_syn_004_evidence_matrix.py",
+            "tests/test_literature_extraction_pipeline.py",
+        ),
+        summary=(
+            "Run the Calyx literature, glossary and evidence-matrix acceptance "
+            "files, which are the async surface."
+        ),
+        proves=(
+            "the Calyx literature-to-evidence acceptance tests actually execute "
+            "and pass on this exact revision, rather than reporting unrun for "
+            "want of an async plugin"
+        ),
+    ),
+    ValidationCommand(
         command_id="control-plane-compiles",
         argv=("python3", "-m", "compileall", "-q", "scripts", "runtime/swarm"),
         summary="Byte-compile the control-plane Python sources.",

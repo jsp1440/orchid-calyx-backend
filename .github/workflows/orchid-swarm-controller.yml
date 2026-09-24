@@ -120,6 +120,41 @@ jobs:
           done < <(gh issue list --repo "$REPO" --state open \
             --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
 
+      # Intake. Until now every TaskLeaf arrived because a person wrote an
+      # issue and attached a label, and the plan step said so every five
+      # minutes: free lanes, nothing admitted. This reads the repository and
+      # files bounded work from facts it can point at — a marker no requirements
+      # file declares, a node id a runner reported. It never reads prose, never
+      # calls a provider, and files at most three issues per pass, each carrying
+      # a fingerprint of the condition so the next pass files none of them again.
+      - name: Discover product work from repository evidence
+        id: discovery
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_discovery --root . \
+            > "$RUNNER_TEMP/work-discovery.json"
+          jq '{schema, candidate_count,
+               candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
+            "$RUNNER_TEMP/work-discovery.json"
+
+      - name: File discovered work into the canonical queue
+        id: materialize
+        if: steps.discovery.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/work-discovery.json" \
+            --max-new 3 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/work-materialization.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/work-materialization.json")" -eq 0
+
       - name: Reconcile stale execution leases
         id: leases
         shell: bash
@@ -317,6 +352,8 @@ jobs:
             echo "- dependency blocked: $(jq -r '.dependency_suppressed | length' <<<"$PLAN")"
             echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<"$PLAN")"
             echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<"$PLAN")"
+            echo "- discovered candidates: $(jq -r '.candidate_count' "$RUNNER_TEMP/work-discovery.json" 2>/dev/null || echo unavailable)"
+            echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"

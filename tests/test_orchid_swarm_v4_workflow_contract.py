@@ -107,3 +107,45 @@ def test_v4_applies_only_authorized_blocked_release_plan():
     assert "oc_blocked_release_apply.py" in text
     assert "--apply" in text
     assert "blocked_reconciliation.release_plan" in text
+
+
+def test_v4_fills_its_own_queue_before_it_plans_a_wave():
+    """Intake must run before the snapshot, or work waits a whole pulse.
+
+    Discovery that files an issue after `Build repository snapshot` has read the
+    issue list files work the same wave cannot see, so every discovered task
+    idles until the next pulse for no reason.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    names = [step.get("name") for step in steps]
+    assert "Discover product work from repository evidence" in names
+    assert "File discovered work into the canonical queue" in names
+    assert names.index("File discovered work into the canonical queue") < names.index(
+        "Build repository snapshot"
+    )
+
+
+def test_v4_intake_is_bounded_and_cannot_stop_the_controller():
+    """A discoverer defect may not take the wave down with it.
+
+    Both intake steps are `continue-on-error`, so a bad pass costs this wave its
+    new work and nothing else: leases still reconcile, the queue still plans,
+    and the lanes still run.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    intake = [
+        step
+        for step in steps
+        if step.get("id") in {"discovery", "materialize"}
+    ]
+    assert len(intake) == 2
+    assert all(step.get("continue-on-error") is True for step in intake)
+    materialize = next(step for step in intake if step["id"] == "materialize")
+    assert "--max-new 3" in materialize["run"]
+    # Materialization must not run on a discovery pass that failed: the report
+    # file would be stale or absent and the plan would be read from neither.
+    assert "steps.discovery.outcome == 'success'" in materialize["if"]
