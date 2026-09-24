@@ -1,4 +1,10 @@
 fastapi<0.116
+# Imported directly by app/main.py and app/university/learner_auth.py, so it is
+# declared rather than relied on as FastAPI's transitive install. The range is
+# the one FastAPI 0.115.x already requires (starlette>=0.40.0,<0.47.0), read
+# from its own metadata, so this cannot conflict with the pin above.
+# Filed by work discovery as #1594.
+starlette>=0.40,<0.47
 uvicorn
 sqlalchemy>=2.0
 psycopg[binary]
