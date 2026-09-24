@@ -127,6 +127,24 @@ jobs:
       # file declares, a node id a runner reported. It never reads prose, never
       # calls a provider, and files at most three issues per pass, each carrying
       # a fingerprint of the condition so the next pass files none of them again.
+      # Discovery asks the environment which distribution provides a module,
+      # rather than guessing from its name. That answer is only as complete as
+      # what is installed, so the production requirements are installed here:
+      # without them the undeclared-import source reports nothing at all, which
+      # is safe but is not coverage. Cached, so it costs a pulse very little.
+      - name: Provision the environment discovery reads
+        id: discovery_env
+        continue-on-error: true
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install production requirements for import discovery
+        if: steps.discovery_env.outcome == 'success'
+        continue-on-error: true
+        run: python3 -m pip install --quiet -r requirements.txt
+
       - name: Discover product work from repository evidence
         id: discovery
         continue-on-error: true

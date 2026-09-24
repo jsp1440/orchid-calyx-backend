@@ -160,3 +160,26 @@ def test_v4_summary_reports_the_intake_outcome_not_its_conclusion():
     """
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "steps.discovery.outcome }} materialize=${{ steps.materialize.outcome" in text
+
+
+def test_v4_provisions_the_environment_discovery_reads_before_reading_it():
+    """The undeclared-import source asks what is installed, not what it guesses.
+
+    Without the production requirements it reports nothing at all -- safe, but
+    not coverage, and the first continuation wave filed nothing for exactly
+    this reason.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    names = [step.get("name") for step in steps]
+    assert names.index("Install production requirements for import discovery") < names.index(
+        "Discover product work from repository evidence"
+    )
+    install = next(
+        step for step in steps
+        if step.get("name") == "Install production requirements for import discovery"
+    )
+    # Provisioning is best-effort: a slow index must cost the wave its new
+    # import findings, never the wave.
+    assert install.get("continue-on-error") is True
