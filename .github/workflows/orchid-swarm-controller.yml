@@ -35,7 +35,24 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   issues:
-    types: [closed, reopened, labeled, unlabeled]
+    # Deliberately not `labeled`/`unlabeled`. This controller relabels issues
+    # itself: `oc-queued` -> `oc-running` on every claim, and `oc-running` ->
+    # `oc-done`/`oc-blocked`/`oc-owner-gate` on every settlement. With those two
+    # event types the controller is its own trigger, and one wave of three lanes
+    # emits about a dozen `issues` events.
+    #
+    # Every one of them enters the concurrency group below, and because GitHub
+    # keeps at most one PENDING run per group, each arrival cancels the run
+    # waiting there. Observed on 2026-09-24: run 35972010403 (the scheduled
+    # dispatch onto this branch) was cancelled three seconds after it was
+    # created, by the label events three issues had just emitted; run
+    # 35970187867 died the same way. The wave that would have done the work is
+    # the one that gets evicted, and the bounded refill wave a completed wave
+    # dispatches is evicted by that wave's own settlement labels.
+    #
+    # The `*/5` pulse below already owns queue latency, so nothing is lost but
+    # the self-inflicted churn.
+    types: [closed, reopened]
   pull_request:
     types: [closed]
 
