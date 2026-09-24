@@ -25,9 +25,32 @@ def test_v4_refills_on_state_changes_and_periodic_pulse():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert 'cron: "*/5 * * * *"' in text
     assert "issues:" in text
-    assert "types: [closed, reopened, labeled, unlabeled]" in text
+    assert "types: [closed, reopened]" in text
     assert "pull_request:" in text
     assert "types: [closed]" in text
+
+
+def test_v4_does_not_trigger_itself_on_the_labels_it_writes():
+    """The controller may not be its own trigger.
+
+    It relabels every issue it claims and every issue it settles. While
+    ``labeled``/``unlabeled`` were trigger types, one wave of three lanes emitted
+    about a dozen ``issues`` events, and because GitHub keeps at most one PENDING
+    run per concurrency group, each arrival cancelled the run waiting there — so
+    the wave that would have done the work was the one evicted. Run 35972010403
+    was cancelled three seconds after creation on 2026-09-24 by exactly this.
+
+    Pinned as a test rather than a comment because re-adding either type looks
+    harmless and restores the eviction immediately.
+    """
+    import yaml
+
+    triggers = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))[True]
+    assert "labeled" not in triggers["issues"]["types"]
+    assert "unlabeled" not in triggers["issues"]["types"]
+    # The periodic pulse is what owns queue latency once the label wakeups are
+    # gone, so it may not be removed in the same breath.
+    assert {"cron": "*/5 * * * *"} in triggers["schedule"]
 
 
 def test_v4_receipt_comes_from_confirmed_claim_adapter():
