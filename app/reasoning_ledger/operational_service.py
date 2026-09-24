@@ -25,6 +25,7 @@ from .models import (
 )
 from .persistence import (
     LedgerRevisionNotFoundError,
+    LedgerRevisionUnreadableError,
     SqlAlchemyReasoningLedgerRepository,
 )
 from .serialization import dict_to_ledger
@@ -219,7 +220,13 @@ class OperationalReasoningLedgerService:
                 version,
                 self.repository.available_versions(ledger_id, owner),
             )
-        ledger = dict_to_ledger(payload)
+        try:
+            ledger = dict_to_ledger(payload)
+        # A stored payload that will not deserialize is damage, whatever
+        # exception the decode raises. Narrowing here would let an
+        # unanticipated one escape as an unlabelled 500.
+        except Exception as exc:
+            raise LedgerRevisionUnreadableError(ledger_id, version) from exc
         self.projects.require_owned(ledger.project_id, owner)
         return ledger
 

@@ -27,7 +27,7 @@ from sqlalchemy.types import JSON
 
 from app.database import Base
 
-from .models import ReasoningLedger
+from .models import LedgerError, ReasoningLedger
 from .serialization import dict_to_ledger, ledger_to_canonical_json
 from .service import LedgerNotFoundError, LedgerValidationError
 
@@ -52,6 +52,24 @@ class LedgerRevisionNotFoundError(LedgerNotFoundError):
         self.version = version
         self.available_versions = tuple(available_versions)
         super().__init__(f"ledger revision not found: {ledger_id}@{version}")
+
+
+class LedgerRevisionUnreadableError(LedgerError):
+    """A revision row exists but its stored payload will not deserialize.
+
+    Kept distinct from every other failure on this path because it is the
+    only one that means the reasoning history itself is damaged. Reported as
+    a missing revision it would read as "that version was never written";
+    reported as a persistence failure it would read as "try again"; left
+    unhandled it surfaced as a bare 500 naming nothing, which told an
+    operator neither what broke nor where. A corrupt record is a finding,
+    and it has to arrive as one.
+    """
+
+    def __init__(self, ledger_id: str, version: int) -> None:
+        self.ledger_id = ledger_id
+        self.version = version
+        super().__init__(f"ledger revision unreadable: {ledger_id}@{version}")
 
 
 class ReasoningLedgerHead(Base):
