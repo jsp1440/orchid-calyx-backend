@@ -85,7 +85,7 @@ RESPONSE_KEYS = {
 GENUS_RE = re.compile(r"^[A-Z][a-z-]+$")  # :22
 SPECIES_RE = re.compile(r"^[A-Z][a-z-]+ [a-z][a-z-]+$")  # :23
 LOCALITY_KEY = re.compile(
-    r"lat|lon|long|coord|locality|geometry|elevation|point|wkt|geo", re.I
+    r"lat|lon|long|coord|locality|geometry|elevation|point|wkt|geo", re.IGNORECASE
 )
 
 
@@ -482,4 +482,6 @@ def test_two_groups_sharing_a_label_never_share_a_trait_identity(monkeypatch):
     assert_frontend_contract(body)
     ids = sorted(item["trait_id"] for item in body["distributions"])
     assert len(set(ids)) == 3
-    assert ids == ["flower width", "flower width [cm]", "flower width [mm]"]
+    # Groups are visited in label order, first-come keeps the bare identity; a
+    # later collision takes its unit, and a unit-less collision takes an ordinal.
+    assert ids == ["flower width", "flower width #2", "flower width [cm]"]
