@@ -1,6 +1,10 @@
+from dataclasses import replace
 from pathlib import Path
 
-from runtime.brain_capability_registry import canonical_brain_registry
+from runtime.brain_capability_registry import (
+    CapabilityRegistry,
+    canonical_brain_registry,
+)
 
 MIGRATION = (
     Path(__file__).parents[1]
@@ -80,7 +84,15 @@ def test_brain_registry_exposes_verified_language_layer_without_authority():
 
 
 def test_reasoning_ledger_is_still_not_promoted_by_dependency_completion():
-    result = canonical_brain_registry().eligibility("reasoning_ledger")
+    # The ledger is now registered OPERATIONAL explicitly (7423c45). What this
+    # guards is that an operational dependency alone never promotes it: the
+    # same registry with the ledger's own status at PARTIAL stays ineligible.
+    registry = canonical_brain_registry()
+    items = dict(registry._items)
+    items["reasoning_ledger"] = replace(items["reasoning_ledger"], status="PARTIAL")
+    partial = CapabilityRegistry(tuple(items.values()))
 
+    assert partial.eligibility("scientific_language_intake")["eligible"] is True
+    result = partial.eligibility("reasoning_ledger")
     assert result["eligible"] is False
     assert result["reasons"] == ["status is PARTIAL, not OPERATIONAL"]

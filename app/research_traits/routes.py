@@ -27,7 +27,9 @@ def get_service() -> ResearchTraitsService:
 def _subject(genus: str | None, species: str | None) -> tuple[str, str]:
     supplied = int(bool(genus)) + int(bool(species))
     if supplied != 1:
-        raise HTTPException(status_code=422, detail="Supply exactly one of genus or species")
+        raise HTTPException(
+            status_code=422, detail="Supply exactly one of genus or species"
+        )
     if genus is not None:
         name = genus.strip()
         if not GENUS_RE.fullmatch(name):

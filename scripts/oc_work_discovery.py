@@ -35,7 +35,8 @@ import re
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from importlib.metadata import packages_distributions
+from importlib.metadata import PackageNotFoundError, packages_distributions
+from importlib.metadata import version as _distribution_version
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,37 @@ from scripts.oc_product_lanes import (
 from scripts.oc_validation_commands import VALIDATION_COMMANDS
 
 REPORT_SCHEMA = "oc.work-discovery.v1"
+
+#: Sources whose remedy is a single line the evidence fully determines: the
+#: distribution is named by the evidence, the file is fixed by the source, and
+#: the version is read from the environment. Anything else needs authoring.
+MECHANICAL_SOURCES: dict[str, str] = {
+    "dependency-gap": "requirements-dev.txt",
+    "undeclared-import": "requirements.txt",
+}
+
+
+def installed_version(distribution: str) -> str | None:
+    """The version of ``distribution`` installed here, or None. Asked, not guessed."""
+    try:
+        return str(_distribution_version(distribution))
+    except PackageNotFoundError:
+        return None
+
+
+def declare_remedy(source: str, distribution: str, *, version_of=installed_version) -> dict[str, Any]:
+    """The structured remedy an edit lane can apply without reading prose.
+
+    ``installed_version`` is the environment's answer at discovery time and may
+    be None; the lane asks again in its own environment and refuses to write a
+    pin it did not observe.
+    """
+    return {
+        "kind": "declare-distribution",
+        "distribution": distribution,
+        "requirements_file": MECHANICAL_SOURCES[source],
+        "installed_version": version_of(distribution),
+    }
 
 #: Pytest markers whose behaviour is supplied by a separate distribution, and
 #: the distribution that supplies it. Deliberately a short, explicit table: an
@@ -157,6 +189,10 @@ class Candidate:
     #: True when the candidate exists to *establish* a binding rather than to do
     #: the work. Never carries a lane label.
     analysis_only: bool = False
+    #: Structured form of ``proposed_remedy`` for the mechanical sources: the
+    #: exact distribution, file and observed version. Empty for every other
+    #: source, which is what stops an edit lane from acting on prose.
+    remedy: dict[str, Any] = field(default_factory=dict)
     capabilities: tuple[str, ...] = field(default_factory=tuple)
     #: A registered validation command that covers every affected path, when one
     #: exists. This is what makes a filed task executable rather than merely
@@ -195,6 +231,7 @@ class Candidate:
             "fingerprint": self.fingerprint,
             "semantic_key": self.semantic_key,
             "proposed_remedy": self.proposed_remedy,
+            "remedy": dict(self.remedy),
             "capabilities": list(self.capabilities),
             "validation_command": self.validation_command,
             "labels": self.labels,
@@ -342,6 +379,7 @@ def discover_dependency_gaps(root: Path) -> list[Candidate]:
                     "install it wherever CI installs that file, then re-run the affected "
                     "files and record the restored result."
                 ),
+                remedy=declare_remedy("dependency-gap", distribution),
                 capabilities=("test-execution",),
                 validation_command=covering_validation_command(relative),
             )
@@ -406,6 +444,30 @@ def discover_failing_tests(report_text: str, root: Path) -> list[Candidate]:
 #: Trees whose imports are production dependencies. Tests are excluded: a test
 #: may legitimately import a dev-only distribution.
 RUNTIME_IMPORT_ROOTS = ("app", "runtime")
+
+#: The registered command that proves an undeclared-import remedy: the base
+#: application imports under the installed distributions. Bound only when
+#: every affected file is inside the production trees that command exercises;
+#: a finding elsewhere names no command and stays filed-but-unexecutable.
+PRODUCTION_IMPORTS_COMMAND = "production-runtime-imports"
+
+
+def import_validation_command(paths: list[str]) -> str:
+    """The command that settles an undeclared-import candidate, or "".
+
+    A literally covering command still wins when one exists. Otherwise the
+    production import check applies to files under ``app/`` or ``runtime/``
+    only -- the trees ``import app.main`` can reach -- and to nothing else.
+    """
+    covering = covering_validation_command(paths)
+    if covering:
+        return covering
+    if not paths or PRODUCTION_IMPORTS_COMMAND not in VALIDATION_COMMANDS:
+        return ""
+    roots = tuple(f"{root}/" for root in RUNTIME_IMPORT_ROOTS)
+    if all(path.startswith(roots) for path in paths):
+        return PRODUCTION_IMPORTS_COMMAND
+    return ""
 
 
 def _imported_modules(source: str) -> set[str]:
@@ -497,8 +559,9 @@ def discover_undeclared_imports(root: Path, *, provided_by: dict[str, list[str]]
                     f"Add {distribution} to requirements.txt with a pin consistent with the "
                     "dependency that currently supplies it, so the deployment declares what it imports."
                 ),
+                remedy=declare_remedy("undeclared-import", distribution),
                 capabilities=("schema-validation",),
-                validation_command=covering_validation_command(relative),
+                validation_command=import_validation_command(relative),
             )
         )
     return candidates
@@ -581,6 +644,15 @@ def brain_observations(root: Path, *, now: datetime | None = None) -> dict[str, 
     }
 
 
+def evidence_path(where: str) -> str:
+    """The repository path an evidence locator names.
+
+    A pytest node id carries its file before the first ``::``; a path is
+    already a path. Nothing else is inferred from the locator.
+    """
+    return str(where or "").split("::", 1)[0]
+
+
 def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     """Turn every unplaced candidate into one bounded analysis task.
 
@@ -591,7 +663,13 @@ def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     unplaced = [item for item in candidates if item.lane is None and not item.analysis_only]
     if not unplaced:
         return []
-    paths = sorted({item.where for candidate in unplaced for item in candidate.evidence})
+    # Evidence ``where`` is a repository path OR a pytest node id
+    # (``tests/test_x.py::test_a``). The lane table binds paths, so the
+    # question is asked about the file, once, however many of its tests
+    # failed. Asking it per node id counted thirteen "paths" for one file and
+    # gave the question a new identity every time a different test in that
+    # file went red -- an uncounted magnitude and a churning fingerprint.
+    paths = sorted({evidence_path(item.where) for candidate in unplaced for item in candidate.evidence})
     return [
         Candidate(
             source="binding-gap",

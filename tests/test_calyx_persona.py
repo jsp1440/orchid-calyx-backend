@@ -32,10 +32,7 @@ def test_calyx_answer_first_policy_blocks_workflow_menus_and_graph_limit_inferen
     assert "40 nodes returned" in text
     assert "must never be converted into an estimate of species richness" in text
     assert "should not ask unnecessary spelling or intent confirmations" in text
-    assert (
-        "literature retrieval should enrich or qualify the answer, not act as a veto"
-        in text
-    )
+    assert "literature retrieval should enrich or qualify the answer, not act as a veto" in text
 
 
 def test_fcos_voice_is_separate_publication_mode():
@@ -55,8 +52,15 @@ def test_generative_system_prompt_includes_persona_and_governance():
     assert "internal machinery" in prompt
     assert "answer-first rule" in prompt
     assert "fcos voice" in prompt
+    # Both governance sentences are asserted whole so that no clause (evidence
+    # scope, causation, publication, promotion, KG mutation, human review) can
+    # be dropped or diluted unnoticed.
     assert (
-        "do not generalize beyond the evidence, convert correlation into causation, "
-        "publish candidate knowledge, or mutate the knowledge graph"
+        "do not generalize beyond the evidence or convert correlation into causation."
         in prompt
+    )
+    assert (
+        "do not publish, promote, or activate candidate knowledge, and do not mutate "
+        "the knowledge graph: scientific publication requires human review and is "
+        "never automatic." in prompt
     )
