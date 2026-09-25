@@ -312,3 +312,18 @@ def test_genus_can_resolve_multiple_species() -> None:
     assert _TaxonService()._resolve_taxon_ids(
         cursor, rank="genus", name="Cattleya"
     ) == ["taxon-a", "taxon-b"]
+
+
+def test_colliding_labels_at_the_id_length_limit_stay_unique() -> None:
+    label = "x" * 600
+    rows = [
+        {"trait_name": label, "trait_value": 1, "unit": unit, "support_count": 1}
+        for unit in (None, "mm", "cm")
+    ]
+
+    result = aggregate_trait_rows(rows, source_table="oc_views.trait_resolved_v4")
+
+    ids = [distribution["trait_id"] for distribution in result]
+    assert len(ids) == 3
+    assert len(set(ids)) == 3
+    assert all(len(trait_id) <= 512 for trait_id in ids)

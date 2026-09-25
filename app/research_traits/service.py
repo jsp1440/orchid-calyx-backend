@@ -154,6 +154,11 @@ def _state(row: dict[str, Any]) -> str:
     return "AVAILABLE"
 
 
+def _with_suffix(base: str, suffix: str, limit: int = 512) -> str:
+    suffix = suffix[:limit]
+    return f"{base[: limit - len(suffix)]}{suffix}"
+
+
 def _unique_trait_id(candidate: str, unit: str | None, seen: set[str]) -> str:
     """A trait identity no earlier distribution in this response already uses.
 
@@ -162,10 +167,12 @@ def _unique_trait_id(candidate: str, unit: str | None, seen: set[str]) -> str:
     """
     trait_id = candidate[:512]
     if trait_id in seen and unit:
-        trait_id = f"{candidate} [{unit}]"[:512]
+        trait_id = _with_suffix(candidate, f" [{unit}]")
     ordinal = 2
     while trait_id in seen:
-        trait_id = f"{candidate} #{ordinal}"[:512]
+        # Truncate the base, never the suffix: a label at the 512-character
+        # limit would otherwise yield the same id for every ordinal.
+        trait_id = _with_suffix(candidate, f" #{ordinal}")
         ordinal += 1
     seen.add(trait_id)
     return trait_id
