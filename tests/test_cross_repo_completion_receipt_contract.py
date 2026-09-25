@@ -21,10 +21,10 @@ from runtime.completion_receipt_contract import (
     REPO_ROOT,
     CompletionReceiptError,
     canonical_json,
+    evidence_digest,
     frontend_declares_full_sha_pattern,
     frontend_required_field_sets,
     load_contract,
-    evidence_digest,
     validate_completion_receipt,
 )
 

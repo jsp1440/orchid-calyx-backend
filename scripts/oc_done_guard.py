@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from runtime.oc_done_guard import (  # noqa: E402
+from runtime.oc_done_guard import (
     DONE_LABEL,
     FULL_SHA,
     Observation,
@@ -149,9 +149,11 @@ def main(argv: list[str] | None = None) -> int:
                     "--repo",
                     args.repo,
                     "--body",
-                    f"[OC-DONE-GUARD] `oc-done` withdrawn: {t['reason']} {json.dumps(t['evidence'], sort_keys=True)}. "
-                    "Completion requires a closed issue, a receipt whose full implementation SHA is on "
-                    f"`{args.target_branch}`, and changed files or a merged PR. Returned to `oc-validating`.",
+                    (
+                        f"[OC-DONE-GUARD] `oc-done` withdrawn: {t['reason']} {json.dumps(t['evidence'], sort_keys=True)}. "
+                        "Completion requires a closed issue, a receipt whose full implementation SHA is on "
+                        f"`{args.target_branch}`, and changed files or a merged PR. Returned to `oc-validating`."
+                    ),
                 ],
                 check=True,
                 capture_output=True,
