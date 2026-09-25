@@ -66,3 +66,16 @@ def test_gated_suite_skips_cleanly_when_postgres_is_unusable(path: str):
     assert "FAILED" not in output and "ERROR" not in output
     assert "PostgreSQL not usable at postgresql://nobody:***@127.0.0.1:1/none" in output
     assert "hunter2" not in output
+
+
+def test_ci_turns_an_unusable_database_into_a_failure_not_a_skip(monkeypatch):
+    """A skip in CI would let a broken runner report the Postgres suites green."""
+    from tests import conftest
+
+    monkeypatch.delenv("OC_REQUIRE_POSTGRES", raising=False)
+    monkeypatch.setenv("CI", "true")
+    assert conftest._postgres_required_here() is True
+    monkeypatch.setenv("CI", "false")
+    assert conftest._postgres_required_here() is False
+    monkeypatch.setenv("OC_REQUIRE_POSTGRES", "1")
+    assert conftest._postgres_required_here() is True

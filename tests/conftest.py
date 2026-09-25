@@ -69,8 +69,35 @@ def pytest_collection_modifyitems(
         if marker is None:
             continue
         reason = _requires_postgres_skip_reason(marker)
-        if reason:
+        if not reason:
+            continue
+        if _postgres_required_here():
+            # In CI an unusable database is a broken runner, not an absent one.
+            # Skipping there would turn a red gate green; fail with the reason.
+            item.add_marker(pytest.mark.usefixtures("_postgres_required_but_unusable"))
+            item.user_properties.append(("postgres_unusable_reason", reason))
+        else:
             item.add_marker(pytest.mark.skip(reason=reason))
+
+
+def _postgres_required_here() -> bool:
+    """Whether an unusable PostgreSQL must fail rather than skip.
+
+    GitHub Actions sets ``CI=true``; ``OC_REQUIRE_POSTGRES=1`` forces it
+    locally. Off-runner, a missing database is an honest skip.
+    """
+    if os.environ.get("OC_REQUIRE_POSTGRES", "").strip() in {"1", "true", "yes"}:
+        return True
+    return os.environ.get("CI", "").strip().lower() == "true"
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    reason = dict(item.user_properties).get("postgres_unusable_reason")
+    if reason:
+        pytest.fail(
+            f"PostgreSQL is required in this environment but unusable: {reason}",
+            pytrace=False,
+        )
 
 
 # ---------------------------------------------------------------------------
