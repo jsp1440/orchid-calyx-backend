@@ -20,8 +20,13 @@ from runtime.knowledge_graph import (
     WritablePostgresGraphRepository,
     validate_graph,
 )
-from runtime.knowledge_graph.publisher import EdgeSpec, NodeSpec, _Writer, publish_domain
 from runtime.knowledge_graph.orchestrator import DomainAdapter
+from runtime.knowledge_graph.publisher import (
+    EdgeSpec,
+    NodeSpec,
+    _Writer,
+    publish_domain,
+)
 
 DSN = os.environ.get("DATABASE_URL")
 
@@ -125,9 +130,8 @@ def test_publication_lock_releases_after_exception(schema):
     failed = WritablePostgresGraphRepository(DSN, schema=schema)
     contender = WritablePostgresGraphRepository(DSN, schema=schema)
     try:
-        with pytest.raises(RuntimeError, match="synthetic publication failure"):
-            with failed.publication_lock():
-                raise RuntimeError("synthetic publication failure")
+        with pytest.raises(RuntimeError, match="synthetic publication failure"), failed.publication_lock():
+            raise RuntimeError("synthetic publication failure")
         contender.acquire_publication_lock()
         contender.release_publication_lock()
     finally:
@@ -159,14 +163,13 @@ def test_publication_lock_releases_after_postgres_transaction_error(schema):
     first = WritablePostgresGraphRepository(DSN, schema=schema)
     contender = WritablePostgresGraphRepository(DSN, schema=schema)
     try:
-        with pytest.raises(psycopg.errors.DivisionByZero):
-            with first.publication_lock():
-                try:
-                    with first._wconn().cursor() as cur:
-                        cur.execute("SELECT 1/0")
-                except psycopg.errors.DivisionByZero:
-                    assert first._wconn().info.transaction_status == TransactionStatus.INERROR
-                    raise
+        with pytest.raises(psycopg.errors.DivisionByZero), first.publication_lock():
+            try:
+                with first._wconn().cursor() as cur:
+                    cur.execute("SELECT 1/0")
+            except psycopg.errors.DivisionByZero:
+                assert first._wconn().info.transaction_status == TransactionStatus.INERROR
+                raise
         contender.acquire_publication_lock()
         contender.release_publication_lock()
     finally:
@@ -267,12 +270,14 @@ def test_rollback_leaves_graph_unchanged(schema):
 @_needs_db
 def test_transaction_failure_leaves_no_partial_batch(schema):
     """A bad edge (missing FK endpoint) inside a run must abort the whole run."""
+    import psycopg
+
     taxon_id = _seed_taxon(schema)
     repo = WritablePostgresGraphRepository(DSN, schema=schema)
     good = repo.upsert_node(Node(kg_node_id=0, node_type="trait", canonical_key="trait:g",
                                  display_label="g", source_table="oc.traits", source_pk="g",
                                  evidence_class="observed"))
-    with pytest.raises(Exception):
+    with pytest.raises(psycopg.errors.ForeignKeyViolation):
         # to_node_id 999999 violates the FK -> error inside the transaction
         repo.upsert_edge(Edge(kg_edge_id=0, edge_type="has_trait", from_node_id=taxon_id,
                               to_node_id=999999, source_table="oc.traits", source_pk="g",
@@ -285,7 +290,7 @@ def test_transaction_failure_leaves_no_partial_batch(schema):
 
 @_needs_db
 def test_node_and_edge_updates_preserve_provenance(schema):
-    taxon_id = _seed_taxon(schema)
+    _seed_taxon(schema)
     repo = WritablePostgresGraphRepository(DSN, schema=schema)
     repo.upsert_node(Node(kg_node_id=0, node_type="trait", canonical_key="trait:p",
                           display_label="v1", source_table="oc.traits", source_pk="p",
@@ -406,10 +411,10 @@ def test_node_edge_decimal_and_datetime_payload_serializable(schema):
         kg_node_id=0, node_type="literature", canonical_key="lit:d1",
         display_label="ref", source_table="oc.lit", source_pk="d1",
         evidence_class="observed",
-        payload={"year": Decimal("2021"), "score": Decimal("3.14"), "pub": date(2021, 5, 1)}))
+        payload={"year": Decimal(2021), "score": Decimal("3.14"), "pub": date(2021, 5, 1)}))
     repo.upsert_edge(Edge(kg_edge_id=0, edge_type="cited_in", from_node_id=taxon_id,
                           to_node_id=node.kg_node_id, source_table="oc.lit", source_pk="d1",
-                          evidence_class="observed", payload={"n": Decimal("7")}))
+                          evidence_class="observed", payload={"n": Decimal(7)}))
     repo.commit(); repo.close()
     import psycopg
     with psycopg.connect(DSN, autocommit=True) as c, c.cursor() as cur:

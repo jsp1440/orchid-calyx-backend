@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 import urllib.request
-from typing import Any, Dict, List
+from typing import Any
 
 from .config_loader import BrainConfigLoader
 
@@ -13,7 +13,7 @@ class InfrastructureRegistryService:
     def __init__(self, loader: BrainConfigLoader | None = None) -> None:
         self.loader = loader or BrainConfigLoader()
 
-    def registry(self) -> Dict[str, Any]:
+    def registry(self) -> dict[str, Any]:
         """The registry, or the last-known registry, under the unavailable contract.
 
         ``config_source`` always carries ``repo``, ``ref``, ``status``,
@@ -34,7 +34,7 @@ class InfrastructureRegistryService:
             "config_source": result.config_source,
         }
 
-    def _check_service(self, service: Dict[str, Any]) -> Dict[str, Any]:
+    def _check_service(self, service: dict[str, Any]) -> dict[str, Any]:
         url = service.get("url") or ""
         health_path = service.get("health_path") or "/"
         status = service.get("status") or "unknown"
@@ -73,16 +73,16 @@ class InfrastructureRegistryService:
             result["runtime_status"] = "healthy" if 200 <= code < 400 else "warning"
             result["message"] = f"HTTP {code}"
             return result
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 - any probe failure is reported as a critical health result
             latency_ms = round((time.perf_counter() - start) * 1000, 2)
             result["latency_ms"] = latency_ms
             result["runtime_status"] = "critical"
             result["message"] = str(exc)
             return result
 
-    def health(self) -> Dict[str, Any]:
+    def health(self) -> dict[str, Any]:
         registry = self.registry()
-        services: List[Dict[str, Any]] = registry.get("services", [])
+        services: list[dict[str, Any]] = registry.get("services", [])
         checks = [self._check_service(s) for s in services]
 
         summary = {
