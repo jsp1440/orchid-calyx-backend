@@ -28,7 +28,6 @@ from .evidence_coverage_gaps import (
     research_mission,
 )
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 GAP_DIR = REPO_ROOT / "runtime" / "knowledge_gaps"
 LATEST_PATH = GAP_DIR / "latest.json"
