@@ -6,6 +6,8 @@ BUILD-019: Maintains backward compatibility with connector scaffold endpoints at
 
 from __future__ import annotations
 
+import os
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.security import verify_owner_or_api_key
@@ -17,6 +19,7 @@ from .connector_runtime import ConnectorRuntimeBuilder
 from .connector_routes import router as connector_router
 from .discovery_memory import DiscoveryMemoryStore
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
+from .evidence_coverage_gaps import EvidenceCoverageGapSource
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
@@ -47,7 +50,20 @@ def snapshot_store() -> DiscoveryMemoryStore:
 
 
 def gap_engine() -> KnowledgeGapDiscoveryEngine:
-    return KnowledgeGapDiscoveryEngine()
+    return KnowledgeGapDiscoveryEngine(kg_source=evidence_coverage_source())
+
+
+def evidence_coverage_source() -> EvidenceCoverageGapSource:
+    """The KG gap source; without a database it reports why and the engine fails closed."""
+    if not os.getenv("DATABASE_URL"):
+        return EvidenceCoverageGapSource(None, unavailable_reason="DATABASE_URL is not configured")
+    try:
+        from app.routers.owner_operations import db_execute
+    except ImportError as exc:  # pragma: no cover - depends on optional drivers
+        return EvidenceCoverageGapSource(
+            None, unavailable_reason=f"database driver unavailable: {type(exc).__name__}"
+        )
+    return EvidenceCoverageGapSource(db_execute)
 
 
 def diagnostic_engine() -> KnowledgeGapDiagnosticsEngine:

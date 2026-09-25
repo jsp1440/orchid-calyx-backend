@@ -1,9 +1,15 @@
 """BUILD-016 knowledge gap discovery.
 
-This module turns runtime discovery memory into actionable Orchid Continuum
-knowledge-gap signals. It is intentionally safe and file-backed: it can run on
-Render without DATABASE_URL, while using live discovery snapshots when they are
-available.
+Two gap sources, never mixed silently:
+
+* **evidence coverage** (``runtime/evidence_coverage_gaps.py``): counts from the
+  persisted knowledge graph of which dossier evidence domains each taxon lacks.
+  When an engine is given a KG source it uses only this; if the KG cannot be
+  read it fails closed to the stored record, marked stale with the reason, and
+  never falls back to the keyword method as if that were fresh.
+* **keyword match** (legacy): discovery-memory module and capability names that
+  contain a keyword. Used only by an engine built without a KG source, and
+  always labelled with :data:`DISCOVERY_METHOD`.
 """
 
 from __future__ import annotations
@@ -15,6 +21,12 @@ from pathlib import Path
 from typing import Any
 
 from .discovery_memory import DiscoveryMemoryStore
+from .evidence_coverage_gaps import (
+    EVIDENCE_COVERAGE_METHOD,
+    EvidenceCoverageGapSource,
+    EvidenceCoverageUnavailable,
+    research_mission,
+)
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +62,7 @@ def freshness_block(
     now: datetime | None = None,
     max_age_days: int = MAX_RECORD_AGE_DAYS,
     stale_reason: str | None = None,
+    method: str = DISCOVERY_METHOD,
 ) -> dict[str, Any]:
     """The freshness contract for a record generated at ``generated_at``.
 
@@ -75,7 +88,7 @@ def freshness_block(
         "age_days": age_days,
         "stale": bool(reasons),
         "reason": "; ".join(reasons) if reasons else None,
-        "method": DISCOVERY_METHOD,
+        "method": method,
     }
 
 
@@ -94,6 +107,7 @@ def assess_freshness(payload: dict[str, Any], *, now: datetime | None = None) ->
         now=now,
         max_age_days=int(existing.get("max_record_age_days") or MAX_RECORD_AGE_DAYS),
         stale_reason=kept_reason,
+        method=str(existing.get("method") or DISCOVERY_METHOD),
     )
     return assessed
 
@@ -126,14 +140,23 @@ class KnowledgeGap:
 class KnowledgeGapDiscoveryEngine:
     """Derive knowledge-gap candidates from discovery memory and runtime modules."""
 
-    def __init__(self, output_dir: Path | None = None, memory_store: DiscoveryMemoryStore | None = None) -> None:
+    def __init__(
+        self,
+        output_dir: Path | None = None,
+        memory_store: DiscoveryMemoryStore | None = None,
+        kg_source: EvidenceCoverageGapSource | None = None,
+    ) -> None:
         self.output_dir = output_dir or GAP_DIR
         self.latest_path = self.output_dir / "latest.json"
         self.memory_store = memory_store or DiscoveryMemoryStore()
+        self.kg_source = kg_source
+        self._kg_payload: dict[str, Any] | None = None
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def discover(self, write_cache: bool = True, *, now: datetime | None = None) -> dict[str, Any]:
         now = now or datetime.now(timezone.utc)
+        if self.kg_source is not None:
+            return self._discover_from_kg(write_cache=write_cache, now=now)
         snapshot = self.memory_store.latest()
         modules = snapshot.get("modules", [])
         capabilities = snapshot.get("capabilities", [])
@@ -173,8 +196,65 @@ class KnowledgeGapDiscoveryEngine:
             self.latest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
         return payload
 
+    def _discover_from_kg(self, *, write_cache: bool, now: datetime) -> dict[str, Any]:
+        try:
+            kg = self.kg_source.collect(now=now)  # type: ignore[union-attr]
+        except EvidenceCoverageUnavailable as exc:
+            return self._fail_closed(str(exc), now=now)
+        generated_at = kg["generated_at"]
+        payload = {
+            "build": "BUILD-016",
+            "status": "knowledge_gaps_discovered",
+            "gap_source": "evidence_coverage_kg",
+            "generated_at": generated_at,
+            "freshness": freshness_block(generated_at, now=now, method=EVIDENCE_COVERAGE_METHOD),
+            "source_id": kg["source_id"],
+            "summary": kg["summary"],
+            "domain_coverage": kg["domain_coverage"],
+            "evidence_sources": kg["evidence_sources"],
+            "gaps": kg["gaps"],
+            "top_actions": kg["top_actions"],
+        }
+        if write_cache:
+            self.latest_path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+        return payload
+
+    def _fail_closed(self, reason: str, *, now: datetime) -> dict[str, Any]:
+        """Serve the stored record, marked stale; never regenerate it by keyword."""
+        if self.latest_path.exists():
+            payload = assess_freshness(json.loads(self.latest_path.read_text(encoding="utf-8")), now=now)
+        else:
+            payload = {
+                "build": "BUILD-016",
+                "status": "knowledge_gaps_unavailable",
+                "generated_at": None,
+                "freshness": freshness_block("", now=now),
+                "summary": {},
+                "domain_coverage": {},
+                "gaps": [],
+                "top_actions": [],
+            }
+        freshness = dict(payload.get("freshness") or {})
+        note = (
+            f"evidence-coverage KG source unavailable ({reason}); serving the stored record "
+            "unchanged, not regenerated by keyword match"
+        )
+        freshness["stale"] = True
+        freshness["reason"] = "; ".join(r for r in (freshness.get("reason"), note) if r)
+        payload["freshness"] = freshness
+        payload["gap_source"] = "stored_record_fail_closed"
+        return payload
+
     def latest(self, *, now: datetime | None = None) -> dict[str, Any]:
-        """The stored record with its freshness assessed now, never rewritten."""
+        """The stored record with its freshness assessed now, never rewritten.
+
+        With a KG source, the live evidence-coverage record (or the fail-closed
+        stored record) is returned instead, computed once per engine.
+        """
+        if self.kg_source is not None:
+            if self._kg_payload is None:
+                self._kg_payload = self.discover(write_cache=False, now=now)
+            return self._kg_payload
         if self.latest_path.exists():
             payload = json.loads(self.latest_path.read_text(encoding="utf-8"))
         else:
@@ -208,7 +288,8 @@ class KnowledgeGapDiscoveryEngine:
         return {"build": "BUILD-016", "priorities": grouped, "freshness": payload.get("freshness")}
 
     def research_queue(self, limit: int = 10) -> dict[str, Any]:
-        gaps = self.latest().get("gaps", [])[:limit]
+        payload = self.latest()
+        gaps = payload.get("gaps", [])[:limit]
         queue = [
             {
                 "queue_rank": index + 1,
@@ -216,14 +297,19 @@ class KnowledgeGapDiscoveryEngine:
                 "domain": gap["domain"],
                 "task": gap["proposed_action"],
                 "priority": gap["priority"],
+                # Only evidence-coverage gaps carry KG counts, so only they are missions.
+                "mission": research_mission(gap)
+                if gap.get("source") == "evidence_coverage_kg"
+                else None,
             }
             for index, gap in enumerate(gaps)
         ]
         return {
             "build": "BUILD-016",
+            "gap_source": payload.get("gap_source"),
             "queue_depth": len(queue),
             "queue": queue,
-            "freshness": self.latest().get("freshness"),
+            "freshness": payload.get("freshness"),
         }
 
     def dashboard(self) -> dict[str, Any]:
