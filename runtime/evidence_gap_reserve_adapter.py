@@ -41,8 +41,17 @@ def evidence_gap_candidates(
     source: EvidenceCoverageGapSource,
     *,
     cap: int = MAX_CANDIDATES_PER_PASS,
+    held_fingerprints: frozenset[str] | set[str] = frozenset(),
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
-    """Return ``(candidates, rejections, unavailable_reason)`` for one pass."""
+    """Return ``(candidates, rejections, unavailable_reason)`` for one pass.
+
+    ``held_fingerprints`` are material fingerprints the caller already filed.
+    They are skipped *before* the per-pass cap is applied: the cap bounds new
+    work, and spending it on candidates ``plan_refill`` will only reject as
+    duplicates made every pass after the first three missions plan nothing
+    (``queue_empty_healthy`` on 2026-09-25 while taxa 1000 and 10000 still had
+    no nomenclature evidence).
+    """
     cap = max(0, min(int(cap), MAX_CANDIDATES_PER_PASS))
     freshness = queue.get("freshness") or {}
     if (
@@ -117,6 +126,15 @@ def evidence_gap_candidates(
                 candidate_source_table=source_table,
                 priority=priority,
             )
+            if candidate["material_fingerprint"] in held_fingerprints:
+                rejections.append(
+                    {
+                        "taxon_id": taxon_id,
+                        "domain": domain,
+                        "reason": "already_held_by_caller",
+                    }
+                )
+                continue
             # Keeps gap-rank order among equal priorities in plan_refill.
             candidate["queue_rank"] = len(candidates)
             candidates.append(candidate)
@@ -139,8 +157,11 @@ def plan_evidence_gap_refill(
     """Plan bounded reserve work from live KG evidence-coverage gaps."""
     engine = engine or KnowledgeGapDiscoveryEngine(kg_source=source)
     queue = engine.research_queue(limit=RESEARCH_QUEUE_SCAN)
+    held = frozenset(
+        str(value) for value in snapshot.get("dispatch_fingerprints") or [] if value
+    )
     candidates, rejections, unavailable = evidence_gap_candidates(
-        queue, source, cap=cap
+        queue, source, cap=cap, held_fingerprints=held
     )
     result = plan_refill(
         snapshot, candidates, reserve_depth=reserve_depth, planner_ok=planner_ok

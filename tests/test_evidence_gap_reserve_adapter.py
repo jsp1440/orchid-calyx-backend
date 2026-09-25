@@ -253,6 +253,33 @@ def test_second_pass_does_not_replan_the_same_gap(tmp_path):
     )
 
 
+def test_held_work_does_not_consume_the_per_pass_cap(tmp_path):
+    """Regression (production, 2026-09-25): once the first three missions were
+    filed, every pass rebuilt the same three candidates, the planner rejected
+    them as duplicates and nothing new was ever planned (``queue_empty_healthy``)
+    although further (taxon, domain) gaps remained."""
+    first = plan(labelled_kg(), output_dir=tmp_path)
+    held = [p["material_fingerprint"] for p in first["proposals"]]
+    assert len(held) == MAX_CANDIDATES_PER_PASS
+    source = source_for(labelled_kg())
+    engine = KnowledgeGapDiscoveryEngine(output_dir=tmp_path, kg_source=source)
+    second = plan_evidence_gap_refill(
+        {**snapshot(), "dispatch_fingerprints": held},
+        source,
+        engine=engine,
+        reserve_depth=3,
+    )
+    fresh = [p["material_fingerprint"] for p in second["proposals"]]
+    assert second["status"] == "refill_planned"
+    assert fresh, "held work must not use up the cap for new work"
+    assert not set(fresh) & set(held)
+    assert len(fresh) <= MAX_CANDIDATES_PER_PASS
+    skipped = [r for r in second["source_rejections"] if r.get("reason") == "already_held_by_caller"]
+    assert len(skipped) == len(held)
+    # Nothing the caller holds is ever re-proposed, and every payload stays admissible.
+    assert all(frontend_admits(p["source_payload"]) is None for p in second["proposals"])
+
+
 def test_kg_unavailable_yields_zero_candidates_never_stale_record_work(tmp_path):
     (tmp_path / "latest.json").write_text(
         RECORD.read_text(encoding="utf-8"), encoding="utf-8"
