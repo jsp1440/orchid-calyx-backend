@@ -7,6 +7,7 @@ BUILD-019: Maintains backward compatibility with connector scaffold endpoints at
 from __future__ import annotations
 
 import os
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -19,6 +20,7 @@ from .connector_planner import BrainConnectorPlanner
 from .connector_runtime import ConnectorRuntimeBuilder
 from .discovery_memory import DiscoveryMemoryStore
 from .evidence_coverage_gaps import EvidenceCoverageGapSource
+from .evidence_gap_reserve_plan import evidence_gap_reserve_plan, valid_fingerprints
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
@@ -326,6 +328,23 @@ def knowledge_gap_priorities():
 @router.get("/knowledge-gaps/queue")
 def knowledge_gap_queue(limit: int = Query(default=10, ge=1, le=50)):
     return gap_engine().research_queue(limit=limit)
+
+
+@router.get("/knowledge-gaps/reserve-plan")
+def knowledge_gap_reserve_plan(
+    reserve_depth: int = Query(default=3, ge=0, le=3),
+    fingerprint: Annotated[list[str] | None, Query()] = None,
+):
+    """Read-only reserve plan of KG evidence-gap missions (oc.reserve-refill.v1)."""
+    fingerprints = valid_fingerprints(fingerprint or [])
+    if fingerprints is None:
+        raise HTTPException(
+            status_code=422,
+            detail="fingerprint must be up to 100 lowercase 64-hex material fingerprints",
+        )
+    return evidence_gap_reserve_plan(
+        evidence_coverage_source(), reserve_depth=reserve_depth, fingerprints=fingerprints
+    )
 
 
 @router.get("/knowledge-gaps/dashboard")
