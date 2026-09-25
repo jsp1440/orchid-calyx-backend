@@ -1,0 +1,70 @@
+name: OC Done Guard
+
+# `oc-done` is a completion claim. This guard withdraws claims that cannot be
+# substantiated: the issue must be closed, a receipt must name a full
+# implementation SHA reachable from main, and the requested change must be
+# evidenced by changed files or a merged pull request. Refused claims go back
+# to `oc-validating` (bounded per run, idempotent). The rule itself is
+# `runtime/oc_done_guard.py`; its regression runs on pull requests that touch it.
+
+on:
+  pull_request:
+    paths:
+      - "runtime/oc_done_guard.py"
+      - "scripts/oc_done_guard.py"
+      - "tests/test_oc_done_guard.py"
+      - ".github/workflows/oc-done-guard.yml"
+  schedule:
+    - cron: "37 * * * *"
+  workflow_dispatch:
+    inputs:
+      apply:
+        description: "Apply label transitions (otherwise report only)"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oc-done-guard-${{ github.repository }}-${{ github.event_name }}
+  cancel-in-progress: false
+
+jobs:
+  rule-regression:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install pytest
+      - run: env -u DATABASE_URL python -m pytest -q -p no:cacheprovider tests/test_oc_done_guard.py
+      - run: |
+          python -m compileall -q runtime/oc_done_guard.py scripts/oc_done_guard.py
+          git diff --check
+
+  guard:
+    if: ${{ github.event_name != 'pull_request' }}
+    needs: rule-regression
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Audit oc-done claims
+        run: >-
+          python scripts/oc_done_guard.py --repo "$GITHUB_REPOSITORY" --target-branch main --limit 25
+          ${{ (github.event_name == 'schedule' || inputs.apply) && '--apply' || '' }}
