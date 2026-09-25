@@ -9,6 +9,7 @@ on:
       - 'tests/test_calyx_conversation.py'
       - 'tests/test_calyx_file_analysis.py'
       - 'tests/test_build_613_calyx_reasoning_context.py'
+      - 'tests/test_calyx_adaptive_communication.py'
       - 'tests/test_calyx_speak_002.py'
       - 'tests/test_calyx_live_runtime_repairs.py'
       - 'tests/test_calyx_anti_robot_conversation.py'
@@ -50,12 +51,14 @@ jobs:
           app/calyx_conversation/file_analysis.py
           app/calyx_conversation/file_routes.py
           app/calyx_conversation/reasoning_routes.py
+          app/calyx_conversation/adaptive_communication.py
           app/calyx_conversation/conversational_synthesis.py
           app/calyx_orchestrator/schema.py
           app/routers/calyx_core.py
           tests/test_calyx_conversation.py
           tests/test_calyx_file_analysis.py
           tests/test_build_613_calyx_reasoning_context.py
+          tests/test_calyx_adaptive_communication.py
           tests/test_calyx_speak_002.py
           tests/test_calyx_live_runtime_repairs.py
           tests/test_calyx_anti_robot_conversation.py
@@ -70,10 +73,17 @@ jobs:
           tests/test_calyx_conversation.py
           tests/test_calyx_file_analysis.py
           tests/test_build_613_calyx_reasoning_context.py
+          tests/test_calyx_adaptive_communication.py
           tests/test_calyx_speak_002.py
           tests/test_calyx_live_runtime_repairs.py
           tests/test_calyx_anti_robot_conversation.py
           tests/test_calyx_phalaenopsis_thermal_traits.py
+      - name: Lint adaptive communication changes
+        run: >-
+          ruff check
+          app/calyx_conversation/adaptive_communication.py
+          app/calyx_conversation/reasoning_routes.py
+          tests/test_calyx_adaptive_communication.py
       - name: Lint Calyx conversation slice
         run: >-
           ruff check
@@ -82,6 +92,7 @@ jobs:
           tests/test_calyx_conversation.py
           tests/test_calyx_file_analysis.py
           tests/test_build_613_calyx_reasoning_context.py
+          tests/test_calyx_adaptive_communication.py
           tests/test_calyx_speak_002.py
           tests/test_calyx_live_runtime_repairs.py
           tests/test_calyx_anti_robot_conversation.py

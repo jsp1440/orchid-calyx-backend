@@ -27,7 +27,7 @@ from sqlalchemy.types import JSON
 
 from app.database import Base
 
-from .models import ReasoningLedger
+from .models import LedgerError, ReasoningLedger
 from .serialization import dict_to_ledger, ledger_to_canonical_json
 from .service import LedgerNotFoundError, LedgerValidationError
 
@@ -40,6 +40,36 @@ class StaleLedgerVersionError(LedgerValidationError):
     def __init__(self, current_version: int) -> None:
         self.current_version = current_version
         super().__init__(f"stale ledger version; current version is {current_version}")
+
+
+class LedgerRevisionNotFoundError(LedgerNotFoundError):
+    """The owned ledger exists, but the requested exact version does not."""
+
+    def __init__(
+        self, ledger_id: str, version: int, available_versions: list[int]
+    ) -> None:
+        self.ledger_id = ledger_id
+        self.version = version
+        self.available_versions = tuple(available_versions)
+        super().__init__(f"ledger revision not found: {ledger_id}@{version}")
+
+
+class LedgerRevisionUnreadableError(LedgerError):
+    """A revision row exists but its stored payload will not deserialize.
+
+    Kept distinct from every other failure on this path because it is the
+    only one that means the reasoning history itself is damaged. Reported as
+    a missing revision it would read as "that version was never written";
+    reported as a persistence failure it would read as "try again"; left
+    unhandled it surfaced as a bare 500 naming nothing, which told an
+    operator neither what broke nor where. A corrupt record is a finding,
+    and it has to arrive as one.
+    """
+
+    def __init__(self, ledger_id: str, version: int) -> None:
+        self.ledger_id = ledger_id
+        self.version = version
+        super().__init__(f"ledger revision unreadable: {ledger_id}@{version}")
 
 
 class ReasoningLedgerHead(Base):
@@ -375,6 +405,38 @@ class SqlAlchemyReasoningLedgerRepository:
         head = self._head(ledger_id, owner)
         return dict_to_ledger(
             self._revision(ledger_id, head.current_version).canonical_payload
+        )
+
+    def revision_payload(
+        self, ledger_id: str, owner: str, version: int
+    ) -> dict[str, Any] | None:
+        """Return only the requested owned revision's canonical payload.
+
+        The head lookup preserves the existing owner-scoped not-found boundary.
+        The revision query deliberately selects only ``canonical_payload`` so an
+        exact read does not materialize every revision column or any audit row.
+        """
+        self._head(ledger_id, owner)
+        return self.db.scalar(
+            select(ReasoningLedgerRevision.canonical_payload).where(
+                ReasoningLedgerRevision.ledger_id == ledger_id,
+                ReasoningLedgerRevision.owner_subject == owner,
+                ReasoningLedgerRevision.version == version,
+            )
+        )
+
+    def available_versions(self, ledger_id: str, owner: str) -> list[int]:
+        """Return only the lightweight version numbers held by this ledger."""
+        self._head(ledger_id, owner)
+        return list(
+            self.db.scalars(
+                select(ReasoningLedgerRevision.version)
+                .where(
+                    ReasoningLedgerRevision.ledger_id == ledger_id,
+                    ReasoningLedgerRevision.owner_subject == owner,
+                )
+                .order_by(ReasoningLedgerRevision.version)
+            ).all()
         )
 
     def history(self, ledger_id: str, owner: str) -> list[ReasoningLedger]:
