@@ -293,9 +293,14 @@ def test_an_opened_edit_pull_request_gets_exact_head_validation_dispatched():
     step = _step(dispatch)
     assert step["if"] == "steps.lease.outputs.execute == 'true'"
     run = step["run"]
-    # Only a push the lane made is validated, on the fenced branch, at the exact
-    # commit the receipt recorded; a moved branch is refused, not validated.
-    assert '[[ "$outcome" == "pr_opened" ]] || exit 0' in run
+    # A push the lane made is validated at the exact commit its receipt
+    # recorded; a PR it found already open, at that PR's current head, and only
+    # when it is open against the integration branch. A moved branch is refused.
+    assert "pr_opened)" in run and "already_open)" in run
+    assert "commit=$(jq -r '.commit_sha // empty' \"$edit\")" in run
+    assert "--json state,headRefName,headRefOid,baseRefName" in run
+    assert "commit=$(jq -r .headRefOid <<<\"$view\")" in run
+    assert '!= "$INTEGRATION_BRANCH"' in run
     assert "^oc/discovered-[0-9a-f]{16}$" in run
     assert "^[0-9a-f]{40}$" in run
     assert 'git ls-remote origin "refs/heads/$branch"' in run
