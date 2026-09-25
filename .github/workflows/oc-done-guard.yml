@@ -19,10 +19,10 @@ on:
   workflow_dispatch:
     inputs:
       apply:
-        description: "Apply label transitions (otherwise report only)"
+        description: "Apply label transitions (default: report only)"
         required: false
         type: boolean
-        default: true
+        default: false
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - run: pip install pytest
+      - run: pip install -r requirements-dev.txt pyyaml
       - run: env -u DATABASE_URL python -m pytest -q -p no:cacheprovider tests/test_oc_done_guard.py
       - run: |
           python -m compileall -q runtime/oc_done_guard.py scripts/oc_done_guard.py
@@ -64,7 +64,13 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
+      # Scheduled runs are REPORT-ONLY. Withdrawing oc-done on a schedule would
+      # re-admit work into the lanes, a state mutation the owner has not
+      # authorized. Transitions are applied only when the owner dispatches the
+      # workflow with apply=true or sets the repository variable
+      # OC_DONE_GUARD_APPLY=true. The refusal list is always written to the
+      # step summary, so a report-only run is still evidence.
       - name: Audit oc-done claims
         run: >-
           python scripts/oc_done_guard.py --repo "$GITHUB_REPOSITORY" --target-branch main --limit 25
-          ${{ (github.event_name == 'schedule' || inputs.apply) && '--apply' || '' }}
+          ${{ ((github.event_name == 'workflow_dispatch' && inputs.apply == true) || vars.OC_DONE_GUARD_APPLY == 'true') && '--apply' || '' }}

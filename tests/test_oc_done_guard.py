@@ -147,3 +147,39 @@ def test_parse_ignores_claims_and_malformed_json():
     assert parse_receipt_comment("plain comment") is None
     abbreviated = '[OC-SWARM-V4] completed: `{"schema":"oc.swarm-provider-free-result.v1","disposition":"done","integration_sha":"4ea032b7"}`'
     assert parse_receipt_comment(abbreviated).sha is None
+
+
+# --- the workflow must never mutate labels on a schedule ---------------------
+
+
+def test_workflow_is_report_only_on_a_schedule():
+    """Withdrawing oc-done re-admits work into the lanes; that may only happen on
+    an explicit owner dispatch (apply=true) or the repository variable
+    OC_DONE_GUARD_APPLY=true, never unattended."""
+    import re
+    from pathlib import Path
+
+    yaml = __import__("yaml")
+    path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "oc-done-guard.yml"
+    )
+    text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(text)
+    on = workflow.get(True) or workflow.get("on")
+    assert "schedule" in on
+    assert on["workflow_dispatch"]["inputs"]["apply"]["default"] is False
+
+    audit = next(
+        step
+        for step in workflow["jobs"]["guard"]["steps"]
+        if step.get("name") == "Audit oc-done claims"
+    )
+    run = audit["run"]
+    assert "--limit 25" in run
+    assert re.search(r"event_name\s*==\s*'schedule'", run) is None
+    assert "github.event_name == 'workflow_dispatch' && inputs.apply == true" in run
+    assert "vars.OC_DONE_GUARD_APPLY == 'true'" in run
+    assert "'--apply' || ''" in run
