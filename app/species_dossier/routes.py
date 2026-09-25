@@ -39,7 +39,9 @@ def get_service() -> SpeciesDossierService:
         raise HTTPException(status_code=503, detail=DATABASE_UNCONFIGURED)
     from app.routers.owner_operations import db_execute
 
-    return SpeciesDossierService(PostgresSpeciesRepository(db_execute), public_base_url=public_base_url())
+    return SpeciesDossierService(
+        PostgresSpeciesRepository(db_execute), public_base_url=public_base_url()
+    )
 
 
 Service = Annotated[SpeciesDossierService, Depends(get_service)]
@@ -48,9 +50,13 @@ Service = Annotated[SpeciesDossierService, Depends(get_service)]
 def _guard(call: Any) -> Any:
     try:
         return call()
-    except HTTPException:
+    except HTTPException as exc:
+        if exc.status_code == 503:
+            raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE) from exc
         raise
-    except Exception as exc:  # database or driver failure: say unavailable, never fabricate
+    except (
+        Exception
+    ) as exc:  # database or driver failure: say unavailable, never fabricate
         raise HTTPException(status_code=503, detail=SERVICE_UNAVAILABLE) from exc
 
 
@@ -58,11 +64,16 @@ def _guard(call: Any) -> Any:
 def species_dossier(taxon_id: str, service: Service) -> SpeciesDossierEnvelope:
     dossier = _guard(lambda: service.dossier(taxon_id))
     if dossier is None:
-        raise HTTPException(status_code=404, detail="No canonical taxon record exists for this identifier.")
+        raise HTTPException(
+            status_code=404,
+            detail="No canonical taxon record exists for this identifier.",
+        )
     return dossier
 
 
-@router.get("/homepage/species/{taxon_id}/evidence", response_model=SpeciesDossierEnvelope)
+@router.get(
+    "/homepage/species/{taxon_id}/evidence", response_model=SpeciesDossierEnvelope
+)
 def species_evidence(taxon_id: str, service: Service) -> SpeciesDossierEnvelope:
     """The evidence link every homepage species-exhibit card advertises.
 
@@ -78,7 +89,10 @@ def species_evidence(taxon_id: str, service: Service) -> SpeciesDossierEnvelope:
 def species_atlas(taxon_id: str, service: Service) -> SpeciesAtlasEnvelope:
     atlas = _guard(lambda: service.atlas(taxon_id))
     if atlas is None:
-        raise HTTPException(status_code=404, detail="No canonical taxon record exists for this identifier.")
+        raise HTTPException(
+            status_code=404,
+            detail="No canonical taxon record exists for this identifier.",
+        )
     return atlas
 
 
@@ -88,20 +102,28 @@ def resolve_species(
     name: Annotated[str | None, Query(max_length=300)] = None,
     taxon_id: Annotated[str | None, Query(max_length=200)] = None,
     source_url: Annotated[str | None, Query(max_length=2000)] = None,
+    partner: Annotated[str | None, Query(max_length=100)] = None,
+    slug: Annotated[str | None, Query(max_length=300)] = None,
     partner_slug: Annotated[str | None, Query(max_length=100)] = None,
     partner_species_slug: Annotated[str | None, Query(max_length=300)] = None,
 ) -> FederationResolveResult:
+    effective_partner = partner if partner is not None else partner_slug
+    effective_slug = slug if slug is not None else partner_species_slug
     try:
         request = FederationResolveRequest(
             name=name,
             taxon_id=taxon_id,
             source_url=source_url,  # type: ignore[arg-type]
-            partner_slug=partner_slug,
-            partner_species_slug=partner_species_slug,
+            partner_slug=effective_partner,
+            partner_species_slug=effective_slug,
         )
     except ValidationError as exc:
         detail = [
-            {"loc": [str(part) for part in err.get("loc", ())], "msg": str(err.get("msg", "")), "type": str(err.get("type", ""))}
+            {
+                "loc": [str(part) for part in err.get("loc", ())],
+                "msg": str(err.get("msg", "")),
+                "type": str(err.get("type", "")),
+            }
             for err in exc.errors(include_url=False)
         ]
         raise HTTPException(status_code=422, detail=detail) from exc

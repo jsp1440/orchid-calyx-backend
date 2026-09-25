@@ -19,7 +19,11 @@ from .models import (
     UncertaintyMarker,
 )
 from .operational_service import OperationalReasoningLedgerService, ProjectNotFoundError
-from .persistence import StaleLedgerVersionError
+from .persistence import (
+    LedgerRevisionNotFoundError,
+    LedgerRevisionUnreadableError,
+    StaleLedgerVersionError,
+)
 from .schemas import ConflictResolutionIn, LedgerCreateIn, LedgerEntryIn, ReviewIn
 from .serialization import ledger_to_dict
 from .service import LedgerNotFoundError
@@ -40,6 +44,27 @@ def _subject(auth: dict) -> str:
 def _invoke(db: Session, request: Request, operation):
     try:
         return operation()
+    except LedgerRevisionNotFoundError as exc:
+        db.rollback()
+        raise HTTPException(
+            404,
+            detail={
+                "code": "LEDGER_REVISION_NOT_FOUND",
+                "ledger_id": exc.ledger_id,
+                "requested_version": exc.version,
+                "available_versions": list(exc.available_versions),
+            },
+        ) from exc
+    except LedgerRevisionUnreadableError as exc:
+        db.rollback()
+        raise HTTPException(
+            500,
+            detail={
+                "code": "LEDGER_REVISION_UNREADABLE",
+                "ledger_id": exc.ledger_id,
+                "requested_version": exc.version,
+            },
+        ) from exc
     except LedgerNotFoundError as exc:
         db.rollback()
         raise HTTPException(404, detail={"code": "LEDGER_NOT_FOUND"}) from exc
@@ -175,34 +200,18 @@ def get_history(ledger_id: str, request: Request, auth: Auth, db: Db):
 
 @router.get("/{ledger_id}/revisions/{version}")
 def get_ledger_revision(
-    ledger_id: str, version: int, request: Request, auth: Auth, db: Db
+    ledger_id: str, version: str, request: Request, auth: Auth, db: Db
 ):
     """Retrieve one exact reasoning-ledger revision, read-only.
 
-    CALYX-VERIFY-LEDGER-001 (#1142). The Verification Workbench can already see
-    that a ledger *exists* — a mission carries ``ledger_id`` and ``version`` —
-    and had no way to retrieve the revision being verified. Existence is not
-    inspectability, and the frontend says so rather than implying the reasoning
-    has been audited. This supplies the missing half.
-
-    The exactness is the contract. A request for a version that does not exist
-    fails with ``LEDGER_REVISION_NOT_FOUND`` and never falls back to the latest
-    revision: silently answering with a different revision than the one being
-    verified would attach the wrong reasoning to a claim, which is worse than
-    returning nothing.
-
-    Nothing new is serialized. ``ledger_to_dict`` is the canonical projection
-    already used by the current/history routes, so evidence provenance, source
-    anchors, content hashes, conflict dispositions, uncertainty markers and
-    review state survive retrieval unchanged — and no private chain-of-thought,
-    scratchpad or provider transcript exists in the persisted model to leak.
-
-    This endpoint does not certify the reasoning. It makes the recorded
-    reasoning inspectable.
+    Exactness is the contract: a request for a version that does not exist
+    fails with ``LEDGER_REVISION_NOT_FOUND`` (reporting which versions do
+    exist) and never falls back to the latest revision. The version is read
+    as text so that ``abc``, ``1.5`` and non-positive values are all refused
+    as malformed rather than coerced or answered with the first revision.
     """
-    if version < 1:
-        # Versions are 1-based. A non-positive version is a malformed request,
-        # not a missing revision, and must not be answered with the first one.
+    text = str(version).strip()
+    if not text.isascii() or not text.isdigit() or int(text) < 1:
         raise HTTPException(
             422,
             detail={
@@ -212,32 +221,17 @@ def get_ledger_revision(
         )
 
     owner = _subject(auth)
-    revision, available = _invoke(
+    revision = _invoke(
         db,
         request,
-        lambda: OperationalReasoningLedgerService(db).exact_revision(
-            ledger_id, owner, version
+        lambda: OperationalReasoningLedgerService(db).revision(
+            ledger_id, owner, int(text)
         ),
     )
-    if revision is None:
-        raise HTTPException(
-            404,
-            detail={
-                "code": "LEDGER_REVISION_NOT_FOUND",
-                "ledger_id": ledger_id,
-                "requested_version": version,
-                # Reporting what exists keeps "this revision is gone" distinct
-                # from "this ledger is empty" for the caller.
-                "available_versions": available,
-            },
-        )
-
     return {
         "ledger_id": ledger_id,
-        "requested_version": version,
+        "requested_version": int(text),
         "revision": ledger_to_dict(revision),
-        # An explicit marker so a consumer never has to infer that a successful
-        # retrieval is an inspectable revision rather than a certified one.
         "inspectable": True,
         "reasoning_certified": False,
     }

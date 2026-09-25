@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import AliasChoices, BaseModel, Field, HttpUrl, model_validator
 
 
 class DossierEvidenceState(str, Enum):
@@ -37,8 +37,11 @@ class DossierSection(BaseModel):
     unavailable_reason: str | None = None
 
     @model_validator(mode="after")
-    def unavailable_requires_reason(self) -> "DossierSection":
-        if self.state == DossierEvidenceState.UNAVAILABLE and not self.unavailable_reason:
+    def unavailable_requires_reason(self) -> DossierSection:
+        if (
+            self.state == DossierEvidenceState.UNAVAILABLE
+            and not self.unavailable_reason
+        ):
             raise ValueError("unavailable dossier sections require unavailable_reason")
         return self
 
@@ -80,8 +83,11 @@ class AtlasLayer(BaseModel):
     unavailable_reason: str | None = None
 
     @model_validator(mode="after")
-    def unavailable_layer_requires_reason(self) -> "AtlasLayer":
-        if self.state == DossierEvidenceState.UNAVAILABLE and not self.unavailable_reason:
+    def unavailable_layer_requires_reason(self) -> AtlasLayer:
+        if (
+            self.state == DossierEvidenceState.UNAVAILABLE
+            and not self.unavailable_reason
+        ):
             raise ValueError("unavailable Atlas layers require unavailable_reason")
         return self
 
@@ -127,9 +133,21 @@ class SpeciesAtlasEnvelope(BaseModel):
     provenance: list[EvidenceReceipt] = Field(default_factory=list)
 
 
+class DossierFreshness(BaseModel):
+    """Explicit freshness state; unknown is safer than an invented timestamp."""
+
+    state: Literal["current", "stale", "unknown"] = "unknown"
+    as_of: datetime | None = None
+    source: str | None = None
+
+
 class SpeciesDossierEnvelope(BaseModel):
     contract_version: Literal["oc-species-dossier-v1"] = "oc-species-dossier-v1"
     generated_at: datetime
+    taxon_id: str
+    display_name: str
+    full_scientific_name: str
+    accepted_name: str
     identity: SpeciesIdentity
     nomenclature: DossierSection
     protologue: DossierSection
@@ -149,6 +167,10 @@ class SpeciesDossierEnvelope(BaseModel):
     calyx_narrative: DossierSection
     research_gaps: DossierSection
     atlas: SpeciesAtlasEnvelope
+    atlas_summary: DossierSection
+    identification_matrix: DossierSection
+    freshness: DossierFreshness
+    unavailable_sections: list[str] = Field(default_factory=list)
     related_species: list[dict[str, Any]] = Field(default_factory=list)
     matrix_url: str
     partner_references: list[PartnerReference] = Field(default_factory=list)
@@ -159,12 +181,20 @@ class FederationResolveRequest(BaseModel):
     name: str | None = None
     taxon_id: str | None = None
     source_url: HttpUrl | None = None
-    partner_slug: str | None = None
-    partner_species_slug: str | None = None
+    partner_slug: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("partner_slug", "partner"),
+    )
+    partner_species_slug: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("partner_species_slug", "slug"),
+    )
 
     @model_validator(mode="after")
-    def at_least_one_identifier(self) -> "FederationResolveRequest":
-        if not any((self.name, self.taxon_id, self.source_url, self.partner_species_slug)):
+    def at_least_one_identifier(self) -> FederationResolveRequest:
+        if not any(
+            (self.name, self.taxon_id, self.source_url, self.partner_species_slug)
+        ):
             raise ValueError("at least one species identifier is required")
         return self
 
