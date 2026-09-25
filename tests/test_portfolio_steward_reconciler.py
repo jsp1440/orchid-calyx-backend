@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from app.calyx_orchestrator.deep_orchestrate import Priority
 from runtime.portfolio_steward_reconciler import (
     PortfolioStewardReport,
     _filter_prepared,
@@ -20,7 +21,6 @@ from runtime.portfolio_steward_reconciler import (
     _priority_from_labels,
     reconcile,
 )
-from app.calyx_orchestrator.deep_orchestrate import Priority
 
 # ---------------------------------------------------------------------------
 # Real-world issue fixtures matching orchid-continuum-frontend state
@@ -227,3 +227,31 @@ def test_reconcile_all_three_frontier_issues():
     assert report.blocked_count == 0
     for ev in report.evidence:
         assert not ev.get("provider_api_called")
+
+
+# ---------------------------------------------------------------------------
+# Regression — shared ORM registry pollution
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_survives_schema_qualified_models_on_shared_base():
+    """reconcile() must not depend on which ORM modules were imported earlier.
+
+    ``Base.metadata`` is shared by the whole application. Importing the Research
+    Station models registers ``research_station.*`` tables on it, and an
+    unrestricted ``Base.metadata.create_all`` on SQLite then fails with
+    ``sqlite3.OperationalError: unknown database research_station``. In the full
+    suite that import happens long before this file runs, so this test performs
+    it explicitly to make the order dependence deterministic.
+    """
+    import app.research_workspace.models  # noqa: F401  (registers schema-qualified tables)
+    from app.database import Base
+
+    assert any(
+        table.schema == "research_station" for table in Base.metadata.sorted_tables
+    )
+
+    report = reconcile([_ISSUE_660], _EMPTY_SNAPSHOT, reserve_depth=1)
+
+    assert report.admitted_count == 1
+    assert report.executed_count == 1
