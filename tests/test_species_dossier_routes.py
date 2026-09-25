@@ -93,6 +93,17 @@ GRAPH_EDGES = {
             "from_is_active": True,
             "to_is_active": True,
         },
+        {
+            "edge_type": "supported_by_evidence",
+            "node_type": "evidence",
+            "canonical_key": "evidence:yong-gee:4242:notes",
+            "display_label": "Phalaenopsis amabilis — notes",
+            "evidence_class": "compiled_specialist_source",
+            "confidence_score": 1.0,
+            "confidence_label": "source_faithful",
+            "source_table": "federated.gary_yong_gee_workbook",
+            "source_pk": "yong-gee:4242:notes",
+        },
     ]
 }
 
@@ -112,8 +123,16 @@ def assert_no_sensitive_locality(value: Any) -> None:
 class FakeCursor:
     """Answers the exact SQL shapes the repository issues; anything else is a test failure."""
 
-    def __init__(self, *, graph_present: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        graph_present: bool = True,
+        evidence: dict[int, list[dict[str, Any]]] | None = None,
+        honor_evidence_type_filter: bool = True,
+    ) -> None:
         self.graph_present = graph_present
+        self.evidence = evidence or {}
+        self.honor_evidence_type_filter = honor_evidence_type_filter
         self._rows: list[dict[str, Any]] = []
         self.statements: list[str] = []
 
@@ -144,9 +163,30 @@ class FakeCursor:
                     row for row in rows if str(row.get("image_license") or "").strip()
                 ]
             self._rows = rows
+        elif "FROM oc_graph.kg_nodes t JOIN oc_graph.kg_edges e" in compact:
+            assert "e.edge_type = 'supported_by_evidence'" in compact
+            assert "ev.node_type = 'evidence'" in compact
+            taxon_id = int(params[0].split(":", 1)[1])
+            rows = [
+                row
+                for row in self.evidence.get(taxon_id, [])
+                if row["source_table"] == params[1] and row.get("is_active", True)
+            ]
+            if self.honor_evidence_type_filter:
+                assert "NOT IN (%s, %s, %s, %s)" in compact
+                rows = [
+                    row
+                    for row in rows
+                    if row["payload_json"].get("evidence_type") not in params[2:6]
+                ]
+            self._rows = rows[: params[6]]
         elif "FROM oc_graph.kg_nodes n1" in compact:
             taxon_id = int(params[0].split(":", 1)[1])
             rows = list(GRAPH_EDGES.get(taxon_id, []))
+            if "e.edge_type <> 'supported_by_evidence'" in compact:
+                rows = [
+                    row for row in rows if row["edge_type"] != "supported_by_evidence"
+                ]
             if "n1.is_active IS TRUE" in compact:
                 rows = [
                     row
@@ -483,3 +523,314 @@ def test_main_app_registers_species_dossier_routes():
     assert "/api/platform/species/{taxon_id}/dossier" in paths
     assert "/api/platform/species/{taxon_id}/atlas" in paths
     assert "/api/platform/federation/resolve-species" in paths
+
+
+# -- federated compiled-specialist evidence (Gary Yong Gee) --------------------------------
+
+FRONTEND_ENVELOPE_KEYS = [
+    "contract_version",
+    "generated_at",
+    "identity",
+    "nomenclature",
+    "protologue",
+    "type_material",
+    "historical_media",
+    "living_media",
+    "morphology",
+    "distribution",
+    "ecology",
+    "phenology",
+    "pollinators",
+    "mycorrhizae",
+    "conservation",
+    "literature",
+    "cultivation",
+    "knowledge_graph",
+    "calyx_narrative",
+    "research_gaps",
+    "atlas",
+    "related_species",
+    "matrix_url",
+    "partner_references",
+    "provenance",
+]
+FRONTEND_SECTION_KEYS = {"state", "summary", "items", "receipts", "unavailable_reason"}
+FRONTEND_RECEIPT_KEYS = {
+    "source_id",
+    "source_name",
+    "source_url",
+    "record_id",
+    "retrieved_at",
+    "license",
+    "attribution",
+    "evidence_state",
+    "confidence",
+    "notes",
+}
+DISTRIBUTION_TEXT = (
+    "Endemic to the Kinabalu massif, lower montane forest near Kundasang"
+)
+HABITAT_TEXT = "Epiphyte on mossy trunks in cloud forest at 1500 m"
+LONG_MORPHOLOGY = "Sepals ovate, acuminate. " * 120
+
+
+def yong_gee_kg_rows(
+    taxon_pk: str, cleaned: dict[str, str | None]
+) -> list[dict[str, Any]]:
+    """KG node rows exactly as the Yong Gee adapter (#1617) would publish them."""
+    from runtime.federated_sources.yong_gee import (
+        TaxonResolution,
+        YongGeeRecord,
+        _produce_yong_gee_evidence,
+        evidence_rows,
+    )
+
+    record = YongGeeRecord(
+        source_record_id="4242",
+        scientific_name="Phalaenopsis amabilis",
+        source_digest="d" * 64,
+        raw={},
+        cleaned={"websiteSlug": "phalaenopsis-amabilis", **cleaned},
+    )
+    resolution = TaxonResolution(
+        source_record_id="4242",
+        scientific_name="Phalaenopsis amabilis",
+        state="matched",
+        taxon_pk=taxon_pk,
+    )
+    nodes, edges = _produce_yong_gee_evidence(evidence_rows([(record, resolution)]))
+    assert all(edge.edge_type == "supported_by_evidence" for edge in edges)
+    return [
+        {
+            "source_table": node.source_table,
+            "source_pk": node.source_pk,
+            "payload_json": dict(node.payload),
+            "updated_at": "2026-09-20T12:00:00+00:00",
+        }
+        for node in nodes
+    ]
+
+
+YONG_GEE_CLEANED = {
+    "synonym": "Epidendrum amabile L.",
+    "publicationsp": "Bijdr. Fl. Ned. Ind. 7: 294",
+    "pubyrsp": "1825",
+    "commonName": "Moon orchid",
+    "etymology": "Latin amabilis, lovely.",
+    "characteristicsp": LONG_MORPHOLOGY,
+    "scent": "Faintly sweet.",
+    "season": "Flowers in winter and spring.",
+    "referencesp": "Christenson, E.A. (2001) Phalaenopsis: a monograph.",
+    "notes": "A parent of many hybrids.",
+    "distributionsp": DISTRIBUTION_TEXT,
+    "habitat": HABITAT_TEXT,
+}
+
+
+def federated_repository(**cursor_kwargs: Any) -> PostgresSpeciesRepository:
+    evidence = {101: yong_gee_kg_rows("101", YONG_GEE_CLEANED)}
+    return repository(FakeCursor(evidence=evidence, **cursor_kwargs))
+
+
+def _strings(value: Any) -> list[str]:
+    if isinstance(value, dict):
+        return [s for item in value.values() for s in _strings(item)] + list(value)
+    if isinstance(value, list):
+        return [s for item in value for s in _strings(item)]
+    return [value] if isinstance(value, str) else []
+
+
+def test_yong_gee_evidence_populates_provisional_sections_with_receipts():
+    from app.species_dossier import repository as dossier_repository
+    from runtime.federated_sources import yong_gee
+
+    assert dossier_repository.YONG_GEE_SOURCE_TABLE == yong_gee.SOURCE_TABLE
+    assert dossier_repository.YONG_GEE_SOURCE_NAME == yong_gee.SOURCE_NAME
+
+    dossier = federated_repository().get_dossier("101")
+    assert dossier is not None
+    expected_types = {
+        "nomenclature": {
+            "nomenclature",
+            "nomenclatural_publication",
+            "publication_year",
+            "common_name",
+            "etymology",
+        },
+        "morphology": {"morphology", "scent"},
+        "phenology": {"phenology"},
+        "literature": {"bibliography"},
+    }
+    for name, types in expected_types.items():
+        section = getattr(dossier, name)
+        assert section.state == "provisional", name
+        assert section.unavailable_reason is None
+        assert (
+            "Compiled by Gary Yong Gee; not independently verified" in section.summary
+        )
+        assert {item["evidence_type"] for item in section.items} == types
+        assert all(item["evidence_state"] == "provisional" for item in section.items)
+        assert len(section.receipts) == len(section.items)
+        for receipt in section.receipts:
+            assert receipt.source_id == "federated.gary_yong_gee_workbook"
+            assert receipt.source_name == "Gary Yong Gee Orchid Database"
+            assert (
+                str(receipt.source_url)
+                == "https://www.yonggee.name/phalaenopsis-amabilis"
+            )
+            assert receipt.record_id.startswith("yong-gee:4242:")
+            assert receipt.attribution == "Gary Yong Gee (compiler)"
+            assert receipt.evidence_state == "provisional"
+            assert (
+                receipt.confidence is None
+            )  # stored score is source faithfulness only
+            assert receipt.license is None  # no licence is stored; none is invented
+            assert receipt.retrieved_at is not None
+            assert "underlying_citation_status=present_in_record" in receipt.notes
+        assert name not in dossier.unavailable_sections
+
+    assert dossier.phenology.items[0]["excerpt"] == "Flowers in winter and spring."
+    morphology = next(
+        i for i in dossier.morphology.items if i["evidence_type"] == "morphology"
+    )
+    assert morphology["excerpt_truncated"] is True
+    assert morphology["excerpt"].endswith("[...]")
+    assert len(morphology["excerpt"]) <= 1200
+
+    # Free-text notes can name a locality in prose, so they are withheld with
+    # distribution and habitat until a locality-sensitivity review.
+    assert not [i for i in dossier.knowledge_graph.items if "excerpt" in i]
+    assert dossier.knowledge_graph.items[0]["edge_type"] == "pollinated_by"
+    assert "compiled specialist" not in (dossier.knowledge_graph.summary or "")
+    assert "A parent of many hybrids." not in dossier.model_dump_json()
+
+    # Sections without evidence keep the existing honest reason.
+    for name in [
+        "protologue",
+        "type_material",
+        "ecology",
+        "pollinators",
+        "research_gaps",
+    ]:
+        assert getattr(dossier, name).state == "unavailable"
+        assert name in dossier.unavailable_sections
+    assert dossier.calyx_narrative.state == "unavailable"
+
+
+def test_taxon_without_federated_evidence_is_unchanged():
+    dossier = federated_repository().get_dossier("102")
+    assert dossier is not None
+    for name in ["nomenclature", "morphology", "phenology", "literature"]:
+        section = getattr(dossier, name)
+        assert section.state == "unavailable"
+        assert "not evidence of absence" in section.unavailable_reason
+        assert name in dossier.unavailable_sections
+
+
+def test_no_graph_tables_means_no_federated_query():
+    cursor = FakeCursor(
+        graph_present=False, evidence={101: yong_gee_kg_rows("101", YONG_GEE_CLEANED)}
+    )
+    dossier = repository(cursor).get_dossier("101")
+    assert dossier.nomenclature.state == "unavailable"
+    assert not any("supported_by_evidence" in sql for sql in cursor.statements)
+
+
+@pytest.mark.parametrize("honor_sql_filter", [True, False])
+def test_federated_distribution_and_habitat_are_never_emitted(honor_sql_filter):
+    dossier = federated_repository(
+        honor_evidence_type_filter=honor_sql_filter
+    ).get_dossier("101")
+    payload = dossier.model_dump(mode="json")
+    text = "\n".join(_strings(payload))
+    for sensitive in (
+        DISTRIBUTION_TEXT,
+        HABITAT_TEXT,
+        "Kinabalu",
+        "Kundasang",
+        "1500 m",
+    ):
+        assert sensitive not in text
+    assert all(
+        item.get("evidence_type") not in {"distribution", "habitat"}
+        for section in payload.values()
+        if isinstance(section, dict)
+        for item in section.get("items", [])
+    )
+    assert dossier.distribution.state == "unavailable"
+    assert (
+        "Distribution and habitat descriptions from federated sources are withheld "
+        "pending locality-sensitivity review."
+        in dossier.distribution.unavailable_reason
+    )
+    assert dossier.ecology.state == "unavailable"
+    assert_no_sensitive_locality(payload)
+    assert not re.search(r"\b-?\d{1,2}\.\d{3,}\b", str(payload))
+
+
+def test_coordinate_looking_excerpts_are_withheld_from_any_section():
+    rows = yong_gee_kg_rows(
+        "101",
+        {
+            "season": "Collected at 5.9804 N, 116.0735 E in March.",
+            "scent": "Noted near 6°05'N 116°33'E.",
+        },
+    )
+    dossier = repository(FakeCursor(evidence={101: rows})).get_dossier("101")
+    assert dossier.phenology.state == "unavailable"
+    assert dossier.morphology.state == "unavailable"
+    # Check the coordinate fragments themselves: a bare "116" also matches the
+    # generated_at timestamp whenever its microseconds contain those digits.
+    dumped = str(dossier.model_dump(mode="json"))
+    for fragment in ("5.9804", "116.0735", "6°05'N", "116°33'E", "Collected at", "Noted near"):
+        assert fragment not in dumped
+
+
+def test_federated_payload_still_satisfies_the_frontend_contract(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(
+        federated_repository(), public_base_url="https://oc.test"
+    )
+    resp = TestClient(app).get("/api/platform/species/101/dossier")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert set(FRONTEND_ENVELOPE_KEYS) <= set(body)
+    sections = [
+        key
+        for key in FRONTEND_ENVELOPE_KEYS
+        if isinstance(body[key], dict) and "state" in body[key] and key != "atlas"
+    ]
+    assert "nomenclature" in sections and "knowledge_graph" in sections
+    for key in sections:
+        section = body[key]
+        assert FRONTEND_SECTION_KEYS <= set(section), key
+        assert section["state"] in {
+            "available",
+            "provisional",
+            "conflicting",
+            "modeled",
+            "inferred",
+            "unavailable",
+        }
+        assert isinstance(section["items"], list)
+        for receipt in section["receipts"]:
+            assert FRONTEND_RECEIPT_KEYS <= set(receipt), key
+    assert body["nomenclature"]["state"] == "provisional"
+    assert (
+        body["literature"]["receipts"][0]["attribution"] == "Gary Yong Gee (compiler)"
+    )
+    assert_no_sensitive_locality(body)
+
+
+def test_evidence_edges_are_not_listed_as_graph_relationships():
+    dossier = repository().get_dossier("101")
+    assert dossier.knowledge_graph.state == "available"  # no federated notes here
+    assert [item["edge_type"] for item in dossier.knowledge_graph.items] == [
+        "pollinated_by"
+    ]
+    assert all(
+        receipt.record_id != "yong-gee:4242:notes"
+        for receipt in dossier.knowledge_graph.receipts
+    )

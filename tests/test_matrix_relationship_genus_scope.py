@@ -77,7 +77,9 @@ class _Connection:
 
 def test_governed_source_read_applies_genus_and_subject_filters(monkeypatch):
     connection = _Connection()
-    monkeypatch.setattr(sources.psycopg, "connect", lambda *_args, **_kwargs: connection)
+    monkeypatch.setattr(
+        sources.psycopg, "connect", lambda *_args, **_kwargs: connection
+    )
 
     assertions = sources.load_governed_assertions(
         "postgresql://unused",

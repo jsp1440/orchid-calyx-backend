@@ -1,0 +1,80 @@
+name: OC Completion Receipt Contract
+
+# The completion receipt contract is shared by the backend, the frontend and the
+# Brain. This gate validates the fail-closed validator against the contract and,
+# with a live checkout of the sibling repositories, proves the shapes have not
+# diverged. The daily run catches drift that lands in another repository.
+
+on:
+  pull_request:
+    paths:
+      - "contracts/oc-completion-receipt.v1.json"
+      - "contracts/oc-autonomy-context.v1.json"
+      - "runtime/completion_receipt_contract.py"
+      - "tests/test_cross_repo_completion_receipt_contract.py"
+      - "artifacts/autonomy-durable-proof.json"
+      - ".github/workflows/oc-completion-receipt-contract.yml"
+  push:
+    branches: [main]
+    paths:
+      - "contracts/oc-completion-receipt.v1.json"
+      - "contracts/oc-autonomy-context.v1.json"
+      - "runtime/completion_receipt_contract.py"
+      - "tests/test_cross_repo_completion_receipt_contract.py"
+      - ".github/workflows/oc-completion-receipt-contract.yml"
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  receipt-contract:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+      # Optional read token for the private Brain repository. Without it the
+      # Brain comparison falls back to the bindings pinned in the contract.
+      OC_BRAIN_READ_TOKEN: ${{ secrets.OC_BRAIN_READ_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check out orchid-continuum-frontend (public)
+        uses: actions/checkout@v4
+        with:
+          repository: jsp1440/orchid-continuum-frontend
+          ref: main
+          path: cross-repo/frontend
+          persist-credentials: false
+
+      - name: Check out Orchid-Continuum-Brain (private; needs OC_BRAIN_READ_TOKEN)
+        if: ${{ env.OC_BRAIN_READ_TOKEN != '' }}
+        uses: actions/checkout@v4
+        with:
+          repository: jsp1440/Orchid-Continuum-Brain
+          ref: main
+          path: cross-repo/brain
+          token: ${{ env.OC_BRAIN_READ_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install -r requirements.txt pytest pytest-asyncio httpx ruff
+
+      - name: Cross-repository completion receipt contract
+        run: >-
+          env -u DATABASE_URL -u TEST_DATABASE_URL python -m pytest -q -rs
+          tests/test_cross_repo_completion_receipt_contract.py
+        env:
+          OC_FRONTEND_CHECKOUT: cross-repo/frontend
+          OC_BRAIN_CHECKOUT: cross-repo/brain
+
+      - name: Changed-surface hygiene
+        run: |
+          python -m compileall -q runtime/completion_receipt_contract.py tests/test_cross_repo_completion_receipt_contract.py
+          python -m ruff check runtime/completion_receipt_contract.py tests/test_cross_repo_completion_receipt_contract.py
+          python -m ruff format --check runtime/completion_receipt_contract.py tests/test_cross_repo_completion_receipt_contract.py
+          git diff --check
