@@ -54,11 +54,17 @@ OPTIONAL_MARKER = re.compile(
 #: codes. It exists because a lane whose only executor performs no commands can
 #: complete a cycle without producing any evidence about the revision.
 #:
+#: ``edit`` is ``scripts/oc_work_edit_lane.py``, which applies the one-line
+#: remedy a discovery candidate carries (a pinned requirement), re-runs the
+#: candidate's own validation command on a branch, and opens a draft pull
+#: request. It never writes to the checked-out revision or to ``main``, and it
+#: refuses every remedy it cannot derive from evidence.
+#:
 #: Adding a name here without adding the executor behind it re-creates the exact
 #: failure this constant was introduced to stop: the controller admits the task,
 #: the worker does not recognise it, and the issue is marked blocked for lacking
 #: a capability nothing ever had.
-DETERMINISTIC_EXECUTORS = frozenset({"reconcile", "validate"})
+DETERMINISTIC_EXECUTORS = frozenset({"reconcile", "validate", "edit"})
 
 
 @dataclass(frozen=True)

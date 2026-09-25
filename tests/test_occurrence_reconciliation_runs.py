@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import os
-import socket
 from pathlib import Path
-from urllib.parse import urlparse
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -16,29 +14,9 @@ from runtime.occurrence_persistence import (
 DATABASE_URL = os.environ.get("TEST_DATABASE_URL") or os.environ.get("DATABASE_URL")
 
 
-def _postgres_reachable(dsn: str | None, timeout: float = 0.5) -> bool:
-    """True only if something is actually listening at the DSN's host:port.
-
-    ``tests/conftest.py`` sets a placeholder ``DATABASE_URL`` so unrelated
-    modules can import cleanly without a real database; that placeholder is a
-    syntactically valid DSN pointing at nothing. Checking presence alone
-    would treat that placeholder as "configured" and let these Postgres-backed
-    tests attempt a real connection and fail with a raw driver error instead
-    of skipping cleanly.
-    """
-    if not dsn:
-        return False
-    try:
-        parsed = urlparse(dsn)
-        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 5432), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-pytestmark = pytest.mark.skipif(
-    not _postgres_reachable(DATABASE_URL), reason="no reachable PostgreSQL test database"
-)
+# Gated in tests/conftest.py by a real connection probe; skips with the
+# driver's reason when no usable PostgreSQL is configured.
+pytestmark = pytest.mark.requires_postgres
 
 
 def _apply(engine, filename: str) -> None:

@@ -624,6 +624,20 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
                     }
                 },
             ),
+            "edit": (
+                "\nOC-SWARM-VALIDATE: control-plane-compiles",
+                {
+                    "edit": {
+                        "schema": "oc.provider-free-edit-result.v1",
+                        "outcome": "condition_absent_validated",
+                        "validation_commands": ["control-plane-compiles"],
+                        "validation_passed": True,
+                        "changed_file_count": 0,
+                        "changed_files": [],
+                        "pr_number": None,
+                    }
+                },
+            ),
         }
         assert set(minimum_inputs) == set(routing.DETERMINISTIC_EXECUTORS)
         for task in sorted(routing.DETERMINISTIC_EXECUTORS):

@@ -15,6 +15,13 @@ declared disposition still bounds the *best* outcome available, but it cannot
 manufacture one: a failing, timed-out, or unrunnable command settles ``blocked``
 whatever the issue asked for. That asymmetry is the whole point — a task may
 declare what success would mean, never that it happened.
+
+``edit`` settles from the receipt ``oc_work_edit_lane`` produced: a draft pull
+request opened for a one-line remedy parks the issue on that PR (``blocked``,
+with ``OC-BLOCKED-ON: pr#N`` for the reconciler to clear on merge); a
+condition the lane found already absent, proven by the validation command,
+settles at the declared disposition; everything else is ``blocked``. The
+edited files are checked against the lease exactly as any other write set.
 """
 
 from __future__ import annotations
@@ -40,8 +47,14 @@ VALIDATE = re.compile(
     r"^OC-SWARM-VALIDATE:\s*([a-z0-9][a-z0-9-]*)\s*$", re.IGNORECASE | re.MULTILINE
 )
 ALLOWED_DISPOSITIONS = {"blocked", "done", "owner-gate"}
-SUPPORTED_MODES = {"reconcile", "validate"}
+SUPPORTED_MODES = {"reconcile", "validate", "edit"}
 VALIDATION_EVIDENCE_SCHEMA = "oc.provider-free-validation-evidence.v1"
+EDIT_RECEIPT_SCHEMA = "oc.provider-free-edit-result.v1"
+#: Edit-lane outcomes that may settle at the issue's declared disposition. Only
+#: one: the condition was gone and the validation command proved it. A pull
+#: request is progress, not completion, and everything else is a refusal.
+EDIT_OUTCOMES_AT_DECLARED = {"condition_absent_validated"}
+EDIT_OUTCOMES_PARKED_ON_PR = {"pr_opened", "already_open"}
 
 
 def declared_validation_commands(body: str) -> list[str]:
@@ -89,6 +102,7 @@ def build_receipt(
     changed_files: list[str],
     integration_sha: str,
     validation: dict[str, Any] | None = None,
+    edit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = str(issue.get("body") or "")
     mode_match = MODE.search(body)
@@ -110,6 +124,9 @@ def build_receipt(
         raise ValueError("integration SHA is required")
 
     declared_commands = declared_validation_commands(body)
+    if mode != "edit" and edit is not None:
+        raise ValueError(f"{mode} mode does not carry edit-lane evidence")
+    blocked_on: str | None = None
     if mode == "reconcile":
         if validation is not None:
             raise ValueError("reconcile mode does not run validation commands")
@@ -117,6 +134,10 @@ def build_receipt(
             raise ValueError(
                 "validation commands are declared but the mode is reconcile"
             )
+    elif mode == "edit":
+        if validation is not None:
+            raise ValueError("edit mode carries its validation inside the edit receipt")
+        disposition, blocked_on = _edit_disposition(disposition, edit, declared_commands)
     else:
         disposition = _validated_disposition(
             disposition, validation, declared_commands
@@ -147,7 +168,53 @@ def build_receipt(
     if mode == "validate":
         receipt["validation"] = validation
         receipt["declared_commands"] = declared_commands
+    if mode == "edit":
+        receipt["edit"] = edit
+        receipt["declared_commands"] = declared_commands
+        receipt["blocked_on"] = blocked_on
+        receipt["changed_file_count"] = int(edit["changed_file_count"])  # type: ignore[index]
+        # The write set verified above must be the one the lane committed, and
+        # a pass that committed and pushed a file did write to the repository.
+        if sorted(changed_files) != sorted(edit.get("changed_files") or []):  # type: ignore[union-attr]
+            raise ValueError("changed files differ from the edit lane's receipt")
+        receipt["safety"]["repository_writes"] = receipt["changed_file_count"] > 0
     return receipt
+
+
+def _edit_disposition(
+    declared: str, edit: dict[str, Any] | None, declared_commands: list[str]
+) -> tuple[str, str | None]:
+    """Settle an edit task from what the lane recorded, never from its intent.
+
+    The lane's receipt is the only evidence. A missing or foreign receipt, a
+    receipt about another set of commands, or one whose outcome is not in the
+    two small tables above settles ``blocked`` — the same asymmetry ``validate``
+    keeps: the issue may say what done would mean, not that it happened.
+    """
+    if not declared_commands:
+        raise ValueError("edit mode declares no OC-SWARM-VALIDATE command")
+    if edit is None:
+        raise ValueError("edit mode requires the edit lane's receipt")
+    if not isinstance(edit, dict) or edit.get("schema") != EDIT_RECEIPT_SCHEMA:
+        raise ValueError("edit receipt schema is unrecognised")
+    executed = [str(name) for name in edit.get("validation_commands") or []]
+    expected: list[str] = []
+    for name in declared_commands:
+        if name not in expected:
+            expected.append(name)
+    if executed != expected:
+        raise ValueError("edit receipt does not cover the declared commands")
+    if not isinstance(edit.get("changed_file_count"), int):
+        raise TypeError("edit receipt carries no integer changed_file_count")
+    outcome = str(edit.get("outcome") or "")
+    if outcome in EDIT_OUTCOMES_PARKED_ON_PR:
+        number = edit.get("pr_number")
+        if not isinstance(number, int) or number <= 0:
+            raise ValueError("edit receipt names no pull request to wait on")
+        return "blocked", f"pr#{number}"
+    if outcome in EDIT_OUTCOMES_AT_DECLARED and edit.get("validation_passed") is True:
+        return declared, None
+    return "blocked", None
 
 
 def _validated_disposition(
@@ -193,6 +260,11 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="oc.provider-free-validation-evidence.v1 produced by oc_provider_free_validate",
     )
+    parser.add_argument(
+        "--edit-json",
+        default="",
+        help="oc.provider-free-edit-result.v1 produced by oc_work_edit_lane",
+    )
     args = parser.parse_args(argv)
 
     if args.plan:
@@ -221,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         validation = json.loads(args.validation_json) if args.validation_json.strip() else None
         if validation is not None and not isinstance(validation, dict):
             raise TypeError("validation-json must be an object")
+        edit = json.loads(args.edit_json) if args.edit_json.strip() else None
+        if edit is not None and not isinstance(edit, dict):
+            raise TypeError("edit-json must be an object")
         if not isinstance(issue, dict):
             raise TypeError("issue-json must be an object")
         if not isinstance(changed_files, list) or not all(
@@ -233,6 +308,7 @@ def main(argv: list[str] | None = None) -> int:
             changed_files=changed_files,
             integration_sha=args.integration_sha,
             validation=validation,
+            edit=edit,
         )
     except (KeyError, TypeError, ValueError, json.JSONDecodeError) as exc:
         json.dump(
