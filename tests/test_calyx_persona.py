@@ -62,6 +62,5 @@ def test_generative_system_prompt_includes_persona_and_governance():
     assert (
         "do not publish, promote, or activate candidate knowledge, and do not mutate "
         "the knowledge graph: scientific publication requires human review and is "
-        "never automatic."
-        in prompt
+        "never automatic." in prompt
     )
