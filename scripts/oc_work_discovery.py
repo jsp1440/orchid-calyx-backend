@@ -445,6 +445,30 @@ def discover_failing_tests(report_text: str, root: Path) -> list[Candidate]:
 #: may legitimately import a dev-only distribution.
 RUNTIME_IMPORT_ROOTS = ("app", "runtime")
 
+#: The registered command that proves an undeclared-import remedy: the base
+#: application imports under the installed distributions. Bound only when
+#: every affected file is inside the production trees that command exercises;
+#: a finding elsewhere names no command and stays filed-but-unexecutable.
+PRODUCTION_IMPORTS_COMMAND = "production-runtime-imports"
+
+
+def import_validation_command(paths: list[str]) -> str:
+    """The command that settles an undeclared-import candidate, or "".
+
+    A literally covering command still wins when one exists. Otherwise the
+    production import check applies to files under ``app/`` or ``runtime/``
+    only -- the trees ``import app.main`` can reach -- and to nothing else.
+    """
+    covering = covering_validation_command(paths)
+    if covering:
+        return covering
+    if not paths or PRODUCTION_IMPORTS_COMMAND not in VALIDATION_COMMANDS:
+        return ""
+    roots = tuple(f"{root}/" for root in RUNTIME_IMPORT_ROOTS)
+    if all(path.startswith(roots) for path in paths):
+        return PRODUCTION_IMPORTS_COMMAND
+    return ""
+
 
 def _imported_modules(source: str) -> set[str]:
     """Top-level module names a file imports, parsed rather than matched."""
@@ -537,7 +561,7 @@ def discover_undeclared_imports(root: Path, *, provided_by: dict[str, list[str]]
                 ),
                 remedy=declare_remedy("undeclared-import", distribution),
                 capabilities=("schema-validation",),
-                validation_command=covering_validation_command(relative),
+                validation_command=import_validation_command(relative),
             )
         )
     return candidates
@@ -620,6 +644,15 @@ def brain_observations(root: Path, *, now: datetime | None = None) -> dict[str, 
     }
 
 
+def evidence_path(where: str) -> str:
+    """The repository path an evidence locator names.
+
+    A pytest node id carries its file before the first ``::``; a path is
+    already a path. Nothing else is inferred from the locator.
+    """
+    return str(where or "").split("::", 1)[0]
+
+
 def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     """Turn every unplaced candidate into one bounded analysis task.
 
@@ -630,7 +663,13 @@ def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     unplaced = [item for item in candidates if item.lane is None and not item.analysis_only]
     if not unplaced:
         return []
-    paths = sorted({item.where for candidate in unplaced for item in candidate.evidence})
+    # Evidence ``where`` is a repository path OR a pytest node id
+    # (``tests/test_x.py::test_a``). The lane table binds paths, so the
+    # question is asked about the file, once, however many of its tests
+    # failed. Asking it per node id counted thirteen "paths" for one file and
+    # gave the question a new identity every time a different test in that
+    # file went red -- an uncounted magnitude and a churning fingerprint.
+    paths = sorted({evidence_path(item.where) for candidate in unplaced for item in candidate.evidence})
     return [
         Candidate(
             source="binding-gap",

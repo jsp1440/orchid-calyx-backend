@@ -6,21 +6,25 @@ BUILD-019: Maintains backward compatibility with connector scaffold endpoints at
 
 from __future__ import annotations
 
+import os
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.security import verify_owner_or_api_key
+
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .connector_planner import BrainConnectorPlanner
 from .connector_runtime import ConnectorRuntimeBuilder
-from .connector_routes import router as connector_router
 from .discovery_memory import DiscoveryMemoryStore
+from .evidence_coverage_gaps import EvidenceCoverageGapSource
+from .evidence_gap_reserve_plan import evidence_gap_reserve_plan, valid_fingerprints
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
-
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Runtime Planner"])
 WRITE_AUTH = [Depends(verify_owner_or_api_key)]
@@ -47,7 +51,20 @@ def snapshot_store() -> DiscoveryMemoryStore:
 
 
 def gap_engine() -> KnowledgeGapDiscoveryEngine:
-    return KnowledgeGapDiscoveryEngine()
+    return KnowledgeGapDiscoveryEngine(kg_source=evidence_coverage_source())
+
+
+def evidence_coverage_source() -> EvidenceCoverageGapSource:
+    """The KG gap source; without a database it reports why and the engine fails closed."""
+    if not os.getenv("DATABASE_URL"):
+        return EvidenceCoverageGapSource(None, unavailable_reason="DATABASE_URL is not configured")
+    try:
+        from app.routers.owner_operations import db_execute
+    except ImportError as exc:  # pragma: no cover - depends on optional drivers
+        return EvidenceCoverageGapSource(
+            None, unavailable_reason=f"database driver unavailable: {type(exc).__name__}"
+        )
+    return EvidenceCoverageGapSource(db_execute)
 
 
 def diagnostic_engine() -> KnowledgeGapDiagnosticsEngine:
@@ -311,6 +328,23 @@ def knowledge_gap_priorities():
 @router.get("/knowledge-gaps/queue")
 def knowledge_gap_queue(limit: int = Query(default=10, ge=1, le=50)):
     return gap_engine().research_queue(limit=limit)
+
+
+@router.get("/knowledge-gaps/reserve-plan")
+def knowledge_gap_reserve_plan(
+    reserve_depth: int = Query(default=3, ge=0, le=3),
+    fingerprint: Annotated[list[str] | None, Query()] = None,
+):
+    """Read-only reserve plan of KG evidence-gap missions (oc.reserve-refill.v1)."""
+    fingerprints = valid_fingerprints(fingerprint or [])
+    if fingerprints is None:
+        raise HTTPException(
+            status_code=422,
+            detail="fingerprint must be up to 100 lowercase 64-hex material fingerprints",
+        )
+    return evidence_gap_reserve_plan(
+        evidence_coverage_source(), reserve_depth=reserve_depth, fingerprints=fingerprints
+    )
 
 
 @router.get("/knowledge-gaps/dashboard")

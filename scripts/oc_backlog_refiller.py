@@ -219,6 +219,8 @@ def plan_refill(
         key=lambda item: (
             int(item.get("priority", 999)),
             str(item.get("created_at") or ""),
+            # Optional source-supplied rank; absent (0) keeps the prior ordering.
+            int(item.get("queue_rank") or 0),
             str(item.get("source_ref") or ""),
         ),
     )
@@ -247,6 +249,11 @@ def plan_refill(
             "material_fingerprint": fingerprint,
             "semantic_key": semantic_key,
         }
+        # Carried so a consumer does not flatten every source to one priority.
+        if isinstance(candidate.get("priority"), int) and not isinstance(
+            candidate.get("priority"), bool
+        ):
+            proposal["priority"] = candidate["priority"]
         if candidate.get("queue_source_kind") is not None:
             proposal["queue_source_kind"] = candidate["queue_source_kind"]
         if candidate.get("required_capabilities") is not None:

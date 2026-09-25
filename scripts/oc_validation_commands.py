@@ -148,6 +148,19 @@ _COMMANDS = (
         ),
     ),
     ValidationCommand(
+        command_id="production-runtime-imports",
+        # The same statement validate-python-runtime makes in CI: the base
+        # application imports under the pinned runtime. It is the check that
+        # proves a requirements.txt declaration did not break what it declares
+        # for, which is what an undeclared-import remedy needs settled.
+        argv=("python3", "-c", "import app.main; import app.routers.calyx_core"),
+        summary="Import the base application and the Calyx core router.",
+        proves=(
+            "the production import graph resolves on this exact revision under "
+            "the runner's installed distributions"
+        ),
+    ),
+    ValidationCommand(
         command_id="control-plane-compiles",
         argv=("python3", "-m", "compileall", "-q", "scripts", "runtime/swarm"),
         summary="Byte-compile the control-plane Python sources.",

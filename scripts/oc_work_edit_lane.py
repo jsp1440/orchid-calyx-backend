@@ -120,6 +120,21 @@ class Edit:
 # -- Derivation ---------------------------------------------------------------
 
 
+#: The distribution name at the start of a requirements line (comments and
+#: options such as ``-r`` never match).
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
+def canonical_distribution(name: str) -> str:
+    """PEP 503 normalised name: ``Foo.Bar_baz`` and ``foo-bar-baz`` are one.
+
+    pip treats every run of ``-``, ``_`` and ``.`` as the same separator, so a
+    file that declares ``pytest.asyncio`` already declares ``pytest-asyncio``;
+    writing it a second time is a duplicate requirement, not a remedy.
+    """
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def derive_edit(
     candidate: Mapping[str, Any],
     root: Path,
@@ -154,8 +169,10 @@ def derive_edit(
     command = str(candidate.get("validation_command") or "")
     if command not in VALIDATION_COMMANDS:
         raise LaneRefusal("no_validation_command", command or "none bound")
-    normalised = distribution.lower().replace("_", "-")
-    if normalised in discovery.declared_distributions(root):
+    normalised = canonical_distribution(distribution)
+    if normalised in {
+        canonical_distribution(name) for name in discovery.declared_distributions(root)
+    }:
         raise LaneRefusal("already_declared", distribution)
     version = version_of(distribution)
     if version is None:
@@ -174,14 +191,18 @@ def derive_edit(
 def apply_edit(edit: Edit, root: Path) -> bool:
     """Append the pinned line to the requirements file. True when it wrote.
 
-    Idempotent: a file that already carries the exact line is left alone. The
-    comment names the fingerprint so a reader can find the issue that filed
-    the condition without a search.
+    Idempotent: a file that already declares the distribution, under any PEP
+    503 spelling and any specifier, is left alone. The comment names the
+    fingerprint so a reader can find the issue that filed the condition
+    without a search.
     """
     target = root / edit.path
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
-    if any(line.strip() == edit.line for line in existing.splitlines()):
-        return False
+    wanted = canonical_distribution(edit.distribution)
+    for line in existing.splitlines():
+        declared = _REQUIREMENT_NAME.match(line)
+        if declared and canonical_distribution(declared.group(1)) == wanted:
+            return False
     block = (
         f"# Declared by the provider-free edit lane from discovery fingerprint "
         f"{edit.fingerprint}: the installed version, pinned.\n{edit.line}\n"
@@ -277,13 +298,19 @@ def run_validation(
         {match.group("nodeid") for match in discovery.PYTEST_OUTCOME.finditer(output)}
     )
     has_summary = bool(discovery.PYTEST_SUMMARY.search(output))
+    # A pytest run must carry its summary line to count; an import check has
+    # no summary to carry, and its exit code is the whole statement.
+    pytest_shaped = "pytest" in command.argv
     return {
         "command_id": command_id,
         "argv": list(command.argv),
         "exit_code": exit_code,
         "timed_out": timed_out,
         "passed": exit_code == 0 and not timed_out,
+        "pytest_shaped": pytest_shaped,
         "has_summary": has_summary,
+        "conclusive": (exit_code is not None and not timed_out)
+        and (has_summary or not pytest_shaped),
         "failing_node_ids": failing,
         "output_digest": "sha256:" + hashlib.sha256(output.encode("utf-8")).hexdigest(),
         "output_tail": output[-1200:],
@@ -304,8 +331,11 @@ def judge(before: Mapping[str, Any], after: Mapping[str, Any]) -> tuple[bool, st
     read as a result at all -- an empty failure set from a run that collected
     nothing is the same shape as green, and it is not green.
     """
-    if not before.get("has_summary") or not after.get("has_summary"):
-        return False, "a validation run carried no pytest summary line"
+    if not before.get("conclusive") or not after.get("conclusive"):
+        return (
+            False,
+            "a validation run was inconclusive (no pytest summary line, or it never finished)",
+        )
     if not after.get("passed"):
         return False, f"validation exited {after.get('exit_code')} after the edit"
     still = sorted(
@@ -393,6 +423,7 @@ def pull_request_body(
         f"- `{edit.path}`: add `{edit.line}`",
         f"- base: `{base_sha}`; commit: `{commit_sha}`",
         f"- provisioned into the lane environment before pinning: {'yes' if edit.provisioned else 'no'}",
+        f"- declared in any requirements file: before {before.get('declared')}, after {after.get('declared')}",
         "",
         "```diff",
         diff.rstrip("\n"),
@@ -496,6 +527,41 @@ def finalize_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("pr_opened receipt names no lane branch")
         if receipt.get("disposition") != "blocked":
             raise ValueError("a pull request parks the issue; it does not complete it")
+        url = receipt.get("pr_url")
+        found = PR_URL.search(url) if isinstance(url, str) else None
+        if not found or int(found.group("number")) != number:
+            raise ValueError("pr_opened receipt carries no URL for its pull request")
+        if receipt.get("validation_passed") is not True:
+            raise ValueError("pr_opened receipt does not record a passing validation")
+        if not isinstance(receipt.get("fingerprint"), str) or not re.fullmatch(
+            r"[a-f0-9]{16}", receipt["fingerprint"]
+        ):
+            raise ValueError("pr_opened receipt carries no discovery fingerprint")
+        issue_number = receipt.get("issue_number")
+        if not isinstance(issue_number, int) or issue_number <= 0:
+            raise ValueError("pr_opened receipt names no issue")
+        commands = receipt.get("validation_commands")
+        if not isinstance(commands, list) or len(commands) != 1:
+            raise ValueError("pr_opened receipt names no single validation command")
+        edit = receipt.get("edit")
+        if (
+            not isinstance(edit, Mapping)
+            or edit.get("path") != (receipt.get("changed_files") or [None])[0]
+        ):
+            raise ValueError("pr_opened receipt's edit does not name the changed file")
+        for side in ("before", "after"):
+            run = receipt.get(side)
+            if not isinstance(run, Mapping) or run.get("command_id") != commands[0]:
+                raise ValueError(f"pr_opened receipt carries no {side} validation run")
+        if not isinstance(receipt.get("reason"), str) or not receipt["reason"]:
+            raise ValueError("pr_opened receipt carries no reason")
+        safety = receipt.get("safety")
+        if (
+            not isinstance(safety, Mapping)
+            or not safety
+            or any(value is not False for value in safety.values())
+        ):
+            raise ValueError("pr_opened receipt carries no all-false safety record")
     elif outcome == "already_open":
         if (
             not isinstance(receipt.get("pr_number"), int)
@@ -545,6 +611,8 @@ def run_lane(
     if not FULL_SHA.fullmatch(str(base_sha or "")):
         raise ValueError("base sha must be a full commit id")
     number = int(issue.get("number") or 0)
+    if number <= 0:
+        raise ValueError("issue number is required")
     body = str(issue.get("body") or "")
     commands = declared_validation_commands(body)
     match = materialize.FINGERPRINT.search(body)
@@ -602,7 +670,7 @@ def run_lane(
         result = run_validation(
             commands[0], cwd=str(root), runner=runner, timeout=timeout
         )
-        passed = bool(result["passed"] and result["has_summary"])
+        passed = bool(result["passed"] and result["conclusive"])
         return _receipt(
             outcome="condition_absent_validated" if passed else "validation_failed",
             reason="condition_absent"
@@ -662,23 +730,32 @@ def run_lane(
         before = run_validation(
             command_id, cwd=str(worktree), runner=runner, timeout=timeout
         )
-        if edit is None:
-            # Provision, then derive again: the version written is the one
-            # that actually arrived, read from the environment.
+        provisioned = edit is None
+        if provisioned:
+            # Provision first: the version written is the one that actually
+            # arrived, read from the environment.
             provision(candidate["remedy"]["distribution"], worktree)  # type: ignore[misc]
-            try:
-                edit = derive_edit(candidate, worktree, version_of=version_of)
-            except LaneRefusal as refusal:
-                return _receipt(
-                    outcome="refused",
-                    reason=refusal.reason,
-                    fingerprint=fingerprint,
-                    issue_number=number,
-                    validation_commands=commands,
-                    edit={"detail": refusal.detail, "provisioned": True},
-                    before=before,
-                )
+        # Derive again against the tree the edit lands in. The derivation
+        # above read the checkout, which is where discovery found the
+        # condition; ``base_sha`` may be another revision, and a requirements
+        # file that already declares the distribution there (under any pin)
+        # must refuse rather than receive a second line.
+        try:
+            edit = derive_edit(candidate, worktree, version_of=version_of)
+        except LaneRefusal as refusal:
+            return _receipt(
+                outcome="refused",
+                reason=refusal.reason,
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+                edit={"detail": refusal.detail, "provisioned": provisioned},
+                before=before,
+            )
+        if provisioned:
             edit = replace(edit, provisioned=True)
+        normalised = edit.distribution.lower().replace("_", "-")
+        declared_before = normalised in discovery.declared_distributions(worktree)
         if not apply_edit(edit, worktree):
             return _receipt(
                 outcome="refused",
@@ -688,10 +765,21 @@ def run_lane(
                 validation_commands=commands,
                 edit=edit.to_record(),
             )
+        declared_after = normalised in discovery.declared_distributions(worktree)
         after = run_validation(
             command_id, cwd=str(worktree), runner=runner, timeout=timeout
         )
+        # The declaration is the condition for an undeclared-import remedy:
+        # the import check passes before and after (the distribution was
+        # installed all along), so what changed is recorded alongside it.
+        before = {**before, "declared": declared_before}
+        after = {**after, "declared": declared_after}
         ok, why = judge(before, after)
+        if ok and not (declared_after and not declared_before):
+            ok, why = (
+                False,
+                "the edit did not turn an undeclared distribution into a declared one",
+            )
         if not ok:
             return _receipt(
                 outcome="validation_failed",
