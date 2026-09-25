@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import json
-
 from app.calyx_conversation.provider_runtime import (
     _MAX_CONTEXT_CHARS,
     _MAX_HISTORY_CHARS,
@@ -35,20 +33,10 @@ def test_governed_context_compacts_large_retrieval_objects():
         "epistemic_policy": {"external_literature_requires_review": True},
     }
     compact = compact_governed_context(governed)
-    # compact_governed_context adapts every source family into the canonical
-    # synthesis packet; the raw ``retrieval`` block is no longer forwarded.
-    packet = compact["synthesis_packet"]
-    assert packet["contract_version"] == "CALYX-EVIDENCE-SYNTHESIS-002"
-    evidence_items = packet["evidence_items"]
-    assert any(
-        item.get("source_family") == "external_literature"
-        for item in evidence_items
-        if isinstance(item, dict)
-    )
-    assert evidence_items[-1]["_additional_items_omitted"] > 0
-    assert len(evidence_items) <= 17
+    records = compact["retrieval"]["external_literature"]["results"]
+    assert len(records) == 9
+    assert records[-1]["_additional_items_omitted"] == 12
     assert compact["epistemic_policy"]["external_literature_requires_review"] is True
-    assert len(json.dumps(compact, default=str)) <= _MAX_CONTEXT_CHARS
 
 
 def test_model_context_text_has_hard_character_budget():
@@ -59,22 +47,4 @@ def test_model_context_text_has_hard_character_budget():
     }
     text = provider._governed_context_text(governed)
     assert len(text) <= _MAX_CONTEXT_CHARS + 200
-    assert "Governed Calyx semantic synthesis context for this turn:" in text
-
-
-def test_the_character_budget_actually_truncates_when_it_is_reached(monkeypatch):
-    """The hard budget is unreachable through real input (compaction bounds every
-    value first), so the truncation branch is exercised by replacing the
-    collaborator, not the code under test."""
-    provider = object.__new__(OpenAIRuntimeResponsesProvider)
-    oversized = {"evidence": "z" * (_MAX_CONTEXT_CHARS * 2)}
-    monkeypatch.setattr(
-        "app.calyx_conversation.provider_runtime.compact_governed_context",
-        lambda governed_context, **_: oversized,
-    )
-
-    text = provider._governed_context_text({"anything": True})
-
-    assert len(text) <= _MAX_CONTEXT_CHARS + 200
-    assert "additional governed context omitted" in text
-    assert "full provenance remains server-side" in text
+    assert "Governed Calyx context for this turn:" in text

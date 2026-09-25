@@ -55,13 +55,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    # Create only the reservoir tables. The shared ``Base.metadata`` also holds
-    # schema-qualified tables (``research_station.*``, ``reasoning_ledger.*``)
-    # once ``app.main`` has been imported earlier in a full-suite run, and SQLite
-    # rejects those with "unknown database research_station".
-    Base.metadata.create_all(
-        e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__]
-    )
+    Base.metadata.create_all(e)
     yield e
     e.dispose()
 

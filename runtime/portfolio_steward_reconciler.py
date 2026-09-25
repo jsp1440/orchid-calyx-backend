@@ -47,10 +47,6 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskLeaf,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
-from app.calyx_orchestrator.durable_reservoir_models import (
-    DurableReservoirRun,
-    DurableReservoirTask,
-)
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.database import Base
 from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
@@ -258,15 +254,7 @@ def reconcile(
         connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
         poolclass=StaticPool if "sqlite" in db_url else None,
     )
-    # Provision only the reservoir tables this pass uses. ``Base.metadata`` is the
-    # application-wide registry and also carries schema-qualified tables
-    # (``research_station.*``, ``reasoning_ledger.*``) whenever ``app.main`` has been
-    # imported in the same process; SQLite cannot create those ("unknown database
-    # research_station"), and a production PostgreSQL URL must not have unrelated
-    # ORM tables created as a side effect of a steward pass.
-    Base.metadata.create_all(
-        engine, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__]
-    )
+    Base.metadata.create_all(engine)
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
 
