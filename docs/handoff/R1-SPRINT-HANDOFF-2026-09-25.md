@@ -2,57 +2,53 @@
 
 Written from repository state, not recollection. Supersede it at the next session start; don't extend it.
 
-## Heads
+## Heads (updated 2026-09-25 ~16:10 UTC)
 
 | Repo | main | Notes |
 |---|---|---|
-| orchid-calyx-backend | 1ef29ee | integration `oc-autonomous-integration` @ 8af77bd (synced from main 0be3ebd) |
-| orchid-continuum-frontend | 82c76b9 | |
+| orchid-calyx-backend | 64a8bfe | integration `oc-autonomous-integration` @ e9473b7 (main synced via #1624) |
+| orchid-continuum-frontend | 975dda0 | |
 | orchid-continuum-brain | b0e8b2c | agents may not merge here (Brain AGENTS.md:17) |
 
-## Merged this sprint (last 24 h)
+## Merged this sprint
 
-**Backend main:**
-- #1614: scipy pin derivation
-- #1615: interaction-graph docs
-- #1616: requires_postgres fails in CI instead of skipping
-- #1617: Gary Yong Gee federated ingestion
-- #1609: Matrix governed sources on main
-- #1611: `GET /api/research/traits`
-- #1618: Yong Gee evidence as provisional dossier sections, with distribution, habitat and free-text notes withheld
-- #1619: KG evidence-coverage knowledge gaps, fail-closed, replacing the keyword-count generator
+- **Backend main:**
+  - #1614–#1619 (#1618: Yong Gee in the dossier, with distribution, habitat and free-text notes withheld; #1619: KG evidence-coverage gaps)
+  - #1609: Matrix governed sources
+  - #1611: `/api/research/traits`
+  - #1625: main lint debt and CI-sensitive tests
+- **Backend integration:**
+  - #1606 + #1620: provider-free edit lane, with fixed receipts and PEP 503
+  - #1608: production-import check
+  - #1624: main sync
+- **Frontend main:**
+  - #760, #761, #765
+  - #764: graph discovery loop
+  - #766: Matrix ranking basis and locality filter
+  - #768: backend reserve-plan client
+  - #772: dossier item evidence state and a single truncation marker
 
-**Frontend main:**
-- #760, #761: Render gate and ledger
-- #765: dossier excerpts
-- #764: completion-graph discovery loop; the oc-node label counts as tracking
-- #766: Matrix ranking basis, provenance, and the locality-key filter
-
-## Cross-repo path now wired (all read-only, provisional, human review required)
+## Cross-repo path (read-only, provisional, human review required)
 
 1. Yong Gee workbook → KG evidence nodes (#1617)
 2. → species dossier (#1618)
-3. → frontend excerpts (#765)
+3. → frontend excerpts (#765, #772)
 4. → KG evidence-coverage gaps (#1619)
-5. → reserve candidates (#1621, open)
+5. → reserve candidates using canonical taxon names only (#1621, open)
 6. → `GET /api/runner/knowledge-gaps/reserve-plan` (#1623, open)
-7. → frontend client and Portfolio Steward source (#768, open)
+7. → frontend client (#768, merged)
+8. → opt-in supervisor admission, `OC_ADMIT_BACKEND_RESERVE=1` (#773, open)
 
-Nothing on the frontend calls `planPortfolioSteward` on a schedule yet.
-
-## Open PRs and their state
+## Open PRs
 
 | PR | Repo | State |
 |---|---|---|
-| #1621 → integration | backend | gap→reserve adapter; checker defects fixed @39bf783; re-check pending |
-| #1623 → integration | backend | reserve-plan endpoint, stacked on #1621; check pending |
-| #768 → main | frontend | reserve-plan client; check pending |
-| #767 → main | frontend | Research Station evidence chain; checker defects fixed @edcc768; re-check pending |
-| #1606 + fix #1620 → #1608 | backend | provider-free edit lane; #1620 re-fixed @a771066 (worktree re-derivation, PEP 503); re-check pending. Merge order: #1620 → #1606 → #1608 into integration |
-| #1610 + fix #1622 | backend | **owner-gated**: grants the edit-lane workflow write permissions and replaces a permission-pin test |
-| #1605 | backend | **owner**: read the Brain at main instead of the frozen `calyx-core-operational-foundation` ref |
-| #1607 | backend | **owner**: lane binding |
-| #1199 | backend | **owner**: integration → main promotion |
+| #1621 → integration | backend | Five checker rounds. The last findings were edge cases, all fixed with tests. Head 2280255 carries the integration sync; merge on green CI. |
+| #1623 → integration | backend | Q PASS; head 546bf59 carries #1621. Merge after #1621. |
+| #767 → main | frontend | Five checker rounds; the last findings were fixed (f6d8bfd). Merge on green CI. |
+| #773 → main | frontend | T PASS; build and test green. `mergeable_state` is blocked because the autonomy dispatcher's lane checks run on every PR event. A lane's budget-preflight drift refusal also recurs on main's own runs. Do not re-run: re-running dispatches paid lanes. |
+| #1610 + #1622 | backend | **owner-gated**: edit-lane workflow write permissions |
+| #1605, #1607, #1199 | backend | **owner** decisions (Brain ref, lane binding, integration → main) |
 
 ## Owner gates (nothing else is blocked on the owner)
 
@@ -75,11 +71,11 @@ Nothing on the frontend calls `planPortfolioSteward` on a schedule yet.
 
 ## Next 5 tasks, in priority order
 
-1. Merge on checker PASS: #1620 → #1606 → #1608 into integration; #1621 → #1623 into integration; #767 and #768 into frontend main.
-2. Sync main into `oc-autonomous-integration`. It conflicts on the research_traits, matrix_relationship_sources, species_dossier and evidence_coverage files that both sides added. Main's versions are the reviewed ones.
-3. Give the frontend a scheduled caller for `planPortfolioSteward`/`admitBackendReservePlan`, through the existing supervisor workflow, no-API and bounded, so KG gaps become oc-prepared issues.
-4. Show `item.evidence_state` when it differs from the section state on the species dossier, and drop the double truncation marker (frontend follow-up from the #765 review).
-5. Surface `/api/research/traits` (#1611) in the frontend trait explorer against captured payloads. #767 already carries the client.
+1. Merge #1621 → #1623 into integration, and #767 into frontend main, once CI is green.
+2. #773: decide whether the dispatcher lane checks should be required on PRs. A lane refusal blocks an unrelated PR, and this is an owner decision. Then merge.
+3. Owner gates: activate `OC_ADMIT_BACKEND_RESERVE`; set `DATABASE_URL` on the Calyx Render service; merge the Brain PRs #159 → #161 → #163 and #162; decide #1605.
+4. Run the locality-sensitivity review so that Yong Gee taxon_notes can be shown on the dossier.
+5. Surface `/api/research/traits` in the frontend trait explorer; the #767 client is in place.
 
 ## First command for the next session
 
