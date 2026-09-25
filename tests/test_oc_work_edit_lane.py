@@ -421,6 +421,10 @@ def lease_comment(writes: list[str] | None = None) -> str:
     )
 
 
+#: requirements*.txt classify as repo-global, so a lane lease must write it.
+LANE_LEASE = lease_comment(["repo-global"])
+
+
 def edit_receipt(**over) -> dict:
     receipt = {
         "schema": lane.RECEIPT_SCHEMA,
@@ -632,6 +636,7 @@ class TestLaneEndToEnd:
         provision=None,
         discover=None,
         cand=None,
+        lease=LANE_LEASE,
     ):
         origin, work, base = tiny_repo
         cand = cand or candidate()
@@ -639,6 +644,7 @@ class TestLaneEndToEnd:
         receipt = lane.run_lane(
             issue_for(cand),
             repository=REPO,
+            lease_comment=lease,
             root=work,
             base_sha=base,
             call=gh,
@@ -696,6 +702,7 @@ class TestLaneEndToEnd:
         again = lane.run_lane(
             issue_for(candidate()),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base,
             call=gh,
@@ -723,6 +730,7 @@ class TestLaneEndToEnd:
         receipt = lane.run_lane(
             issue_for(cand),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base,
             call=gh,
@@ -762,6 +770,7 @@ class TestLaneEndToEnd:
         receipt = lane.run_lane(
             issue_for(cand),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base,
             call=gh,
@@ -828,6 +837,7 @@ class TestLaneEndToEnd:
         receipt = lane.run_lane(
             issue_for(other),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base,
             call=FakeGitHub(),
@@ -873,6 +883,7 @@ class TestLaneEndToEnd:
         receipt = lane.run_lane(
             issue_for(cand),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base_b,
             call=gh,
@@ -900,6 +911,182 @@ class TestLaneEndToEnd:
             and receipt["reason"] == "branch_exists_without_pull_request"
         )
         assert gh.prs == []
+
+    def test_the_only_push_is_one_fenced_refspec_even_without_a_hook(
+        self, tiny_repo
+    ) -> None:
+        # tiny_repo has no pre-push hook: this is the lane's own fence alone.
+        pushes: list[list[str]] = []
+
+        def recording_git(args, cwd=None):
+            if args and args[0] == "push":
+                pushes.append(list(args))
+            return lane.git(args, cwd)
+
+        origin, work, base = tiny_repo
+        cand = candidate()
+        receipt = lane.run_lane(
+            issue_for(cand),
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=FakeGitHub(),
+            git_call=recording_git,
+            runner=fake_runner_factory({}),
+            version_of=lambda name: "1.4.0",
+            provision=None,
+            discover=lambda root: {"candidates": [cand]},
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "pr_opened"
+        assert pushes == [
+            ["push", "origin", f"{receipt['commit_sha']}:refs/heads/oc/discovered-{FP}"]
+        ]
+        heads = sorted(
+            line.split()[1]
+            for line in _git(["ls-remote", "--heads", "origin"], work).splitlines()
+        )
+        assert heads == ["refs/heads/main", f"refs/heads/oc/discovered-{FP}"]
+        assert _git(["rev-parse", "refs/heads/main"], origin) == base
+
+    def test_a_branch_outside_the_fence_is_refused_before_git_pushes(
+        self, tiny_repo, monkeypatch
+    ) -> None:
+        origin, work, base = tiny_repo
+        monkeypatch.setattr(
+            lane, "branch_name", lambda fingerprint: "release-candidate"
+        )
+        with pytest.raises(lane.PushFenceViolation):
+            self.run(tiny_repo)
+        assert _git(["ls-remote", "--heads", "origin"], work).count("\n") == 0
+        assert _git(["rev-parse", "refs/heads/main"], origin) == base
+
+    def test_a_commit_outside_the_lease_write_set_is_never_pushed(
+        self, tiny_repo
+    ) -> None:
+        _origin, work, _base = tiny_repo
+        receipt, gh, *_ = self.run(tiny_repo, lease=lease_comment(["traits"]))
+        assert receipt["outcome"] == "refused"
+        assert receipt["reason"] == "write_set_exceeds_lease"
+        assert receipt["changed_file_count"] == 0 and gh.prs == []
+        assert receipt["edit"]["write_set"]["violations"][0]["missing_writes"] == [
+            "repo-global"
+        ]
+        assert (
+            _git(["ls-remote", "--heads", "origin", lane.branch_name(FP)], work) == ""
+        )
+
+    @pytest.mark.parametrize(
+        "lease",
+        [
+            "",
+            "no receipt here",
+            "[OC-SWARM-V4] Dependency/resource lease claimed: none",
+        ],
+    )
+    def test_a_pass_without_a_durable_lease_refuses_before_reading_the_tree(
+        self, tiny_repo, lease
+    ) -> None:
+        _origin, work, base = tiny_repo
+        with pytest.raises(ValueError):
+            lane.run_lane(
+                issue_for(candidate()),
+                repository=REPO,
+                lease_comment=lease,
+                root=work,
+                base_sha=base,
+                call=lambda args, payload: pytest.fail(
+                    "no GitHub call without a lease"
+                ),
+                discover=lambda root: pytest.fail(
+                    "must refuse before reading the tree"
+                ),
+            )
+
+    def test_the_pr_links_its_issue_for_write_set_verification(self, tiny_repo) -> None:
+        receipt, gh, *_ = self.run(tiny_repo)
+        assert receipt["outcome"] == "pr_opened"
+        assert "\nOC-AUTO-ISSUE: #9000\n" in gh.prs[0]["body"]
+
+    def test_the_pr_base_is_pinned_to_the_integration_branch(self, tiny_repo) -> None:
+        _origin, work, base = tiny_repo
+        with pytest.raises(ValueError, match="integration branch"):
+            lane.run_lane(
+                issue_for(candidate()),
+                repository=REPO,
+                lease_comment=LANE_LEASE,
+                root=work,
+                base_sha=base,
+                integration_branch="main",
+                call=FakeGitHub(),
+                discover=lambda root: pytest.fail(
+                    "must refuse before reading the tree"
+                ),
+            )
+
+
+SHA = "a" * 40
+
+
+class TestPushFence:
+    def test_the_lane_branch_is_the_one_accepted_shape(self) -> None:
+        dest = f"refs/heads/{lane.branch_name(FP)}"
+        assert lane.fenced_push_args(SHA, dest) == ["push", "origin", f"{SHA}:{dest}"]
+
+    @pytest.mark.parametrize(
+        "destination",
+        [
+            "refs/heads/main",
+            "refs/heads/oc-autonomous-integration",
+            "main",
+            f"oc/discovered-{FP}",  # unqualified: push.default could resolve it
+            "refs/heads/oc/discovered-abc",
+            f"refs/heads/oc/discovered-{FP.upper()}",
+            f"refs/heads/oc/discovered-{FP}0",
+            f"refs/heads/oc/discovered-{FP}/x",
+            f"refs/tags/oc/discovered-{FP}",
+            f"refs/heads/x/oc/discovered-{FP}",
+            f"refs/heads/oc/discovered-{FP}\nrefs/heads/main",
+            "",
+        ],
+    )
+    def test_destinations_outside_the_fence_are_refused(self, destination) -> None:
+        with pytest.raises(lane.PushFenceViolation):
+            lane.fenced_push_args(SHA, destination)
+
+    @pytest.mark.parametrize("source", ["HEAD", "main", "a" * 39, "", "A" * 40])
+    def test_the_source_must_be_a_full_commit_id(self, source) -> None:
+        with pytest.raises(lane.PushFenceViolation):
+            lane.fenced_push_args(source, f"refs/heads/{lane.branch_name(FP)}")
+
+    @pytest.mark.parametrize(
+        "args",
+        [
+            ["push", "--force", "origin", f"{SHA}:refs/heads/oc/discovered-{FP}"],
+            ["push", "-f", "origin", f"{SHA}:refs/heads/oc/discovered-{FP}"],
+            ["push", "origin", f"+{SHA}:refs/heads/oc/discovered-{FP}"],
+            ["push", "origin", f":refs/heads/oc/discovered-{FP}"],
+            ["push", "--delete", "origin", f"refs/heads/oc/discovered-{FP}"],
+            ["push", "origin", "--delete", f"refs/heads/oc/discovered-{FP}"],
+            ["push", "origin", f"--force-with-lease={SHA}"],
+            ["push", "--no-verify", "origin", f"{SHA}:refs/heads/oc/discovered-{FP}"],
+            ["push", "--mirror", "origin"],
+            ["push", "--all", "origin"],
+            ["push", "origin"],
+            ["push", "upstream", f"{SHA}:refs/heads/oc/discovered-{FP}"],
+            [
+                "push",
+                "origin",
+                f"{SHA}:refs/heads/oc/discovered-{FP}",
+                f"{SHA}:refs/heads/main",
+            ],
+            ["push", "origin", f"{SHA}:refs/heads/oc/discovered-{FP}:x"],
+        ],
+    )
+    def test_force_delete_options_and_extra_refspecs_are_refused(self, args) -> None:
+        with pytest.raises(lane.PushFenceViolation):
+            lane.assert_fenced_push(args)
 
 
 class TestUndeclaredImportRemedy:
@@ -1003,6 +1190,7 @@ class TestUndeclaredImportRemedy:
         receipt = lane.run_lane(
             issue_for(cand),
             repository=REPO,
+            lease_comment=LANE_LEASE,
             root=work,
             base_sha=base,
             call=gh,
@@ -1142,6 +1330,7 @@ def test_the_lane_repairs_the_real_pytest_asyncio_gap(tmp_path: Path) -> None:
     receipt = lane.run_lane(
         issue_for(gaps[0]),
         repository=REPO,
+        lease_comment=LANE_LEASE,
         root=work,
         base_sha=base,
         call=gh,
@@ -1167,6 +1356,7 @@ def test_the_lane_repairs_the_real_pytest_asyncio_gap(tmp_path: Path) -> None:
     again = lane.run_lane(
         issue_for(gaps[0]),
         repository=REPO,
+        lease_comment=LANE_LEASE,
         root=work,
         base_sha=base,
         call=gh,

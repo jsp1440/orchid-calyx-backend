@@ -42,7 +42,13 @@ jobs:
           set -euo pipefail
 
           # Only PRs actually dispatched by a versioned Swarm controller carry a
-          # durable lease receipt. Legacy/manual PRs remain valid.
+          # durable lease receipt. Legacy/manual PRs remain valid. A head on an
+          # oc/discovered-* branch is the provider-free edit lane's by
+          # construction, so for it the issue marker and lease are required.
+          lane_head=false
+          if [[ "$HEAD_REF" == oc/discovered-* ]]; then
+            lane_head=true
+          fi
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
             pr="${{ github.event.pull_request.number }}"
           else
@@ -51,6 +57,10 @@ jobs:
               --json number --jq '.[0].number // empty')
           fi
           if [[ -z "${pr:-}" ]]; then
+            if [[ "$lane_head" == true ]]; then
+              echo "Edit-lane head $HEAD_REF has no integration PR; refusing." >&2
+              exit 1
+            fi
             echo "No integration PR for this head; write-set verification not applicable."
             exit 0
           fi
@@ -58,6 +68,10 @@ jobs:
           body=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""')
           issue=$(sed -n 's/.*OC-AUTO-ISSUE: #\([0-9][0-9]*\).*/\1/p' <<<"$body" | sed -n '1p')
           if [[ -z "$issue" ]]; then
+            if [[ "$lane_head" == true ]]; then
+              echo "Edit-lane PR #$pr has no OC-AUTO-ISSUE marker; its lease cannot be verified." >&2
+              exit 1
+            fi
             echo "PR #$pr has no OC-AUTO-ISSUE marker; write-set verification not applicable."
             exit 0
           fi
@@ -65,6 +79,10 @@ jobs:
           lease=$(gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json comments \
             --jq '[.comments[].body | select(test("^\\[OC-SWARM-V[0-9]+\\].*lease claimed:"; "i"))] | last // ""')
           if [[ -z "$lease" ]]; then
+            if [[ "$lane_head" == true ]]; then
+              echo "Edit-lane PR #$pr: issue #$issue has no versioned Swarm lease receipt; refusing." >&2
+              exit 1
+            fi
             echo "Issue #$issue has no versioned Swarm lease receipt; treating as legacy/manual work."
             exit 0
           fi

@@ -76,6 +76,7 @@ def test_execute_step_runs_the_edit_lane_and_hands_its_receipt_to_the_worker():
         '--repository "$GITHUB_REPOSITORY"',
         "--root .",
         '--base-sha "$INTEGRATION_SHA"',
+        '--lease-comment "$lease"',
         '--integration-branch "$INTEGRATION_BRANCH"',
         '--github-output "$GITHUB_OUTPUT"',
         '> "$RUNNER_TEMP/provider-free-edit.json"',
@@ -125,6 +126,21 @@ def test_budget_and_no_api_guards_are_intact():
     assert "Observe current governed budget conditions" in text
     assert "gh pr merge" not in text
     assert "git push" not in text  # only the lane pushes, from its own worktree
+
+
+def test_the_lane_pushes_only_through_its_structural_fence():
+    # The pre-push hook is advisory to anyone who passes --no-verify; the
+    # lane's one push call site builds its argv from fenced_push_args, which
+    # refuses any refspec but <full sha>:refs/heads/oc/discovered-<16 hex>.
+    source = (REPO_ROOT / "scripts" / "oc_work_edit_lane.py").read_text(
+        encoding="utf-8"
+    )
+    assert source.count('"push"') == 2  # fenced_push_args + assert_fenced_push
+    assert source.count("git_call(fenced_push_args(") == 1
+    assert (
+        'PUSH_DESTINATION = re.compile(r"^refs/heads/oc/discovered-[0-9a-f]{16}$")'
+        in source
+    )
 
 
 def _hook_script() -> str:

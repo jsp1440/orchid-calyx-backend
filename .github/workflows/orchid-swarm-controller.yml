@@ -583,6 +583,7 @@ jobs:
               --repository "$GITHUB_REPOSITORY" \
               --root . \
               --base-sha "$INTEGRATION_SHA" \
+              --lease-comment "$lease" \
               --integration-branch "$INTEGRATION_BRANCH" \
               --github-output "$GITHUB_OUTPUT" \
               > "$RUNNER_TEMP/provider-free-edit.json"
