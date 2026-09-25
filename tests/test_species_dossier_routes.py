@@ -9,7 +9,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.calyx_flywheel.locality import assert_no_sensitive_locality
 from app.species_dossier import routes as dossier_routes
 from app.species_dossier.repository import (
     PostgresSpeciesRepository,
@@ -19,26 +18,95 @@ from app.species_dossier.routes import get_service, router
 from app.species_dossier.service import SpeciesDossierService
 
 TAXA = [
-    {"id": 101, "scientific_name": "Phalaenopsis amabilis (L.) Blume", "genus": "Phalaenopsis"},
-    {"id": 102, "scientific_name": "Phalaenopsis aphrodite Rchb.f.", "genus": "Phalaenopsis"},
+    {
+        "id": 101,
+        "scientific_name": "Phalaenopsis amabilis (L.) Blume",
+        "genus": "Phalaenopsis",
+    },
+    {
+        "id": 102,
+        "scientific_name": "Phalaenopsis aphrodite Rchb.f.",
+        "genus": "Phalaenopsis",
+    },
     {"id": 103, "scientific_name": "Dracula vampira (Luer) Luer", "genus": "Dracula"},
     {"id": 104, "scientific_name": "Dendrobium nobile var. alba", "genus": "Dendrobium"},
     {"id": 105, "scientific_name": "Dendrobium nobile Lindl.", "genus": "Dendrobium"},
 ]
 IMAGES = {
     101: [
-        {"id": 9001, "image_url": "https://images.example/1.jpg", "image_source": "iNaturalist", "image_license": "CC-BY-NC-4.0",
-         "image_rights_holder": "A. Grower", "observer_name": "A. Grower", "gbif_occurrence_key": "gbif-1"},
-        {"id": 9002, "image_url": "https://images.example/2.jpg", "image_source": "Wikimedia Commons", "image_license": "CC-BY-SA-4.0",
-         "image_rights_holder": None, "observer_name": "B. Photographer", "gbif_occurrence_key": None},
+        {
+            "id": 9001,
+            "image_url": "https://images.example/1.jpg",
+            "image_source": "iNaturalist",
+            "image_license": "CC-BY-NC-4.0",
+            "image_rights_holder": "A. Grower",
+            "observer_name": "A. Grower",
+            "gbif_occurrence_key": "gbif-1",
+        },
+        {
+            "id": 9002,
+            "image_url": "https://images.example/2.jpg",
+            "image_source": "Wikimedia Commons",
+            "image_license": "CC-BY-SA-4.0",
+            "image_rights_holder": None,
+            "observer_name": "B. Photographer",
+            "gbif_occurrence_key": None,
+        },
+        {
+            "id": 9003,
+            "image_url": "https://images.example/unlicensed.jpg",
+            "image_source": "unknown",
+            "image_license": None,
+            "image_rights_holder": None,
+            "observer_name": None,
+            "gbif_occurrence_key": None,
+        },
     ]
 }
 GRAPH_EDGES = {
     101: [
-        {"edge_type": "pollinated_by", "node_type": "pollinator", "canonical_key": "pollinator:moth", "display_label": "hawk moth",
-         "evidence_class": "literature", "confidence_score": 0.7, "confidence_label": "moderate", "source_table": "oc_graph.kg_edges", "source_pk": 5},
+        {
+            "edge_type": "pollinated_by",
+            "node_type": "pollinator",
+            "canonical_key": "pollinator:moth",
+            "display_label": "hawk moth",
+            "evidence_class": "literature",
+            "confidence_score": 0.7,
+            "confidence_label": "moderate",
+            "source_table": "oc_graph.kg_edges",
+            "source_pk": 5,
+            "is_active": True,
+            "from_is_active": True,
+            "to_is_active": True,
+        },
+        {
+            "edge_type": "withdrawn_relation",
+            "node_type": "pollinator",
+            "canonical_key": "pollinator:withdrawn",
+            "display_label": "withdrawn pollinator",
+            "evidence_class": "historical",
+            "confidence_score": 0.9,
+            "confidence_label": "high",
+            "source_table": "oc_graph.kg_edges",
+            "source_pk": 6,
+            "is_active": False,
+            "from_is_active": True,
+            "to_is_active": True,
+        },
     ]
 }
+
+
+def assert_no_sensitive_locality(value: Any) -> None:
+    """Keep the route contract test independent of optional locality modules."""
+    forbidden = {"latitude", "longitude", "coordinates", "locality", "exact_locality"}
+    if isinstance(value, dict):
+        assert not forbidden.intersection(value), value
+        for item in value.values():
+            assert_no_sensitive_locality(item)
+    elif isinstance(value, list):
+        for item in value:
+            assert_no_sensitive_locality(item)
 
 
 class FakeCursor:
@@ -53,22 +121,47 @@ class FakeCursor:
         compact = " ".join(sql.split())
         self.statements.append(compact)
         if "to_regclass('oc_graph.kg_nodes')" in compact:
-            self._rows = [{"nodes_present": self.graph_present, "edges_present": self.graph_present}]
+            self._rows = [
+                {
+                    "nodes_present": self.graph_present,
+                    "edges_present": self.graph_present,
+                }
+            ]
         elif "FROM public.orchid_taxonomy WHERE id::text = %s" in compact:
             self._rows = [dict(t) for t in TAXA if str(t["id"]) == params[0]]
         elif "lower(scientific_name) = lower(%s)" in compact:
             wanted = params[0].lower()
             self._rows = [
-                dict(t) for t in TAXA
-                if t["scientific_name"].lower() == wanted or " ".join(t["scientific_name"].split()[:2]).lower() == wanted
+                dict(t)
+                for t in TAXA
+                if t["scientific_name"].lower() == wanted
+                or " ".join(t["scientific_name"].split()[:2]).lower() == wanted
             ]
         elif "FROM public.orchid_images" in compact:
-            self._rows = list(IMAGES.get(params[0], []))
+            rows = list(IMAGES.get(params[0], []))
+            if "NULLIF(BTRIM(image_license), '') IS NOT NULL" in compact:
+                rows = [
+                    row for row in rows if str(row.get("image_license") or "").strip()
+                ]
+            self._rows = rows
         elif "FROM oc_graph.kg_nodes n1" in compact:
             taxon_id = int(params[0].split(":", 1)[1])
-            self._rows = list(GRAPH_EDGES.get(taxon_id, []))
+            rows = list(GRAPH_EDGES.get(taxon_id, []))
+            if "n1.is_active IS TRUE" in compact:
+                rows = [
+                    row
+                    for row in rows
+                    if row.get("is_active", True)
+                    and row.get("from_is_active", True)
+                    and row.get("to_is_active", True)
+                ]
+            self._rows = rows
         elif "lower(genus) = lower(%s) AND id::text <> %s" in compact:
-            self._rows = [dict(t) for t in TAXA if t["genus"].lower() == params[0].lower() and str(t["id"]) != params[1]]
+            self._rows = [
+                dict(t)
+                for t in TAXA
+                if t["genus"].lower() == params[0].lower() and str(t["id"]) != params[1]
+            ]
         else:  # pragma: no cover - guards against silently accepting an unexpected query
             raise AssertionError(f"unexpected SQL: {compact}")
 
@@ -87,7 +180,9 @@ def fake_db_execute(*, cursor: FakeCursor | None):
 
 
 def repository(cursor: FakeCursor | None = None) -> PostgresSpeciesRepository:
-    return PostgresSpeciesRepository(fake_db_execute(cursor=cursor if cursor is not None else FakeCursor()))
+    return PostgresSpeciesRepository(
+        fake_db_execute(cursor=cursor if cursor is not None else FakeCursor())
+    )
 
 
 @pytest.fixture()
@@ -95,7 +190,9 @@ def client(monkeypatch) -> TestClient:
     monkeypatch.setenv("DATABASE_URL", "postgresql://test")
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(repository(), public_base_url="https://oc.test")
+    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(
+        repository(), public_base_url="https://oc.test"
+    )
     return TestClient(app)
 
 
@@ -103,7 +200,10 @@ def client(monkeypatch) -> TestClient:
 
 
 def test_split_scientific_name_keeps_only_genus_and_lowercase_epithet():
-    assert split_scientific_name("Phalaenopsis amabilis (L.) Blume") == ("Phalaenopsis", "amabilis")
+    assert split_scientific_name("Phalaenopsis amabilis (L.) Blume") == (
+        "Phalaenopsis",
+        "amabilis",
+    )
     assert split_scientific_name("Phalaenopsis") == ("Phalaenopsis", None)
     assert split_scientific_name("Phalaenopsis Blume") == ("Phalaenopsis", None)
 
@@ -113,31 +213,73 @@ def test_dossier_identity_media_and_graph_come_from_stored_rows_and_every_gap_is
     assert dossier is not None
     assert dossier.identity.taxon_id == "101"
     assert dossier.identity.full_scientific_name == "Phalaenopsis amabilis (L.) Blume"
-    assert dossier.identity.accepted_name == "Phalaenopsis amabilis"  # the same split the exhibit applies
+    assert dossier.identity.accepted_name == "Phalaenopsis amabilis"
     assert dossier.identity.display_name == "Phalaenopsis amabilis"
     assert dossier.identity.authorship == "(L.) Blume"
-    assert (dossier.identity.genus, dossier.identity.specific_epithet, dossier.identity.rank) == ("Phalaenopsis", "amabilis", "species")
+    assert (
+        dossier.identity.genus,
+        dossier.identity.specific_epithet,
+        dossier.identity.rank,
+    ) == ("Phalaenopsis", "amabilis", "species")
     assert dossier.identity.synonyms == []
+    assert dossier.taxon_id == "101"
+    assert dossier.display_name == "Phalaenopsis amabilis"
+    assert dossier.full_scientific_name == "Phalaenopsis amabilis (L.) Blume"
+    assert dossier.accepted_name == "Phalaenopsis amabilis"
+    assert dossier.atlas_summary.state == "unavailable"
+    assert dossier.identification_matrix.state == "unavailable"
+    assert dossier.freshness.state == "unknown"
+    assert "atlas_summary" in dossier.unavailable_sections
 
     assert dossier.living_media.state == "provisional"
-    assert [item["url"] for item in dossier.living_media.items] == ["https://images.example/1.jpg", "https://images.example/2.jpg"]
-    assert all(item["identification_state"] == "source_record_not_independently_verified" for item in dossier.living_media.items)
-    assert [r.license for r in dossier.living_media.receipts] == ["CC-BY-NC-4.0", "CC-BY-SA-4.0"]
+    assert [item["url"] for item in dossier.living_media.items] == [
+        "https://images.example/1.jpg",
+        "https://images.example/2.jpg",
+    ]
+    assert all(
+        item["identification_state"] == "source_record_not_independently_verified"
+        for item in dossier.living_media.items
+    )
+    assert [r.license for r in dossier.living_media.receipts] == [
+        "CC-BY-NC-4.0",
+        "CC-BY-SA-4.0",
+    ]
     assert dossier.living_media.receipts[1].attribution == "B. Photographer"
 
     assert dossier.knowledge_graph.state == "available"
     assert dossier.knowledge_graph.items[0]["edge_type"] == "pollinated_by"
     assert dossier.knowledge_graph.receipts[0].record_id == "5"
 
-    for name in ["nomenclature", "protologue", "type_material", "historical_media", "morphology", "distribution", "ecology",
-                 "phenology", "pollinators", "mycorrhizae", "conservation", "literature", "cultivation", "calyx_narrative", "research_gaps"]:
+    for name in [
+        "nomenclature",
+        "protologue",
+        "type_material",
+        "historical_media",
+        "morphology",
+        "distribution",
+        "ecology",
+        "phenology",
+        "pollinators",
+        "mycorrhizae",
+        "conservation",
+        "literature",
+        "cultivation",
+        "calyx_narrative",
+        "research_gaps",
+    ]:
         section = getattr(dossier, name)
         assert section.state == "unavailable", name
         assert section.unavailable_reason, name
     assert "not evidence of absence" in dossier.nomenclature.unavailable_reason
     assert "human scientific review" in dossier.calyx_narrative.unavailable_reason
 
-    assert dossier.related_species == [{"taxon_id": "102", "display_name": "Phalaenopsis aphrodite Rchb.f.", "relation": "same_genus"}]
+    assert dossier.related_species == [
+        {
+            "taxon_id": "102",
+            "display_name": "Phalaenopsis aphrodite Rchb.f.",
+            "relation": "same_genus",
+        }
+    ]
     assert dossier.matrix_url == "/orchid-identification?taxon_id=101"
     assert dossier.provenance[0].source_id == "public.orchid_taxonomy"
 
@@ -145,18 +287,27 @@ def test_dossier_identity_media_and_graph_come_from_stored_rows_and_every_gap_is
 def test_an_infraspecific_row_keeps_its_rank_in_the_name_and_is_not_its_species():
     variety = repository().get_dossier("104")
     species = repository().get_dossier("105")
-    assert variety.identity.display_name == variety.identity.accepted_name == "Dendrobium nobile var. alba"
+    assert (
+        variety.identity.display_name
+        == variety.identity.accepted_name
+        == "Dendrobium nobile var. alba"
+    )
     assert variety.identity.authorship is None
     assert variety.identity.rank == "variety"
-    assert (species.identity.display_name, species.identity.authorship, species.identity.rank) == (
-        "Dendrobium nobile",
-        "Lindl.",
-        "species",
-    )
+    assert (
+        species.identity.display_name,
+        species.identity.authorship,
+        species.identity.rank,
+    ) == ("Dendrobium nobile", "Lindl.", "species")
     assert variety.identity.taxon_id != species.identity.taxon_id
-    # Resolving the species binomial names the species, never the variety; the variety resolves by its own name.
-    assert repository().resolve_name("Dendrobium nobile") == [("105", "Dendrobium nobile", "accepted_name")]
-    assert repository().resolve_name("Dendrobium nobile var. alba") == [("104", "Dendrobium nobile var. alba", "accepted_name")]
+    # Resolving the species binomial names the species, never the variety; the
+    # variety resolves by its own name.
+    assert repository().resolve_name("Dendrobium nobile") == [
+        ("105", "Dendrobium nobile", "accepted_name")
+    ]
+    assert repository().resolve_name("Dendrobium nobile var. alba") == [
+        ("104", "Dendrobium nobile var. alba", "accepted_name")
+    ]
 
 
 def test_dossier_never_emits_locality_or_coordinates():
@@ -166,7 +317,9 @@ def test_dossier_never_emits_locality_or_coordinates():
     assert dossier.atlas.layers == []
     assert "occurrences" in dossier.atlas.unavailable_layers
     assert "protected" in dossier.distribution.unavailable_reason
-    assert not re.search(r"\b-?\d{1,2}\.\d{3,}\b", str(payload))  # no coordinate-looking numbers anywhere
+    assert not re.search(
+        r"\b-?\d{1,2}\.\d{3,}\b", str(payload)
+    )  # no coordinate-looking numbers anywhere
 
 
 def test_dossier_without_media_or_graph_tables_is_honest_not_empty_handed():
@@ -204,7 +357,15 @@ def test_dossier_route_serves_the_contract_the_species_page_consumes(client):
     body = resp.json()
     assert body["contract_version"] == "oc-species-dossier-v1"
     assert body["identity"]["display_name"] == "Phalaenopsis amabilis"
-    assert body["identity"]["full_scientific_name"] == "Phalaenopsis amabilis (L.) Blume"
+    assert body["taxon_id"] == "101"
+    assert body["display_name"] == "Phalaenopsis amabilis"
+    assert body["full_scientific_name"] == "Phalaenopsis amabilis (L.) Blume"
+    assert body["accepted_name"] == "Phalaenopsis amabilis"
+    assert body["freshness"]["state"] == "unknown"
+    assert "identification_matrix" in body["unavailable_sections"]
+    assert (
+        body["identity"]["full_scientific_name"] == "Phalaenopsis amabilis (L.) Blume"
+    )
     assert body["atlas"]["contract_version"] == "oc-species-atlas-v1"
     assert body["living_media"]["state"] == "provisional"
     assert body["pollinators"]["state"] == "unavailable"
@@ -215,7 +376,13 @@ def test_atlas_route_reports_every_layer_unavailable(client):
     resp = client.get("/api/platform/species/101/atlas")
     assert resp.status_code == 200, resp.text
     assert resp.json()["layers"] == []
-    assert resp.json()["unavailable_layers"] == ["occurrences", "range", "protected_areas", "elevation", "climate"]
+    assert resp.json()["unavailable_layers"] == [
+        "occurrences",
+        "range",
+        "protected_areas",
+        "elevation",
+        "climate",
+    ]
 
 
 def test_unknown_taxon_is_404_on_both_routes(client):
@@ -223,17 +390,42 @@ def test_unknown_taxon_is_404_on_both_routes(client):
     assert client.get("/api/platform/species/999/atlas").status_code == 404
 
 
-def test_resolve_route_resolves_id_and_accepted_name_and_reports_unresolved_honestly(client):
-    by_id = client.get("/api/platform/federation/resolve-species", params={"taxon_id": "101"}).json()
-    assert (by_id["status"], by_id["match_state"], by_id["taxon_id"]) == ("resolved", "taxon_id", "101")
+def test_resolve_route_resolves_id_and_accepted_name_and_reports_unresolved_honestly(
+    client,
+):
+    by_id = client.get(
+        "/api/platform/federation/resolve-species", params={"taxon_id": "101"}
+    ).json()
+    assert (by_id["status"], by_id["match_state"], by_id["taxon_id"]) == (
+        "resolved",
+        "taxon_id",
+        "101",
+    )
     assert by_id["canonical_dossier_url"] == "https://oc.test/species/101"
 
-    by_name = client.get("/api/platform/federation/resolve-species", params={"name": "Phalaenopsis amabilis Blume"}).json()
-    assert (by_name["status"], by_name["match_state"], by_name["matched_name"]) == ("resolved", "accepted_name", "Phalaenopsis amabilis")
+    by_name = client.get(
+        "/api/platform/federation/resolve-species",
+        params={"name": "Phalaenopsis amabilis Blume"},
+    ).json()
+    assert (by_name["status"], by_name["match_state"], by_name["matched_name"]) == (
+        "resolved",
+        "accepted_name",
+        "Phalaenopsis amabilis",
+    )
 
-    unresolved = client.get("/api/platform/federation/resolve-species", params={"name": "Masdevallia vampira"}).json()
+    unresolved = client.get(
+        "/api/platform/federation/resolve-species",
+        params={"name": "Masdevallia vampira"},
+    ).json()
     assert unresolved["status"] == "unresolved"
     assert "No canonical accepted name or synonym match" in unresolved["explanation"]
+
+    partner_aliases = client.get(
+        "/api/platform/federation/resolve-species",
+        params={"partner": "iospe", "slug": "dracvampira"},
+    ).json()
+    assert partner_aliases["status"] == "invalid"
+    assert partner_aliases["partner_slug"] == "iospe"
 
     assert client.get("/api/platform/federation/resolve-species").status_code == 422
 
@@ -255,7 +447,29 @@ def test_database_failure_is_503_not_a_fabricated_dossier(monkeypatch):
 
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(PostgresSpeciesRepository(_boom))
+    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(
+        PostgresSpeciesRepository(_boom)
+    )
+    resp = TestClient(app).get("/api/platform/species/101/dossier")
+    assert resp.status_code == 503
+    assert resp.json()["detail"] == dossier_routes.SERVICE_UNAVAILABLE
+
+
+def test_database_http_503_is_sanitized(monkeypatch):
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+
+    def _boom(callback):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=503, detail="connection refused at db.internal:5432"
+        )
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_service] = lambda: SpeciesDossierService(
+        PostgresSpeciesRepository(_boom)
+    )
     resp = TestClient(app).get("/api/platform/species/101/dossier")
     assert resp.status_code == 503
     assert resp.json()["detail"] == dossier_routes.SERVICE_UNAVAILABLE

@@ -644,6 +644,15 @@ def brain_observations(root: Path, *, now: datetime | None = None) -> dict[str, 
     }
 
 
+def evidence_path(where: str) -> str:
+    """The repository path an evidence locator names.
+
+    A pytest node id carries its file before the first ``::``; a path is
+    already a path. Nothing else is inferred from the locator.
+    """
+    return str(where or "").split("::", 1)[0]
+
+
 def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     """Turn every unplaced candidate into one bounded analysis task.
 
@@ -654,7 +663,13 @@ def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     unplaced = [item for item in candidates if item.lane is None and not item.analysis_only]
     if not unplaced:
         return []
-    paths = sorted({item.where for candidate in unplaced for item in candidate.evidence})
+    # Evidence ``where`` is a repository path OR a pytest node id
+    # (``tests/test_x.py::test_a``). The lane table binds paths, so the
+    # question is asked about the file, once, however many of its tests
+    # failed. Asking it per node id counted thirteen "paths" for one file and
+    # gave the question a new identity every time a different test in that
+    # file went red -- an uncounted magnitude and a churning fingerprint.
+    paths = sorted({evidence_path(item.where) for candidate in unplaced for item in candidate.evidence})
     return [
         Candidate(
             source="binding-gap",
