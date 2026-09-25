@@ -365,3 +365,11 @@ def test_plan_refill_treats_a_null_queue_rank_as_absent():
         snapshot(), [{**candidate, "queue_rank": None}], reserve_depth=2
     )
     assert [p["source_ref"] for p in planned["proposals"]] == [candidate["source_ref"]]
+
+
+def test_planned_proposals_keep_the_gap_priority(tmp_path):
+    result = plan(labelled_kg(), output_dir=tmp_path)
+    assert [p["priority"] for p in result["proposals"]] == sorted(
+        p["priority"] for p in result["proposals"]
+    )
+    assert all(p["priority"] in (1, 2, 3) for p in result["proposals"])
