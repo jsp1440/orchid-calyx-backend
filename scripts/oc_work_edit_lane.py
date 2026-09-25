@@ -277,13 +277,19 @@ def run_validation(
         {match.group("nodeid") for match in discovery.PYTEST_OUTCOME.finditer(output)}
     )
     has_summary = bool(discovery.PYTEST_SUMMARY.search(output))
+    # A pytest run must carry its summary line to count; an import check has
+    # no summary to carry, and its exit code is the whole statement.
+    pytest_shaped = "pytest" in command.argv
     return {
         "command_id": command_id,
         "argv": list(command.argv),
         "exit_code": exit_code,
         "timed_out": timed_out,
         "passed": exit_code == 0 and not timed_out,
+        "pytest_shaped": pytest_shaped,
         "has_summary": has_summary,
+        "conclusive": (exit_code is not None and not timed_out)
+        and (has_summary or not pytest_shaped),
         "failing_node_ids": failing,
         "output_digest": "sha256:" + hashlib.sha256(output.encode("utf-8")).hexdigest(),
         "output_tail": output[-1200:],
@@ -304,8 +310,11 @@ def judge(before: Mapping[str, Any], after: Mapping[str, Any]) -> tuple[bool, st
     read as a result at all -- an empty failure set from a run that collected
     nothing is the same shape as green, and it is not green.
     """
-    if not before.get("has_summary") or not after.get("has_summary"):
-        return False, "a validation run carried no pytest summary line"
+    if not before.get("conclusive") or not after.get("conclusive"):
+        return (
+            False,
+            "a validation run was inconclusive (no pytest summary line, or it never finished)",
+        )
     if not after.get("passed"):
         return False, f"validation exited {after.get('exit_code')} after the edit"
     still = sorted(
@@ -393,6 +402,7 @@ def pull_request_body(
         f"- `{edit.path}`: add `{edit.line}`",
         f"- base: `{base_sha}`; commit: `{commit_sha}`",
         f"- provisioned into the lane environment before pinning: {'yes' if edit.provisioned else 'no'}",
+        f"- declared in any requirements file: before {before.get('declared')}, after {after.get('declared')}",
         "",
         "```diff",
         diff.rstrip("\n"),
@@ -602,7 +612,7 @@ def run_lane(
         result = run_validation(
             commands[0], cwd=str(root), runner=runner, timeout=timeout
         )
-        passed = bool(result["passed"] and result["has_summary"])
+        passed = bool(result["passed"] and result["conclusive"])
         return _receipt(
             outcome="condition_absent_validated" if passed else "validation_failed",
             reason="condition_absent"
@@ -679,6 +689,8 @@ def run_lane(
                     before=before,
                 )
             edit = replace(edit, provisioned=True)
+        normalised = edit.distribution.lower().replace("_", "-")
+        declared_before = normalised in discovery.declared_distributions(worktree)
         if not apply_edit(edit, worktree):
             return _receipt(
                 outcome="refused",
@@ -688,10 +700,21 @@ def run_lane(
                 validation_commands=commands,
                 edit=edit.to_record(),
             )
+        declared_after = normalised in discovery.declared_distributions(worktree)
         after = run_validation(
             command_id, cwd=str(worktree), runner=runner, timeout=timeout
         )
+        # The declaration is the condition for an undeclared-import remedy:
+        # the import check passes before and after (the distribution was
+        # installed all along), so what changed is recorded alongside it.
+        before = {**before, "declared": declared_before}
+        after = {**after, "declared": declared_after}
         ok, why = judge(before, after)
+        if ok and not (declared_after and not declared_before):
+            ok, why = (
+                False,
+                "the edit did not turn an undeclared distribution into a declared one",
+            )
         if not ok:
             return _receipt(
                 outcome="validation_failed",
