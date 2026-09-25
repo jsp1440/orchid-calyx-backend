@@ -242,6 +242,45 @@ class TestReportShape:
             assert candidate.lane is not None, candidate.title
 
 
+class TestOwnerDecidedBindings:
+    """Bindings a person accepted for files a live report left unbound.
+
+    A full-suite discovery pass on 2026-09-25 asked to bind five files. Three
+    were placeable from their subject modules and are pinned here; the other
+    two (tests/test_scientific_language_postgres_migration.py and
+    tests/test_build_067_pg_writer.py) are Postgres migration surfaces and
+    remain deliberately unbound.
+    """
+
+    @pytest.mark.parametrize(
+        ("path", "lane"),
+        [
+            ("tests/calyx_certification/test_deterministic_failure_round2.py", "calyx"),
+            ("tests/test_calyx_scientific_uncertainty_617.py", "research-station"),
+            ("tests/test_calyx_scientific_runtime_readiness_617.py", "research-station"),
+            ("runtime/scientific_uncertainty.py", "research-station"),
+            ("runtime/scientific_runtime_readiness.py", "research-station"),
+            ("tests/test_run_live_dispatch_canary.py", "improvement-discovery"),
+            ("scripts/run_live_dispatch_canary.py", "improvement-discovery"),
+        ],
+    )
+    def test_the_accepted_bindings_hold(self, path: str, lane: str) -> None:
+        found = lane_for_path(path)
+        assert found is not None and found.key == lane
+
+    def test_the_undecided_files_stay_unbound(self) -> None:
+        assert lane_for_path("tests/test_scientific_language_postgres_migration.py") is None
+        assert lane_for_path("tests/test_build_067_pg_writer.py") is None
+
+    def test_a_node_id_in_a_bound_file_is_bound_through_the_file(self) -> None:
+        report = (
+            "FAILED tests/test_run_live_dispatch_canary.py::test_a\n"
+            "1 failed in 1.00s\n"
+        )
+        candidates = discovery.discover_failing_tests(report, Path("."))
+        assert [c.lane.key for c in candidates] == ["improvement-discovery"]
+
+
 class TestExecutableCoupling:
     """A filed task is only executable when a real command covers its evidence."""
 
