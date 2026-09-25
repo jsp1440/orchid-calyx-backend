@@ -83,6 +83,9 @@ PRODUCT_LANES: tuple[ProductLane, ...] = (
             "runtime/brain_integration.py",
             "runtime/brain_router.py",
             "runtime/continuum_conversation.py",
+            # [OWNER DECISION] Calyx certification fixtures are statements about
+            # Calyx itself; the directory is bound as a path, not by test name.
+            "tests/calyx_certification/",
         ),
         test_name_markers=("calyx_brain", "calyx_conversation", "reasoning_ledger", "brain_"),
     ),
@@ -121,8 +124,20 @@ PRODUCT_LANES: tuple[ProductLane, ...] = (
             "app/scientific_interpretation/",
             "runtime/research_station.py",
             "runtime/research_analysis_workflow.py",
+            # [OWNER DECISION] The numerical-environment readiness and
+            # uncertainty modules the CALYX-617 tests exercise; scientific
+            # inference is what they serve.
+            "runtime/scientific_runtime_readiness.py",
+            "runtime/scientific_uncertainty.py",
+            "runtime/scientific_uncertainty_artifacts.py",
         ),
-        test_name_markers=("research_station", "research_traits", "evidence_matrix", "syn_"),
+        test_name_markers=(
+            "research_station",
+            "research_traits",
+            "evidence_matrix",
+            "syn_",
+            "calyx_scientific",
+        ),
     ),
     ProductLane(
         key="matrix-id",
@@ -166,8 +181,12 @@ PRODUCT_LANES: tuple[ProductLane, ...] = (
             "runtime/autonomous_orchestrator.py",
             "runtime/self_audit.py",
             "scripts/oc_work_discovery.py",
+            # [OWNER DECISION] The live-dispatch canary drives
+            # app/calyx_orchestrator's proposal-mutation adapter; it is the
+            # factory's own instrument.
+            "scripts/run_live_dispatch_canary.py",
         ),
-        test_name_markers=("improvement", "self_audit", "work_discovery"),
+        test_name_markers=("improvement", "self_audit", "work_discovery", "live_dispatch"),
     ),
 )
 

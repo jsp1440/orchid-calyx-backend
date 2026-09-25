@@ -7,7 +7,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "orchid-swarm-controller.yml"
 def test_swarm_workflow_uses_bounded_parallel_matrix():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "max-parallel: 12" in text
-    assert "default: \"8\"" in text
+    assert 'default: "8"' in text
     assert "oc_swarm_controller.py" in text
     assert "orchid-completion-lane.yml" in text
 
@@ -28,8 +28,14 @@ def test_swarm_claims_only_queue_leases_and_reports_resources():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "python3 -m scripts.oc_swarm_claim" in text
     claim = (ROOT / "scripts" / "oc_swarm_claim.py").read_text(encoding="utf-8")
-    for label in ("oc-queued", "oc-running", "oc-owner-gate", "oc-blocked",
-                  "oc-runtime-backoff", "oc-repair-backoff"):
+    for label in (
+        "oc-queued",
+        "oc-running",
+        "oc-owner-gate",
+        "oc-blocked",
+        "oc-runtime-backoff",
+        "oc-repair-backoff",
+    ):
         assert label in claim
     assert "Dependency/resource lease claimed" in claim
     assert "resource conflicts suppressed" in text
@@ -48,9 +54,15 @@ def test_no_api_mode_dispatches_only_provider_free_workers():
     assert "oc_swarm_provider_free_worker.py" in text
     # The paid lane is gated on providers being enabled AND a provider-dependent
     # claim existing; provider-free claims never reach it.
-    assert "needs.plan.outputs.provider_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'" in text
+    assert (
+        "needs.plan.outputs.provider_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'"
+        in text
+    )
     assert "needs.plan.outputs.provider_blocked == 'true'" in text
-    assert "--files-json '[]'" in text
+    # The provider-free worker verifies the actual write set against the lease:
+    # empty outside edit mode, the edit lane's changed files inside it.
+    assert "files_json='[]'" in text
+    assert '--files-json "$files_json"' in text
 
 
 def test_every_launched_wave_gets_one_bounded_refill_attempt():

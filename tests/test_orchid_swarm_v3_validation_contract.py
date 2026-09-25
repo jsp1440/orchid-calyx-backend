@@ -24,3 +24,30 @@ def test_verifier_runs_before_normal_validation_suite():
     assert text.index("Swarm post-build write-set verification") < text.index(
         "Install runtime and validation dependencies"
     )
+
+
+def _verification_step() -> str:
+    import yaml
+
+    doc = yaml.safe_load(VALIDATION.read_text(encoding="utf-8"))
+    steps = doc["jobs"]["validate"]["steps"]
+    return next(
+        s["run"]
+        for s in steps
+        if s.get("name") == "Swarm post-build write-set verification"
+    )
+
+
+def test_edit_lane_heads_require_the_issue_marker_and_lease():
+    run = _verification_step()
+    assert 'if [[ "$HEAD_REF" == oc/discovered-* ]]; then' in run
+    # Each "not applicable" exit is preceded by a refusal for edit-lane heads.
+    for skip in (
+        "No integration PR for this head",
+        "has no OC-AUTO-ISSUE marker; write-set verification not applicable",
+        "treating as legacy/manual work",
+    ):
+        before = run[: run.index(skip)]
+        guard = before.rindex('if [[ "$lane_head" == true ]]; then')
+        assert "exit 1" in before[guard:], skip
+    assert run.index("lane_head=true") < run.index("gh pr view")

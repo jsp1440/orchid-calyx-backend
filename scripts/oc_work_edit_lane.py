@@ -57,6 +57,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
+from scripts import oc_swarm_write_set_verifier as write_set_verifier
 from scripts import oc_work_discovery as discovery
 from scripts import oc_work_materialize as materialize
 from scripts.oc_swarm_provider_free_worker import declared_validation_commands
@@ -75,12 +76,60 @@ PINNABLE_VERSION = re.compile(
 DISTRIBUTION_NAME = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$")
 FULL_SHA = re.compile(r"^[0-9a-f]{40}$")
 PR_URL = re.compile(r"/pull/(?P<number>\d+)\s*$")
+#: The only remote ref this lane may ever update. Structural, not advisory: the
+#: workflow's pre-push hook is a second fence, but ``--no-verify`` or a missing
+#: hooks path skips a hook, and this check is on the only code path that pushes.
+PUSH_DESTINATION = re.compile(r"^refs/heads/oc/discovered-[0-9a-f]{16}$")
 
 Transport = Callable[[list[str], dict | None], Any]
 Git = Callable[[list[str], str | None], str]
 Runner = Callable[
     [tuple[str, ...], str | None, int], "subprocess.CompletedProcess[str]"
 ]
+
+
+class PushFenceViolation(ValueError):
+    """A push this lane would make targets anything but one new lane branch."""
+
+
+def fenced_push_args(commit_sha: str, destination: str) -> list[str]:
+    """The exact ``git push`` argv for one lane branch, or raise.
+
+    The shape is fixed: ``push origin <full sha>:refs/heads/oc/discovered-<16 hex>``.
+    No options, so no ``--force``/``--force-with-lease``/``--delete``/``--mirror``
+    /``--all``/``--tags``/``--no-verify``; no ``+`` (forced) refspec; no empty
+    source (a delete); an explicit, fully qualified destination so neither
+    ``push.default`` nor ``remote.origin.push`` can choose where it lands.
+    """
+    if not FULL_SHA.fullmatch(str(commit_sha or "")):
+        raise PushFenceViolation(
+            f"push source must be a full commit id: {commit_sha!r}"
+        )
+    if not PUSH_DESTINATION.fullmatch(str(destination or "")):
+        raise PushFenceViolation(
+            f"push destination is outside the lane fence: {destination!r}"
+        )
+    args = ["push", "origin", f"{commit_sha}:{destination}"]
+    assert_fenced_push(args)
+    return args
+
+
+def assert_fenced_push(args: list[str]) -> None:
+    """Refuse any ``git push`` argv that is not exactly one fenced refspec."""
+    if len(args) != 3 or args[0] != "push" or args[1] != "origin":
+        raise PushFenceViolation(f"push must be `push origin <refspec>`: {args!r}")
+    refspec = args[2]
+    if refspec.startswith(("+", "-", ":")) or refspec.count(":") != 1:
+        raise PushFenceViolation(
+            f"forced, delete or option-shaped refspec refused: {refspec!r}"
+        )
+    source, destination = refspec.split(":")
+    if not FULL_SHA.fullmatch(source):
+        raise PushFenceViolation(f"push source must be a full commit id: {source!r}")
+    if not PUSH_DESTINATION.fullmatch(destination):
+        raise PushFenceViolation(
+            f"push destination is outside the lane fence: {destination!r}"
+        )
 
 
 class LaneRefusal(RuntimeError):
@@ -456,6 +505,10 @@ def pull_request_body(
             "An independent checker verifies this exact head before integration."
         ),
         "",
+        # The integration-PR marker every Swarm lane carries: the validation
+        # workflow resolves the issue's lease from it and verifies this PR's
+        # files against that lease's write set.
+        f"OC-AUTO-ISSUE: #{issue_number}",
         f"{materialize.FINGERPRINT_MARKER}: {edit.fingerprint}",
     ]
     return "\n".join(lines)
@@ -591,6 +644,7 @@ def run_lane(
     repository: str,
     root: Path,
     base_sha: str,
+    lease_comment: str,
     integration_branch: str = DEFAULT_INTEGRATION_BRANCH,
     call: Transport = github,
     git_call: Git = git,
@@ -610,6 +664,14 @@ def run_lane(
         raise ValueError("invalid repository")
     if not FULL_SHA.fullmatch(str(base_sha or "")):
         raise ValueError("base sha must be a full commit id")
+    if integration_branch != DEFAULT_INTEGRATION_BRANCH:
+        # The draft PR's base is fixed, like the push destination: the lane
+        # files only against the integration branch, never main.
+        raise ValueError(f"integration branch must be {DEFAULT_INTEGRATION_BRANCH}")
+    # The durable lease is required and parsed before anything else: a pass
+    # that cannot say what it may write does not get to write. Raises
+    # ValueError/TypeError on a missing or malformed receipt.
+    lease_claim = write_set_verifier.parse_lease_claim(lease_comment)
     number = int(issue.get("number") or 0)
     if number <= 0:
         raise ValueError("issue number is required")
@@ -832,7 +894,22 @@ def run_lane(
                 before=before,
                 after=after,
             )
-        git_call(["push", "-u", "origin", f"{branch}:{branch}"], str(worktree))
+        # The committed write set must sit inside the lease *before* anything
+        # leaves this runner; the worker re-checks it afterwards, and the
+        # validation workflow checks the PR's files against the same lease.
+        write_set = write_set_verifier.verify_write_set(changed, lease_claim)
+        if not write_set["passed"]:
+            return _receipt(
+                outcome="refused",
+                reason="write_set_exceeds_lease",
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+                edit={**edit.to_record(), "write_set": write_set},
+                before=before,
+                after=after,
+            )
+        git_call(fenced_push_args(commit_sha, f"refs/heads/{branch}"), str(worktree))
         pr_body = pull_request_body(
             edit,
             candidate,
@@ -910,6 +987,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--root", default=".")
     parser.add_argument("--base-sha", required=True)
+    parser.add_argument("--lease-comment", required=True)
     parser.add_argument("--integration-branch", default=DEFAULT_INTEGRATION_BRANCH)
     parser.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT_SECONDS)
     parser.add_argument("--github-output")
@@ -923,6 +1001,7 @@ def main(argv: list[str] | None = None) -> int:
             repository=args.repository,
             root=Path(args.root).resolve(),
             base_sha=args.base_sha,
+            lease_comment=args.lease_comment,
             integration_branch=args.integration_branch,
             timeout=args.timeout,
         )
