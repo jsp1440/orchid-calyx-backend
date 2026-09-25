@@ -220,7 +220,7 @@ def plan_refill(
             int(item.get("priority", 999)),
             str(item.get("created_at") or ""),
             # Optional source-supplied rank; absent (0) keeps the prior ordering.
-            int(item.get("queue_rank", 0)),
+            int(item.get("queue_rank") or 0),
             str(item.get("source_ref") or ""),
         ),
     )

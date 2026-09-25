@@ -32,6 +32,26 @@ from scripts.oc_backlog_refiller import plan_refill
 
 _SCHEMA = "oc.knowledge-gap-reserve-source.v1"
 _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
+# A KG display label enters a question only if it looks like a scientific name
+# (with optional authority): letters, spaces and . - ' ( ) × & , only; no
+# digits, sentence punctuation, control characters or long prose.
+_MAX_TAXON_NAME_CHARS = 120
+_MAX_TAXON_NAME_WORDS = 12
+
+
+def safe_taxon_name(taxon_name: str) -> str | None:
+    """The whitespace-normalised name, or ``None`` if it is not name-shaped."""
+    name = " ".join(str(taxon_name or "").split())
+    if not name or len(name) > _MAX_TAXON_NAME_CHARS:
+        return None
+    if len(name.split(" ")) > _MAX_TAXON_NAME_WORDS:
+        return None
+    if not all(ch.isalpha() or ch in " .-'()×&," for ch in name):
+        return None
+    if not name[0].isalpha():
+        return None
+    return name
+
 
 #: Closed vocabulary of evidence-coverage research domains. Locality-gated
 #: domains (distribution/habitat) are deliberately absent.
@@ -130,8 +150,8 @@ def evidence_coverage_research_question(
     outside the vocabulary (including every locality-gated domain).
     """
     label = EVIDENCE_GAP_DOMAIN_LABELS.get(domain)
-    name = " ".join(taxon_name.split())
-    if label is None or not name:
+    name = safe_taxon_name(taxon_name)
+    if label is None or name is None:
         return None
     source_clause = "No federated source in the knowledge graph covers it yet."
     if candidate_source_table:
@@ -166,12 +186,14 @@ def evidence_gap_candidate(
     is the same work across runs, whatever the run id or source wording.
     """
     normalized_taxon_id = _normalize(taxon_id)
-    normalized_taxon_name = " ".join(taxon_name.split())
+    normalized_taxon_name = " ".join(str(taxon_name or "").split())
     normalized_domain = _normalize(domain)
     if not normalized_taxon_id:
         raise ValueError("CANONICAL_TAXON_ID_REQUIRED")
     if not normalized_taxon_name:
         raise ValueError("TAXON_NAME_REQUIRED")
+    if safe_taxon_name(normalized_taxon_name) is None:
+        raise ValueError("TAXON_NAME_UNSAFE")
     if normalized_domain not in EVIDENCE_GAP_DOMAIN_LABELS:
         raise ValueError("UNSUPPORTED_EVIDENCE_DOMAIN")
     question = evidence_coverage_research_question(
