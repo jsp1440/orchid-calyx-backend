@@ -205,6 +205,11 @@ SQL_SOURCE_DOMAIN_TAXA = f"""
       AND n.source_table = %s
       AND COALESCE(n.payload_json->>'evidence_type', '') = ANY(%s::text[])
 """
+SQL_TAXON_LABELS = f"""
+    SELECT t.source_pk, t.display_label FROM oc_graph.kg_nodes t
+    WHERE {_TAXON} AND t.source_pk = ANY(%s::text[])
+    ORDER BY t.source_pk
+"""
 SQL_PARTIAL_COUNT = f"""
     SELECT COUNT(*) AS n FROM ({_SOURCE_TAXA}) src
     WHERE src.kg_node_id NOT IN ({_COVERED_TAXA})
@@ -281,6 +286,45 @@ class EvidenceCoverageGapSource:
             "gaps": [asdict(gap) for gap in gaps],
             "top_actions": [gap.proposed_action for gap in gaps[:5]],
         }
+
+    def taxon_labels(self, taxon_ids: list[str]) -> dict[str, str]:
+        """Display labels of active KG taxon nodes, by ``source_pk`` (read-only).
+
+        Ids with no active node or an empty label are absent: a name is never
+        invented. Raises :class:`EvidenceCoverageUnavailable` if the KG cannot be read.
+        """
+        wanted = sorted({str(value) for value in taxon_ids if str(value).strip()})
+        if not wanted:
+            return {}
+        if self._db_execute is None:
+            raise EvidenceCoverageUnavailable(
+                self._unavailable_reason
+                or "no knowledge-graph connection is configured"
+            )
+
+        def _work(cur: Any) -> dict[str, str] | None:
+            if cur is None:
+                return None
+            cur.execute("SET TRANSACTION READ ONLY")
+            cur.execute(SQL_TAXON_LABELS, (wanted,))
+            labels: dict[str, str] = {}
+            for row in cur.fetchall():
+                label = " ".join(str(row.get("display_label") or "").split())
+                if label and row.get("source_pk") is not None:
+                    labels[str(row["source_pk"])] = label
+            return labels
+
+        try:
+            result = self._db_execute(_work)
+        except Exception as exc:
+            raise EvidenceCoverageUnavailable(
+                f"knowledge-graph read failed: {type(exc).__name__}"
+            ) from exc
+        if result is None:
+            raise EvidenceCoverageUnavailable(
+                "no knowledge-graph connection is configured"
+            )
+        return result
 
     # -- internals --------------------------------------------------------------------------
 

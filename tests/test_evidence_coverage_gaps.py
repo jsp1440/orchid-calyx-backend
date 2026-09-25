@@ -42,8 +42,10 @@ class FakeKG:
         edges: list[tuple[str, str, str, str | None, str | None]],
         *,
         present: bool = True,
+        labels: dict[str, str] | None = None,
     ) -> None:
         self.taxa = taxa
+        self.labels = labels or {}
         self.edges = edges
         self.present = present
         self.statements: list[str] = []
@@ -90,6 +92,12 @@ class FakeKGCursor:
         elif sql == ecg.SQL_PRESENT:
             self._rows = [
                 {"nodes_present": self.kg.present, "edges_present": self.kg.present}
+            ]
+        elif sql == ecg.SQL_TAXON_LABELS:
+            self._rows = [
+                {"source_pk": t, "display_label": self.kg.labels.get(t)}
+                for t in sorted(params[0])
+                if t in self.kg.taxa
             ]
         elif sql == ecg.SQL_TAXA_EXAMINED:
             self._rows = [{"n": len(self.kg.taxa)}]
