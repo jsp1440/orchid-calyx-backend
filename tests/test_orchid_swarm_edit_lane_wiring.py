@@ -49,7 +49,22 @@ def test_checkout_has_history_and_a_pushable_remote():
     checkout = _step("Checkout controller revision")
     assert checkout["with"]["fetch-depth"] == 0
     assert checkout["with"]["persist-credentials"] is True
-    assert _job()["env"]["INTEGRATION_BRANCH"] == "${{ github.ref_name }}"
+    # Pinned, not github.ref_name: that is `main` on schedule/issues runs and
+    # `<N>/merge` on pull_request runs, neither of which is a PR base.
+    assert _job()["env"]["INTEGRATION_BRANCH"] == "oc-autonomous-integration"
+
+
+def test_the_edit_lane_runs_only_on_a_run_of_the_integration_ref():
+    run = _step("Execute deterministic provider-free work")["run"]
+    edit_block = run.split('if [[ "$mode" == "edit" ]]; then', maxsplit=1)[1]
+    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then'
+    assert guard in edit_block
+    # The guard fails the step (the fail-closed release parks the issue with
+    # evidence) before the lane can create a worktree, push or open a PR.
+    assert edit_block.index(guard) < edit_block.index(
+        "python3 -m scripts.oc_work_edit_lane"
+    )
+    assert "exit 2" in edit_block[edit_block.index(guard) : edit_block.index("set +e")]
 
 
 def test_execute_step_runs_the_edit_lane_and_hands_its_receipt_to_the_worker():

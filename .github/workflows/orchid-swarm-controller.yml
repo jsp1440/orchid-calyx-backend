@@ -433,7 +433,9 @@ jobs:
       ISSUE_NUMBER: ${{ matrix.issue_number }}
       LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
       INTEGRATION_SHA: ${{ github.sha }}
-      INTEGRATION_BRANCH: ${{ github.ref_name }}
+      # The edit lane's PR base. Pinned like plan/refill: github.ref_name is
+      # `main` on schedule/issues runs and `<N>/merge` on pull_request runs.
+      INTEGRATION_BRANCH: oc-autonomous-integration
     steps:
       # Full history: the edit lane creates `git worktree add --detach <base>`
       # and pushes from it, and the pre-push fence needs a real remote.
@@ -568,6 +570,13 @@ jobs:
           edit_args=()
           files_json='[]'
           if [[ "$mode" == "edit" ]]; then
+            # The lane branches from INTEGRATION_SHA and files against
+            # INTEGRATION_BRANCH; both mean the integration head only on a run
+            # of that ref. Any other trigger fails closed before any git write.
+            if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
+              echo "Edit lane runs only on refs/heads/$INTEGRATION_BRANCH (this run: $GITHUB_REF)." >&2
+              exit 2
+            fi
             set +e
             python3 -m scripts.oc_work_edit_lane \
               --issue-json "$issue" \

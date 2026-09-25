@@ -62,11 +62,24 @@ def test_provider_free_and_paid_lanes_are_split_by_confirmed_claim_matrices():
     assert free["strategy"]["fail-fast"] is False  # one failing lane never stops siblings
 
 
-def test_provider_free_lane_keeps_read_only_repository_permissions():
+def test_provider_free_lane_writes_only_through_the_fenced_edit_lane():
+    # Was `contents: read`. The edit lane (#1606/#1610) pushes one
+    # oc/discovered-<fingerprint> branch and opens a draft PR, so this job holds
+    # contents/pull-requests write -- and nothing else does it: the job's own
+    # shell never pushes, opens or merges a PR, and a pre-push fence precedes
+    # every step that could push.
     free = _doc()["jobs"]["provider_free_workers"]
-    assert free["permissions"] == {"contents": "read", "issues": "write"}
+    assert free["permissions"] == {
+        "contents": "write",
+        "issues": "write",
+        "pull-requests": "write",
+    }
     run_text = "\n".join(str(s.get("run", "")) for s in free["steps"])
     assert "git push" not in run_text and "gh pr create" not in run_text
+    assert "gh pr merge" not in run_text
+    names = [s.get("name", "") for s in free["steps"]]
+    fence = names.index("Fence pushes to oc/discovered-* branches")
+    assert fence < names.index("Execute deterministic provider-free work")
     assert "ANTHROPIC_API_KEY" not in WORKFLOW.read_text(encoding="utf-8").split("provider_free_workers:")[1].split("refill:")[0]
 
 
