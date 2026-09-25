@@ -193,6 +193,16 @@ class TestDerivation:
         with pytest.raises(lane.LaneRefusal, match="already_declared"):
             lane.derive_edit(candidate(), tmp_path, version_of=lambda name: "1.4.0")
 
+    @pytest.mark.parametrize(
+        "spelling", ["pytest.asyncio==1.0", "Pytest.Asyncio", "pytest__asyncio>=1"]
+    )
+    def test_a_declaration_under_any_pep503_spelling_is_a_refusal(
+        self, tmp_path: Path, spelling: str
+    ) -> None:
+        (tmp_path / "requirements-ci.txt").write_text(f"{spelling}\n")
+        with pytest.raises(lane.LaneRefusal, match="already_declared"):
+            lane.derive_edit(candidate(), tmp_path, version_of=lambda name: "1.4.0")
+
     def test_a_remedy_naming_the_wrong_file_is_refused(self, tmp_path: Path) -> None:
         cand = candidate()
         cand["remedy"]["requirements_file"] = "requirements.txt"
@@ -232,6 +242,25 @@ class TestApply:
         assert (tmp_path / "requirements-dev.txt").read_text().count(
             "pytest-asyncio=="
         ) == 1
+
+    @pytest.mark.parametrize(
+        "existing",
+        [
+            "Pytest_Asyncio>=0.1",
+            "pytest.asyncio==1.4.0",
+            "  pytest-asyncio ; python_version>'3'",
+        ],
+    )
+    def test_any_pep503_spelling_already_declared_is_left_alone(
+        self, tmp_path: Path, existing: str
+    ) -> None:
+        edit = lane.derive_edit(candidate(), tmp_path, version_of=lambda name: "1.4.0")
+        (tmp_path / "requirements-dev.txt").write_text(f"pytest==9.1.1\n{existing}\n")
+        assert lane.apply_edit(edit, tmp_path) is False
+        assert (
+            "pytest-asyncio==1.4.0"
+            not in (tmp_path / "requirements-dev.txt").read_text()
+        )
 
 
 class TestJudgement:
@@ -288,6 +317,16 @@ class TestReceiptFailsClosed:
             "commit_sha": "a" * 40,
             "diff_sha256": "b" * 64,
             "branch": lane.branch_name(FP),
+            "pr_url": f"https://github.com/{REPO}/pull/101",
+            "reason": "validation passed",
+            "validation_passed": True,
+            "fingerprint": FP,
+            "issue_number": 9000,
+            "validation_commands": ["control-plane-compiles"],
+            "edit": {"path": "requirements-dev.txt", "line": "pytest-asyncio==1.4.0"},
+            "before": {"command_id": "control-plane-compiles", "exit_code": 1},
+            "after": {"command_id": "control-plane-compiles", "exit_code": 0},
+            "safety": {"provider_calls": False, "push_to_main": False},
         }
 
     def test_a_complete_pr_receipt_passes(self) -> None:
@@ -307,6 +346,21 @@ class TestReceiptFailsClosed:
             {"disposition": "done"},
             {"outcome": "merged"},
             {"schema": "something-else"},
+            {"pr_url": None},
+            {"pr_url": f"https://github.com/{REPO}/pull/102"},
+            {"validation_passed": False},
+            {"fingerprint": None},
+            {"issue_number": None},
+            {"issue_number": 0},
+            {"validation_commands": []},
+            {"edit": None},
+            {"edit": {"path": "requirements.txt"}},
+            {"before": None},
+            {"after": None},
+            {"after": {"command_id": "calyx-async-acceptance"}},
+            {"reason": ""},
+            {"safety": None},
+            {"safety": {"push_to_main": True}},
         ],
     )
     def test_a_pr_receipt_missing_anything_is_refused(self, broken: dict) -> None:
@@ -385,6 +439,18 @@ class TestWorkerEditMode:
         assert receipt["blocked_on"] == "pr#101"
         assert receipt["changed_file_count"] == 1
         assert receipt["write_set"]["passed"] is True
+        # It pushed a branch: the settlement may not say it wrote nothing.
+        assert receipt["safety"]["repository_writes"] is True
+
+    def test_the_verified_write_set_must_be_the_lanes_own(self) -> None:
+        with pytest.raises(ValueError, match="differ from the edit lane"):
+            worker.build_receipt(
+                issue_for(candidate()),
+                lease_comment=lease_comment(["repo-global"]),
+                changed_files=[],
+                integration_sha="abc",
+                edit=edit_receipt(),
+            )
 
     def test_the_issue_body_leases_the_write_the_lane_needs(self) -> None:
         body = issue_for(candidate())["body"]
@@ -441,7 +507,7 @@ class TestWorkerEditMode:
             lease_comment=lease_comment(["repo-global"]),
             changed_files=[],
             integration_sha="abc",
-            edit=edit_receipt(**over),
+            edit=edit_receipt(**{"changed_files": [], **over}),
         )
         assert receipt["disposition"] == "blocked" and receipt["blocked_on"] is None
 
@@ -761,6 +827,58 @@ class TestLaneEndToEnd:
             discover=lambda root: {"candidates": [cand]},
         )
         assert receipt["reason"] == "issue_and_candidate_disagree_on_command"
+
+    def test_a_base_that_already_declares_it_under_another_pin_is_refused(
+        self, tiny_repo
+    ) -> None:
+        """The checkout lacks the line; ``base_sha`` carries it as ``>=``.
+
+        Discovery ran on the checkout, so the candidate is real there. The
+        edit lands on ``base_sha``, where the distribution is already declared
+        under a floating pin: the lane must refuse, not append a second line.
+        """
+        _origin, work, base_a = tiny_repo
+        (work / "requirements-dev.txt").write_text(
+            "pytest==9.1.1\npytest-asyncio>=0.20\n"
+        )
+        _git(
+            [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "-q",
+                "-am",
+                "declare loosely",
+            ],
+            work,
+        )
+        base_b = _git(["rev-parse", "HEAD"], work)
+        _git(["push", "-q", "origin", "HEAD:main"], work)
+        _git(["checkout", "-q", base_a], work)
+        cand = candidate()
+        gh = FakeGitHub()
+        receipt = lane.run_lane(
+            issue_for(cand),
+            repository=REPO,
+            root=work,
+            base_sha=base_b,
+            call=gh,
+            git_call=lane.git,
+            runner=fake_runner_factory({}),
+            version_of=lambda name: "1.4.0",
+            provision=None,
+            discover=lambda root: {"candidates": [cand]},
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "refused"
+        assert receipt["reason"] == "already_declared"
+        assert receipt["changed_file_count"] == 0 and gh.prs == []
+        assert (
+            _git(["ls-remote", "--heads", "origin", lane.branch_name(FP)], work) == ""
+        )
+        assert _git(["branch", "--list", lane.branch_name(FP)], work) == ""
 
     def test_a_stale_remote_branch_without_a_pr_fails_closed(self, tiny_repo) -> None:
         _origin, work, _base = tiny_repo
