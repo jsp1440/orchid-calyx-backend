@@ -174,6 +174,48 @@ class TestItRefusesToGuess:
         assert questions[0]["analysis_only"] is True
         assert "oc-lane:" not in " ".join(questions[0]["labels"])
 
+    def test_the_question_is_about_files_not_about_test_node_ids(self, tmp_path: Path) -> None:
+        """Thirteen failing tests in one unmapped file are one path to bind.
+
+        A live pass over the repository's own failure report asked to "Bind 17
+        discovered path(s)" over five files, because every node id was counted
+        as a path. The table binds files; the question must count files.
+        """
+        report = (
+            "FAILED tests/test_unmapped_alpha.py::test_a\n"
+            "FAILED tests/test_unmapped_alpha.py::test_b\n"
+            "ERROR tests/test_unmapped_alpha.py::test_c\n"
+            "FAILED tests/test_unmapped_beta.py::test_d\n"
+            "3 failed, 1 error in 1.00s\n"
+        )
+        result = discovery.discover(tmp_path, pytest_report=report)
+        question = next(c for c in result["candidates"] if c["source"] == "binding-gap")
+        assert [item["where"] for item in question["evidence"]] == [
+            "tests/test_unmapped_alpha.py",
+            "tests/test_unmapped_beta.py",
+        ]
+        assert question["title"].startswith("Bind 2 discovered path(s)")
+        assert "::" not in question["semantic_key"]
+
+    def test_the_questions_identity_is_the_set_of_unbound_files(self, tmp_path: Path) -> None:
+        """A different test failing in the same unmapped file is the same question."""
+        first = discovery.discover(
+            tmp_path, pytest_report="FAILED tests/test_unmapped_alpha.py::test_a\n1 failed in 1.00s\n"
+        )
+        second = discovery.discover(
+            tmp_path, pytest_report="FAILED tests/test_unmapped_alpha.py::test_b\n1 failed in 1.00s\n"
+        )
+        fingerprints = [
+            next(c["fingerprint"] for c in result["candidates"] if c["source"] == "binding-gap")
+            for result in (first, second)
+        ]
+        assert fingerprints[0] == fingerprints[1]
+
+    def test_evidence_path_strips_only_the_node_id(self) -> None:
+        assert discovery.evidence_path("tests/test_x.py::TestA::test_b") == "tests/test_x.py"
+        assert discovery.evidence_path("app/module/file.py") == "app/module/file.py"
+        assert discovery.evidence_path("") == ""
+
     def test_no_analysis_task_when_everything_placed(self, tmp_path: Path) -> None:
         report = "FAILED tests/test_calyx_brain_x.py::test_a\n1 failed in 1.00s\n"
         result = discovery.discover(tmp_path, pytest_report=report)

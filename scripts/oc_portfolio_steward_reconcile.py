@@ -35,7 +35,7 @@ from runtime.portfolio_steward_reconciler import (
     reconcile,
 )
 
-_QUEUED_LABELS = frozenset({"oc-queued", "oc-running", "oc-validating", "oc-done"})
+_REFILL_SNAPSHOT_LABELS = frozenset({"oc-queued", "oc-running", "oc-done"})
 _SCHEMA = "oc.portfolio-steward-workflow-bridge.v1"
 
 
@@ -109,14 +109,20 @@ def _label_names(issue: dict[str, Any]) -> list[str]:
 def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     """Build a deduplication snapshot from current frontend issue state.
 
-    Issues already in oc-queued/oc-running/oc-validating contribute their
-    material_fingerprint and semantic_key so the bridge does not re-admit them.
-    Issues in oc-done contribute to the completed set.
+    Issues already in oc-queued/oc-running contribute their material_fingerprint
+    and semantic_key so the bridge does not re-admit them. Issues in oc-done
+    contribute to the completed set.
+
+    Deliberately omit oc-validating from this refill-health snapshot. Validation
+    health requires exact PR/head metadata that the Portfolio Steward issue-list
+    query does not fetch; representing such issues without that metadata creates
+    false global-health failures. Validation remains governed by its own exact-
+    head supervisor rather than this refill planner.
     """
     snapshot_issues: list[dict[str, Any]] = []
     for issue in all_issues:
         labels = set(_label_names(issue))
-        if not (labels & _QUEUED_LABELS):
+        if not (labels & _REFILL_SNAPSHOT_LABELS):
             continue
         leaf = _issue_to_leaf(issue)
         if leaf is None:
@@ -181,6 +187,8 @@ def run_reconciliation(
         "bridge_status": report.bridge_result.get("status"),
         "evidence_count": len(report.evidence),
         "executed_count": report.executed_count,
+        "canonical_context_schema": report.canonical_context_schema,
+        "canonical_context_version": report.canonical_context_version,
         "report": report.as_dict(),
     }
 
@@ -245,6 +253,14 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.github_output:
         _write_github_output(args.github_output, result)
+
+    failed_statuses = {"planner_failed", "queue_empty_planner_failed"}
+    if result.get("bridge_status") in failed_statuses:
+        print(
+            f"FAIL-CLOSED: bridge_status={result['bridge_status']}",
+            file=sys.stderr,
+        )
+        return 2
 
     return 0
 
