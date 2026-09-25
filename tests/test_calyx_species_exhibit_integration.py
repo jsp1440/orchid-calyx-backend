@@ -71,7 +71,8 @@ CREATE TABLE public.orchid_images (
 );
 CREATE TABLE oc_graph.kg_nodes (
   kg_node_id bigint PRIMARY KEY, canonical_key text UNIQUE NOT NULL,
-  node_type text NOT NULL, display_label text
+  node_type text NOT NULL, display_label text,
+  is_active boolean NOT NULL DEFAULT true
 );
 CREATE TABLE oc_graph.kg_edges (
   kg_edge_id bigint PRIMARY KEY,
@@ -100,7 +101,8 @@ INSERT INTO public.orchid_images
   'iNaturalist', 'CC0', 'Alex Grower', 'Alex Grower', 'gbif-4503003', false);
 
 INSERT INTO oc_graph.kg_nodes(kg_node_id, canonical_key, node_type, display_label) VALUES
- (1, 'taxon:1001', 'taxon', 'Phalaenopsis amabilis'),
+ -- The graph backbone id is not the orchid-taxonomy id; the link is the name.
+ (1, 'taxon:55', 'taxon', 'Phalaenopsis amabilis'),
  (2, 'trait:growth_habit=epiphytic', 'trait', 'epiphytic growth habit');
 INSERT INTO oc_graph.kg_edges
  (kg_edge_id, from_node_id, to_node_id, edge_type, evidence_class,
