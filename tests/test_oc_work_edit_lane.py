@@ -420,6 +420,18 @@ class TestWorkerEditMode:
         assert receipt["blocked_on"] == "pr#101"
         assert receipt["changed_file_count"] == 1
         assert receipt["write_set"]["passed"] is True
+        # It pushed a branch: the settlement may not say it wrote nothing.
+        assert receipt["safety"]["repository_writes"] is True
+
+    def test_the_verified_write_set_must_be_the_lanes_own(self) -> None:
+        with pytest.raises(ValueError, match="differ from the edit lane"):
+            worker.build_receipt(
+                issue_for(candidate()),
+                lease_comment=lease_comment(["repo-global"]),
+                changed_files=[],
+                integration_sha="abc",
+                edit=edit_receipt(),
+            )
 
     def test_the_issue_body_leases_the_write_the_lane_needs(self) -> None:
         body = issue_for(candidate())["body"]
@@ -476,7 +488,7 @@ class TestWorkerEditMode:
             lease_comment=lease_comment(["repo-global"]),
             changed_files=[],
             integration_sha="abc",
-            edit=edit_receipt(**over),
+            edit=edit_receipt(**{"changed_files": [], **over}),
         )
         assert receipt["disposition"] == "blocked" and receipt["blocked_on"] is None
 

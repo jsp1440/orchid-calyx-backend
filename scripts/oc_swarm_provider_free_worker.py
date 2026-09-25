@@ -173,6 +173,11 @@ def build_receipt(
         receipt["declared_commands"] = declared_commands
         receipt["blocked_on"] = blocked_on
         receipt["changed_file_count"] = int(edit["changed_file_count"])  # type: ignore[index]
+        # The write set verified above must be the one the lane committed, and
+        # a pass that committed and pushed a file did write to the repository.
+        if sorted(changed_files) != sorted(edit.get("changed_files") or []):  # type: ignore[union-attr]
+            raise ValueError("changed files differ from the edit lane's receipt")
+        receipt["safety"]["repository_writes"] = receipt["changed_file_count"] > 0
     return receipt
 
 
