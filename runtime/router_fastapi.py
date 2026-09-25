@@ -195,6 +195,17 @@ def serve_brain_record(path: str, loader: BrainConfigLoader | None = None):
     return {**result.record, "config_source": result.config_source}
 
 
+@config_router.get("/brain-source")
+def config_brain_source():
+    """Which Brain ref this runtime reads, and whether it is the served one.
+
+    ``stale`` is true whenever the pinned ref is not the Brain's served ref
+    (``main``). Resolution of the pinned ref's commit and date is one bounded
+    call; if it fails, ``resolution`` says so and ``stale`` is unaffected.
+    """
+    return BrainConfigLoader().describe_ref(resolve=True)
+
+
 @config_router.get("/manifest")
 def config_manifest():
     return serve_brain_record("config/calyx_core_manifest.json")

@@ -23,6 +23,7 @@ from fastapi.testclient import TestClient
 
 from runtime import router_fastapi
 from runtime.config_loader import (
+    BRAIN_SERVED_REF,
     BRAIN_SOURCE_REQUIRED_FIELDS,
     BRAIN_SOURCE_STATUSES,
     BrainConfigError,
@@ -48,6 +49,14 @@ class Brain:
         self.calls += 1
         if not self.reachable:
             raise OSError("connection refused")
+        if "/commits/" in url:
+            ref = url.rsplit("/", 1)[1]
+            return json.dumps(
+                {
+                    "sha": f"sha-of-{ref}",
+                    "commit": {"committer": {"date": "2026-09-20T00:00:00Z"}},
+                }
+            ).encode("utf-8")
         path = url.split("/contents/", 1)[1].split("?", 1)[0]
         return json.dumps(self.records[path]).encode("utf-8")
 
@@ -271,3 +280,89 @@ def test_registry_health_carries_the_same_source(loader, brain):
     assert health["config_source"]["status"] == "unavailable"
     assert health["config_source"]["last_known_at"] is None
     assert health["summary"]["total"] == 0
+
+
+# -- the pinned ref is reported honestly ---------------------------------------
+
+
+def test_config_source_says_whether_the_pinned_ref_is_the_served_ref(brain):
+    store = LastKnownStore()
+    pinned = BrainConfigLoader(
+        BrainConfigSource(
+            repo="example/brain", ref="calyx-core-operational-foundation"
+        ),
+        last_known=store,
+        fetch=brain.fetch,
+    )
+    served = BrainConfigLoader(
+        BrainConfigSource(repo="example/brain", ref=BRAIN_SERVED_REF),
+        last_known=store,
+        fetch=brain.fetch,
+    )
+    stale = pinned.load_with_source("config/calyx_core_manifest.json").config_source
+    current = served.load_with_source("config/calyx_core_manifest.json").config_source
+    assert stale["served_ref"] == "main" and stale["stale"] is True
+    assert current["served_ref"] == "main" and current["stale"] is False
+
+
+def test_describe_ref_reports_the_known_pin_without_a_network_call(brain):
+    loader = BrainConfigLoader(
+        BrainConfigSource(
+            repo="example/brain", ref="calyx-core-operational-foundation"
+        ),
+        last_known=LastKnownStore(),
+        fetch=brain.fetch,
+    )
+    described = loader.describe_ref()
+    assert brain.calls == 0
+    assert described["stale"] is True
+    assert described["ref_commit"].startswith("54692d7")
+    assert described["ref_commit_date"].startswith("2026-07-03")
+    assert described["resolution"] == "known"
+
+
+def test_describe_ref_resolves_the_commit_when_asked_and_reachable():
+    def fetch(url, headers):
+        assert url.endswith("/repos/example/brain/commits/feature")
+        return json.dumps(
+            {"sha": "abc123", "commit": {"committer": {"date": "2026-09-01T00:00:00Z"}}}
+        ).encode("utf-8")
+
+    loader = BrainConfigLoader(
+        BrainConfigSource(repo="example/brain", ref="feature"),
+        last_known=LastKnownStore(),
+        fetch=fetch,
+    )
+    described = loader.describe_ref(resolve=True)
+    assert described == {
+        "repo": "example/brain",
+        "ref": "feature",
+        "served_ref": "main",
+        "stale": True,
+        "ref_commit": "abc123",
+        "ref_commit_date": "2026-09-01T00:00:00Z",
+        "resolution": "resolved",
+    }
+
+
+def test_describe_ref_reports_an_unresolvable_commit_without_raising(brain):
+    brain.reachable = False
+    loader = BrainConfigLoader(
+        BrainConfigSource(repo="example/brain", ref="feature"),
+        last_known=LastKnownStore(),
+        fetch=brain.fetch,
+    )
+    described = loader.describe_ref(resolve=True)
+    assert described["stale"] is True
+    assert described["ref_commit"] is None
+    assert described["resolution"].startswith("unresolved: ")
+
+
+def test_brain_source_endpoint_reports_the_pin(client, loader):
+    response = client.get("/api/config/brain-source")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ref"] == "main" and body["served_ref"] == "main"
+    assert body["stale"] is False
+    assert body["resolution"] == "resolved"
+    assert body["ref_commit"] == "sha-of-main"

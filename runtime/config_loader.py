@@ -14,6 +14,22 @@ DEFAULT_BRAIN_REPO = "jsp1440/Orchid-Continuum-Brain"
 DEFAULT_BRAIN_REF = "calyx-core-operational-foundation"
 DEFAULT_GITHUB_API = "https://api.github.com"
 
+#: The ref the Brain serves its records on (Orchid-Continuum-Brain
+#: ``contracts/federation_records_v1.json``, ``served_ref.canonical``). A
+#: consumer pinned to any other ref is reading a frozen snapshot of the Brain,
+#: and must say so.
+BRAIN_SERVED_REF = "main"
+#: What the default pin is known to point at, recorded so the runtime can
+#: report its age without a network call. ``calyx-core-operational-foundation``
+#: is a frozen ancestor of ``main``: 54692d7, 2026-07-03; on it
+#: config/infrastructure_registry.json is 1.1 where main serves 1.2.
+KNOWN_REF_COMMITS: dict[str, tuple[str, str]] = {
+    "calyx-core-operational-foundation": (
+        "54692d77f02716b7535836607c4b27d25810eb4c",
+        "2026-07-03T21:26:49-07:00",
+    ),
+}
+
 #: The status vocabulary and required fields of the Brain's unavailable contract
 #: (Orchid-Continuum-Brain ``contracts/federation_records_v1.json``,
 #: ``unavailable_contract``): a consumer that cannot reach the Brain reports
@@ -39,6 +55,24 @@ class BrainConfigSource:
     ref: str = DEFAULT_BRAIN_REF
     api_base: str = DEFAULT_GITHUB_API
     token: str | None = None
+
+    @property
+    def stale(self) -> bool:
+        """True when this source reads a ref other than the one the Brain serves."""
+        return self.ref != BRAIN_SERVED_REF
+
+    def describe(self) -> dict[str, Any]:
+        """The ref this source reads, against the ref the Brain serves. No network."""
+        known = KNOWN_REF_COMMITS.get(self.ref)
+        return {
+            "repo": self.repo,
+            "ref": self.ref,
+            "served_ref": BRAIN_SERVED_REF,
+            "stale": self.stale,
+            "ref_commit": known[0] if known else None,
+            "ref_commit_date": known[1] if known else None,
+            "resolution": "known" if known else "not_attempted",
+        }
 
     @classmethod
     def from_env(cls) -> BrainConfigSource:
@@ -213,7 +247,13 @@ class BrainConfigLoader:
         with nothing last-known the result carries ``record=None`` and a
         ``config_source`` whose ``last_known_at`` is ``None``.
         """
-        base = {"repo": self.source.repo, "ref": self.source.ref, "path": path}
+        base = {
+            "repo": self.source.repo,
+            "ref": self.source.ref,
+            "served_ref": BRAIN_SERVED_REF,
+            "stale": self.source.stale,
+            "path": path,
+        }
         try:
             record, known = self._load_fresh(path)
         except (OSError, ValueError, BrainConfigError) as exc:
@@ -254,6 +294,29 @@ class BrainConfigLoader:
                 "last_known_sha256": known.sha256,
             },
         )
+
+    def describe_ref(self, *, resolve: bool = False) -> dict[str, Any]:
+        """Report the pinned ref honestly: what it is, whether it is stale, and,
+        when asked and reachable, what commit and date it resolves to.
+
+        ``resolve=True`` makes one bounded GitHub API call; failure is reported
+        in ``resolution`` and never raised, and never changes ``stale``.
+        """
+        described = self.source.describe()
+        if not resolve:
+            return described
+        owner, repo = self.source.repo.split("/", 1)
+        url = f"{self.source.api_base}/repos/{owner}/{repo}/commits/{self.source.ref}"
+        headers = {**self._headers(), "Accept": "application/vnd.github+json"}
+        try:
+            payload = json.loads(self._fetch(url, headers).decode("utf-8"))
+            sha = payload["sha"]
+            date = payload["commit"]["committer"]["date"]
+        except (OSError, ValueError, KeyError, TypeError) as exc:
+            described["resolution"] = f"unresolved: {exc}"
+            return described
+        described.update(ref_commit=sha, ref_commit_date=date, resolution="resolved")
+        return described
 
     def load_manifest(self) -> dict[str, Any]:
         return self.load_json("config/calyx_core_manifest.json")
