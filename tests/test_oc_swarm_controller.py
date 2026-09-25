@@ -384,3 +384,67 @@ def test_blocked_report_drives_enrichment_then_one_idempotent_release():
     assert action["issue_number"] == 200
     assert action["requires_labels"] == ["oc-blocked"]
     assert action["idempotency_key"] == "blocked-release:200:pr#300"
+
+
+def _edit_snapshot():
+    snapshot = _snapshot()
+    snapshot["issues"][1]["body"] = (
+        "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-DISPOSITION: done\nOC-SWARM-VALIDATE: ruff-check"
+    )
+    return snapshot
+
+
+def test_edit_mode_issues_stay_queued_on_runs_off_the_integration_ref(monkeypatch):
+    """A run that cannot execute the edit lane must not offer its issues for claim."""
+    captured = {}
+
+    class CapturingScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            captured.update(snapshot)
+            queued = [
+                issue["number"]
+                for issue in snapshot["issues"]
+                if "oc-queued" in issue["labels"]
+            ]
+            return {
+                "ranking": [
+                    {"number": number, "lane_id": "L3", "priority": 0, "repair": False}
+                    for number in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return CapturingScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = _edit_snapshot()
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=8, defer_edit_mode=True)
+    deferred = next(issue for issue in captured["issues"] if issue["number"] == 100)
+    assert "oc-queued" not in deferred["labels"]
+    assert plan["selected_numbers"] == [101, 102]
+    assert plan["edit_mode_deferred_numbers"] == [100]
+    assert plan["safety"]["edit_mode_deferred"] is True
+    # Deferral is a planning view: the durable snapshot is untouched.
+    assert "oc-queued" in snapshot["issues"][1]["labels"]
+
+
+def test_edit_mode_issues_are_planned_on_the_integration_ref(monkeypatch):
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_edit_snapshot(), worker_slots=8)
+    assert 100 in plan["selected_numbers"]
+    assert plan["edit_mode_deferred_numbers"] == []
+    assert plan["safety"]["edit_mode_deferred"] is False
+
+
+def test_edit_mode_marker_matches_the_worker_parser():
+    assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: EDIT\n"}) is True
+    assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: reconcile"}) is False
+    assert swarm.is_edit_mode({"body": "text OC-SWARM-PROVIDER-FREE: edit"}) is False
+    assert swarm.is_edit_mode({"body": None}) is False

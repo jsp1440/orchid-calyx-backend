@@ -301,6 +301,12 @@ jobs:
           if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
             provider_args+=(--provider-free-only)
           fi
+          # The edit lane executes only on a run of the integration ref (see the
+          # provider_free_workers guard). Any other run leaves edit-mode issues
+          # queued and unleased for that run instead of claiming and parking them.
+          if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
+            provider_args+=(--defer-edit-mode)
+          fi
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \

@@ -269,3 +269,15 @@ def test_fence_refuses_a_mixed_push_entirely(scratch_repo):
         f"refs/heads/oc/discovered-abc {newer} refs/heads/main {ZERO}\n"
     )
     assert _push_lines(repo, lines) != 0
+
+
+def test_runs_off_the_integration_ref_defer_edit_mode_in_the_planner():
+    """The planner, not the worker, keeps edit issues away from runs that refuse them."""
+    workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    plan_job = workflow["jobs"]["plan"]
+    assert plan_job["env"]["INTEGRATION_BRANCH"] == "oc-autonomous-integration"
+    step = next(s for s in plan_job["steps"] if s.get("name") == "Plan dependency-aware resource wave")
+    run = step["run"]
+    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then\n  provider_args+=(--defer-edit-mode)'
+    assert guard in run
+    assert run.index("--defer-edit-mode") < run.index("scripts/oc_swarm_controller.py")
