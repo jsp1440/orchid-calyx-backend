@@ -23,7 +23,12 @@ from .models import (
     ReasoningLedger,
     ReviewDecision,
 )
-from .persistence import SqlAlchemyReasoningLedgerRepository
+from .persistence import (
+    LedgerRevisionNotFoundError,
+    LedgerRevisionUnreadableError,
+    SqlAlchemyReasoningLedgerRepository,
+)
+from .serialization import dict_to_ledger
 from .service import _assign_sequence
 
 
@@ -203,6 +208,25 @@ class OperationalReasoningLedgerService:
 
     def current(self, ledger_id: str, owner: str) -> ReasoningLedger:
         ledger = self.repository.current(ledger_id, owner)
+        self.projects.require_owned(ledger.project_id, owner)
+        return ledger
+
+    def revision(self, ledger_id: str, owner: str, version: int) -> ReasoningLedger:
+        """Retrieve one exact owned revision without loading ledger history."""
+        payload = self.repository.revision_payload(ledger_id, owner, version)
+        if payload is None:
+            raise LedgerRevisionNotFoundError(
+                ledger_id,
+                version,
+                self.repository.available_versions(ledger_id, owner),
+            )
+        try:
+            ledger = dict_to_ledger(payload)
+        # A stored payload that will not deserialize is damage, whatever
+        # exception the decode raises. Narrowing here would let an
+        # unanticipated one escape as an unlabelled 500.
+        except Exception as exc:
+            raise LedgerRevisionUnreadableError(ledger_id, version) from exc
         self.projects.require_owned(ledger.project_id, owner)
         return ledger
 

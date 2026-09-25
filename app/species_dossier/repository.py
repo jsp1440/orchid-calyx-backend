@@ -64,7 +64,9 @@ def split_scientific_name(value: str) -> tuple[str, str | None]:
 
 
 def _unavailable(reason: str = NOT_ASSEMBLED) -> DossierSection:
-    return DossierSection(state=DossierEvidenceState.UNAVAILABLE, unavailable_reason=reason)
+    return DossierSection(
+        state=DossierEvidenceState.UNAVAILABLE, unavailable_reason=reason
+    )
 
 
 def _now() -> datetime:
@@ -74,7 +76,9 @@ def _now() -> datetime:
 class PostgresSpeciesRepository:
     """Implements :class:`app.species_dossier.service.SpeciesRepository` over Calyx's tables."""
 
-    def __init__(self, db_execute: DbExecute, *, matrix_path: str = "/orchid-identification") -> None:
+    def __init__(
+        self, db_execute: DbExecute, *, matrix_path: str = "/orchid-identification"
+    ) -> None:
         self._db_execute = db_execute
         self._matrix_path = matrix_path
 
@@ -92,8 +96,31 @@ class PostgresSpeciesRepository:
             graph = self._graph(cur, taxon["id"])
             related = self._related(cur, taxon["id"], identity.genus)
             generated_at = _now()
+            unavailable_sections = [
+                "nomenclature",
+                "protologue",
+                "type_material",
+                "historical_media",
+                "morphology",
+                "distribution",
+                "ecology",
+                "phenology",
+                "pollinators",
+                "mycorrhizae",
+                "conservation",
+                "literature",
+                "cultivation",
+                "calyx_narrative",
+                "research_gaps",
+                "atlas_summary",
+                "identification_matrix",
+            ]
             return SpeciesDossierEnvelope(
                 generated_at=generated_at,
+                taxon_id=identity.taxon_id,
+                display_name=identity.display_name,
+                full_scientific_name=identity.full_scientific_name,
+                accepted_name=identity.accepted_name,
                 identity=identity,
                 nomenclature=_unavailable(),
                 protologue=_unavailable(),
@@ -118,6 +145,14 @@ class PostgresSpeciesRepository:
                 ),
                 research_gaps=_unavailable(),
                 atlas=self._atlas_envelope(str(taxon["id"]), generated_at),
+                atlas_summary=_unavailable(
+                    "Atlas layers are not assembled from a verified occurrence source in this path."
+                ),
+                identification_matrix=_unavailable(
+                    "The identification matrix is not assembled from verified diagnostic evidence in this path."
+                ),
+                freshness={"state": "unknown", "as_of": None, "source": None},
+                unavailable_sections=unavailable_sections,
                 related_species=related,
                 matrix_url=f"{self._matrix_path}?taxon_id={taxon['id']}",
                 partner_references=[],
@@ -175,22 +210,25 @@ class PostgresSpeciesRepository:
             hits = [
                 (
                     str(row["id"]),
-                    split_display_name_and_authorship(str(row["scientific_name"]))[0] or str(row["scientific_name"]),
+                    split_display_name_and_authorship(str(row["scientific_name"]))[0]
+                    or str(row["scientific_name"]),
                     "accepted_name",
                 )
                 for row in cur.fetchall()
             ]
-            # The SQL also matches rows whose first two words equal the query, which lets a
-            # species query reach its own infraspecific rows. When the query names a row
-            # exactly, that row is the answer; otherwise every match is returned and the
-            # service reports the ambiguity rather than guessing.
+            # The SQL also matches rows whose first two words equal the query, which
+            # lets a species query reach its own infraspecific rows. When the query
+            # names a row exactly, that row is the answer; otherwise every match is
+            # returned and the service reports the ambiguity rather than guessing.
             wanted = " ".join(normalized_name.split()).lower()
             exact = [hit for hit in hits if hit[1].lower() == wanted]
             return exact or hits
 
         return self._db_execute(_work) or []
 
-    def resolve_partner_slug(self, partner_slug: str, species_slug: str) -> Sequence[tuple[str, str, str]]:
+    def resolve_partner_slug(
+        self, partner_slug: str, species_slug: str
+    ) -> Sequence[tuple[str, str, str]]:
         # No partner slug mapping is stored yet; the service reports "unresolved".
         return []
 
@@ -211,8 +249,9 @@ class PostgresSpeciesRepository:
         genus_from_name, epithet = split_scientific_name(scientific_name)
         genus = str(taxon.get("genus") or genus_from_name or "").strip()
         # The same split the homepage species exhibit applies to the same row, so the
-        # binomial a reader sees on the exhibit, the dossier and every continuation link
-        # is one string, and authorship is stated separately rather than folded into it.
+        # binomial a reader sees on the exhibit, the dossier and every continuation
+        # link is one string, and authorship is stated separately rather than folded
+        # into it.
         display_name, authorship = split_display_name_and_authorship(scientific_name)
         return SpeciesIdentity(
             taxon_id=str(taxon["id"]),
@@ -220,7 +259,9 @@ class PostgresSpeciesRepository:
             full_scientific_name=scientific_name,
             accepted_name=display_name or scientific_name,
             authorship=authorship,
-            rank=taxon_rank(display_name) if display_name else ("species" if epithet else "genus"),
+            rank=taxon_rank(display_name)
+            if display_name
+            else ("species" if epithet else "genus"),
             genus=genus,
             specific_epithet=epithet,
             taxonomic_status="recorded_in_orchid_taxonomy_table",
@@ -235,6 +276,7 @@ class PostgresSpeciesRepository:
             FROM {IMAGES_TABLE}
             WHERE taxonomy_id = %s
               AND image_url IS NOT NULL
+              AND NULLIF(BTRIM(image_license), '') IS NOT NULL
               AND COALESCE(is_duplicate, false) = false
             ORDER BY id
             LIMIT %s
@@ -283,7 +325,9 @@ class PostgresSpeciesRepository:
         )
         present = cur.fetchone()
         if not present or not present["nodes_present"] or not present["edges_present"]:
-            return _unavailable("The persisted knowledge graph is not provisioned in this database.")
+            return _unavailable(
+                "The persisted knowledge graph is not provisioned in this database."
+            )
         cur.execute(
             """
             SELECT e.edge_type, n2.node_type, n2.canonical_key, n2.display_label,
@@ -293,6 +337,9 @@ class PostgresSpeciesRepository:
             JOIN oc_graph.kg_edges e ON e.from_node_id = n1.kg_node_id
             JOIN oc_graph.kg_nodes n2 ON n2.kg_node_id = e.to_node_id
             WHERE n1.canonical_key = %s
+              AND n1.is_active IS TRUE
+              AND e.is_active IS TRUE
+              AND n2.is_active IS TRUE
             ORDER BY e.kg_edge_id
             LIMIT %s
             """,
@@ -300,7 +347,9 @@ class PostgresSpeciesRepository:
         )
         rows = [dict(row) for row in cur.fetchall()]
         if not rows:
-            return _unavailable("No persisted knowledge-graph relation names this taxon yet.")
+            return _unavailable(
+                "No persisted knowledge-graph relation names this taxon yet."
+            )
         items = [
             {
                 "edge_type": row.get("edge_type"),
@@ -317,7 +366,9 @@ class PostgresSpeciesRepository:
             EvidenceReceipt(
                 source_id=str(row.get("source_table") or "oc_graph.kg_edges"),
                 source_name="Persisted knowledge graph edge",
-                record_id=str(row.get("source_pk")) if row.get("source_pk") is not None else None,
+                record_id=str(row.get("source_pk"))
+                if row.get("source_pk") is not None
+                else None,
                 evidence_state=DossierEvidenceState.AVAILABLE,
                 notes="Relation as persisted; confidence is the graph's own score, not a verdict.",
             )
@@ -344,7 +395,11 @@ class PostgresSpeciesRepository:
             (genus, str(taxon_id), MAX_RELATED),
         )
         return [
-            {"taxon_id": str(row["id"]), "display_name": str(row["scientific_name"]), "relation": "same_genus"}
+            {
+                "taxon_id": str(row["id"]),
+                "display_name": str(row["scientific_name"]),
+                "relation": "same_genus",
+            }
             for row in cur.fetchall()
         ]
 
