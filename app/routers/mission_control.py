@@ -16,6 +16,8 @@ from typing import Any, Iterable
 import psycopg
 from fastapi import APIRouter
 
+from app.readiness.harvester_productivity import harvester_productivity
+
 router = APIRouter(prefix="/api/mission-control", tags=["mission-control"])
 
 BUILD_ID = "BUILD-065"
@@ -544,6 +546,33 @@ def mission_control_audit() -> dict[str, Any]:
 @router.get("/harvesters")
 def mission_control_harvesters() -> dict[str, Any]:
     return {"build": BUILD_ID, "harvesters": harvester_rows(), "generated_at": utc_now()}
+
+
+@router.get("/harvesters/productivity")
+def mission_control_harvester_productivity() -> dict[str, Any]:
+    """Read-only per-source productivity for the 24h/7d/30d windows.
+
+    Additive: /harvesters keeps its shape, so existing consumers are untouched.
+    This reports what was actually recorded, and reports "unavailable" rather
+    than 0 where nothing recorded it - the counters on /harvesters are literal
+    zeros and cannot tell those two apart.
+    """
+
+    def _read(cur):
+        return harvester_productivity(cur, table_exists)
+
+    result = with_connection(_read)
+    if isinstance(result, dict) and result.get("database_connected") is False:
+        return {
+            "build": BUILD_ID,
+            "schema_version": "harvester-productivity-001",
+            "telemetry_state": "unavailable",
+            "reason": "Database telemetry is unavailable; no harvester run history could be read.",
+            "blockers": result.get("blockers", []),
+            "harvesters": [],
+            "generated_at": utc_now(),
+        }
+    return {"build": BUILD_ID, **result}
 
 
 @router.get("/runtime")
