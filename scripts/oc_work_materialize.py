@@ -420,6 +420,23 @@ def ensure_labels(repository: str, labels: list[str], *, call: Transport = githu
     return ensured
 
 
+def is_mechanically_remediable(candidate: Mapping[str, Any]) -> bool:
+    """True when the candidate carries a structured, single-line remedy.
+
+    Judged from the record, not from the source name alone: a candidate from a
+    mechanical source that arrived without its ``remedy`` block (an older
+    discovery report, or a hand-written one) is not something an edit lane may
+    act on.
+    """
+    remedy = candidate.get("remedy")
+    return (
+        isinstance(remedy, Mapping)
+        and remedy.get("kind") == "declare-distribution"
+        and bool(remedy.get("distribution"))
+        and bool(remedy.get("requirements_file"))
+    )
+
+
 def issue_body(candidate: dict[str, Any]) -> str:
     """The issue text, including the machine-readable markers the lanes read."""
     lines = [
@@ -476,7 +493,21 @@ def issue_body(candidate: dict[str, Any]) -> str:
         ]
     for capability in candidate.get("capabilities") or []:
         lines.append(f"OC-SWARM-CAPABILITY: {capability}")
-    if command:
+    mechanical = is_mechanically_remediable(candidate)
+    if command and mechanical:
+        # The remedy is one line the evidence determines and a registered
+        # command proves. The edit lane derives it, applies it on a branch,
+        # re-runs the command, and opens a draft pull request; the issue then
+        # waits on that PR through the blocked-work reconciler. It writes the
+        # requirements file, which the write-set verifier files under
+        # ``repo-global``, so the lease must carry that write.
+        lines += [
+            "OC-SWARM-PROVIDER-FREE: edit",
+            f"OC-SWARM-VALIDATE: {command}",
+            "OC-SWARM-DISPOSITION: done",
+            "OC-SWARM-WRITES: repo-global",
+        ]
+    elif command:
         # Only when a registered command covers every affected path. Without
         # one the task is filed and ranked but not lane-executable, which is
         # the honest state: the factory found the work and has no executor for

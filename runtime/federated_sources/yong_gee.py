@@ -15,9 +15,10 @@ import hashlib
 import html
 import json
 import re
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterable, Mapping
+from typing import Any
 
 from openpyxl import load_workbook
 
@@ -181,7 +182,7 @@ def read_workbook(path: str | Path, sheet_name: str = DEFAULT_SHEET) -> list[Yon
             continue
         scientific_name = scientific_name_from_row(raw)
         cleaned = {field: clean_html(raw.get(field)) for field in EVIDENCE_FIELDS}
-        for field in (
+        for column in (
             "author",
             "author1",
             "author2",
@@ -191,7 +192,7 @@ def read_workbook(path: str | Path, sheet_name: str = DEFAULT_SHEET) -> list[Yon
             "websiteIsPublished",
             "websiteUpdatedAt",
         ):
-            cleaned[field] = clean_html(raw.get(field))
+            cleaned[column] = clean_html(raw.get(column))
         out.append(
             YongGeeRecord(
                 source_record_id=source_id,

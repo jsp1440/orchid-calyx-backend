@@ -12,20 +12,19 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.security import verify_owner_or_api_key
+
 from .autonomous_discovery import AutonomousDiscoveryEngine
 from .brain_integration import BrainIntegrationWorker
 from .cds_loader import CDSRegistryError, clear_cds_cache
 from .connector_planner import BrainConnectorPlanner
 from .connector_runtime import ConnectorRuntimeBuilder
-from .connector_routes import router as connector_router
 from .discovery_memory import DiscoveryMemoryStore
-from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .evidence_coverage_gaps import EvidenceCoverageGapSource
 from .evidence_gap_reserve_plan import evidence_gap_reserve_plan, valid_fingerprints
+from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
-
 
 router = APIRouter(prefix="/api/runner", tags=["Calyx Runtime Planner"])
 WRITE_AUTH = [Depends(verify_owner_or_api_key)]
