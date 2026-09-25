@@ -14,6 +14,20 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The requires_postgres suites (tests/conftest.py) fail rather than skip
+    # when CI=true and PostgreSQL is unusable, so changed PostgreSQL-backed
+    # tests run here against a disposable database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocvalidate
+          POSTGRES_PASSWORD: ocvalidate_test_only
+          POSTGRES_DB: oc_validate
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ocvalidate -d oc_validate"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -77,6 +91,9 @@ jobs:
         run: python -m compileall -q app runtime harvesters scripts
       - name: Validate changed Python files
         shell: bash
+        env:
+          DATABASE_URL: postgresql://ocvalidate:ocvalidate_test_only@localhost:5432/oc_validate
+          TEST_DATABASE_URL: postgresql://ocvalidate:ocvalidate_test_only@localhost:5432/oc_validate
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha || github.sha }}"

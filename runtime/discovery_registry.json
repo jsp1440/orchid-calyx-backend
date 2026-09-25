@@ -935,10 +935,34 @@
       "provider": "CdsRouter"
     },
     {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "hashlib",
+        "json",
+        "pathlib",
+        "re",
+        "typing"
+      ],
+      "description": "CompletionReceiptError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CompletionReceiptError"
+    },
+    {
       "category": "Brain",
       "dependencies": [
         "__future__",
+        "collections.abc",
+        "copy",
         "dataclasses",
+        "datetime",
+        "hashlib",
         "json",
         "os",
         "typing",
@@ -1735,6 +1759,25 @@
     {
       "category": "Runtime",
       "dependencies": [
+        "__future__",
+        "app.species_dossier.repository",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "description": "EvidenceDomain provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "EvidenceDomain"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
         "__future__"
       ],
       "description": "Dependencies provides: Analyze dependencies",
@@ -1824,6 +1867,32 @@
         "Provide runtime component"
       ],
       "provider": "SentinelFinding"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "hashlib",
+        "html",
+        "json",
+        "openpyxl",
+        "pathlib",
+        "re",
+        "runtime.knowledge_graph.canonical_taxonomy",
+        "runtime.knowledge_graph.models",
+        "runtime.knowledge_graph.publisher",
+        "typing"
+      ],
+      "description": "YongGeeRecord provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "YongGeeRecord"
     },
     {
       "category": "Runtime",
@@ -2201,6 +2270,7 @@
         "dataclasses",
         "datetime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "json",
         "pathlib",
         "typing"
@@ -2854,6 +2924,25 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "collections.abc",
+        "dataclasses",
+        "json",
+        "re",
+        "typing"
+      ],
+      "description": "Receipt provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "Receipt"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "app.database",
         "collections.abc",
         "dataclasses",
@@ -2931,17 +3020,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -2960,17 +3051,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -2989,17 +3082,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -3018,17 +3113,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -3047,17 +3144,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -3076,17 +3175,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -3106,17 +3207,19 @@
       "category": "API",
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -3138,6 +3241,7 @@
         "app.calyx_orchestrator.bounded_dispatcher",
         "app.calyx_orchestrator.deep_orchestrate",
         "app.calyx_orchestrator.durable_reservoir",
+        "app.calyx_orchestrator.durable_reservoir_models",
         "app.calyx_orchestrator.leaf_worker",
         "app.database",
         "dataclasses",
@@ -3397,6 +3501,7 @@
         "config_loader",
         "constitutional_orchestrator",
         "fastapi",
+        "fastapi.responses",
         "featured_genus_sentinel",
         "infrastructure",
         "pydantic",
@@ -3412,6 +3517,33 @@
       "name": "Expose API endpoints",
       "outputs": [
         "Expose API endpoints"
+      ],
+      "provider": "ConstitutionalActionRequest"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "app.security",
+        "config_loader",
+        "constitutional_orchestrator",
+        "fastapi",
+        "fastapi.responses",
+        "featured_genus_sentinel",
+        "infrastructure",
+        "pydantic",
+        "scheduler",
+        "science_registry",
+        "typing"
+      ],
+      "description": "ConstitutionalActionRequest provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL",
+        "HTTP request"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
       ],
       "provider": "ConstitutionalActionRequest"
     },
@@ -18107,7 +18239,9 @@
         "app.species_exhibit.service",
         "collections.abc",
         "datetime",
+        "json",
         "models",
+        "re",
         "typing"
       ],
       "description": "PostgresSpeciesRepository provides: Provide runtime component",
@@ -18998,7 +19132,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 2453,
+    "edge_count": 2468,
     "edges": [
       {
         "from": "GovernanceError",
@@ -19497,6 +19631,16 @@
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "CompletionReceiptError",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "CompletionReceiptError",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
         "to": "BrainConfigError",
         "type": "import"
       },
@@ -19786,6 +19930,11 @@
         "type": "import"
       },
       {
+        "from": "RepositoryContext",
+        "to": "EvidenceDomain",
+        "type": "import"
+      },
+      {
         "from": "Dependencies",
         "to": "Engine",
         "type": "import"
@@ -19868,6 +20017,21 @@
       {
         "from": "ActionEvaluationRequest",
         "to": "SentinelFinding",
+        "type": "import"
+      },
+      {
+        "from": "YongGeeRecord",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "YongGeeRecord",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "YongGeeRecord",
         "type": "import"
       },
       {
@@ -20018,6 +20182,11 @@
       {
         "from": "InvalidDispositionError",
         "to": "KnowledgeGapDiagnosticsEngine",
+        "type": "import"
+      },
+      {
+        "from": "Evidence",
+        "to": "KnowledgeGapDiscoveryEngine",
         "type": "import"
       },
       {
@@ -20591,6 +20760,16 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "Receipt",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "Receipt",
+        "type": "import"
+      },
+      {
         "from": "Database",
         "to": "TaxonomyReconciliationContext",
         "type": "import"
@@ -20603,6 +20782,11 @@
       {
         "from": "AutonomousDiscoveryEngine",
         "to": "TaxonomyReconciliationContext",
+        "type": "import"
+      },
+      {
+        "from": "Operations",
+        "to": "PlannerRouter",
         "type": "import"
       },
       {
@@ -20626,7 +20810,7 @@
         "type": "import"
       },
       {
-        "from": "ConnectorRoutes",
+        "from": "Evidence",
         "to": "PlannerRouter",
         "type": "import"
       },
@@ -20642,6 +20826,11 @@
       },
       {
         "from": "KnowledgeGapDiscoveryEngine",
+        "to": "PlannerRouter",
+        "type": "import"
+      },
+      {
+        "from": "InvalidDispositionError",
         "to": "PlannerRouter",
         "type": "import"
       },
@@ -20837,6 +21026,11 @@
       },
       {
         "from": "Api",
+        "to": "ConstitutionalActionRequest",
+        "type": "import"
+      },
+      {
+        "from": "OpenAIRuntimeResponsesProvider",
         "to": "ConstitutionalActionRequest",
         "type": "import"
       },
@@ -21197,6 +21391,11 @@
       },
       {
         "from": "Utils",
+        "to": "ScientificRuntimeReadiness",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
         "to": "ScientificRuntimeReadiness",
         "type": "import"
       },
@@ -24801,7 +25000,7 @@
         "type": "import"
       },
       {
-        "from": "AllDomainAuthorization",
+        "from": "EvidenceDomain",
         "to": "Init",
         "type": "import"
       },
@@ -24821,7 +25020,7 @@
         "type": "import"
       },
       {
-        "from": "AllDomainAuthorization",
+        "from": "EvidenceDomain",
         "to": "SubscribeRequest",
         "type": "import"
       },
@@ -24846,7 +25045,7 @@
         "type": "import"
       },
       {
-        "from": "AllDomainAuthorization",
+        "from": "EvidenceDomain",
         "to": "ConstituentService",
         "type": "import"
       },
@@ -28721,7 +28920,7 @@
         "type": "import"
       },
       {
-        "from": "AllDomainAuthorization",
+        "from": "EvidenceDomain",
         "to": "ScheduleRequest",
         "type": "import"
       },
@@ -30581,6 +30780,16 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "PostgresSpeciesRepository",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "PostgresSpeciesRepository",
+        "type": "import"
+      },
+      {
         "from": "Operations",
         "to": "Routes",
         "type": "import"
@@ -31360,6 +31569,18 @@
         "module": "Telemetry"
       },
       {
+        "dependency": "runtime.knowledge_graph.canonical_taxonomy",
+        "module": "YongGeeRecord"
+      },
+      {
+        "dependency": "runtime.knowledge_graph.models",
+        "module": "YongGeeRecord"
+      },
+      {
+        "dependency": "runtime.knowledge_graph.publisher",
+        "module": "YongGeeRecord"
+      },
+      {
         "dependency": "app.calyx_orchestrator.github_agent_dispatch_cycle",
         "module": "GithubCodingAgentAutonomyWorker"
       },
@@ -31421,6 +31642,10 @@
       },
       {
         "dependency": "app.calyx_orchestrator.bounded_dispatcher",
+        "module": "PortfolioStewardReport"
+      },
+      {
+        "dependency": "app.calyx_orchestrator.durable_reservoir_models",
         "module": "PortfolioStewardReport"
       },
       {
@@ -31650,25 +31875,9 @@
       {
         "dependency": "app.calyx_engineering.event_dispatcher",
         "module": "CompletionEventKind"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.event_continuation",
-        "module": "FactoryBridgeAction"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.head_bound_integration",
-        "module": "RiskTier"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.artifact_registry",
-        "module": "GovervedResearchExecutor"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.artifact_registry",
-        "module": "ExecutionEvidencePackage"
       }
     ],
-    "node_count": 1082,
+    "node_count": 1087,
     "nodes": [
       {
         "category": "Runtime",
@@ -32224,6 +32433,13 @@
         "type": "api_router"
       },
       {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CompletionReceiptError",
+        "path": "runtime/completion_receipt_contract.py",
+        "type": "python_module"
+      },
+      {
         "category": "Brain",
         "health": "healthy",
         "name": "BrainConfigError",
@@ -32484,6 +32700,13 @@
       },
       {
         "category": "Runtime",
+        "health": "healthy",
+        "name": "EvidenceDomain",
+        "path": "runtime/evidence_coverage_gaps.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
         "health": "available",
         "name": "Init",
         "path": "runtime/executive/__init__.py",
@@ -32557,6 +32780,20 @@
         "health": "healthy",
         "name": "SentinelFinding",
         "path": "runtime/featured_genus_sentinel.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "runtime/federated_sources/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "YongGeeRecord",
+        "path": "runtime/federated_sources/yong_gee.py",
         "type": "python_module"
       },
       {
@@ -33117,6 +33354,13 @@
         "health": "healthy",
         "name": "HealthCheckResult",
         "path": "runtime/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Receipt",
+        "path": "runtime/oc_done_guard.py",
         "type": "python_module"
       },
       {
@@ -41324,27 +41568,80 @@
     },
     {
       "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CompletionReceiptError"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "hashlib",
+        "json",
+        "pathlib",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "load_contract",
+        "canonical_json",
+        "evidence_digest",
+        "_check_field",
+        "validate_completion_receipt",
+        "frontend_required_field_sets",
+        "frontend_declares_full_sha_pattern",
+        "__init__"
+      ],
+      "module_type": "python_module",
+      "name": "CompletionReceiptError",
+      "path": "runtime/completion_receipt_contract.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Inspect Brain state"
       ],
       "category": "Brain",
       "classes": [
         "BrainConfigError",
         "BrainConfigSource",
+        "LastKnownRecord",
+        "LastKnownStore",
+        "BrainConfigResult",
         "BrainConfigLoader"
       ],
       "dependencies": [
         "__future__",
+        "collections.abc",
+        "copy",
         "dataclasses",
+        "datetime",
+        "hashlib",
         "json",
         "os",
         "typing",
         "urllib.request"
       ],
       "functions": [
+        "_utc_now",
+        "stale",
+        "describe",
         "from_env",
         "__init__",
+        "remember",
+        "get",
+        "clear",
+        "available",
+        "__init__",
         "_contents_url",
+        "_headers",
+        "_fetch_over_http",
+        "_load_fresh",
         "load_json",
+        "load_with_source",
+        "describe_ref",
         "load_manifest",
         "load_runtime_services",
         "load_infrastructure_registry",
@@ -42551,6 +42848,43 @@
       "status": "healthy"
     },
     {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "EvidenceDomain",
+        "EvidenceCoverageUnavailable",
+        "EvidenceCoverageGap",
+        "EvidenceCoverageGapSource"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.species_dossier.repository",
+        "collections.abc",
+        "dataclasses",
+        "datetime",
+        "typing"
+      ],
+      "functions": [
+        "severity_for",
+        "priority_for",
+        "_slug",
+        "_count",
+        "_ids",
+        "research_mission",
+        "__init__",
+        "collect",
+        "_work",
+        "_gaps_for"
+      ],
+      "module_type": "python_module",
+      "name": "EvidenceDomain",
+      "path": "runtime/evidence_coverage_gaps.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
       "capabilities": [],
       "category": "Runtime",
       "classes": [],
@@ -42808,6 +43142,66 @@
       "module_type": "python_module",
       "name": "SentinelFinding",
       "path": "runtime/featured_genus_sentinel.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "yong_gee"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "runtime/federated_sources/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "YongGeeRecord",
+        "TaxonResolution",
+        "ReconciliationReport"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "hashlib",
+        "html",
+        "json",
+        "openpyxl",
+        "pathlib",
+        "re",
+        "runtime.knowledge_graph.canonical_taxonomy",
+        "runtime.knowledge_graph.models",
+        "runtime.knowledge_graph.publisher",
+        "typing"
+      ],
+      "functions": [
+        "_none_if_null",
+        "clean_html",
+        "stable_digest",
+        "scientific_name_from_row",
+        "read_workbook",
+        "_taxon_names",
+        "build_taxon_index",
+        "reconcile_records",
+        "evidence_rows",
+        "_produce_yong_gee_evidence",
+        "publish_matched_evidence",
+        "build_dry_run",
+        "to_dict"
+      ],
+      "module_type": "python_module",
+      "name": "YongGeeRecord",
+      "path": "runtime/federated_sources/yong_gee.py",
       "routers": [],
       "status": "healthy"
     },
@@ -43524,13 +43918,19 @@
         "dataclasses",
         "datetime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "json",
         "pathlib",
         "typing"
       ],
       "functions": [
+        "_parse_timestamp",
+        "freshness_block",
+        "assess_freshness",
         "__init__",
         "discover",
+        "_discover_from_kg",
+        "_fail_closed",
         "latest",
         "gaps",
         "domains",
@@ -45224,6 +45624,35 @@
       ],
       "category": "Runtime",
       "classes": [
+        "Receipt",
+        "Observation",
+        "Decision"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "dataclasses",
+        "json",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "parse_receipt_comment",
+        "decide",
+        "transitions"
+      ],
+      "module_type": "python_module",
+      "name": "Receipt",
+      "path": "runtime/oc_done_guard.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
         "TaxonomyReconciliationContext",
         "OccurrenceRunReceipt",
         "PostgresOccurrencePersistence"
@@ -45388,17 +45817,19 @@
       "classes": [],
       "dependencies": [
         "__future__",
+        "app.routers.owner_operations",
         "app.security",
         "autonomous_discovery",
         "brain_integration",
         "cds_loader",
         "connector_planner",
-        "connector_routes",
         "connector_runtime",
         "discovery_memory",
+        "evidence_coverage_gaps",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
+        "os",
         "runtime_executor",
         "runtime_planner"
       ],
@@ -45408,6 +45839,7 @@
         "discovery_engine",
         "snapshot_store",
         "gap_engine",
+        "evidence_coverage_source",
         "diagnostic_engine",
         "connector_planner",
         "connector_runtime",
@@ -45426,8 +45858,7 @@
         "retry_execution",
         "cancel_execution",
         "brain_summary",
-        "brain_status",
-        "engineering_memory_status"
+        "brain_status"
       ],
       "module_type": "api_router",
       "name": "PlannerRouter",
@@ -45509,6 +45940,7 @@
         "app.calyx_orchestrator.bounded_dispatcher",
         "app.calyx_orchestrator.deep_orchestrate",
         "app.calyx_orchestrator.durable_reservoir",
+        "app.calyx_orchestrator.durable_reservoir_models",
         "app.calyx_orchestrator.leaf_worker",
         "app.database",
         "dataclasses",
@@ -45923,7 +46355,8 @@
     },
     {
       "capabilities": [
-        "Expose API endpoints"
+        "Expose API endpoints",
+        "Inspect Brain state"
       ],
       "category": "API",
       "classes": [
@@ -45934,6 +46367,7 @@
         "config_loader",
         "constitutional_orchestrator",
         "fastapi",
+        "fastapi.responses",
         "featured_genus_sentinel",
         "infrastructure",
         "pydantic",
@@ -45962,11 +46396,11 @@
         "science_harvesters_endpoint",
         "science_dossiers_endpoint",
         "science_audit",
+        "serve_brain_record",
+        "config_brain_source",
         "config_manifest",
         "config_runtime_services",
-        "config_governance_policy",
-        "config_knowledge_preservation_policy",
-        "infrastructure_registry"
+        "config_governance_policy"
       ],
       "module_type": "api_router",
       "name": "ConstitutionalActionRequest",
@@ -45992,6 +46426,7 @@
         "GET /harvesters",
         "GET /dossiers",
         "POST /audit/{audit_key}",
+        "GET /brain-source",
         "GET /manifest",
         "GET /runtime-services",
         "GET /governance-policy",
@@ -46883,11 +47318,14 @@
         "__future__",
         "importlib.metadata",
         "importlib.util",
+        "pathlib",
         "platform",
+        "re",
         "sys",
         "typing"
       ],
       "functions": [
+        "required_scipy_version",
         "_installed_version",
         "scientific_runtime_readiness"
       ],
@@ -66627,9 +67065,12 @@
         "_text",
         "_safe_number",
         "_safe_nonnegative_int",
+        "_complete_count_sum",
         "_safe_confidence",
         "_safe_url",
         "_state",
+        "_with_suffix",
+        "_unique_trait_id",
         "_receipt",
         "aggregate_trait_rows",
         "__init__",
@@ -72435,13 +72876,18 @@
         "app.species_exhibit.service",
         "collections.abc",
         "datetime",
+        "json",
         "models",
+        "re",
         "typing"
       ],
       "functions": [
         "split_scientific_name",
         "_unavailable",
         "_now",
+        "_str_or_none",
+        "_clean_excerpt",
+        "_federated_receipt",
         "__init__",
         "get_dossier",
         "get_atlas",
@@ -72452,6 +72898,7 @@
         "_identity",
         "_media",
         "_graph",
+        "_federated_sections",
         "_related",
         "_atlas_envelope",
         "_work",
@@ -74231,12 +74678,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 902,
+    "capabilities": 907,
     "degraded": 1,
-    "graph_edges": 2453,
-    "graph_nodes": 1082,
-    "healthy": 798,
-    "modules": 1082,
+    "graph_edges": 2468,
+    "graph_nodes": 1087,
+    "healthy": 802,
+    "modules": 1087,
     "recommendations": 3
   }
 }
