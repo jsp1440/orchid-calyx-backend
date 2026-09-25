@@ -248,18 +248,21 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
     return numbers
 
 
-_EDIT_MODE = re.compile(
-    r"^OC-SWARM-PROVIDER-FREE:\s*edit\s*$", re.IGNORECASE | re.MULTILINE
+_PROVIDER_FREE_MODE = re.compile(
+    r"^OC-SWARM-PROVIDER-FREE:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
 )
 
 
 def is_edit_mode(issue: dict) -> bool:
     """True when the issue asks for the provider-free edit lane.
 
-    Read with the same marker the worker parses (``OC-SWARM-PROVIDER-FREE:``),
-    so the planner and the worker cannot disagree about which issues edit.
+    Read exactly as the worker reads it (``oc_swarm_provider_free_worker.MODE``):
+    the FIRST ``OC-SWARM-PROVIDER-FREE:`` line decides the mode. Matching any
+    line that says ``edit`` deferred a body whose first marker was ``validate``,
+    which the worker would have run as validate.
     """
-    return bool(_EDIT_MODE.search(str(issue.get("body") or "")))
+    match = _PROVIDER_FREE_MODE.search(str(issue.get("body") or ""))
+    return bool(match) and match.group(1).lower() == "edit"
 
 
 def edit_deferred_numbers(snapshot: dict) -> list[int]:
