@@ -38,6 +38,7 @@ def test_edit_lane_job_receives_exactly_the_mutation_authority_it_needs():
         "contents": "write",
         "issues": "write",
         "pull-requests": "write",
+        "actions": "write",
     }
     # The workflow-level ceiling stays read-biased; only this job is raised.
     header = WORKFLOW.read_text(encoding="utf-8").split("\njobs:", maxsplit=1)[0]
@@ -281,3 +282,32 @@ def test_runs_off_the_integration_ref_defer_edit_mode_in_the_planner():
     guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then\n  provider_args+=(--defer-edit-mode)'
     assert guard in run
     assert run.index("--defer-edit-mode") < run.index("scripts/oc_swarm_controller.py")
+
+
+def test_an_opened_edit_pull_request_gets_exact_head_validation_dispatched():
+    """GITHUB_TOKEN-opened PRs start no pull_request workflow; the lane dispatches one."""
+    names = [step.get("name") for step in _job()["steps"]]
+    dispatch = "Dispatch exact-head validation for the edit-lane pull request"
+    assert names.index("Execute deterministic provider-free work") < names.index(dispatch)
+    assert names.index(dispatch) < names.index("Retain deterministic execution evidence")
+    step = _step(dispatch)
+    assert step["if"] == "steps.lease.outputs.execute == 'true'"
+    run = step["run"]
+    # A push the lane made is validated at the exact commit its receipt
+    # recorded; a PR it found already open, at that PR's current head, and only
+    # when it is open against the integration branch. A moved branch is refused.
+    assert "pr_opened)" in run and "already_open)" in run
+    assert "commit=$(jq -r '.commit_sha // empty' \"$edit\")" in run
+    assert "--json state,headRefName,headRefOid,baseRefName" in run
+    assert "commit=$(jq -r .headRefOid <<<\"$view\")" in run
+    assert '!= "$INTEGRATION_BRANCH"' in run
+    assert "^oc/discovered-[0-9a-f]{16}$" in run
+    assert "^[0-9a-f]{40}$" in run
+    assert 'git ls-remote origin "refs/heads/$branch"' in run
+    assert '[[ "$remote" != "$commit" ]]' in run
+    assert (
+        'gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$branch"'
+        in run
+    )
+    # A failed dispatch fails the step loudly instead of leaving an unvalidated PR.
+    assert run.count("exit 1") >= 3
