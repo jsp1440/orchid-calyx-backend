@@ -85,6 +85,23 @@ def test_caller_fingerprints_exclude_already_held_work(monkeypatch):
     assert client.get(PATH, params={"reserve_depth": 9}).status_code == 422
 
 
+def test_domain_filter_is_validated_and_recorded(monkeypatch):
+    client = client_with(monkeypatch, kg_source())
+    resp = client.get(PATH, params={"domain": ["nomenclature"]})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source_domains"] == ["nomenclature"]
+    assert body["proposals"]
+    assert {p["source_payload"]["domain"] for p in body["proposals"]} == {
+        "nomenclature"
+    }
+    assert client.get(PATH).json()["source_domains"] is None
+    bad = client.get(PATH, params={"domain": ["nomenclature", "astrology"]})
+    assert bad.status_code == 422
+    assert "nomenclature" in bad.json()["detail"]
+    assert client.get(PATH, params={"domain": ["nomenclature"] * 11}).status_code == 422
+
+
 @pytest.mark.parametrize(
     "source,reason",
     [

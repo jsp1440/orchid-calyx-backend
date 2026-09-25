@@ -42,6 +42,7 @@ def evidence_gap_candidates(
     *,
     cap: int = MAX_CANDIDATES_PER_PASS,
     held_fingerprints: frozenset[str] | set[str] = frozenset(),
+    domains: frozenset[str] | set[str] | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
     """Return ``(candidates, rejections, unavailable_reason)`` for one pass.
 
@@ -51,6 +52,13 @@ def evidence_gap_candidates(
     duplicates made every pass after the first three missions plan nothing
     (``queue_empty_healthy`` on 2026-09-25 while taxa 1000 and 10000 still had
     no nomenclature evidence).
+
+    ``domains`` restricts the pass to the evidence domains the caller can
+    execute; ``None`` means every supported domain. Unrequested domains are
+    skipped *before* the taxon-label lookup and the per-pass cap, for the same
+    reason: missions the caller cannot run must not crowd out ones it can
+    (three morphology missions were filed on 2026-09-25 although only
+    nomenclature had an executor).
     """
     cap = max(0, min(int(cap), MAX_CANDIDATES_PER_PASS))
     freshness = queue.get("freshness") or {}
@@ -78,6 +86,15 @@ def evidence_gap_candidates(
                     "reason": "locality_gated_domain_skipped"
                     if mission.get("locality_gated")
                     else "unsupported_evidence_domain",
+                }
+            )
+            continue
+        if domains is not None and domain not in domains:
+            rejections.append(
+                {
+                    "gap_id": item.get("gap_id"),
+                    "domain": domain,
+                    "reason": "domain_not_requested",
                 }
             )
             continue
@@ -153,15 +170,20 @@ def plan_evidence_gap_refill(
     cap: int = MAX_CANDIDATES_PER_PASS,
     reserve_depth: int = 2,
     planner_ok: bool = True,
+    domains: frozenset[str] | set[str] | None = None,
 ) -> dict[str, Any]:
-    """Plan bounded reserve work from live KG evidence-coverage gaps."""
+    """Plan bounded reserve work from live KG evidence-coverage gaps.
+
+    ``domains`` (``None`` = all supported) limits which evidence domains are
+    planned; see :func:`evidence_gap_candidates`.
+    """
     engine = engine or KnowledgeGapDiscoveryEngine(kg_source=source)
     queue = engine.research_queue(limit=RESEARCH_QUEUE_SCAN)
     held = frozenset(
         str(value) for value in snapshot.get("dispatch_fingerprints") or [] if value
     )
     candidates, rejections, unavailable = evidence_gap_candidates(
-        queue, source, cap=cap, held_fingerprints=held
+        queue, source, cap=cap, held_fingerprints=held, domains=domains
     )
     result = plan_refill(
         snapshot, candidates, reserve_depth=reserve_depth, planner_ok=planner_ok
@@ -174,6 +196,7 @@ def plan_evidence_gap_refill(
             "source_rejections": rejections,
             "source_unavailable_reason": unavailable,
             "source_cap": cap,
+            "source_domains": sorted(domains) if domains is not None else None,
         }
     )
     return result
