@@ -4,7 +4,7 @@ import time
 import urllib.request
 from typing import Any, Dict, List
 
-from .config_loader import BrainConfigLoader, BrainConfigError
+from .config_loader import BrainConfigLoader
 
 
 class InfrastructureRegistryService:
@@ -14,25 +14,25 @@ class InfrastructureRegistryService:
         self.loader = loader or BrainConfigLoader()
 
     def registry(self) -> Dict[str, Any]:
-        try:
-            data = self.loader.load_infrastructure_registry()
-            data["config_source"] = {
-                "repo": self.loader.source.repo,
-                "ref": self.loader.source.ref,
-                "status": "loaded",
-            }
+        """The registry, or the last-known registry, under the unavailable contract.
+
+        ``config_source`` always carries ``repo``, ``ref``, ``status``,
+        ``last_known_at`` and ``last_known_sha256`` (Orchid-Continuum-Brain
+        ``contracts/federation_records_v1.json#unavailable_contract``). When the
+        Brain is unreachable and nothing was ever loaded, the registry is
+        honestly empty with ``status: unavailable`` and ``last_known_at: None``;
+        it is never invented.
+        """
+        result = self.loader.load_with_source("config/infrastructure_registry.json")
+        if result.record is not None:
+            data = dict(result.record)
+            data["config_source"] = result.config_source
             return data
-        except BrainConfigError as exc:
-            return {
-                "registry_version": "unknown",
-                "services": [],
-                "config_source": {
-                    "repo": self.loader.source.repo,
-                    "ref": self.loader.source.ref,
-                    "status": "error",
-                    "error": str(exc),
-                },
-            }
+        return {
+            "registry_version": "unknown",
+            "services": [],
+            "config_source": result.config_source,
+        }
 
     def _check_service(self, service: Dict[str, Any]) -> Dict[str, Any]:
         url = service.get("url") or ""

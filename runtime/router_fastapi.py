@@ -2,6 +2,7 @@
 from typing import Any
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -165,24 +166,64 @@ def science_audit(audit_key: str) -> dict[str, Any]:
     return audit_result(department_id)
 
 
+def serve_brain_record(path: str, loader: BrainConfigLoader | None = None):
+    """Serve one Brain record under the Brain's unavailable contract.
+
+    Reachable: the record plus ``config_source.status == "loaded"``. Unreachable
+    after a good load: the last-known record plus ``status == "unavailable"``,
+    ``last_known_at``, ``last_known_sha256`` and the error text, still 200.
+    Unreachable and never loaded in this process: 503 with ``last_known_at``
+    ``None`` and the reason. A record is never fabricated and an outage is never
+    a 500. Contract: Orchid-Continuum-Brain
+    ``contracts/federation_records_v1.json#unavailable_contract``.
+    """
+    result = (loader or BrainConfigLoader()).load_with_source(path)
+    if result.record is None:
+        source = result.config_source
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unavailable",
+                "repo": source["repo"],
+                "ref": source["ref"],
+                "path": path,
+                "last_known_at": None,
+                "last_known_sha256": None,
+                "reason": source.get("error"),
+            },
+        )
+    return {**result.record, "config_source": result.config_source}
+
+
+@config_router.get("/brain-source")
+def config_brain_source():
+    """Which Brain ref this runtime reads, and whether it is the served one.
+
+    ``stale`` is true whenever the pinned ref is not the Brain's served ref
+    (``main``). Resolution of the pinned ref's commit and date is one bounded
+    call; if it fails, ``resolution`` says so and ``stale`` is unaffected.
+    """
+    return BrainConfigLoader().describe_ref(resolve=True)
+
+
 @config_router.get("/manifest")
 def config_manifest():
-    return BrainConfigLoader().load_manifest()
+    return serve_brain_record("config/calyx_core_manifest.json")
 
 
 @config_router.get("/runtime-services")
 def config_runtime_services():
-    return BrainConfigLoader().load_runtime_services()
+    return serve_brain_record("config/runtime_services.json")
 
 
 @config_router.get("/governance-policy")
 def config_governance_policy():
-    return BrainConfigLoader().load_governance_policy()
+    return serve_brain_record("config/governance_policy.json")
 
 
 @config_router.get("/knowledge-preservation-policy")
 def config_knowledge_preservation_policy():
-    return BrainConfigLoader().load_knowledge_preservation_policy()
+    return serve_brain_record("config/knowledge_preservation_policy.json")
 
 
 @infrastructure_router.get("/registry")
