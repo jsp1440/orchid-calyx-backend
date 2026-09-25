@@ -52,20 +52,43 @@ def test_redaction_keeps_the_user_and_host():
 
 @pytest.mark.parametrize("path", GATED_FILES)
 def test_gated_suite_skips_cleanly_when_postgres_is_unusable(path: str):
-    env = dict(os.environ, TEST_DATABASE_URL=UNREACHABLE, DATABASE_URL=UNREACHABLE)
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly", "-rs", path],
-        capture_output=True,
-        text=True,
-        check=False,
-        env=env,
-    )
+    # The off-runner skip path. The inner run must not inherit the runner's
+    # CI=true, which (by design, see the next test) turns the skip into a failure.
+    env = _unreachable_env(require_postgres=False)
+    proc = _run_gated(path, env)
     output = proc.stdout + proc.stderr
     assert proc.returncode == 0, output
     assert " error" not in output.split("\n")[-2]
     assert "FAILED" not in output and "ERROR" not in output
     assert "PostgreSQL not usable at postgresql://nobody:***@127.0.0.1:1/none" in output
     assert "hunter2" not in output
+
+
+def test_gated_suite_fails_rather_than_skips_when_postgres_is_required():
+    proc = _run_gated(GATED_FILES[0], _unreachable_env(require_postgres=True))
+    output = proc.stdout + proc.stderr
+    assert proc.returncode != 0, output
+    assert "PostgreSQL is required in this environment but unusable" in output
+    assert "hunter2" not in output
+
+
+def _unreachable_env(*, require_postgres: bool) -> dict[str, str]:
+    env = dict(os.environ, TEST_DATABASE_URL=UNREACHABLE, DATABASE_URL=UNREACHABLE)
+    env.pop("CI", None)
+    env.pop("OC_REQUIRE_POSTGRES", None)
+    if require_postgres:
+        env["OC_REQUIRE_POSTGRES"] = "1"
+    return env
+
+
+def _run_gated(path: str, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly", "-rs", path],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
 
 
 def test_ci_turns_an_unusable_database_into_a_failure_not_a_skip(monkeypatch):
