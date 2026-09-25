@@ -7,6 +7,7 @@
         "oc-queued"
       ],
       "material_fingerprint": "f551fd010aefdc3b2776dc533eeecacfb5fc50df0f08719897c96f51e9fac880",
+      "priority": 1,
       "queue_source_kind": "brain-knowledge-gap",
       "semantic_key": "calyx-evidence-gap:102:morphology",
       "source_kind": "objective",
@@ -32,6 +33,7 @@
         "oc-queued"
       ],
       "material_fingerprint": "7898a890af4634fb4947f79eb1551d6e901aad9949f7cda918926b1cfbe2eb35",
+      "priority": 1,
       "queue_source_kind": "brain-knowledge-gap",
       "semantic_key": "calyx-evidence-gap:102:phenology",
       "source_kind": "objective",
@@ -57,6 +59,7 @@
         "oc-queued"
       ],
       "material_fingerprint": "0a1154bbd1fb452d1cd3e0efc96896cf330769dc2a51108422f6da52a17c813a",
+      "priority": 2,
       "queue_source_kind": "brain-knowledge-gap",
       "semantic_key": "calyx-evidence-gap:103:nomenclature",
       "source_kind": "objective",
