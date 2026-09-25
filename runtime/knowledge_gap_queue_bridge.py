@@ -32,11 +32,23 @@ from scripts.oc_backlog_refiller import plan_refill
 
 _SCHEMA = "oc.knowledge-gap-reserve-source.v1"
 _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
-# A KG display label enters a question only if it looks like a scientific name
-# (with optional authority): letters, spaces and . - ' ( ) × & , only; no
-# digits, sentence punctuation, control characters or long prose.
+# A KG display label enters a question only if it has the structure of a
+# botanical name: a capitalised genus, optional lowercase epithet(s) (an
+# infraspecific epithet only after a rank marker), then author tokens only:
+# capitalised words or abbreviations, parenthesised authorities, "ex", "&",
+# "et", "in". No commas, no lowercase prose, no sentence text.
 _MAX_TAXON_NAME_CHARS = 120
-_MAX_TAXON_NAME_WORDS = 12
+_MAX_TAXON_NAME_WORDS = 10
+_RANK_MARKERS = frozenset(
+    {"var.", "subsp.", "ssp.", "f.", "forma", "nothosubsp.", "nothovar."}
+)
+_AUTHOR_CONNECTORS = frozenset({"ex", "&", "et", "in", "f."})
+_GENUS = re.compile(r"^×?[A-Z][a-z]*(?:-[a-z]+)?\.?$")
+_EPITHET = re.compile(r"^[a-z]+(?:-[a-z]+)?$")
+# One author token: "L.", "Blume", "Rchb.f.", "(F.M.Bailey)", "O'Brien".
+_AUTHOR = re.compile(
+    r"^\(?[A-Z][A-Za-z'\u00c0-\u024f-]*\.?(?:[A-Za-z][A-Za-z'\u00c0-\u024f-]*\.?)*\)?$"
+)
 
 
 def safe_taxon_name(taxon_name: str) -> str | None:
@@ -44,12 +56,23 @@ def safe_taxon_name(taxon_name: str) -> str | None:
     name = " ".join(str(taxon_name or "").split())
     if not name or len(name) > _MAX_TAXON_NAME_CHARS:
         return None
-    if len(name.split(" ")) > _MAX_TAXON_NAME_WORDS:
+    tokens = name.split(" ")
+    if len(tokens) > _MAX_TAXON_NAME_WORDS or not _GENUS.match(tokens[0]):
         return None
-    if not all(ch.isalpha() or ch in " .-'()×&," for ch in name):
-        return None
-    if not name[0].isalpha():
-        return None
+    index = 1
+    if index < len(tokens) and tokens[index] in {"×", "x"}:
+        index += 1  # nothospecies marker before the epithet
+    if index < len(tokens) and _EPITHET.match(tokens[index]):
+        index += 1
+    while index < len(tokens):
+        token = tokens[index]
+        following = tokens[index + 1] if index + 1 < len(tokens) else ""
+        if token in _RANK_MARKERS and _EPITHET.match(following):
+            index += 2  # an infraspecific rank and its epithet
+        elif token in _AUTHOR_CONNECTORS or _AUTHOR.match(token):
+            index += 1
+        else:
+            return None
     return name
 
 
