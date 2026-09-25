@@ -37,7 +37,8 @@ _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
 # Authorities and anything after them are dropped, not interpreted, so no
 # free text in a label can reach the question (title-case author words are
 # lexically indistinguishable from prose, so they are never carried). A label
-# that does not begin with a genus and a species epithet is rejected.
+# that does not begin with a genus and a species epithet is rejected. The result
+# is at most five tokens, the fifth only ever the literal hybrid marker "×".
 _MAX_TAXON_NAME_CHARS = 120
 _RANK_MARKERS = frozenset({"var.", "subsp.", "ssp.", "f.", "forma"})
 _HYBRID_MARKERS = frozenset({"×", "x"})
@@ -64,15 +65,13 @@ def safe_taxon_name(taxon_name: str) -> str | None:
     name.append(tokens[index])
     index += 1
     # Skip authorities; carry the first infraspecific rank that has an epithet.
-    # "f." straight after an abbreviated author ("Rchb. f.", "L. f.") is filius,
-    # part of the authority, not the forma rank.
+    # A rank marker counts only when a real epithet follows it, so "f." as
+    # filius ("Rchb. f. ex Lindl.", "L. f. var. …") is skipped as authority text
+    # while "Lindl. f. alba" is still the forma.
     while index + 1 < len(tokens):
         token, following = tokens[index], tokens[index + 1]
-        previous = tokens[index - 1]
-        filius = token == "f." and previous.endswith(".") and previous[:1].isupper()
         if (
             token in _RANK_MARKERS
-            and not filius
             and _EPITHET.match(following)
             and following not in _AUTHOR_CONNECTORS
         ):
