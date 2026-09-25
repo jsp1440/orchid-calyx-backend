@@ -9,9 +9,7 @@ DATABASE_URL is configured.
 from __future__ import annotations
 
 import os
-import socket
 import uuid
-from urllib.parse import urlparse
 
 import pytest
 
@@ -28,27 +26,8 @@ from runtime.knowledge_graph.orchestrator import DomainAdapter
 DSN = os.environ.get("DATABASE_URL")
 
 
-def _postgres_reachable(dsn: str | None, timeout: float = 0.5) -> bool:
-    """True only if something is actually listening at the DSN's host:port.
-
-    ``tests/conftest.py`` sets a placeholder ``DATABASE_URL`` so unrelated
-    modules can import cleanly without a real database; that placeholder is a
-    syntactically valid DSN pointing at nothing. Checking presence alone
-    would treat that placeholder as "configured" and let these Postgres-backed
-    tests attempt a real connection and fail with a raw driver error instead
-    of skipping cleanly.
-    """
-    if not dsn:
-        return False
-    try:
-        parsed = urlparse(dsn)
-        with socket.create_connection((parsed.hostname or "localhost", parsed.port or 5432), timeout=timeout):
-            return True
-    except OSError:
-        return False
-
-
-_needs_db = pytest.mark.skipif(not _postgres_reachable(DSN), reason="no reachable PostgreSQL for isolated DB test")
+# Gated in tests/conftest.py by a real connection probe against DATABASE_URL.
+_needs_db = pytest.mark.requires_postgres("DATABASE_URL")
 
 _DDL = """
 CREATE SCHEMA {s};
