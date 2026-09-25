@@ -113,13 +113,12 @@ def test_missions_become_capped_candidates_in_gap_rank_order(tmp_path):
         (p["source_payload"]["taxon_id"], p["source_payload"]["domain"]): p
         for p in proposals
     }
-    # The adapter caps by gap rank; the shared planner then orders by priority.
-    assert set(got) == {
+    # Gap-rank order survives the planner, including ties within one priority.
+    assert list(got) == [
         ("102", "morphology"),
         ("102", "phenology"),
         ("103", "nomenclature"),
-    }
-    assert [p["source_payload"]["domain"] for p in proposals][-1] == "nomenclature"
+    ]
     first = got[("102", "morphology")]["source_payload"]
     assert first["taxon_name"] == "Phalaenopsis aphrodite"  # from the KG taxon node
     assert "holds no morphology evidence for this taxon" in first["research_question"]
@@ -279,3 +278,22 @@ def test_taxon_name_read_failure_yields_zero_candidates(tmp_path):
     )
     assert candidates == []
     assert "taxon names unavailable" in reason
+
+
+def test_plan_refill_ties_keep_source_rank_and_default_is_unchanged():
+    from scripts.oc_backlog_refiller import plan_refill
+
+    base = evidence_gap_candidate(taxon_id="1", taxon_name="A b", domain="morphology")
+    other = evidence_gap_candidate(taxon_id="2", taxon_name="C d", domain="morphology")
+    first, second = sorted([base, other], key=lambda c: c["source_ref"])
+    ranked = [{**second, "queue_rank": 0}, {**first, "queue_rank": 1}]
+    planned = plan_refill(snapshot(), ranked, reserve_depth=2)["proposals"]
+    assert [p["source_ref"] for p in planned] == [
+        second["source_ref"],
+        first["source_ref"],
+    ]
+    unranked = plan_refill(snapshot(), [second, first], reserve_depth=2)["proposals"]
+    assert [p["source_ref"] for p in unranked] == [
+        first["source_ref"],
+        second["source_ref"],
+    ]

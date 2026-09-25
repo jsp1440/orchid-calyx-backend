@@ -106,15 +106,16 @@ def evidence_gap_candidates(
             )
             continue
         try:
-            candidates.append(
-                evidence_gap_candidate(
-                    taxon_id=taxon_id,
-                    taxon_name=name,
-                    domain=domain,
-                    candidate_source_table=source_table,
-                    priority=priority,
-                )
+            candidate = evidence_gap_candidate(
+                taxon_id=taxon_id,
+                taxon_name=name,
+                domain=domain,
+                candidate_source_table=source_table,
+                priority=priority,
             )
+            # Keeps gap-rank order among equal priorities in plan_refill.
+            candidate["queue_rank"] = len(candidates)
+            candidates.append(candidate)
         except ValueError as exc:
             rejections.append(
                 {"taxon_id": taxon_id, "domain": domain, "reason": str(exc)}
