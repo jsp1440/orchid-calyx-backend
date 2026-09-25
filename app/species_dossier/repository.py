@@ -9,6 +9,11 @@ Reads only what Calyx already holds and says so section by section:
   not independently verified here;
 * knowledge-graph relations from ``oc_graph.kg_nodes`` / ``kg_edges`` when
   those tables exist, with their persisted source table and confidence;
+* federated compiled-specialist evidence (Gary Yong Gee, published by
+  ``runtime/federated_sources/yong_gee.py`` as ``evidence`` nodes attached via
+  ``supported_by_evidence`` edges) surfaced as ``provisional`` nomenclature,
+  morphology, phenology and literature sections. Distribution and habitat
+  prose is never read or emitted: it is withheld pending locality review;
 * every other section ``unavailable`` with an explicit reason. Absence here
   is not evidence of absence in the literature.
 
@@ -18,6 +23,8 @@ unavailable, so a species page can never leak locality through this path.
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Callable, Sequence
 from datetime import datetime, timezone
 from typing import Any
@@ -51,6 +58,53 @@ ATLAS_UNAVAILABLE_LAYERS = [
 MAX_MEDIA = 12
 MAX_GRAPH_EDGES = 100
 MAX_RELATED = 8
+
+# Federated compiled-specialist evidence (see runtime/federated_sources/yong_gee.py).
+# Kept as literals so the request path does not import the ingestion module.
+YONG_GEE_SOURCE_TABLE = "federated.gary_yong_gee_workbook"
+YONG_GEE_SOURCE_NAME = "Gary Yong Gee Orchid Database"
+YONG_GEE_ATTRIBUTION = "Gary Yong Gee (compiler)"
+YONG_GEE_SUMMARY = (
+    "Compiled by Gary Yong Gee; not independently verified by Orchid Continuum."
+)
+# Section -> evidence types, in display order.
+FEDERATED_SECTION_TYPES: dict[str, tuple[str, ...]] = {
+    "nomenclature": (
+        "nomenclature",
+        "nomenclatural_publication",
+        "publication_year",
+        "common_name",
+        "taxonomy_section",
+        "taxonomy_subsection",
+        "etymology",
+    ),
+    "morphology": ("morphology", "fruit_capsule", "scent", "diagnostic_comparison"),
+    "phenology": ("phenology",),
+    "literature": ("bibliography",),
+    # Free-text notes have no obvious dossier section; they are listed with the
+    # knowledge-graph relations that carry them, still marked provisional.
+    "knowledge_graph": ("taxon_notes", "compiler_note"),
+}
+# Locality-sensitive: never selected, never emitted.
+WITHHELD_EVIDENCE_TYPES = ("distribution", "habitat")
+DISTRIBUTION_REASON = (
+    "Distribution is not served through the dossier: occurrence and locality "
+    "records are protected and are never emitted by this path. "
+    "Distribution and habitat descriptions from federated sources are withheld "
+    "pending locality-sensitivity review."
+)
+GRAPH_NOT_PROVISIONED = (
+    "The persisted knowledge graph is not provisioned in this database."
+)
+MAX_FEDERATED_EVIDENCE = 200
+MAX_SECTION_ITEMS = 12
+MAX_EXCERPT_CHARS = 1200
+TRUNCATION_MARKER = " [...]"
+# Coordinate-looking text is withheld even from non-locality evidence types.
+_COORDINATE_RE = re.compile(
+    r"-?\b\d{1,3}\.\d{3,}\b|\d{1,3}\s*°\s*\d{0,2}\s*['′]?\s*\d{0,2}(?:\.\d+)?\s*[\"″]?\s*[NSEW]\b"
+)
+_WS_RE = re.compile(r"[ \t\f\v]+")
 
 DbExecute = Callable[[Callable[[Any], Any]], Any]
 
@@ -93,9 +147,12 @@ class PostgresSpeciesRepository:
             identity = self._identity(taxon)
             media = self._media(cur, taxon["id"])
             graph = self._graph(cur, taxon["id"])
+            federated = self._federated_sections(cur, taxon["id"], graph)
+            if "knowledge_graph" in federated:
+                graph = federated.pop("knowledge_graph")
             related = self._related(cur, taxon["id"], identity.genus)
             generated_at = _now()
-            unavailable_sections = [
+            candidate_unavailable = [
                 "nomenclature",
                 "protologue",
                 "type_material",
@@ -114,6 +171,9 @@ class PostgresSpeciesRepository:
                 "atlas_summary",
                 "identification_matrix",
             ]
+            unavailable_sections = [
+                name for name in candidate_unavailable if name not in federated
+            ]
             return SpeciesDossierEnvelope(
                 generated_at=generated_at,
                 taxon_id=identity.taxon_id,
@@ -121,22 +181,19 @@ class PostgresSpeciesRepository:
                 full_scientific_name=identity.full_scientific_name,
                 accepted_name=identity.accepted_name,
                 identity=identity,
-                nomenclature=_unavailable(),
+                nomenclature=federated.get("nomenclature") or _unavailable(),
                 protologue=_unavailable(),
                 type_material=_unavailable(),
                 historical_media=_unavailable(),
                 living_media=media,
-                morphology=_unavailable(),
-                distribution=_unavailable(
-                    "Distribution is not served through the dossier: occurrence and locality "
-                    "records are protected and are never emitted by this path."
-                ),
+                morphology=federated.get("morphology") or _unavailable(),
+                distribution=_unavailable(DISTRIBUTION_REASON),
                 ecology=_unavailable(),
-                phenology=_unavailable(),
+                phenology=federated.get("phenology") or _unavailable(),
                 pollinators=_unavailable(),
                 mycorrhizae=_unavailable(),
                 conservation=_unavailable(),
-                literature=_unavailable(),
+                literature=federated.get("literature") or _unavailable(),
                 cultivation=_unavailable(),
                 knowledge_graph=graph,
                 calyx_narrative=_unavailable(
@@ -311,9 +368,7 @@ class PostgresSpeciesRepository:
         )
         present = cur.fetchone()
         if not present or not present["nodes_present"] or not present["edges_present"]:
-            return _unavailable(
-                "The persisted knowledge graph is not provisioned in this database."
-            )
+            return _unavailable(GRAPH_NOT_PROVISIONED)
         cur.execute(
             """
             SELECT e.edge_type, n2.node_type, n2.canonical_key, n2.display_label,
@@ -367,6 +422,123 @@ class PostgresSpeciesRepository:
             receipts=receipts,
         )
 
+    def _federated_sections(
+        self, cur: Any, taxon_id: Any, graph: DossierSection
+    ) -> dict[str, DossierSection]:
+        """Provisional sections from compiled-specialist evidence nodes (read-only).
+
+        Distribution/habitat evidence is excluded in SQL and again here, and any
+        excerpt with coordinate-looking text is withheld, so locality prose never
+        leaves the database through this path.
+        """
+        if graph.unavailable_reason == GRAPH_NOT_PROVISIONED:
+            return {}
+        cur.execute(
+            """
+            SELECT ev.source_table, ev.source_pk, ev.payload_json, ev.updated_at
+            FROM oc_graph.kg_nodes t
+            JOIN oc_graph.kg_edges e ON e.from_node_id = t.kg_node_id
+            JOIN oc_graph.kg_nodes ev ON ev.kg_node_id = e.to_node_id
+            WHERE t.canonical_key = %s
+              AND e.edge_type = 'supported_by_evidence'
+              AND ev.node_type = 'evidence'
+              AND ev.source_table = %s
+              AND COALESCE(ev.payload_json->>'evidence_type', '') NOT IN (%s, %s)
+              AND t.is_active IS TRUE
+              AND e.is_active IS TRUE
+              AND ev.is_active IS TRUE
+            ORDER BY e.kg_edge_id
+            LIMIT %s
+            """,
+            (
+                f"taxon:{taxon_id}",
+                YONG_GEE_SOURCE_TABLE,
+                *WITHHELD_EVIDENCE_TYPES,
+                MAX_FEDERATED_EVIDENCE,
+            ),
+        )
+        by_type: dict[str, list[dict[str, Any]]] = {}
+        for raw in cur.fetchall():
+            row = dict(raw)
+            payload = row.get("payload_json") or {}
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except ValueError:
+                    continue
+            if not isinstance(payload, dict):
+                continue
+            evidence_type = str(payload.get("evidence_type") or "")
+            if not evidence_type or evidence_type in WITHHELD_EVIDENCE_TYPES:
+                continue
+            excerpt, truncated = _clean_excerpt(payload.get("excerpt"))
+            if excerpt is None or _COORDINATE_RE.search(excerpt):
+                continue
+            by_type.setdefault(evidence_type, []).append(
+                {
+                    "row": row,
+                    "payload": payload,
+                    "excerpt": excerpt,
+                    "truncated": truncated,
+                }
+            )
+
+        sections: dict[str, DossierSection] = {}
+        for section_name, types in FEDERATED_SECTION_TYPES.items():
+            entries = [entry for t in types for entry in by_type.get(t, [])]
+            if not entries:
+                continue
+            total = len(entries)
+            entries = entries[:MAX_SECTION_ITEMS]
+            items = [
+                {
+                    "evidence_type": entry["payload"].get("evidence_type"),
+                    "excerpt": entry["excerpt"],
+                    "excerpt_truncated": entry["truncated"],
+                    "evidence_class": "compiled_specialist_source",
+                    "evidence_state": DossierEvidenceState.PROVISIONAL.value,
+                    "review_state": entry["payload"].get("review_state"),
+                    "compiler": entry["payload"].get("compiler"),
+                    "underlying_citation_status": entry["payload"].get(
+                        "underlying_citation_status"
+                    ),
+                    "source_digest": entry["payload"].get("source_digest"),
+                    "record_id": _str_or_none(entry["row"].get("source_pk")),
+                }
+                for entry in entries
+            ]
+            receipts = [_federated_receipt(entry) for entry in entries]
+            if section_name == "knowledge_graph":
+                noun = "note is" if len(items) == 1 else "notes are"
+                sections[section_name] = DossierSection(
+                    # Relations keep their own state; the notes carry "provisional"
+                    # on every item and receipt.
+                    state=DossierEvidenceState.PROVISIONAL
+                    if graph.state == DossierEvidenceState.UNAVAILABLE
+                    else graph.state,
+                    summary=(
+                        f"{graph.summary or ''} {len(items)} compiled specialist "
+                        f"{noun} provisional. {YONG_GEE_SUMMARY}"
+                    ).strip(),
+                    items=[*graph.items, *items],
+                    receipts=[*graph.receipts, *receipts],
+                )
+                continue
+            shown = (
+                f"{len(items)} of {total}" if total > len(items) else f"{len(items)}"
+            )
+            sections[section_name] = DossierSection(
+                state=DossierEvidenceState.PROVISIONAL,
+                summary=(
+                    f"{shown} compiled specialist excerpt{'s' if total != 1 else ''} "
+                    f"({', '.join(sorted({str(i['evidence_type']) for i in items}))}). "
+                    f"{YONG_GEE_SUMMARY}"
+                ),
+                items=items,
+                receipts=receipts,
+            )
+        return sections
+
     @staticmethod
     def _related(cur: Any, taxon_id: Any, genus: str) -> list[dict[str, Any]]:
         if not genus:
@@ -398,3 +570,50 @@ class PostgresSpeciesRepository:
             unavailable_layers=list(ATLAS_UNAVAILABLE_LAYERS),
             provenance=[],
         )
+
+
+def _str_or_none(value: Any) -> str | None:
+    return None if value is None else str(value)
+
+
+def _clean_excerpt(value: Any) -> tuple[str | None, bool]:
+    if value is None:
+        return None, False
+    lines = [_WS_RE.sub(" ", line).strip() for line in str(value).splitlines()]
+    text = "\n".join(line for line in lines if line).strip()
+    if not text:
+        return None, False
+    if len(text) <= MAX_EXCERPT_CHARS:
+        return text, False
+    cut = text[: MAX_EXCERPT_CHARS - len(TRUNCATION_MARKER)].rstrip()
+    return cut + TRUNCATION_MARKER, True
+
+
+def _federated_receipt(entry: dict[str, Any]) -> EvidenceReceipt:
+    row, payload = entry["row"], entry["payload"]
+    notes = (
+        "Compiled specialist source, not independently verified by Orchid Continuum; "
+        f"evidence_type={payload.get('evidence_type')}; "
+        f"review_state={payload.get('review_state')}; "
+        f"underlying_citation_status={payload.get('underlying_citation_status') or 'unknown'}; "
+        f"source_digest={payload.get('source_digest') or 'not recorded'}."
+    )
+    fields: dict[str, Any] = {
+        "source_id": str(row.get("source_table") or YONG_GEE_SOURCE_TABLE),
+        "source_name": str(payload.get("source_name") or YONG_GEE_SOURCE_NAME),
+        "record_id": _str_or_none(row.get("source_pk")),
+        "retrieved_at": row.get("updated_at"),
+        "license": None,
+        "attribution": YONG_GEE_ATTRIBUTION,
+        "evidence_state": DossierEvidenceState.PROVISIONAL,
+        # The stored score is source faithfulness, not scientific confidence.
+        "confidence": None,
+        "notes": notes,
+    }
+    source_uri = payload.get("source_uri")
+    if source_uri:
+        try:
+            return EvidenceReceipt(**fields, source_url=source_uri)
+        except ValueError:
+            pass
+    return EvidenceReceipt(**fields)
