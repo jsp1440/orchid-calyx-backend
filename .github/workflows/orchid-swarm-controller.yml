@@ -413,12 +413,17 @@ jobs:
   provider_free_workers:
     needs: plan
     # Deterministic lane. Runs for every confirmed provider-free claim whether or
-    # not paid providers are enabled; it never calls a provider or edits files.
+    # not paid providers are enabled; it never calls a provider. The `edit` mode
+    # (scripts/oc_work_edit_lane.py) may write exactly one mechanically derived
+    # line on an isolated `oc/discovered-<fingerprint>` branch and open a draft
+    # pull request against the integration branch; it never pushes anywhere
+    # else, which the pre-push fence below enforces at the git level.
     if: needs.plan.outputs.provider_free_launch_count != '0'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write        # the edit lane pushes oc/discovered-<fingerprint> branches
       issues: write
+      pull-requests: write   # the edit lane opens a draft pull request
     strategy:
       fail-fast: false
       max-parallel: 12
@@ -428,12 +433,55 @@ jobs:
       ISSUE_NUMBER: ${{ matrix.issue_number }}
       LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
       INTEGRATION_SHA: ${{ github.sha }}
+      INTEGRATION_BRANCH: ${{ github.ref_name }}
     steps:
+      # Full history: the edit lane creates `git worktree add --detach <base>`
+      # and pushes from it, and the pre-push fence needs a real remote.
       - name: Checkout controller revision
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
+          persist-credentials: true
+
+      # The token can write to this repository; git itself must not. Every push
+      # from this checkout (worktrees share the hooks directory) is refused
+      # unless every ref it updates is refs/heads/oc/discovered-*, and forced
+      # updates are refused outright. main and the integration branch are
+      # therefore unreachable from this job even by a defective lane.
+      - name: Fence pushes to oc/discovered-* branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          hooks_dir=$(git rev-parse --git-path hooks)
+          mkdir -p "$hooks_dir"
+          hooks_dir=$(cd "$hooks_dir" && pwd)   # absolute: the lane pushes from a detached worktree
+          cat > "$hooks_dir/pre-push" <<'HOOK'
+          #!/usr/bin/env bash
+          # Refuse any push whose remote ref is not an oc/discovered-* branch,
+          # and any forced update (non-fast-forward or delete).
+          set -euo pipefail
+          status=0
+          while read -r local_ref local_sha remote_ref remote_sha; do
+            [[ -n "${remote_ref:-}" ]] || continue
+            if [[ "$remote_ref" != refs/heads/oc/discovered-* ]]; then
+              echo "pre-push fence: refusing push to $remote_ref (only refs/heads/oc/discovered-* is allowed)" >&2
+              status=1
+            fi
+            if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+              echo "pre-push fence: refusing branch deletion of $remote_ref" >&2
+              status=1
+            fi
+            if [[ "$remote_sha" != "0000000000000000000000000000000000000000" ]] \
+               && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+              echo "pre-push fence: refusing non-fast-forward update of $remote_ref" >&2
+              status=1
+            fi
+          done
+          exit "$status"
+          HOOK
+          chmod +x "$hooks_dir/pre-push"
+          git config --local core.hooksPath "$hooks_dir"
 
       - name: Verify provider-free worker claim
         id: lease
@@ -512,12 +560,36 @@ jobs:
             validation_args=(--validation-json "$(jq -c . "$RUNNER_TEMP/provider-free-validation.json")")
           fi
 
+          # Edit mode: one mechanically derived line on an isolated worktree and
+          # branch, validated before and after, filed as a draft PR against the
+          # integration branch. The lane's exit code is a finding about the
+          # revision, not a broken job; the worker settles the issue from the
+          # receipt and verifies the changed files against the lease write set.
+          edit_args=()
+          files_json='[]'
+          if [[ "$mode" == "edit" ]]; then
+            set +e
+            python3 -m scripts.oc_work_edit_lane \
+              --issue-json "$issue" \
+              --repository "$GITHUB_REPOSITORY" \
+              --root . \
+              --base-sha "$INTEGRATION_SHA" \
+              --integration-branch "$INTEGRATION_BRANCH" \
+              --github-output "$GITHUB_OUTPUT" \
+              > "$RUNNER_TEMP/provider-free-edit.json"
+            set -e
+            jq '{outcome, disposition, reason, changed_file_count, pr_number, commit_sha, diff_sha256}' \
+              "$RUNNER_TEMP/provider-free-edit.json"
+            edit_args=(--edit-json "$(jq -c . "$RUNNER_TEMP/provider-free-edit.json")")
+            files_json="$(jq -c '.changed_files // []' "$RUNNER_TEMP/provider-free-edit.json")"
+          fi
+
           python3 scripts/oc_swarm_provider_free_worker.py \
             --issue-json "$issue" \
             --lease-comment "$lease" \
-            --files-json '[]' \
+            --files-json "$files_json" \
             --integration-sha "$INTEGRATION_SHA" \
-            "${validation_args[@]}" \
+            "${validation_args[@]}" "${edit_args[@]}" \
             | tee "$RUNNER_TEMP/provider-free-result.json"
           disposition=$(jq -r '.disposition' "$RUNNER_TEMP/provider-free-result.json")
           echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
@@ -546,6 +618,13 @@ jobs:
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
                 --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
                 --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
+              # An edit lane that opened a pull request parks the issue on it;
+              # the blocked-work reconciler releases `pr#N` when it merges.
+              blocked_on=$(jq -r '.blocked_on // empty' "$RUNNER_TEMP/provider-free-result.json")
+              if [[ -n "$blocked_on" ]]; then
+                gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                  --body "[OC-SWARM-V4] Provider-free edit lane opened a pull request for this condition; the issue waits on it. OC-BLOCKED-ON: ${blocked_on}" >/dev/null
+              fi
               ;;
             *)
               echo "Unknown provider-free disposition: $DISPOSITION" >&2
@@ -563,6 +642,7 @@ jobs:
           path: |
             ${{ runner.temp }}/provider-free-plan.json
             ${{ runner.temp }}/provider-free-validation.json
+            ${{ runner.temp }}/provider-free-edit.json
             ${{ runner.temp }}/provider-free-result.json
           if-no-files-found: warn
           retention-days: 30
