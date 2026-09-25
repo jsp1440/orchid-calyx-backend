@@ -3,6 +3,8 @@ from pathlib import Path
 from openpyxl import Workbook
 
 from runtime.federated_sources.yong_gee import (
+    SOURCE_NAME,
+    SOURCE_TABLE,
     build_dry_run,
     clean_html,
     publish_matched_evidence,
@@ -81,6 +83,7 @@ def test_read_and_reconcile_workbook(tmp_path: Path):
         "bibliography",
     }
     assert all(row["taxon_pk"] == "42" for row in rows)
+    assert all(row["source_name"] == SOURCE_NAME for row in rows)
 
 
 def test_unresolved_taxon_is_not_projected(tmp_path: Path):
@@ -105,3 +108,10 @@ def test_existing_graph_publisher_attaches_evidence_to_taxon(tmp_path: Path):
     assert result.edges_written == 3
     assert all(edge.from_node_id == taxon.kg_node_id for edge in repo.all_edges())
     assert {edge.edge_type for edge in repo.all_edges()} == {"supported_by_evidence"}
+    assert {edge.source_table for edge in repo.all_edges()} == {SOURCE_TABLE}
+
+    evidence_nodes = [node for node in repo.all_nodes() if node.node_type == "evidence"]
+    assert len(evidence_nodes) == 3
+    assert all(node.source_table == SOURCE_TABLE for node in evidence_nodes)
+    assert all(node.payload["source_name"] == SOURCE_NAME for node in evidence_nodes)
+    assert all(node.payload["compiler"] == "Gary Yong Gee" for node in evidence_nodes)
