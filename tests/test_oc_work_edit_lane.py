@@ -264,9 +264,10 @@ class TestApply:
 
 
 class TestJudgement:
+    # A pytest-shaped command: its summary line is part of the result.
     def run(self, exit_code: int, output: str) -> dict:
         return lane.run_validation(
-            "control-plane-compiles",
+            "calyx-async-acceptance",
             cwd=".",
             runner=lambda argv, cwd, timeout: completed(argv, exit_code, output),
         )
@@ -295,7 +296,17 @@ class TestJudgement:
         ok, why = lane.judge(
             self.run(1, BEFORE_OUTPUT), self.run(0, "collected nothing\n")
         )
-        assert not ok and "summary" in why
+        assert not ok and "inconclusive" in why
+
+    def test_an_import_check_needs_no_summary_line(self) -> None:
+        result = lane.run_validation(
+            "production-runtime-imports",
+            cwd=".",
+            runner=lambda argv, cwd, timeout: completed(argv, 0, ""),
+        )
+        assert result["pytest_shaped"] is False and result["conclusive"] is True
+        ok, _ = lane.judge(result, result)
+        assert ok
 
     def test_a_timeout_is_a_failure(self) -> None:
         def runner(argv, cwd, timeout):
@@ -889,6 +900,161 @@ class TestLaneEndToEnd:
             and receipt["reason"] == "branch_exists_without_pull_request"
         )
         assert gh.prs == []
+
+
+class TestUndeclaredImportRemedy:
+    """The starlette-shaped finding: declared where imported, proven by the import check."""
+
+    @pytest.fixture()
+    def app_repo(self, tiny_repo) -> tuple[Path, Path, str]:
+        origin, work, _ = tiny_repo
+        (work / "app").mkdir()
+        (work / "app" / "__init__.py").write_text("")
+        (work / "app" / "main.py").write_text("import starlette\n")
+        (work / "app" / "routers").mkdir()
+        (work / "app" / "routers" / "__init__.py").write_text("")
+        (work / "app" / "routers" / "calyx_core.py").write_text(
+            "ROUTER = 'calyx-core'\n"
+        )
+        _git(["add", "."], work)
+        _git(
+            [
+                "-c",
+                "user.name=t",
+                "-c",
+                "user.email=t@example.com",
+                "commit",
+                "-q",
+                "-m",
+                "app",
+            ],
+            work,
+        )
+        return origin, work, _git(["rev-parse", "HEAD"], work)
+
+    def test_discovery_binds_the_import_check_for_production_paths(self) -> None:
+        assert discovery.import_validation_command(
+            ["app/main.py", "app/university/learner_auth.py"]
+        ) == ("production-runtime-imports")
+        assert (
+            discovery.import_validation_command(["runtime/brain_router.py"])
+            == "production-runtime-imports"
+        )
+
+    def test_a_path_outside_the_production_trees_names_no_command(self) -> None:
+        assert (
+            discovery.import_validation_command(["app/main.py", "scripts/oc_x.py"])
+            == ""
+        )
+        assert discovery.import_validation_command(["tests/test_x.py"]) == ""
+        assert discovery.import_validation_command([]) == ""
+
+    def test_the_real_repository_finding_is_bound(self, tmp_path: Path) -> None:
+        cand = discovery.discover_undeclared_imports(
+            _production_tree(tmp_path), provided_by={"starlette": ["starlette"]}
+        )
+        assert [c.validation_command for c in cand] == ["production-runtime-imports"]
+        assert cand[0].remedy["requirements_file"] == "requirements.txt"
+
+    def test_a_finding_outside_the_trees_is_refused_by_the_lane(
+        self, tmp_path: Path
+    ) -> None:
+        cand = candidate(
+            source="undeclared-import", distribution="starlette", command=""
+        )
+        cand["evidence"] = [
+            {
+                "kind": "undeclared-direct-import",
+                "where": "scripts/oc_x.py",
+                "detail": "d",
+            }
+        ]
+        with pytest.raises(lane.LaneRefusal, match="no_validation_command"):
+            lane.derive_edit(cand, tmp_path, version_of=lambda name: "0.46.2")
+
+    def test_the_lane_declares_starlette_and_the_import_check_settles_it(
+        self, app_repo
+    ) -> None:
+        pytest.importorskip("starlette")
+        from importlib.metadata import version
+
+        _origin, work, base = app_repo
+        report = discovery.discover(work)
+        found = [c for c in report["candidates"] if c["source"] == "undeclared-import"]
+        assert [c["remedy"]["distribution"] for c in found] == ["starlette"]
+        cand = found[0]
+        assert cand["validation_command"] == "production-runtime-imports"
+
+        def runner(argv, cwd, timeout):
+            argv = [
+                sys.executable if argv[0] in ("python3", "python") else argv[0],
+                *argv[1:],
+            ]
+            return subprocess.run(
+                argv,
+                cwd=cwd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+            )
+
+        gh = FakeGitHub()
+        receipt = lane.run_lane(
+            issue_for(cand),
+            repository=REPO,
+            root=work,
+            base_sha=base,
+            call=gh,
+            git_call=lane.git,
+            runner=runner,
+            version_of=lambda name: version(name),
+            provision=None,
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "pr_opened", receipt
+        assert receipt["edit"] == {
+            "path": "requirements.txt",
+            "line": f"starlette=={version('starlette')}",
+            "distribution": "starlette",
+            "version": version("starlette"),
+            "provisioned": False,
+        }
+        # The import check passes on both sides; the declaration is what moved.
+        assert receipt["before"]["passed"] and receipt["after"]["passed"]
+        assert (
+            receipt["before"]["pytest_shaped"] is False
+            and receipt["before"]["conclusive"] is True
+        )
+        assert (
+            receipt["before"]["declared"] is False
+            and receipt["after"]["declared"] is True
+        )
+        assert (
+            "declared in any requirements file: before False, after True"
+            in gh.prs[0]["body"]
+        )
+        assert "+starlette==" in gh.prs[0]["body"]
+
+    def test_an_edit_that_does_not_declare_is_not_a_pass(self) -> None:
+        run = {
+            "conclusive": True,
+            "passed": True,
+            "failing_node_ids": [],
+            "pytest_shaped": False,
+        }
+        ok, why = lane.judge({**run, "declared": False}, {**run, "declared": False})
+        assert (
+            ok
+        )  # judge alone is about the command; the lane adds the declaration check
+        assert "passed" in why
+
+
+def _production_tree(tmp_path: Path) -> Path:
+    (tmp_path / "requirements.txt").write_text("fastapi<0.116\n")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "main.py").write_text("import starlette\n")
+    return tmp_path
 
 
 # -- End to end on this repository: the real gap, the real command -------------
