@@ -82,7 +82,9 @@ jobs:
       - name: Install runtime and validation dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          # requirements-scientific.txt includes requirements.txt and pins the
+          # reference-validated scipy that the CALYX-617 readiness tests require.
+          pip install -r requirements-scientific.txt
           # Pinned so a local lint result means what CI will say (#1501).
           pip install -r requirements-dev.txt
       - name: Diff hygiene
