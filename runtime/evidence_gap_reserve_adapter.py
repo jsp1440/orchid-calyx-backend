@@ -43,8 +43,12 @@ def evidence_gap_candidates(
     cap: int = MAX_CANDIDATES_PER_PASS,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str | None]:
     """Return ``(candidates, rejections, unavailable_reason)`` for one pass."""
-    if queue.get("gap_source") != "evidence_coverage_kg":
-        freshness = queue.get("freshness") or {}
+    cap = max(0, min(int(cap), MAX_CANDIDATES_PER_PASS))
+    freshness = queue.get("freshness") or {}
+    if (
+        queue.get("gap_source") != "evidence_coverage_kg"
+        or freshness.get("stale") is not False
+    ):
         reason = (
             "knowledge-graph evidence coverage unavailable; stored-record gaps are "
             f"never converted to work ({freshness.get('reason') or 'no reason recorded'})"
