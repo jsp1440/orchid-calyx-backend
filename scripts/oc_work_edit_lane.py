@@ -120,6 +120,16 @@ class Edit:
 # -- Derivation ---------------------------------------------------------------
 
 
+def canonical_distribution(name: str) -> str:
+    """PEP 503 normalised name: ``Foo.Bar_baz`` and ``foo-bar-baz`` are one.
+
+    pip treats every run of ``-``, ``_`` and ``.`` as the same separator, so a
+    file that declares ``pytest.asyncio`` already declares ``pytest-asyncio``;
+    writing it a second time is a duplicate requirement, not a remedy.
+    """
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
 def derive_edit(
     candidate: Mapping[str, Any],
     root: Path,
@@ -154,8 +164,10 @@ def derive_edit(
     command = str(candidate.get("validation_command") or "")
     if command not in VALIDATION_COMMANDS:
         raise LaneRefusal("no_validation_command", command or "none bound")
-    normalised = distribution.lower().replace("_", "-")
-    if normalised in discovery.declared_distributions(root):
+    normalised = canonical_distribution(distribution)
+    if normalised in {
+        canonical_distribution(name) for name in discovery.declared_distributions(root)
+    }:
         raise LaneRefusal("already_declared", distribution)
     version = version_of(distribution)
     if version is None:
@@ -496,6 +508,41 @@ def finalize_receipt(receipt: dict[str, Any]) -> dict[str, Any]:
             raise ValueError("pr_opened receipt names no lane branch")
         if receipt.get("disposition") != "blocked":
             raise ValueError("a pull request parks the issue; it does not complete it")
+        url = receipt.get("pr_url")
+        found = PR_URL.search(url) if isinstance(url, str) else None
+        if not found or int(found.group("number")) != number:
+            raise ValueError("pr_opened receipt carries no URL for its pull request")
+        if receipt.get("validation_passed") is not True:
+            raise ValueError("pr_opened receipt does not record a passing validation")
+        if not isinstance(receipt.get("fingerprint"), str) or not re.fullmatch(
+            r"[a-f0-9]{16}", receipt["fingerprint"]
+        ):
+            raise ValueError("pr_opened receipt carries no discovery fingerprint")
+        issue_number = receipt.get("issue_number")
+        if not isinstance(issue_number, int) or issue_number <= 0:
+            raise ValueError("pr_opened receipt names no issue")
+        commands = receipt.get("validation_commands")
+        if not isinstance(commands, list) or len(commands) != 1:
+            raise ValueError("pr_opened receipt names no single validation command")
+        edit = receipt.get("edit")
+        if (
+            not isinstance(edit, Mapping)
+            or edit.get("path") != (receipt.get("changed_files") or [None])[0]
+        ):
+            raise ValueError("pr_opened receipt's edit does not name the changed file")
+        for side in ("before", "after"):
+            run = receipt.get(side)
+            if not isinstance(run, Mapping) or run.get("command_id") != commands[0]:
+                raise ValueError(f"pr_opened receipt carries no {side} validation run")
+        if not isinstance(receipt.get("reason"), str) or not receipt["reason"]:
+            raise ValueError("pr_opened receipt carries no reason")
+        safety = receipt.get("safety")
+        if (
+            not isinstance(safety, Mapping)
+            or not safety
+            or any(value is not False for value in safety.values())
+        ):
+            raise ValueError("pr_opened receipt carries no all-false safety record")
     elif outcome == "already_open":
         if (
             not isinstance(receipt.get("pr_number"), int)
@@ -545,6 +592,8 @@ def run_lane(
     if not FULL_SHA.fullmatch(str(base_sha or "")):
         raise ValueError("base sha must be a full commit id")
     number = int(issue.get("number") or 0)
+    if number <= 0:
+        raise ValueError("issue number is required")
     body = str(issue.get("body") or "")
     commands = declared_validation_commands(body)
     match = materialize.FINGERPRINT.search(body)

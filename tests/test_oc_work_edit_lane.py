@@ -193,6 +193,16 @@ class TestDerivation:
         with pytest.raises(lane.LaneRefusal, match="already_declared"):
             lane.derive_edit(candidate(), tmp_path, version_of=lambda name: "1.4.0")
 
+    @pytest.mark.parametrize(
+        "spelling", ["pytest.asyncio==1.0", "Pytest.Asyncio", "pytest__asyncio>=1"]
+    )
+    def test_a_declaration_under_any_pep503_spelling_is_a_refusal(
+        self, tmp_path: Path, spelling: str
+    ) -> None:
+        (tmp_path / "requirements-ci.txt").write_text(f"{spelling}\n")
+        with pytest.raises(lane.LaneRefusal, match="already_declared"):
+            lane.derive_edit(candidate(), tmp_path, version_of=lambda name: "1.4.0")
+
     def test_a_remedy_naming_the_wrong_file_is_refused(self, tmp_path: Path) -> None:
         cand = candidate()
         cand["remedy"]["requirements_file"] = "requirements.txt"
@@ -288,6 +298,16 @@ class TestReceiptFailsClosed:
             "commit_sha": "a" * 40,
             "diff_sha256": "b" * 64,
             "branch": lane.branch_name(FP),
+            "pr_url": f"https://github.com/{REPO}/pull/101",
+            "reason": "validation passed",
+            "validation_passed": True,
+            "fingerprint": FP,
+            "issue_number": 9000,
+            "validation_commands": ["control-plane-compiles"],
+            "edit": {"path": "requirements-dev.txt", "line": "pytest-asyncio==1.4.0"},
+            "before": {"command_id": "control-plane-compiles", "exit_code": 1},
+            "after": {"command_id": "control-plane-compiles", "exit_code": 0},
+            "safety": {"provider_calls": False, "push_to_main": False},
         }
 
     def test_a_complete_pr_receipt_passes(self) -> None:
@@ -307,6 +327,21 @@ class TestReceiptFailsClosed:
             {"disposition": "done"},
             {"outcome": "merged"},
             {"schema": "something-else"},
+            {"pr_url": None},
+            {"pr_url": f"https://github.com/{REPO}/pull/102"},
+            {"validation_passed": False},
+            {"fingerprint": None},
+            {"issue_number": None},
+            {"issue_number": 0},
+            {"validation_commands": []},
+            {"edit": None},
+            {"edit": {"path": "requirements.txt"}},
+            {"before": None},
+            {"after": None},
+            {"after": {"command_id": "calyx-async-acceptance"}},
+            {"reason": ""},
+            {"safety": None},
+            {"safety": {"push_to_main": True}},
         ],
     )
     def test_a_pr_receipt_missing_anything_is_refused(self, broken: dict) -> None:
