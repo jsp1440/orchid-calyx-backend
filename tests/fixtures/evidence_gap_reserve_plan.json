@@ -1,0 +1,102 @@
+{
+  "deficit": 3,
+  "proposals": [
+    {
+      "dependencies": [],
+      "labels": [
+        "oc-queued"
+      ],
+      "material_fingerprint": "f551fd010aefdc3b2776dc533eeecacfb5fc50df0f08719897c96f51e9fac880",
+      "priority": 1,
+      "queue_source_kind": "brain-knowledge-gap",
+      "semantic_key": "calyx-evidence-gap:102:morphology",
+      "source_kind": "objective",
+      "source_payload": {
+        "automatic_publication": false,
+        "domain": "morphology",
+        "execution_mode": "bounded_research_mission",
+        "knowledge_graph_mutation": false,
+        "research_question": "Which published sources give morphological evidence (description, fruit capsule, scent, diagnostic comparison with similar species) for Phalaenopsis aphrodite? The Orchid Continuum knowledge graph holds no morphology evidence for this taxon. Gary Yong Gee Orchid Database already holds evidence for this taxon in other domains and supplies morphology evidence for other taxa, so check its current record and underlying citations first. Any evidence found enters as provisional candidate evidence for human review; nothing is published and the knowledge graph is not changed.",
+        "review_required": true,
+        "schema": "oc.knowledge-gap-reserve-source.v1",
+        "sensitive_locality_disclosure": false,
+        "taxon_id": "102",
+        "taxon_name": "Phalaenopsis aphrodite",
+        "taxonomy_mutation": false
+      },
+      "source_ref": "calyx-evidence-gap:f551fd010aefdc3b2776dc53",
+      "title": "Research morphology gap for Phalaenopsis aphrodite"
+    },
+    {
+      "dependencies": [],
+      "labels": [
+        "oc-queued"
+      ],
+      "material_fingerprint": "7898a890af4634fb4947f79eb1551d6e901aad9949f7cda918926b1cfbe2eb35",
+      "priority": 1,
+      "queue_source_kind": "brain-knowledge-gap",
+      "semantic_key": "calyx-evidence-gap:102:phenology",
+      "source_kind": "objective",
+      "source_payload": {
+        "automatic_publication": false,
+        "domain": "phenology",
+        "execution_mode": "bounded_research_mission",
+        "knowledge_graph_mutation": false,
+        "research_question": "Which published sources give phenological evidence (flowering season) for Phalaenopsis aphrodite? The Orchid Continuum knowledge graph holds no phenology evidence for this taxon. Gary Yong Gee Orchid Database already holds evidence for this taxon in other domains and supplies phenology evidence for other taxa, so check its current record and underlying citations first. Any evidence found enters as provisional candidate evidence for human review; nothing is published and the knowledge graph is not changed.",
+        "review_required": true,
+        "schema": "oc.knowledge-gap-reserve-source.v1",
+        "sensitive_locality_disclosure": false,
+        "taxon_id": "102",
+        "taxon_name": "Phalaenopsis aphrodite",
+        "taxonomy_mutation": false
+      },
+      "source_ref": "calyx-evidence-gap:7898a890af4634fb4947f79e",
+      "title": "Research phenology gap for Phalaenopsis aphrodite"
+    },
+    {
+      "dependencies": [],
+      "labels": [
+        "oc-queued"
+      ],
+      "material_fingerprint": "0a1154bbd1fb452d1cd3e0efc96896cf330769dc2a51108422f6da52a17c813a",
+      "priority": 2,
+      "queue_source_kind": "brain-knowledge-gap",
+      "semantic_key": "calyx-evidence-gap:103:nomenclature",
+      "source_kind": "objective",
+      "source_payload": {
+        "automatic_publication": false,
+        "domain": "nomenclature",
+        "execution_mode": "bounded_research_mission",
+        "knowledge_graph_mutation": false,
+        "research_question": "Which published sources give nomenclatural evidence (accepted name, synonymy, protologue publication and year, common names, infrageneric placement, etymology) for Dracula vampira? The Orchid Continuum knowledge graph holds no nomenclature evidence for this taxon. No federated source in the knowledge graph covers it yet. Any evidence found enters as provisional candidate evidence for human review; nothing is published and the knowledge graph is not changed.",
+        "review_required": true,
+        "schema": "oc.knowledge-gap-reserve-source.v1",
+        "sensitive_locality_disclosure": false,
+        "taxon_id": "103",
+        "taxon_name": "Dracula vampira",
+        "taxonomy_mutation": false
+      },
+      "source_ref": "calyx-evidence-gap:0a1154bbd1fb452d1cd3e0ef",
+      "title": "Research nomenclature gap for Dracula vampira"
+    }
+  ],
+  "queued_count": 0,
+  "rejections": [],
+  "reserve_depth": 3,
+  "schema": "oc.reserve-refill.v1",
+  "snapshot_basis": "empty_queue_snapshot_with_caller_fingerprints: the backend holds no queue snapshot; the frontend admission bridge reconciles against existing work",
+  "source_candidate_count": 3,
+  "source_cap": 3,
+  "source_gap_source": "evidence_coverage_kg",
+  "source_rejections": [
+    {
+      "domain": "distribution",
+      "gap_id": "KG-EVCOV-DISTRIBUTION",
+      "reason": "locality_gated_domain_skipped"
+    }
+  ],
+  "source_schema": "oc.evidence-gap-reserve-adapter.v1",
+  "source_unavailable_reason": null,
+  "status": "refill_planned",
+  "status_reason": null
+}

@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+from .epistemic_memory import project_epistemic_corpus, project_epistemic_memory
 from .models import (
     LedgerEntry,
     LedgerProvenance,
@@ -170,6 +171,19 @@ def get_ledger(ledger_id: str, request: Request, auth: Auth, db: Db):
     )
 
 
+@router.get("/{ledger_id}/epistemic-memory")
+def get_epistemic_memory(ledger_id: str, request: Request, auth: Auth, db: Db):
+    """Return the durable reasoning revision as non-authoritative machine memory."""
+
+    owner = _subject(auth)
+    ledger = _invoke(
+        db,
+        request,
+        lambda: OperationalReasoningLedgerService(db).current(ledger_id, owner),
+    )
+    return project_epistemic_memory(ledger)
+
+
 @router.get("/{ledger_id}/history")
 def get_history(ledger_id: str, request: Request, auth: Auth, db: Db):
     owner = _subject(auth)
@@ -188,8 +202,16 @@ def get_history(ledger_id: str, request: Request, auth: Auth, db: Db):
 def get_ledger_revision(
     ledger_id: str, version: str, request: Request, auth: Auth, db: Db
 ):
-    """Retrieve one exact reasoning-ledger revision, read-only."""
-    if not version.isascii() or not version.isdigit() or int(version) < 1:
+    """Retrieve one exact reasoning-ledger revision, read-only.
+
+    Exactness is the contract: a request for a version that does not exist
+    fails with ``LEDGER_REVISION_NOT_FOUND`` (reporting which versions do
+    exist) and never falls back to the latest revision. The version is read
+    as text so that ``abc``, ``1.5`` and non-positive values are all refused
+    as malformed rather than coerced or answered with the first revision.
+    """
+    text = str(version).strip()
+    if not text.isascii() or not text.isdigit() or int(text) < 1:
         raise HTTPException(
             422,
             detail={
@@ -203,12 +225,12 @@ def get_ledger_revision(
         db,
         request,
         lambda: OperationalReasoningLedgerService(db).revision(
-            ledger_id, owner, int(version)
+            ledger_id, owner, int(text)
         ),
     )
     return {
         "ledger_id": ledger_id,
-        "requested_version": int(version),
+        "requested_version": int(text),
         "revision": ledger_to_dict(revision),
         "inspectable": True,
         "reasoning_certified": False,
@@ -272,6 +294,21 @@ def review_ledger(
         ),
     )
     return ledger_to_dict(ledger)
+
+
+@project_router.get("/{project_id}/epistemic-memory")
+def get_project_epistemic_memory(project_id: str, request: Request, auth: Auth, db: Db):
+    """Return the project's recallable Calyx reasoning corpus without truth promotion."""
+
+    owner = _subject(auth)
+    ledgers = _invoke(
+        db,
+        request,
+        lambda: OperationalReasoningLedgerService(db).list_for_project(
+            project_id, owner
+        ),
+    )
+    return project_epistemic_corpus(ledgers)
 
 
 @project_router.get("/{project_id}/reasoning-ledgers")

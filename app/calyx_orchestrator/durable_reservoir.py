@@ -436,17 +436,21 @@ class DurableOrchestrate:
         """Atomically lease a task.
 
         Acquisition is a database-level compare-and-set: the UPDATE that takes
-        the lease is itself conditional on the task still being READY, and the
-        caller wins only if that UPDATE matched a row. Losing the race raises
-        ``ValueError`` exactly as an ineligible task does.
+        the lease is itself conditional on the row (by primary key) still being
+        READY, and the caller wins only if that UPDATE matched exactly one row.
+        Losing the race raises ``ValueError`` exactly as an ineligible task does.
 
         The conditional UPDATE, not the in-process lock, is what makes this
         safe. ``self._lock`` is per-instance, so two DurableOrchestrate objects
         -- two threads, two workers, two processes -- never contend on it, and
         without a guarded write both could read the task as READY and both
-        believe they hold the lease. On PostgreSQL the row lock narrows the
-        window; on SQLite there is no row lock at all. Either way the guard on
-        the UPDATE is what actually prevents a double lease.
+        believe they hold the lease. On PostgreSQL, SELECT ... FOR UPDATE SKIP
+        LOCKED above narrows the window; on SQLite there is no row lock at all,
+        so non-PostgreSQL acquisition is additionally serialized process-wide
+        (``_SQLITE_LEASE_LOCK``). Either way the guard on the UPDATE is what
+        actually prevents a double lease, and writer contention that surfaces
+        as an ``OperationalError`` (SQLite "database is locked") is reported as
+        ``LEASE_CONTENTION`` rather than as a lease.
 
         Raises:
             LookupError: task not found.
@@ -482,39 +486,41 @@ class DurableOrchestrate:
                         f"RESOURCE_CONFLICT:{key}:resources={sorted(conflict)!r}"
                     )
 
+            # Compare-and-swap: the transition is only applied to a row that is
+            # still READY at write time. This is what makes the reservation
+            # atomic across sessions/processes on every backend — FOR UPDATE
+            # SKIP LOCKED above only reduces contention on PostgreSQL, while the
+            # conditional UPDATE is the correctness guarantee on both PostgreSQL
+            # and SQLite (whose default deferred transactions do not lock reads).
             now = _utcnow()
-            # Conditional acquisition. The WHERE clause carries the precondition
-            # we just checked, so a competitor that leased this task between the
-            # check and here matches zero rows and we lose cleanly instead of
-            # overwriting their lease.
-            self._session.expire(row)
-            matched = (
-                self._session.query(DurableReservoirTask)
-                .filter(
-                    DurableReservoirTask.run_id == self._run_id,
-                    DurableReservoirTask.task_key == key,
-                    DurableReservoirTask.state == TaskState.READY,
+            try:
+                claimed = (
+                    self._session.query(DurableReservoirTask)
+                    .filter(
+                        DurableReservoirTask.id == row.id,
+                        DurableReservoirTask.state == TaskState.READY,
+                    )
+                    .update(
+                        {
+                            DurableReservoirTask.state: TaskState.LEASED,
+                            DurableReservoirTask.leased_at: now,
+                            DurableReservoirTask.lease_holder: holder,
+                            DurableReservoirTask.updated_at: now,
+                        },
+                        synchronize_session=False,
+                    )
                 )
-                .update(
-                    {
-                        DurableReservoirTask.state: TaskState.LEASED,
-                        DurableReservoirTask.leased_at: now,
-                        DurableReservoirTask.lease_holder: holder,
-                        DurableReservoirTask.updated_at: now,
-                    },
-                    synchronize_session=False,
-                )
-            )
-            if not matched:
+                if claimed != 1:
+                    self._session.rollback()
+                    raise ValueError(f"TASK_NOT_READY:{key}:state=claimed_by_other_worker")
+                self._commit()
+            except sa_exc.OperationalError as exc:
+                # Writer contention (e.g. SQLite "database is locked") means another
+                # worker holds the write lock on this row set; the lease is not ours.
                 self._session.rollback()
-                current = self._get_row(key)
-                state = current.state if current is not None else "missing"
-                raise ValueError(f"TASK_NOT_READY:{key}:state={state}:lease_race_lost")
-            self._commit()
-            leased = self._get_row(key)
-            if leased is None:  # pragma: no cover - row cannot vanish here
-                raise LookupError(f"TASK_NOT_FOUND:{key}")
-            return _row_to_leaf(leased)
+                raise ValueError(f"LEASE_CONTENTION:{key}") from exc
+            self._session.expire(row)
+            return _row_to_leaf(row)
 
     def advance(self, key: str, *, state: str) -> TaskLeaf:
         """Move a leased task to running or validating."""
@@ -660,8 +666,14 @@ class DurableOrchestrate:
             self._commit()
             return _row_to_leaf(row)
 
-    def recover_from_backoff(self, key: str) -> TaskLeaf:
-        """Restore a repair-backoff task to READY after a real recovery event."""
+    def recover_from_backoff(
+        self, key: str, *, evidence: dict[str, Any] | None = None
+    ) -> TaskLeaf:
+        """Restore a repair-backoff task to READY after a real recovery event.
+
+        ``evidence`` (optional) is merged into the persisted task row so bounded
+        retry accounting survives process restart.
+        """
         with self._lock:
             row = self._get_row(key)
             if row is None:
@@ -674,6 +686,10 @@ class DurableOrchestrate:
             )
             row.state = target
             row.blocked_reason = None
+            if evidence:
+                merged = dict(row.evidence or {})
+                merged.update(evidence)
+                row.evidence = merged
             row.updated_at = _utcnow()
             self._session.flush()
             self._commit()

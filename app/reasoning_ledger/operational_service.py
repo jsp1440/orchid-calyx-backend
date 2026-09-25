@@ -237,6 +237,20 @@ class OperationalReasoningLedgerService:
             "audit_events": self.repository.audit_history(ledger_id, owner),
         }
 
+    def exact_revision(self, ledger_id: str, owner: str, version: int):
+        revision, available = self.repository.exact_revision(ledger_id, owner, version)
+        # Exact retrieval has its own lightweight query path, but it must retain
+        # the same active-project boundary as current() and history(). The
+        # repository query is owner-scoped; this validation additionally rejects
+        # archived projects without loading history or audit events.
+        project_id = (
+            revision.project_id
+            if revision is not None
+            else self.repository.project_id(ledger_id, owner)
+        )
+        self.projects.require_owned(project_id, owner)
+        return revision, available
+
     def validate(self, ledger_id: str, owner: str) -> list[dict[str, str]]:
         ledger = self.current(ledger_id, owner)
         return [

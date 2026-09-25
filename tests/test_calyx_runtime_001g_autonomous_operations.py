@@ -63,7 +63,7 @@ def test_complete_governed_cycle_prepares_draft_only_work():
         {"ruff": True, "pytest": True, "diff_check": True},
     )
     assert package.draft is True
-    assert package.base_branch == "main"
+    assert package.base_branch == "oc-autonomous-integration"
     assert "merge" in package.evidence["prohibited_actions"]
     assert "deploy" in package.evidence["prohibited_actions"]
 

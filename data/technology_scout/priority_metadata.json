@@ -1,0 +1,26 @@
+{
+  "items": [
+    {
+      "title": "TopoMAS: Large Language Model Driven Topological Materials Multi-Agent System",
+      "primary_url": "https://onlinelibrary.wiley.com/doi/10.1002/mgea.70045",
+      "doi": "10.1002/mgea.70045",
+      "source_kind": "user",
+      "keywords": ["multi-agent", "knowledge graph", "scientific reasoning"]
+    },
+    {
+      "title": "Query-Adaptive Hybrid Search",
+      "primary_url": "https://www.mdpi.com/2504-4990/8/4/91",
+      "doi": "10.3390/make8040091",
+      "discovery_url": "https://journalclub.io/episodes/query-adaptive-hybrid-search",
+      "source_kind": "journalclub",
+      "keywords": ["hybrid search", "retrieval"]
+    },
+    {
+      "title": "A synergistic engine paradigm for real-time, context-aware decision-making: integrating declarative processes and event streams",
+      "primary_url": "https://link.springer.com/article/10.1007/s40747-026-02253-z",
+      "doi": "10.1007/s40747-026-02253-z",
+      "source_kind": "user",
+      "keywords": ["event stream", "orchestration"]
+    }
+  ]
+}

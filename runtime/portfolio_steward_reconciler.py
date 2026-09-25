@@ -57,7 +57,9 @@ from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
 from scripts.oc_portfolio_scheduler import label_names
 
 _SCHEMA = "oc.portfolio-steward-reconciler.v1"
-_CONTEXT_PATH = Path(__file__).resolve().parents[1] / "contracts" / "oc-autonomy-context.v1.json"
+_CONTEXT_PATH = (
+    Path(__file__).resolve().parents[1] / "contracts" / "oc-autonomy-context.v1.json"
+)
 
 
 def _load_canonical_context() -> dict[str, Any]:
@@ -73,14 +75,25 @@ def _load_canonical_context() -> dict[str, Any]:
     if not context.get("provider_neutral"):
         raise RuntimeError("canonical autonomy context must be provider-neutral")
     if not context.get("operating_rules", {}).get("require_evidence_for_completion"):
-        raise RuntimeError("canonical autonomy context must require completion evidence")
+        raise RuntimeError(
+            "canonical autonomy context must require completion evidence"
+        )
     return context
 
 
 # Labels that disqualify an issue from the oc-prepared pool.
-_BLOCKING_LABELS = frozenset({"oc-done", "oc-blocked", "oc-owner-gate", "oc-running",
-                               "oc-queued", "oc-validating", "oc-runtime-backoff",
-                               "oc-repair-backoff"})
+_BLOCKING_LABELS = frozenset(
+    {
+        "oc-done",
+        "oc-blocked",
+        "oc-owner-gate",
+        "oc-running",
+        "oc-queued",
+        "oc-validating",
+        "oc-runtime-backoff",
+        "oc-repair-backoff",
+    }
+)
 
 # Priority label → Priority enum
 _PRIORITY_MAP: dict[str, Priority] = {
@@ -174,7 +187,9 @@ def _issue_to_leaf(issue: dict[str, Any]) -> TaskLeaf | None:
         authority_class=AUTH_WORKSPACE,
         consequence_risk="low",
         issue_number=number,
-        acceptance_criteria=[f"retrieve-evidence for frontend issue #{number} completes provider-free"],
+        acceptance_criteria=[
+            f"retrieve-evidence for frontend issue #{number} completes provider-free"
+        ],
     )
 
 
@@ -246,11 +261,15 @@ def reconcile(
             valid_leaves.append(leaf)
 
     # 3. Run the Queue Bridge (fingerprint/semantic dedup against snapshot)
-    bridge = plan_deep_orchestrate_refill(planner, snapshot, reserve_depth=reserve_depth)
+    bridge = plan_deep_orchestrate_refill(
+        planner, snapshot, reserve_depth=reserve_depth
+    )
 
     admitted_proposals = bridge.get("proposals", [])
     source_rejections = bridge.get("source_rejections", [])
-    dedup_suppressed = len(valid_leaves) - len(admitted_proposals) - len(source_rejections)
+    dedup_suppressed = (
+        len(valid_leaves) - len(admitted_proposals) - len(source_rejections)
+    )
 
     # 4. Provision DurableOrchestrate and execute admitted proposals
     engine = create_engine(
@@ -274,10 +293,15 @@ def reconcile(
     session = session_factory()
 
     try:
-        reservoir = DurableOrchestrate.create_run(session, run_id, configured_width=max_tasks)
+        reservoir = DurableOrchestrate.create_run(
+            session, run_id, configured_width=max_tasks
+        )
 
         # Register only admitted tasks (leaves whose proposals passed dedup)
-        admitted_keys = {p["semantic_key"].removeprefix("deep-orchestrate:") for p in admitted_proposals}
+        admitted_keys = {
+            p["semantic_key"].removeprefix("deep-orchestrate:")
+            for p in admitted_proposals
+        }
         for leaf in valid_leaves:
             if leaf.key in admitted_keys:
                 reservoir.register(leaf)
@@ -290,15 +314,21 @@ def reconcile(
 
         # 6. Collect evidence and terminal-state counts
         all_tasks = reservoir.to_dict().get("tasks", {})
-        executed_count = sum(1 for t in all_tasks.values() if t.get("state") == "completed")
-        blocked_count = sum(1 for t in all_tasks.values() if t.get("state") == "blocked")
+        executed_count = sum(
+            1 for t in all_tasks.values() if t.get("state") == "completed"
+        )
+        blocked_count = sum(
+            1 for t in all_tasks.values() if t.get("state") == "blocked"
+        )
         evidence = tuple(
             {
                 "issue_number": t.get("issue_number"),
                 "task_key": key,
                 "state": t.get("state"),
                 "evidence": t.get("evidence"),
-                "provider_api_called": (t.get("evidence") or {}).get("output", {}).get("provider_api_called", False),
+                "provider_api_called": (t.get("evidence") or {})
+                .get("output", {})
+                .get("provider_api_called", False),
             }
             for key, t in all_tasks.items()
         )

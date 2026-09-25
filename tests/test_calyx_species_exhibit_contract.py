@@ -1,14 +1,17 @@
 from decimal import Decimal
 
 from app.species_exhibit.service import (
+    AUTHOR_CONNECTIVES,
     CONTRACT,
     _build_card,
     _confidence,
     _evidence_receipt,
     _graph_fact,
+    _normalized_name,
     _representative_media,
     _split_scientific_name,
     _state,
+    taxon_rank,
 )
 
 
@@ -39,6 +42,116 @@ def test_scientific_name_separates_binomial_and_authorship():
     display_name, authorship = _split_scientific_name("Cattleya labiata Lindl.")
     assert display_name == "Cattleya labiata"
     assert authorship == "Lindl."
+
+
+def test_infraspecific_rank_and_epithet_stay_in_the_name_and_are_never_called_authorship():
+    assert _split_scientific_name("Dendrobium nobile var. alba") == ("Dendrobium nobile var. alba", None)
+    assert _split_scientific_name("Ophrys apifera subsp. jurana Ruppert") == (
+        "Ophrys apifera subsp. jurana",
+        "Ruppert",
+    )
+    # The species author placed before the rank marker is not the variety's authorship.
+    assert _split_scientific_name("Calypso bulbosa (L.) Oakes var. americana (R.Br.) Luer") == (
+        "Calypso bulbosa var. americana",
+        "(R.Br.) Luer",
+    )
+    assert _split_scientific_name("Phalaenopsis × intermedia Lindl.") == ("Phalaenopsis × intermedia", "Lindl.")
+    assert _split_scientific_name("Cattleya") == ("Cattleya", None)
+    # A rank marker with nothing lowercase after it is authorship-side text, not a name.
+    assert _split_scientific_name("Cattleya labiata var.") == ("Cattleya labiata", "var.")
+
+
+def test_a_spaced_author_abbreviation_is_never_read_as_a_rank_marker():
+    """`f.` is both a form marker and the `filius` of a spaced author abbreviation.
+
+    `Rchb. f. ex Lindl.` is Reichenbach filius citing Lindley, not a form named
+    `ex`. Requiring a real epithet after the marker keeps the species a species
+    and keeps its authority whole.
+    """
+    for name, authorship in (
+        ("Dendrochilum cootesii Rchb. f. ex Lindl.", "Rchb. f. ex Lindl."),
+        ("Bulbophyllum lobbii Rchb. f. et Warsz.", "Rchb. f. et Warsz."),
+        ("Orchis militaris Rchb. f. in Fl.", "Rchb. f. in Fl."),
+    ):
+        display_name, author = _split_scientific_name(name)
+        assert display_name == " ".join(name.split()[:2]), name
+        assert author == authorship, name
+        assert taxon_rank(display_name) == "species", name
+
+
+def test_a_genuine_form_is_still_recognised_after_that_guard():
+    assert _split_scientific_name("Liparis nervosa f. kappleri Rchb.f.") == (
+        "Liparis nervosa f. kappleri", "Rchb.f.",
+    )
+    assert _split_scientific_name("Paphiopedilum robinsonii f. viride Braem") == (
+        "Paphiopedilum robinsonii f. viride", "Braem",
+    )
+    assert taxon_rank("Liparis nervosa f. kappleri") == "form"
+
+
+def test_a_cultivar_uses_its_conventional_capitalised_epithet_only():
+    assert _split_scientific_name("Cattleya labiata cv. Alba") == (
+        "Cattleya labiata cv. Alba",
+        None,
+    )
+    assert taxon_rank("Cattleya labiata cv. Alba") == "cultivar"
+    # Cultivar casing is scoped to cv.; other ranks retain lowercase epithets.
+    assert _split_scientific_name("Cattleya labiata cv. alba") == (
+        "Cattleya labiata",
+        "cv. alba",
+    )
+    assert _split_scientific_name("Cattleya labiata var. Alba") == (
+        "Cattleya labiata",
+        "var. Alba",
+    )
+
+
+def test_a_hyphenated_infraspecific_epithet_survives_the_author_guard():
+    """Hyphens belong to the epithet; the guard must not mistake them for authorship.
+
+    These six names are the repository's own registry, not invented examples.
+    Rejecting a hyphen would collapse each onto its species *and* present the
+    rank text as authorship — both of the failures this module removes.
+    """
+    for name, expected, rank in (
+        ("Ophrys vernixia ssp. regis-ferdinandii", "Ophrys vernixia ssp. regis-ferdinandii", "subspecies"),
+        ("Ophrys ciliata ssp. regis-ferdinandii", "Ophrys ciliata ssp. regis-ferdinandii", "subspecies"),
+        ("Cypripedium chamberlainianum f. victoria-mariae Sander ex Rolfe", "Cypripedium chamberlainianum f. victoria-mariae", "form"),
+        ("Anacamptis picta f. picta-rosea (Barla) Biagioli", "Anacamptis picta f. picta-rosea", "form"),
+        ("Liparis bicallosa f. aureo-variegata (Nakaj.) Nakaj.", "Liparis bicallosa f. aureo-variegata", "form"),
+        ("Paphiopedilum victoria-regina ssp. victoria-regina (Sander) M. W. Wood", "Paphiopedilum victoria-regina ssp. victoria-regina", "subspecies"),
+    ):
+        display_name, _ = _split_scientific_name(name)
+        assert display_name == expected, name
+        assert taxon_rank(display_name) == rank, name
+
+
+def test_a_hyphen_alone_is_not_an_epithet():
+    # Widening the guard for hyphens must not admit punctuation as a name.
+    for token in ("-", "--", "-x-", "x-", "al-"):
+        display_name, _ = _split_scientific_name(f"Genus species var. {token} Author")
+        assert display_name == "Genus species", token
+
+
+def test_a_citation_connective_can_never_become_an_infraspecific_epithet():
+    for connective in AUTHOR_CONNECTIVES:
+        display_name, _ = _split_scientific_name(f"Genus species var. {connective} Author")
+        assert display_name == "Genus species", connective
+
+
+def test_a_variety_is_a_distinct_card_from_its_species_not_a_duplicate():
+    species, _ = _split_scientific_name("Dendrobium nobile Lindl.")
+    variety, _ = _split_scientific_name("Dendrobium nobile var. alba")
+    assert _normalized_name(species) != _normalized_name(variety)
+
+
+def test_taxon_rank_follows_the_name_shape():
+    assert taxon_rank("Cattleya labiata") == "species"
+    assert taxon_rank("Dendrobium nobile var. alba") == "variety"
+    assert taxon_rank("Ophrys apifera subsp. jurana") == "subspecies"
+    assert taxon_rank("Phalaenopsis × intermedia") == "hybrid"
+    assert taxon_rank("Cattleya") == "genus"
+    assert taxon_rank("") == "unknown"
 
 
 def test_representative_media_rejects_duplicate_url_across_cards():

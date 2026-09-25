@@ -18,33 +18,608 @@ on:
         required: false
         default: "4"
         type: string
+  workflow_call:
+    inputs:
+      worker_slots:
+        required: false
+        default: "8"
+        type: string
+      wave:
+        required: false
+        default: "1"
+        type: string
+      max_waves:
+        required: false
+        default: "4"
+        type: string
   schedule:
     - cron: "*/5 * * * *"
   issues:
-    types: [closed, reopened, labeled, unlabeled]
+    # Deliberately not `labeled`/`unlabeled`. This controller relabels issues
+    # itself: `oc-queued` -> `oc-running` on every claim, and `oc-running` ->
+    # `oc-done`/`oc-blocked`/`oc-owner-gate` on every settlement. With those two
+    # event types the controller is its own trigger, and one wave of three lanes
+    # emits about a dozen `issues` events.
+    #
+    # Every one of them enters the concurrency group below, and because GitHub
+    # keeps at most one PENDING run per group, each arrival cancels the run
+    # waiting there. Observed on 2026-09-24: run 35972010403 (the scheduled
+    # dispatch onto this branch) was cancelled three seconds after it was
+    # created, by the label events three issues had just emitted; run
+    # 35970187867 died the same way. The wave that would have done the work is
+    # the one that gets evicted, and the bounded refill wave a completed wave
+    # dispatches is evicted by that wave's own settlement labels.
+    #
+    # The `*/5` pulse below already owns queue latency, so nothing is lost but
+    # the self-inflicted churn.
+    types: [closed, reopened]
   pull_request:
     types: [closed]
 
+concurrency:
+  group: orchid-swarm-controller-${{ github.repository }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: read
+  actions: write
+
 jobs:
-  activate:
+  plan:
     runs-on: ubuntu-latest
-    permissions:
-      actions: write
-      contents: read
+    outputs:
+      matrix: ${{ steps.claim.outputs.matrix }}
+      launch_count: ${{ steps.claim.outputs.launch_count }}
+      # Confirmed claims are split by lane: provider-free reconciliation runs in
+      # the deterministic worker job regardless of NO-API mode; only
+      # provider-dependent claims reach the governed completion lane.
+      provider_free_matrix: ${{ steps.claim.outputs.provider_free_matrix }}
+      provider_free_launch_count: ${{ steps.claim.outputs.provider_free_launch_count }}
+      provider_matrix: ${{ steps.claim.outputs.provider_matrix }}
+      provider_launch_count: ${{ steps.claim.outputs.provider_launch_count }}
+      recovered_count: ${{ steps.leases.outputs.recovered_count }}
+      selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
+      refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
+      provider_blocked: ${{ steps.no_api.outputs.blocked }}
+      summary: ${{ steps.plan.outputs.summary }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
       WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
     steps:
-      - name: Dispatch governed integration controller
+      # Trusted controls are pinned to the exact revision that triggered this
+      # controller run. On the canonical dispatch (`--ref oc-autonomous-integration`)
+      # that is the integration head; a workflow_dispatch on another ref runs that
+      # ref's controller code end-to-end instead of a mixed revision.
+      - name: Checkout controller revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Enforce fail-closed NO-API mode
+        id: no_api
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+        run: python3 scripts/oc_no_api_guard.py
+
+      - name: Reconcile retired provider backoff into governed queue
+        if: steps.no_api.outputs.blocked == 'true'
         shell: bash
         run: |
           set -euo pipefail
+          while read -r issue; do
+            [[ -n "$issue" ]] || continue
+            gh issue edit "$issue" --repo "$REPO" \
+              --remove-label oc-runtime-backoff --add-label oc-queued >/dev/null
+          done < <(gh issue list --repo "$REPO" --state open \
+            --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
+
+      # Intake. Until now every TaskLeaf arrived because a person wrote an
+      # issue and attached a label, and the plan step said so every five
+      # minutes: free lanes, nothing admitted. This reads the repository and
+      # files bounded work from facts it can point at — a marker no requirements
+      # file declares, a node id a runner reported. It never reads prose, never
+      # calls a provider, and files at most three issues per pass, each carrying
+      # a fingerprint of the condition so the next pass files none of them again.
+      # Discovery asks the environment which distribution provides a module,
+      # rather than guessing from its name. That answer is only as complete as
+      # what is installed, so the production requirements are installed here:
+      # without them the undeclared-import source reports nothing at all, which
+      # is safe but is not coverage. Cached, so it costs a pulse very little.
+      - name: Provision the environment discovery reads
+        id: discovery_env
+        continue-on-error: true
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install production requirements for import discovery
+        if: steps.discovery_env.outcome == 'success'
+        continue-on-error: true
+        run: python3 -m pip install --quiet -r requirements.txt
+
+      - name: Discover product work from repository evidence
+        id: discovery
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_discovery --root . \
+            > "$RUNNER_TEMP/work-discovery.json"
+          jq '{schema, candidate_count,
+               candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
+            "$RUNNER_TEMP/work-discovery.json"
+
+      - name: File discovered work into the canonical queue
+        id: materialize
+        if: steps.discovery.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/work-discovery.json" \
+            --max-new 3 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/work-materialization.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/work-materialization.json")" -eq 0
+
+      - name: Reconcile stale execution leases
+        id: leases
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A dead worker (cancelled, timed out, runner lost, settlement never
+          # ran) must not hold an execution slot forever. Release is driven by
+          # run evidence, never by time alone; recovered work is requeued a
+          # bounded number of times and then parked with an explicit reason.
+          python3 -m scripts.oc_swarm_lease_reconcile \
+            --repository "$REPO" \
+            --run-id "$GITHUB_RUN_ID" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-lease-recovery.json"
+
+      - name: Build repository snapshot
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Swarm v4 needs closed dependency issues as well as the open execution
+          # portfolio. The canonical scheduler itself still ignores closed work.
+          gh issue list --repo "$REPO" --state all --limit 1000 \
+            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+
+          # Blocked-work reconciliation reads machine-readable blocker lineage
+          # from issue bodies/comments. Fetch comments only for currently blocked
+          # issues. The REST endpoint supplies numeric comment IDs and its
+          # deterministic order; failures become an empty comment set so the
+          # reconciler holds the issue instead of releasing on incomplete state.
+          blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
+          gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
+            --json number --jq '.[].number' > "$blocked_numbers"
+          echo '[]' > "$RUNNER_TEMP/blocked-comments.json"
+          while read -r issue_number; do
+            [[ -n "$issue_number" ]] || continue
+            comments_file="$RUNNER_TEMP/comments-$issue_number.json"
+            if gh api --paginate \
+              "repos/$REPO/issues/$issue_number/comments?per_page=100" \
+              --jq '.[] | {id: .id, body: .body}' | jq -s '.' > "$comments_file"; then
+              :
+            else
+              echo '[]' > "$comments_file"
+              echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
+            fi
+            jq --argjson number "$issue_number" --slurpfile comments "$comments_file" \
+              '. + [{number: $number, comments: ($comments[0] // [])}]' \
+              "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
+            mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
+          done < "$blocked_numbers"
+
+          jq \
+            --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
+            'INDEX($blocked[0][]; (.number|tostring)) as $idx
+             | map(. as $issue
+                 | ($idx[($issue.number|tostring)] // null) as $blocked_issue
+                 | if $blocked_issue
+                   then . + {comments: ($blocked_issue.comments // [])}
+                   else .
+                   end)' \
+            "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
+
+          gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
+            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
+          jq -n \
+            --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
+            --slurpfile prs "$RUNNER_TEMP/prs.json" \
+            '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Read governed spend ledger for blocked-work observation
+        id: budget_ledger
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_governor_github_ledger.py \
+            --ledger-issue 1330 \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Observe current governed budget conditions
+        id: budget_observation
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+          OC_CLAUDE_DEFAULT_TIER: ${{ vars.OC_CLAUDE_DEFAULT_TIER }}
+          OC_CLAUDE_MAXIMUM_TIER: ${{ vars.OC_CLAUDE_MAXIMUM_TIER }}
+          OC_CLAUDE_CHEAP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_CHEAP_ESTIMATED_COST_USD }}
+          OC_CLAUDE_STANDARD_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_STANDARD_ESTIMATED_COST_USD }}
+          OC_CLAUDE_DEEP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_DEEP_ESTIMATED_COST_USD }}
+        run: |
+          set -euo pipefail
+          # The observer is deliberately allowed to produce an empty map. A
+          # missing ledger or malformed policy must keep blocked work parked,
+          # never turn an observation failure into permission to requeue.
+          echo '{}' > "$RUNNER_TEMP/budget-observation.json"
+          python3 scripts/oc_budget_observe.py \
+            --issues-json "$RUNNER_TEMP/issues-enriched.json" \
+            --output "$RUNNER_TEMP/budget-observation.json"
+
+      - name: Attach issue-specific budget observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile budget "$RUNNER_TEMP/budget-observation.json" \
+            '. + {budget_fingerprints: ($budget[0] // {})}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Plan dependency-aware resource wave
+        id: plan
+        shell: bash
+        run: |
+          set -euo pipefail
+          provider_args=()
+          if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
+            provider_args+=(--provider-free-only)
+          fi
+          python3 scripts/oc_swarm_controller.py \
+            --input "$RUNNER_TEMP/swarm-snapshot.json" \
+            --worker-slots "$WORKER_SLOTS" \
+            "${provider_args[@]}" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-plan.json"
+
+      - name: Apply demonstrably cleared blocked-work releases
+        shell: bash
+        env:
+          CONTROLLER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq '.blocked_reconciliation.release_plan' "$RUNNER_TEMP/swarm-plan.json" \
+            > "$RUNNER_TEMP/blocked-release-plan.json"
+          python3 scripts/oc_blocked_release_apply.py \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/blocked-release-plan.json" \
+            --controller-run-url "$CONTROLLER_RUN_URL" \
+            --apply \
+            | tee "$RUNNER_TEMP/blocked-release-apply.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/blocked-release-apply.json")" -eq 0
+
+      - name: Claim selected worker leases
+        id: claim
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_swarm_claim \
+            --plan "$RUNNER_TEMP/swarm-plan.json" \
+            --snapshot "$RUNNER_TEMP/swarm-snapshot.json" \
+            --repository "$REPO" \
+            --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --github-output "$GITHUB_OUTPUT" \
+            | tee "$RUNNER_TEMP/swarm-claims.json"
+
+      - name: Retain claim handoff evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-claims-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/swarm-claims.json
+            ${{ runner.temp }}/swarm-lease-recovery.json
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Publish swarm summary
+        shell: bash
+        env:
+          PLAN: ${{ steps.plan.outputs.summary }}
+        run: |
+          {
+            echo "## Orchid Swarm v4 Wave ${WAVE}/${MAX_WAVES}"
+            echo
+            echo "- planned_count: $(jq -r '.launch_count' <<<"$PLAN")"
+            echo "- confirmed_launch_count: ${{ steps.claim.outputs.launch_count }}"
+            echo "- provider_free_launch_count: ${{ steps.claim.outputs.provider_free_launch_count }}"
+            echo "- provider_launch_count: ${{ steps.claim.outputs.provider_launch_count }}"
+            echo "- stale leases recovered: ${{ steps.leases.outputs.recovered_count }} (running after reconcile: ${{ steps.leases.outputs.running_after }}, reconcile errors: ${{ steps.leases.outputs.reconcile_errors }})"
+            echo "- claim errors: $(jq -r '.errors | length' "$RUNNER_TEMP/swarm-claims.json")"
+            echo "- active workers: $(jq -r '.active_worker_count' <<<"$PLAN")"
+            echo "- capacity: $(jq -r '.available_capacity' <<<"$PLAN")"
+            echo "- selected: $(jq -c '.selected_numbers' <<<"$PLAN")"
+            echo "- dependency edges: $(jq -r '.dependency_graph.edge_count' <<<"$PLAN")"
+            echo "- dependency blocked: $(jq -r '.dependency_suppressed | length' <<<"$PLAN")"
+            echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<"$PLAN")"
+            echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<"$PLAN")"
+            echo "- discovered candidates: $(jq -r '.candidate_count' "$RUNNER_TEMP/work-discovery.json" 2>/dev/null || echo unavailable)"
+            # The OUTCOME, not the conclusion. Both intake steps are
+            # continue-on-error, so their conclusion is success even when they
+            # failed -- the first live pass filed nothing and reported
+            # "0 filed" with no indication anything had gone wrong, which is an
+            # absent result wearing a passing result's clothes.
+            echo "- intake: discovery=${{ steps.discovery.outcome }} materialize=${{ steps.materialize.outcome }}"
+            echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
+            echo "- recurred work requeued this pass: ${{ steps.materialize.outputs.requeued_count || '0' }} ${{ steps.materialize.outputs.requeued_numbers || '[]' }}"
+            echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
+            echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
+            echo "- integration target: \`oc-autonomous-integration\`"
+            echo "- main merge: disabled"
+            echo "- production deploy: disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  workers:
+    needs: plan
+    if: needs.plan.outputs.provider_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'
+    # Reusable workflows cannot elevate GITHUB_TOKEN permissions above their
+    # caller. Scope the implementation authority to worker jobs so planning and
+    # refill retain the workflow-level read-biased control-plane permissions.
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+      id-token: write
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.plan.outputs.provider_matrix) }}
+    uses: ./.github/workflows/orchid-completion-lane.yml
+    with:
+      wave: ${{ inputs.wave || '1' }}
+      max_waves: ${{ inputs.max_waves || '4' }}
+      issue_number: ${{ format('{0}', matrix.issue_number) }}
+      lease_comment_id: ${{ format('{0}', matrix.lease_comment_id) }}
+    secrets: inherit
+
+  provider_free_workers:
+    needs: plan
+    # Deterministic lane. Runs for every confirmed provider-free claim whether or
+    # not paid providers are enabled; it never calls a provider or edits files.
+    if: needs.plan.outputs.provider_free_launch_count != '0'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJSON(needs.plan.outputs.provider_free_matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_NUMBER: ${{ matrix.issue_number }}
+      LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
+      INTEGRATION_SHA: ${{ github.sha }}
+    steps:
+      - name: Checkout controller revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+
+      - name: Verify provider-free worker claim
+        id: lease
+        shell: bash
+        run: |
+          set -euo pipefail
+          if python3 -m scripts.oc_swarm_claim \
+            --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"; then
+            echo "execute=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "execute=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Validation tasks run this repository's own checks, so the lane needs the
+      # interpreter and test dependencies. Reconcile-only tasks pay for the
+      # setup too; it is a bounded, cached cost and it keeps one lane
+      # definition rather than two that can drift.
+      - name: Prepare deterministic validation runtime
+        if: steps.lease.outputs.execute == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deterministic validation dependencies
+        if: steps.lease.outputs.execute == 'true'
+        run: python3 -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+
+      - name: Execute deterministic provider-free work
+        if: steps.lease.outputs.execute == 'true'
+        id: reconcile
+        shell: bash
+        run: |
+          set -euo pipefail
+          issue=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --json number,title,body,state,labels)
+          labels=$(jq -r '[.labels[].name] | join(" ")' <<<"$issue")
+          [[ "$labels" == *oc-running* ]] || {
+            echo "Issue #$ISSUE_NUMBER no longer owns its Swarm lease." >&2
+            exit 2
+          }
+          lease=$(gh api --method GET \
+            "repos/$GITHUB_REPOSITORY/issues/comments/$LEASE_COMMENT_ID" --jq '.body')
+          [[ -n "$lease" ]] || {
+            echo "Issue #$ISSUE_NUMBER has no durable Swarm lease receipt." >&2
+            exit 2
+          }
+
+          # One parser decides the mode and the declared command ids. Re-reading
+          # the markers in shell is how the job and the worker would come to
+          # disagree about what this task asked for.
+          python3 scripts/oc_swarm_provider_free_worker.py \
+            --plan --issue-json "$issue" > "$RUNNER_TEMP/provider-free-plan.json"
+          mode=$(jq -r '.mode' "$RUNNER_TEMP/provider-free-plan.json")
+
+          validation_args=()
+          if [[ "$mode" == "validate" ]]; then
+            command_args=()
+            while read -r command_id; do
+              [[ -n "$command_id" ]] || continue
+              command_args+=(--command "$command_id")
+            done < <(jq -r '.commands[]' "$RUNNER_TEMP/provider-free-plan.json")
+            # The executor exits non-zero when a command fails. That is a
+            # finding about the revision, not a broken job, so the receipt is
+            # still written and the worker settles the issue from it.
+            set +e
+            python3 scripts/oc_provider_free_validate.py "${command_args[@]}" \
+              > "$RUNNER_TEMP/provider-free-validation.json"
+            set -e
+            jq '{schema, passed, command_count, failed_command_ids,
+                 results: [.results[] | {command_id, exit_code, passed, timed_out,
+                                         duration_seconds, output_digest}]}' \
+              "$RUNNER_TEMP/provider-free-validation.json"
+            validation_args=(--validation-json "$(jq -c . "$RUNNER_TEMP/provider-free-validation.json")")
+          fi
+
+          python3 scripts/oc_swarm_provider_free_worker.py \
+            --issue-json "$issue" \
+            --lease-comment "$lease" \
+            --files-json '[]' \
+            --integration-sha "$INTEGRATION_SHA" \
+            "${validation_args[@]}" \
+            | tee "$RUNNER_TEMP/provider-free-result.json"
+          disposition=$(jq -r '.disposition' "$RUNNER_TEMP/provider-free-result.json")
+          echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
+
+      - name: Publish durable result and release lease
+        if: steps.lease.outputs.execute == 'true'
+        shell: bash
+        env:
+          DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
+        run: |
+          set -euo pipefail
+          result=$(jq -c . "$RUNNER_TEMP/provider-free-result.json")
+          case "$DISPOSITION" in
+            done)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-blocked --remove-label oc-owner-gate \
+                --add-label oc-done >/dev/null
+              ;;
+            owner-gate)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-blocked --add-label oc-owner-gate >/dev/null
+              ;;
+            blocked)
+              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+                --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
+              ;;
+            *)
+              echo "Unknown provider-free disposition: $DISPOSITION" >&2
+              exit 2
+              ;;
+          esac
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      - name: Retain deterministic execution evidence
+        if: always() && steps.lease.outputs.execute == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-free-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.issue_number }}
+          path: |
+            ${{ runner.temp }}/provider-free-plan.json
+            ${{ runner.temp }}/provider-free-validation.json
+            ${{ runner.temp }}/provider-free-result.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail closed and release lease after reconciliation error
+        if: failure() && steps.lease.outputs.execute == 'true'
+        shell: bash
+        run: |
+          # Exact failure evidence travels with the release so the observer and
+          # a later repair never have to guess why this lane died.
+          evidence=$(jq -c . "$RUNNER_TEMP/provider-free-result.json" 2>/dev/null || echo '{"error":"worker_result_unavailable"}')
+          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
+            --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null 2>&1 || true
+          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "[OC-SWARM-V4] Provider-free reconciliation failed closed; execution lease released and issue blocked. Worker evidence: \`$evidence\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+
+  refill:
+    needs: [plan, workers, provider_free_workers]
+    # Completion triggers refill. A wave that launched provider-free lanes refills
+    # immediately (zero paid spend, bounded by max_waves); a wave that only ran
+    # under NO-API mode keeps the governor's explicit auto-refill authorization.
+    # One failed provider-free lane has already released its lease and parked
+    # its issue with evidence, so it must not stop unrelated work from being
+    # refilled; only a cancelled wave (no settlement ran) suppresses refill.
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'cancelled' && needs.plan.outputs.launch_count != '0' && (needs.plan.outputs.provider_free_launch_count != '0' || (needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'))
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+      WAVE: ${{ inputs.wave || '1' }}
+      MAX_WAVES: ${{ inputs.max_waves || '4' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+    steps:
+      - name: Dispatch bounded refill wave
+        shell: bash
+        run: |
+          set -euo pipefail
+          current=$((10#$WAVE))
+          maximum=$((10#$MAX_WAVES))
+          if (( current >= maximum )); then
+            echo "Bounded refill limit reached at wave $current/$maximum." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          next=$((current + 1))
+          # The refill wave stays on the revision that launched this wave so a
+          # lineage never mixes controller code mid-wave. Event-driven runs fall
+          # back to the canonical integration branch.
+          refill_ref="$INTEGRATION_BRANCH"
+          if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            refill_ref="$GITHUB_REF_NAME"
+          fi
           gh workflow run orchid-swarm-controller.yml \
             --repo "$REPO" \
-            --ref oc-autonomous-integration \
+            --ref "$refill_ref" \
             -f worker_slots="$WORKER_SLOTS" \
-            -f wave="$WAVE" \
+            -f wave="$next" \
             -f max_waves="$MAX_WAVES"
+          echo "Dispatched bounded refill wave $next/$maximum on $refill_ref." >> "$GITHUB_STEP_SUMMARY"

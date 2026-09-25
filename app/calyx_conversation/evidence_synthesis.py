@@ -61,6 +61,54 @@ def _evidence_item(
     }
 
 
+def _has_explicit_provenance(item: dict[str, Any]) -> bool:
+    provenance = item.get("provenance")
+    return isinstance(provenance, dict) and any(
+        value not in (None, "", [], {}) for value in provenance.values()
+    )
+
+
+def _evidence_class_readiness(evidence: list[dict[str, Any]]) -> dict[str, Any]:
+    """Measure the #551 evidence gate without upgrading unavailable inputs."""
+
+    literature = [
+        item
+        for item in evidence
+        if item.get("source_family") == "external_literature"
+        and item.get("status") == "review_required"
+        and _text(item.get("statement"))
+        and _has_explicit_provenance(item)
+    ]
+    continuum_items = [
+        item
+        for item in evidence
+        if item.get("source_family") in {"continuum_retrieval", "knowledge_graph"}
+        and item.get("status") == "available"
+        and _text(item.get("evidence_type"))
+        and _text(item.get("statement"))
+        and _has_explicit_provenance(item)
+    ]
+    continuum_classes = sorted(
+        {_text(item.get("evidence_type"), 200) for item in continuum_items}
+    )
+    missing_requirements: list[str] = []
+    if not literature:
+        missing_requirements.append("review-required literature with provenance")
+    if len(continuum_classes) < 2:
+        missing_requirements.append(
+            "at least two distinct canonical Continuum evidence classes with provenance"
+        )
+    return {
+        "status": "ready" if not missing_requirements else "evidence_incomplete",
+        "literature_present": bool(literature),
+        "literature_review_required": bool(literature),
+        "continuum_evidence_classes": continuum_classes,
+        "continuum_evidence_class_count": len(continuum_classes),
+        "required_continuum_evidence_class_count": 2,
+        "missing_requirements": missing_requirements,
+    }
+
+
 def _mission_items(
     mission: dict[str, Any] | None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[str], list[dict[str, Any]]]:
@@ -500,6 +548,7 @@ def build_synthesis_packet(
             "source_families": source_families,
             "canonical_retrieval_gap": retrieval_gap,
             "external_literature_review_required": bool(external.get("results")),
+            "evidence_class_readiness": _evidence_class_readiness(evidence),
         },
         "candidate_conclusions": conclusions,
         "reasoning_graph": reasoning_graph,
@@ -530,6 +579,7 @@ def build_synthesis_packet(
 def provider_context(governed_context: dict[str, Any]) -> dict[str, Any]:
     return {
         "synthesis_packet": governed_context.get("synthesis_packet") or {},
+        "scientific_memory": governed_context.get("scientific_memory") or {},
         "epistemic_policy": governed_context.get("epistemic_policy") or {},
         "deliverable_capabilities": governed_context.get("deliverable_capabilities") or {},
         "provider_configuration": governed_context.get("provider_configuration") or {},

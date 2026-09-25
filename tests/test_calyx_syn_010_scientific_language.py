@@ -96,7 +96,38 @@ def test_paper_language_endpoint_connects_extracted_glossary_to_concept_registry
     labellum = next(item for item in payload["items"] if item["term"] == "labellum")
     assert labellum["concept_registry"]["resolution"] == "RESOLVED"
     assert labellum["glossary"]["status"] == "candidate"
+    assert labellum["candidate_resolution"] == {
+        "state": "MATCHED_PENDING_REVIEW",
+        "matched_concept_id": "11111111-1111-1111-1111-111111111111",
+        "exact_concept_ids": ["11111111-1111-1111-1111-111111111111"],
+        "reason": "one exact canonical label match requires human review",
+        "review_required": True,
+        "canonical_promotion_authorized": False,
+    }
+    pseudobulb = next(
+        item for item in payload["items"] if item["term"] == "pseudobulb"
+    )
+    assert pseudobulb["candidate_resolution"]["state"] == "UNRESOLVED"
     assert payload["canonical_concept_promotion"] is False
+
+
+def test_candidate_resolution_keeps_ambiguity_explicit_and_unapproved():
+    ambiguous = BotanicalLanguageService(
+        lambda _term: {
+            "resolution": "AMBIGUOUS",
+            "exact_concept_ids": ["concept-b", "concept-a"],
+            "matches": [],
+        }
+    ).analyze_term("column", glossary_term=_term("column"))
+
+    assert ambiguous["candidate_resolution"] == {
+        "state": "AMBIGUOUS",
+        "matched_concept_id": None,
+        "exact_concept_ids": ["concept-a", "concept-b"],
+        "reason": "multiple exact canonical matches require disambiguation",
+        "review_required": True,
+        "canonical_promotion_authorized": False,
+    }
 
 
 def test_analysis_without_concepts_never_initializes_concept_repository(monkeypatch):

@@ -1,0 +1,79 @@
+# PROPOSED WORKFLOW — apply to .github/workflows/oc-complete-002-hassler-release-lifecycle.yml
+#
+# This file is NOT active CI. The coding-agent GitHub App token for OC-COMPLETE-002
+# lacks the `workflows` permission, so it cannot create or update files under
+# .github/workflows/. The exact intended content is preserved here for an owner or
+# a workflows-permitted actor to move into place unchanged.
+#
+# Also apply this one-line addition to
+# .github/workflows/calyx-hassler-intake-discovery.yml, under `on.pull_request.paths`:
+#
+#       - 'runtime/hassler_release_lifecycle.py'
+#
+# so that discovery-probe CI is triggered when the shared lifecycle contract changes.
+
+name: OC-COMPLETE-002 Hassler Release Lifecycle
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/hassler_release_lifecycle.py'
+      - 'app/routers/taxonomy_releases.py'
+      - 'scripts/discover_hassler_release_intake.py'
+      - 'tests/test_hassler_release_lifecycle.py'
+      - 'tests/test_hassler_release_status_route.py'
+      - 'tests/test_hassler_intake_discovery_probe.py'
+      - '.github/workflows/oc-complete-002-hassler-release-lifecycle.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install validation dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest ruff fastapi httpx python-multipart sqlalchemy
+      - name: Compile changed modules
+        run: |
+          python -m py_compile \
+            runtime/hassler_release_lifecycle.py \
+            app/routers/taxonomy_releases.py \
+            scripts/discover_hassler_release_intake.py
+      - name: Lint
+        run: |
+          python -m ruff check \
+            runtime/hassler_release_lifecycle.py \
+            app/routers/taxonomy_releases.py \
+            scripts/discover_hassler_release_intake.py \
+            tests/test_hassler_release_lifecycle.py \
+            tests/test_hassler_release_status_route.py \
+            tests/test_hassler_intake_discovery_probe.py
+          python -m ruff format --check \
+            runtime/hassler_release_lifecycle.py \
+            tests/test_hassler_release_lifecycle.py \
+            tests/test_hassler_release_status_route.py \
+            tests/test_hassler_intake_discovery_probe.py
+      - name: Lifecycle, route and probe tests
+        run: |
+          python -m pytest -q \
+            tests/test_hassler_release_lifecycle.py \
+            tests/test_hassler_release_status_route.py \
+            tests/test_hassler_intake_discovery_probe.py
+      - name: Existing taxonomy intake regressions
+        run: |
+          python -m pytest -q \
+            tests/test_world_plants_upload_001.py \
+            tests/test_world_plants_activation_decision.py \
+            tests/test_world_plants_migration_preflight.py \
+            tests/test_upload_hassler_release_guarded.py \
+            tests/test_upload_hassler_release_guarded_failure_receipts.py \
+            tests/test_calyx_taxonomy_release_intake_461.py

@@ -9,8 +9,10 @@ on:
       - "app/mission_control_access/**"
       - "api_occurrence_points.py"
       - "oc_orchid_atlas.py"
+      - "darwin_core_export.py"
       - "migrations/111_partner_data_governance_registry.sql"
       - "tests/test_partner_data_*.py"
+      - "tests/test_darwin_core_export.py"
       - "tests/test_exact_occurrence_api_security.py"
       - "tests/test_security_fail_closed.py"
       - "docs/security/**"
@@ -48,12 +50,14 @@ jobs:
             app/security.py \
             api_occurrence_points.py \
             oc_orchid_atlas.py \
+            darwin_core_export.py \
             tests/test_partner_data_access_bridge.py \
             tests/test_partner_data_disclosure.py \
             tests/test_partner_data_exact_atlas_security.py \
             tests/test_partner_data_governance.py \
             tests/test_partner_data_governance_migration.py \
             tests/test_partner_data_model_output_guards.py \
+            tests/test_darwin_core_export.py \
             tests/test_exact_occurrence_api_security.py \
             tests/test_security_fail_closed.py
       - name: Ruff security surface
@@ -63,12 +67,14 @@ jobs:
             app/security.py \
             api_occurrence_points.py \
             oc_orchid_atlas.py \
+            darwin_core_export.py \
             tests/test_partner_data_access_bridge.py \
             tests/test_partner_data_disclosure.py \
             tests/test_partner_data_exact_atlas_security.py \
             tests/test_partner_data_governance.py \
             tests/test_partner_data_governance_migration.py \
             tests/test_partner_data_model_output_guards.py \
+            tests/test_darwin_core_export.py \
             tests/test_exact_occurrence_api_security.py \
             tests/test_security_fail_closed.py
       - name: Focused security regression tests
@@ -80,6 +86,7 @@ jobs:
             tests/test_partner_data_governance.py \
             tests/test_partner_data_governance_migration.py \
             tests/test_partner_data_model_output_guards.py \
+            tests/test_darwin_core_export.py \
             tests/test_exact_occurrence_api_security.py \
             tests/test_security_fail_closed.py \
             tests/test_mission_control_role_001b_capabilities.py

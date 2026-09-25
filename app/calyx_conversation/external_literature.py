@@ -23,6 +23,26 @@ _ORCHID_GENERA = (
     "Lycaste",
 )
 
+# Common English words that appear Title-cased at sentence start but are not genera.
+_STOPWORDS_LOWER: frozenset[str] = frozenset({
+    "the", "a", "an", "in", "on", "at", "to", "by", "for", "with",
+    "from", "this", "that", "these", "those", "it", "is", "was",
+    "are", "were", "be", "and", "or", "but", "if", "of", "as",
+    "could", "would", "should", "may", "might", "will", "shall",
+    "do", "did", "does", "have", "has", "had", "can", "what",
+    "which", "who", "how", "when", "where", "why",
+    "general", "regional", "seasonal", "another",
+    "review", "compare", "tell", "provide", "show", "explain",
+    "orchid", "orchids", "orchidaceae",
+})
+
+# Positive acceptance pattern for Latin botanical epithets.
+# Endings like -ur and -or admit too much ordinary English and are intentionally excluded.
+_VALID_EPITHET_RE = re.compile(
+    r"(?:a|ae|is|us|um|eps|ens|ans|alis|ensis|oides|ia|ii|ina|inum|inae|ica|ula|ella|ellum"
+    r"|flora|folia|folius|folium)$"
+)
+
 _PHYSIOLOGY_CLUSTERS: tuple[tuple[str, tuple[str, ...]], ...] = (
     (
         "seasonal_flowering",
@@ -143,13 +163,137 @@ _FLOWERING_TERMS = (
 )
 
 
-def _mentioned_genera(question: str) -> list[str]:
+def _extract_genera_from_query(question: str) -> list[str]:
+    """Extract scientific genera from binomial name patterns in a question.
+
+    Matches patterns such as ``*Calypso bulbosa*``, ``Calypso bulbosa``, or
+    any Title-case word followed by a lowercase species epithet (≥5 chars),
+    which is the standard signature of a scientific binomial.  Common English
+    stopwords are excluded so sentence-initial words like "How" are not returned.
+    """
+    pattern = r"\*?([A-Z][a-z]{2,})\s+[a-z]{5,}\*?"
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in re.finditer(pattern, question):
+        candidate = match.group(1)
+        if candidate.casefold() in _STOPWORDS_LOWER:
+            continue
+        key = candidate.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(candidate)
+    return result
+
+
+def _extract_potential_genera(text: str) -> list[str]:
+    """Extract Title-case words from *text* that could be botanical genera.
+
+    Excludes common English stopwords and higher-taxon name endings (-aceae, etc.).
+    Does NOT require a following epithet — suitable for standalone genus detection.
+    """
+    seen: set[str] = set()
+    result: list[str] = []
+    for match in re.finditer(r"\b([A-Z][a-z]{2,})\b", text):
+        candidate = match.group(1)
+        cf = candidate.casefold()
+        if cf in _STOPWORDS_LOWER:
+            continue
+        if candidate.endswith(("aceae", "idae", "ales", "iformes")):
+            continue
+        if cf not in seen:
+            seen.add(cf)
+            result.append(candidate)
+    return result
+
+
+def extract_taxa(text: str, *, resolver: object | None = None) -> list[str]:
+    """Extract scientific binomial names from *text* in encounter order.
+
+    Uses a positive-accept pattern for Latin epithets (e.g. ``-a``, ``-ae``,
+    ``-is``, ``-eps``). Endings like ``-ur`` and ``-or`` that admit too much
+    ordinary English are rejected unless a *resolver* overrides them.
+
+    A *resolver* must expose ``resolve(binomial: str) -> str | None``.  When
+    it returns a non-``None`` value the lexical rules are bypassed and the
+    canonical form is used instead.
+
+    Bare genera from the curated ``_ORCHID_GENERA`` list are also returned
+    when they appear without a following recognised epithet.
+    """
+    result: list[str] = []
+    seen: set[str] = set()
+    genus_in_binomial: set[str] = set()
+
+    for match in re.finditer(r"\b([A-Z][a-z]{2,})\s+([a-z]{5,})\b", text):
+        genus = match.group(1)
+        epithet = match.group(2)
+
+        if genus.casefold() in _STOPWORDS_LOWER:
+            continue
+        if genus.endswith(("aceae", "idae", "ales", "iformes")):
+            continue
+
+        lexical_binomial = f"{genus} {epithet}"
+
+        # Try resolver first — it may accept names the lexical rules reject.
+        resolved: str | None = None
+        if resolver is not None:
+            resolved = resolver.resolve(lexical_binomial)  # type: ignore[union-attr]
+
+        if resolved is None:
+            epithet_ok = bool(_VALID_EPITHET_RE.search(epithet))
+            if not epithet_ok:
+                continue
+            binomial = lexical_binomial
+        else:
+            binomial = resolved
+
+        key = binomial.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(binomial)
+        genus_in_binomial.add(genus.casefold())
+
+    # Include bare curated genera that are not already part of a found binomial.
+    for genus in _ORCHID_GENERA:
+        if genus.casefold() in genus_in_binomial:
+            continue
+        if re.search(rf"\b{re.escape(genus)}\b", text):
+            key = genus.casefold()
+            if key not in seen:
+                seen.add(key)
+                result.append(genus)
+
+    return result
+
+
+def _mentioned_genera(question: str, *, extra_taxa: list[str] | None = None) -> list[str]:
+    """Return all orchid genera mentioned in the question.
+
+    Checks the canonical known-genera list by word boundary, then appends
+    any additional genera extracted from scientific binomial patterns (e.g.
+    ``*Calypso bulbosa*`` → ``Calypso``).  Genera from *extra_taxa* binomials
+    are appended last.  The union is returned in encounter order with no
+    duplicates.
+    """
     normalized = question.casefold()
-    return [
+    known_hits = [
         genus
         for genus in _ORCHID_GENERA
         if re.search(rf"\b{re.escape(genus.casefold())}\b", normalized)
     ]
+    seen = {g.casefold() for g in known_hits}
+    for g in _extract_genera_from_query(question):
+        if g.casefold() not in seen:
+            known_hits.append(g)
+            seen.add(g.casefold())
+    if extra_taxa:
+        for taxon in extra_taxa:
+            genus = taxon.split()[0]
+            if genus.casefold() not in seen:
+                known_hits.append(genus)
+                seen.add(genus.casefold())
+    return known_hits
 
 
 def _wet_winter_intent(question: str) -> bool:
@@ -206,10 +350,12 @@ def _epmc_or(terms: tuple[str, ...], *, limit: int = 5) -> str:
     return " OR ".join(values)
 
 
-def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
+def _query_plan(
+    question: str, *, taxa: list[str] | None = None, max_queries: int = 8
+) -> list[str]:
     """Build focused Europe PMC searches from a natural-language Calyx question."""
 
-    genera = _mentioned_genera(question)
+    genera = _mentioned_genera(question, extra_taxa=taxa)
     clusters = _active_clusters(question)
     wet_winter = _wet_winter_intent(question)
     ordered_genera = sorted(
@@ -220,6 +366,13 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
         ),
     )
     queries: list[str] = []
+
+    # A taxon question with no physiology cluster still deserves a search:
+    # without this, "Tell me about Calypso bulbosa" planned zero queries and
+    # returned EMPTY as though the corpus were bare.
+    if not clusters:
+        for genus in ordered_genera[:max_queries]:
+            queries.append(f'"{genus}" AND (orchid OR Orchidaceae)')
 
     genus_budget = 5 if wet_winter else 4
     cluster_budget = 2 if wet_winter else 3
@@ -256,6 +409,19 @@ def _query_plan(question: str, *, max_queries: int = 8) -> list[str]:
                 f'"{term}"' if " " in term else term for term in combined_terms[:6]
             )
             queries.append(f'(orchid OR Orchidaceae) AND ({expr})')
+
+    # Fallback: when explicit taxa are provided, ensure each genus appears in ≥1 query.
+    if taxa and len(queries) < max_queries:
+        covered = {g for g in ordered_genera if any(g in q for q in queries)}
+        for taxon_str in taxa:
+            if len(queries) >= max_queries:
+                break
+            genus = taxon_str.split()[0]
+            if genus not in covered:
+                queries.append(
+                    f'"{genus}" (Orchidaceae OR orchid OR ecology OR mycorrhiza)'
+                )
+                covered.add(genus)
 
     deduplicated: list[str] = []
     seen: set[str] = set()
@@ -451,6 +617,16 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
     ]
     results = (strong if strong else candidates)[:result_limit]
 
+    all_queries_failed = bool(diagnostics) and len(diagnostics) >= len(query_plan) > 0
+    if all_queries_failed:
+        availability_state = "UNAVAILABLE"
+    elif not results and not candidates:
+        availability_state = "EMPTY"
+    elif results and len(results) < 2 and len(candidates) > 0:
+        availability_state = "INSUFFICIENT_EVIDENCE"
+    else:
+        availability_state = "AVAILABLE"
+
     return {
         "provider": "Europe PMC",
         "query": query[:500],
@@ -463,6 +639,7 @@ def search_europe_pmc(query: str, *, limit: int = 8) -> dict[str, Any]:
         "review_required": True,
         "automatic_publication": False,
         "knowledge_graph_mutation": False,
+        "availability_state": availability_state,
     }
 
 

@@ -29,6 +29,8 @@ TAXA = [
         "genus": "Phalaenopsis",
     },
     {"id": 103, "scientific_name": "Dracula vampira (Luer) Luer", "genus": "Dracula"},
+    {"id": 104, "scientific_name": "Dendrobium nobile var. alba", "genus": "Dendrobium"},
+    {"id": 105, "scientific_name": "Dendrobium nobile Lindl.", "genus": "Dendrobium"},
 ]
 IMAGES = {
     101: [
@@ -320,6 +322,32 @@ def test_dossier_identity_media_and_graph_come_from_stored_rows_and_every_gap_is
     ]
     assert dossier.matrix_url == "/orchid-identification?taxon_id=101"
     assert dossier.provenance[0].source_id == "public.orchid_taxonomy"
+
+
+def test_an_infraspecific_row_keeps_its_rank_in_the_name_and_is_not_its_species():
+    variety = repository().get_dossier("104")
+    species = repository().get_dossier("105")
+    assert (
+        variety.identity.display_name
+        == variety.identity.accepted_name
+        == "Dendrobium nobile var. alba"
+    )
+    assert variety.identity.authorship is None
+    assert variety.identity.rank == "variety"
+    assert (
+        species.identity.display_name,
+        species.identity.authorship,
+        species.identity.rank,
+    ) == ("Dendrobium nobile", "Lindl.", "species")
+    assert variety.identity.taxon_id != species.identity.taxon_id
+    # Resolving the species binomial names the species, never the variety; the
+    # variety resolves by its own name.
+    assert repository().resolve_name("Dendrobium nobile") == [
+        ("105", "Dendrobium nobile", "accepted_name")
+    ]
+    assert repository().resolve_name("Dendrobium nobile var. alba") == [
+        ("104", "Dendrobium nobile var. alba", "accepted_name")
+    ]
 
 
 def test_dossier_never_emits_locality_or_coordinates():

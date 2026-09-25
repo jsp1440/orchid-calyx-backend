@@ -1,0 +1,51 @@
+name: OC Email Gateway Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/email_gateway/**"
+      - "migrations/20260823_oc_email_gateway_foundation.sql"
+      - "tests/test_email_gateway_*.py"
+      - ".github/workflows/oc-email-gateway-validation.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: orchid_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      PYTHONPATH: .
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_test
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install backend dependencies
+        run: pip install -r requirements.txt pytest
+      - name: Apply email gateway schema
+        run: psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -f migrations/20260823_oc_email_gateway_foundation.sql
+      - name: Verify email gateway schema is idempotent
+        run: psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -f migrations/20260823_oc_email_gateway_foundation.sql
+      - name: Run email gateway regressions
+        run: pytest -q tests/test_email_gateway_routing.py tests/test_email_gateway_service.py
+      - name: Compile email gateway package
+        run: python -m compileall -q app/email_gateway

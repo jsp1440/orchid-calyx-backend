@@ -11,9 +11,13 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
 from app.security import verify_owner_or_api_key
 from runtime.hassler_release_lifecycle import (
-    active_release_id_from_env,
-    build_hassler_release_status,
-    observe_release_state,
+    EXPECTED_SHA256 as HASSLER_RELEASE_ID,
+)
+from runtime.hassler_release_lifecycle import (
+    Evidence,
+    build_release_status_block,
+    classify_release_lifecycle,
+    enumerate_downstream_relink_impact,
 )
 from runtime.world_plants_readiness_api import build_taxonomy_readiness_report
 from runtime.world_plants_release_store import WorldPlantsReleaseStore
@@ -73,6 +77,82 @@ def _is_sqlalchemy_error(exc: Exception) -> bool:
     return isinstance(exc, SQLAlchemyError)
 
 
+def _default_active_taxonomy_probe() -> Evidence:
+    """Canonical activation is a separately protected surface with no read probe.
+
+    Migration 107 defines no activated release state, and no owner-approved
+    activation contract exists yet. Reporting ``unavailable`` here is the only
+    honest answer: it must never collapse into "not activated" as an assertion.
+    """
+    return Evidence.unavailable(
+        "no canonical taxonomy activation probe exists; migration 107 defines no "
+        "activated release state and activation remains a separate owner gate"
+    )
+
+
+def _hassler_release_evidence(
+    durable: Any,
+    readiness_payload: dict[str, Any] | None,
+) -> tuple[Evidence, Evidence, Evidence, Evidence]:
+    """Collect read-only probes, marking each failure unavailable rather than empty."""
+    if durable is None:
+        releases_evidence = Evidence.unavailable(
+            "durable PostgreSQL intake store is unavailable; the local "
+            "compatibility store is not authoritative for production release state"
+        )
+        detail_evidence = Evidence.unavailable("durable release detail not readable")
+        staging_evidence = Evidence.unavailable("durable staging state not readable")
+    else:
+        try:
+            releases_evidence = Evidence.of(
+                {"releases": durable.list_reports()},
+                "durable PostgreSQL release list",
+            )
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            releases_evidence = Evidence.unavailable(
+                "durable release list query failed"
+            )
+        try:
+            report = durable.get_with_inspection(HASSLER_RELEASE_ID)
+            detail_evidence = (
+                Evidence.of(report, "durable release readback")
+                if report is not None
+                else Evidence.of(None, "durable release readback returned no row")
+            )
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            detail_evidence = Evidence.unavailable(
+                "durable release readback query failed"
+            )
+        try:
+            staging_evidence = Evidence.of(
+                {
+                    "checkpoint": durable.checkpoint(HASSLER_RELEASE_ID),
+                    "counts": durable.counts(HASSLER_RELEASE_ID),
+                    "change_report": durable.change_report(HASSLER_RELEASE_ID),
+                },
+                "durable staging checkpoint, counts and change report",
+            )
+        except KeyError:
+            staging_evidence = Evidence.unavailable(
+                "no durable staging checkpoint exists for the exact release"
+            )
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            staging_evidence = Evidence.unavailable("durable staging query failed")
+
+    readiness_evidence = (
+        Evidence.of(readiness_payload, "Mission Control taxonomy readiness gates")
+        if readiness_payload is not None
+        else Evidence.unavailable("taxonomy readiness report could not be built")
+    )
+    return releases_evidence, detail_evidence, readiness_evidence, staging_evidence
+
+
 def create_taxonomy_release_router(
     get_store: Callable[[], WorldPlantsReleaseStore] = _default_store,
     require_owner: Callable[..., Any] = verify_owner_or_api_key,
@@ -80,21 +160,18 @@ def create_taxonomy_release_router(
     get_migration_preflight: Callable[
         [], dict[str, Any]
     ] = _default_migration_preflight,
+    get_active_taxonomy: Callable[[], Evidence] = _default_active_taxonomy_probe,
 ) -> APIRouter:
     router = APIRouter(tags=["taxonomy-releases"])
     releases = APIRouter(prefix="/api/mission-control/taxonomy/releases")
 
-    @router.get("/api/mission-control/taxonomy/readiness")
-    def taxonomy_readiness(
-        _: Any = Depends(require_owner),  # noqa: B008
-    ) -> dict[str, Any]:
+    def _readiness_payload(durable: Any) -> dict[str, Any]:
         migration: dict[str, Any] | None = None
         try:
             migration = get_migration_preflight()
         except (ModuleNotFoundError, RuntimeError):
             migration = None
 
-        durable = _try_durable_store(get_durable_store)
         try:
             durable_reports = durable.list_reports() if durable is not None else []
         except Exception as exc:
@@ -113,6 +190,57 @@ def create_taxonomy_release_router(
             ),
             latest_release_override=latest_release,
         )
+
+    @router.get("/api/mission-control/taxonomy/readiness")
+    def taxonomy_readiness(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        return _readiness_payload(_try_durable_store(get_durable_store))
+
+    @router.get("/api/mission-control/taxonomy/hassler-release-status")
+    def hassler_release_status(
+        _: Any = Depends(require_owner),  # noqa: B008
+    ) -> dict[str, Any]:
+        """Read-only lifecycle and active-vs-staged state of the exact release."""
+        durable = _try_durable_store(get_durable_store)
+        try:
+            readiness_payload: dict[str, Any] | None = _readiness_payload(durable)
+        except Exception as exc:
+            if not _is_sqlalchemy_error(exc):
+                raise
+            readiness_payload = None
+
+        releases_ev, detail_ev, readiness_ev, staging_ev = _hassler_release_evidence(
+            durable, readiness_payload
+        )
+        lifecycle = classify_release_lifecycle(
+            releases=releases_ev,
+            release_detail=detail_ev,
+            readiness=readiness_ev,
+            staging=staging_ev,
+            active_taxonomy=get_active_taxonomy(),
+        )
+        change_report_evidence = Evidence.unavailable(
+            "no durable change report is available for the exact release"
+        )
+        if staging_ev.available:
+            report = (staging_ev.payload or {}).get("change_report")
+            if isinstance(report, dict):
+                change_report_evidence = Evidence.of(
+                    report, "durable change report for the exact release"
+                )
+        downstream = enumerate_downstream_relink_impact(
+            change_report=change_report_evidence
+        )
+        return {
+            "lifecycle": lifecycle,
+            "downstream_relink_impact": downstream,
+            "status_block": build_release_status_block(
+                lifecycle=lifecycle, downstream=downstream
+            ),
+            "read_only": True,
+            "automatic_promotion": False,
+        }
 
     @router.get("/api/mission-control/taxonomy/migration-preflight")
     def taxonomy_migration_preflight(
@@ -321,52 +449,6 @@ def create_taxonomy_release_router(
                 status_code=503,
                 detail="taxonomy activation decision evidence is unavailable",
             ) from exc
-
-    @router.get("/api/mission-control/taxonomy/hassler-release-status")
-    def hassler_release_status(
-        _: Any = Depends(require_owner),  # noqa: B008
-    ) -> dict[str, Any]:
-        """Report where the one exact acceptance-target release stands.
-
-        Read-only and incapable of promotion. Unlike the other endpoints here,
-        an unreachable evidence source is not a 503: the frontend distinguishes
-        "the pipeline looked and could not establish this" from "the backend
-        did not answer", and only the first can be expressed in the body. A 503
-        would be read as the second and lose that distinction.
-        """
-        durable = _try_durable_store(get_durable_store)
-        local = get_store()
-        backend = "postgresql" if durable is not None else "local_compatibility"
-
-        def list_releases() -> Any:
-            if durable is not None:
-                try:
-                    return durable.list_reports()
-                except Exception as exc:
-                    if not _is_sqlalchemy_error(exc):
-                        raise
-            return local.list_reports()
-
-        def read_staging(release_id: str) -> Any:
-            if durable is None:
-                raise RuntimeError("durable staging unavailable")
-            checkpoint = durable.checkpoint(release_id)
-            # Flatten the checkpoint so a `complete` flag it carries is visible
-            # to the classifier rather than buried a level down.
-            flat: dict[str, Any] = (
-                dict(checkpoint) if isinstance(checkpoint, dict) else {}
-            )
-            flat["checkpoint"] = checkpoint
-            flat["counts"] = durable.counts(release_id)
-            return flat
-
-        observation = observe_release_state(
-            list_releases=list_releases,
-            read_staging=read_staging,
-            read_active_release_id=active_release_id_from_env,
-            storage_backend=backend,
-        )
-        return build_hassler_release_status(observation)
 
     router.include_router(releases)
     return router

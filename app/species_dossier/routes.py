@@ -71,6 +71,20 @@ def species_dossier(taxon_id: str, service: Service) -> SpeciesDossierEnvelope:
     return dossier
 
 
+@router.get(
+    "/homepage/species/{taxon_id}/evidence", response_model=SpeciesDossierEnvelope
+)
+def species_evidence(taxon_id: str, service: Service) -> SpeciesDossierEnvelope:
+    """The evidence link every homepage species-exhibit card advertises.
+
+    The exhibit card's ``links.evidence`` has pointed here since the exhibit shipped,
+    but nothing answered. It now serves the same dossier envelope as
+    ``/species/{taxon_id}/dossier`` for the same taxon, so the receipts a reader
+    reaches from the exhibit are the receipts the species page shows (journey 19).
+    """
+    return species_dossier(taxon_id, service)
+
+
 @router.get("/species/{taxon_id}/atlas", response_model=SpeciesAtlasEnvelope)
 def species_atlas(taxon_id: str, service: Service) -> SpeciesAtlasEnvelope:
     atlas = _guard(lambda: service.atlas(taxon_id))

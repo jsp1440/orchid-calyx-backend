@@ -1,52 +1,43 @@
-"""Exact-release lifecycle status for the Hassler / World Plants taxonomy release.
+"""Read-only lifecycle classification for the exact current Hassler release.
 
-The frontend consumer (`src/lib/hasslerReleaseLifecycle.ts`) was written against
-this producer, but the producer was never implemented, so the Mission Control
-taxonomy panel had nothing to read. This module supplies it.
+This module answers one question with explicit evidence semantics: where is
+``WorldOrchids 26-08 (Aug 2 2026).csv`` in the governed intake lifecycle right
+now — absent, durably uploaded/inspected, smoke-verified, partially staged,
+fully staged, superseded by a newer release, or activated as canonical
+taxonomy?
 
-What this reports
------------------
-One question, about one release: where is ``WorldOrchids 26-08 (Aug 2 2026).csv``
-in the lifecycle that `AGENTS.md` defines?
+Three rules govern everything here:
 
-    upload -> checksum/release record -> schema validation -> normalization
-    -> comparison -> reviewed change report -> bounded staging projection
-    -> idempotency proof -> owner-approved activation -> species API verification
-
-Reporting rules
----------------
-*It never promotes anything.* This is a read-only observation surface. The
-payload states ``read_only`` and ``automatic_promotion: false`` as facts the
-panel renders, and nothing here can upload, stage, activate, or publish.
-
-*It distinguishes "not there" from "could not look".* ``ABSENT`` is a finding:
-the inventory was read and the release is not in it. ``UNAVAILABLE`` means the
-evidence could not be read at all. Collapsing the second into the first would
-assert the release is missing when we simply do not know, which is the kind of
-fabricated production state the governance rules forbid.
-
-*It reports the highest state it can actually establish, and says what it could
-not read.* When a later-stage evidence source is unreachable, the state is not
-silently promoted or demoted: the established state stands, ``unavailable_evidence``
-names every source that failed, and ``evidence_complete`` goes false.
-
-*It never invents a count.* A downstream relink count appears only when it was
-observed. Anything else is withheld, because a confident ``0`` would read as
-"no downstream work" when the truth is "nobody counted".
+1. Unavailable is never zero. A probe that could not be executed yields
+   ``UNAVAILABLE`` evidence and an ``unavailable_evidence`` entry. It never
+   collapses into ``ABSENT``, ``0``, or ``false``.
+2. Upload and staging never imply activation. Activation is a separately
+   protected owner-governed surface. Migration 107 has no ``activated`` release
+   state at all, so activation can only ever be reported from an explicit
+   canonical-taxonomy probe.
+3. Nothing in this module mutates anything. It classifies supplied read-only
+   evidence and emits receipts.
 """
 
 from __future__ import annotations
 
-import os
-from collections.abc import Callable
-from dataclasses import dataclass, field
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any
 
-SCHEMA = "oc.hassler-release-lifecycle.v1"
+CONTRACT_VERSION = "calyx-hassler-release-lifecycle/v1"
 
-# The ladder, lowest to highest. Mirrored by HASSLER_LIFECYCLE_STATES in the
-# frontend consumer; the payload echoes it so the panel renders the same order.
-LIFECYCLE_STATES: tuple[str, ...] = (
+EXPECTED_FILENAME = "WorldOrchids 26-08 (Aug 2 2026).csv"
+EXPECTED_SHA256 = "e5be9268e1a48cb0e1777137ac386a9a870f3581c35f10678c9b810c59688c6f"
+EXPECTED_SIZE_BYTES = 11_529_836
+EXPECTED_VERSION_LABEL = "26-08"
+EXPECTED_ACQUIRED_AT = "2026-08-02"
+
+#: Release lifecycle states, ordered from least to most advanced. ``UNAVAILABLE``
+#: is deliberately outside that ordering: it is an evidence state, not progress.
+LIFECYCLE_STATES = (
     "UNAVAILABLE",
     "ABSENT",
     "UPLOADED_INSPECTED",
@@ -57,403 +48,640 @@ LIFECYCLE_STATES: tuple[str, ...] = (
     "ACTIVATED",
 )
 
-# The real acceptance target named in AGENTS.md. Not a fixture.
-EXPECTED_FILENAME = "WorldOrchids 26-08 (Aug 2 2026).csv"
-EXPECTED_VERSION_LABEL = "WorldOrchids 26-08"
-
-# Surfaces that a taxonomy relink would touch. Declaring them is a statement
-# about scope, not about how much work each one implies; the counts are
-# reported separately and only when observed.
-RELINK_SURFACES: tuple[str, ...] = (
-    "species_api",
-    "knowledge_graph",
-    "matrix_identification",
-    "atlas_occurrences",
-    "lexicon_concepts",
+#: Durable release states defined by migration 107. There is no activated state.
+DURABLE_RELEASE_STATES = (
+    "inspected",
+    "staging",
+    "staged",
+    "review_required",
+    "reviewed",
 )
 
-_INSPECTED_STATES = frozenset({"inspected", "uploaded", "stored"})
+UNAVAILABLE = "unavailable"
+
+#: Downstream surfaces that must be enumerated before any activation decision.
+#: Each maps to the concrete impact domains produced by
+#: :mod:`runtime.world_plants_impact`.
+RELINK_DOMAINS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("occurrences", ("occurrences",)),
+    ("media", ("images",)),
+    ("traits", ("traits",)),
+    ("literature", ("literature",)),
+    ("interactions", ("pollinators", "mycorrhizae")),
+    ("knowledge_graph", ("knowledge_graph_edges",)),
+)
 
 
-@dataclass(frozen=True, slots=True)
-class ReleaseObservation:
-    """Everything the pipeline could read, and everything it could not.
+@dataclass(frozen=True)
+class Evidence:
+    """A single read-only probe outcome.
 
-    A ``None`` collection means "could not read", which is deliberately
-    different from an empty collection meaning "read it, found nothing".
+    ``available`` false means the probe could not be executed or did not
+    return a usable payload. Callers must never read ``payload`` as authoritative
+    emptiness in that case.
     """
 
-    releases: tuple[dict[str, Any], ...] | None = None
-    inventory_error: str | None = None
-    staging: dict[str, Any] | None = None
-    staging_error: str | None = None
-    active_release_id: str | None = None
-    active_error: str | None = None
-    relink_counts: dict[str, int] | None = None
-    relink_error: str | None = None
-    storage_backend: str | None = None
+    available: bool
+    payload: Any = None
+    detail: str = ""
 
-    @property
-    def unavailable_evidence(self) -> list[str]:
-        missing: list[str] = []
-        if self.inventory_error:
-            missing.append(f"release_inventory:{self.inventory_error}")
-        if self.staging_error:
-            missing.append(f"staging_projection:{self.staging_error}")
-        if self.active_error:
-            missing.append(f"active_release_pointer:{self.active_error}")
-        if self.relink_error:
-            missing.append(f"downstream_relink_counts:{self.relink_error}")
-        return missing
+    @classmethod
+    def unavailable(cls, detail: str) -> Evidence:
+        return cls(available=False, payload=None, detail=detail)
+
+    @classmethod
+    def of(cls, payload: Any, detail: str = "") -> Evidence:
+        return cls(available=True, payload=payload, detail=detail)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "detail": self.detail,
+        }
 
 
-# ---------------------------------------------------------------------------
-# Matching the one exact release
-# ---------------------------------------------------------------------------
+def _artifact_hash(payload: Mapping[str, Any]) -> str:
+    canonical = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), default=str
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
 
 
-def _snapshot_of(report: dict[str, Any]) -> dict[str, Any]:
-    snapshot = report.get("snapshot")
-    return snapshot if isinstance(snapshot, dict) else {}
+def _mapping(value: Any) -> dict[str, Any]:
+    return dict(value) if isinstance(value, Mapping) else {}
 
 
-def _normalize(value: Any) -> str:
-    return str(value or "").strip().casefold()
+def _release_entries(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, Mapping):
+        raw = payload.get("releases")
+    elif isinstance(payload, Sequence) and not isinstance(payload, str | bytes):
+        raw = payload
+    else:
+        raw = None
+    if not isinstance(raw, Sequence) or isinstance(raw, str | bytes):
+        return []
+    return [dict(item) for item in raw if isinstance(item, Mapping)]
 
 
-def matches_expected_release(report: dict[str, Any]) -> bool:
-    """Is this report the exact acceptance-target release?
+def verify_source_identity(source: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Compare an observed release snapshot against the exact expected release.
 
-    Matches on filename or version label. A release uploaded under a tidied-up
-    filename but the right version label is still the same release, and
-    refusing to recognize it would report ABSENT for something that is present.
+    A ``None`` source is reported as unverifiable, not as a mismatch.
     """
-    snapshot = _snapshot_of(report)
-    filename = _normalize(snapshot.get("filename") or report.get("filename"))
-    version = _normalize(snapshot.get("version_label") or report.get("version_label"))
-    if filename and filename == _normalize(EXPECTED_FILENAME):
-        return True
-    return bool(version) and version == _normalize(EXPECTED_VERSION_LABEL)
-
-
-def find_expected_release(
-    releases: tuple[dict[str, Any], ...] | list[dict[str, Any]],
-) -> dict[str, Any] | None:
-    for report in releases:
-        if isinstance(report, dict) and matches_expected_release(report):
-            return report
-    return None
-
-
-# ---------------------------------------------------------------------------
-# Classification (pure)
-# ---------------------------------------------------------------------------
-
-
-def _staging_state(staging: dict[str, Any] | None) -> str | None:
-    """Reduce a staging checkpoint to a lifecycle state, or None if unreadable."""
-    if not isinstance(staging, dict):
-        return None
-    if staging.get("complete") is True:
-        return "STAGED_COMPLETE"
-    counts = staging.get("counts")
-    if isinstance(counts, dict):
-        staged = counts.get("staged")
-        total = counts.get("total")
-        if isinstance(staged, int) and isinstance(total, int) and total > 0:
-            return "STAGED_COMPLETE" if staged >= total else "STAGING_IN_PROGRESS"
-        if isinstance(staged, int) and staged > 0:
-            return "STAGING_IN_PROGRESS"
-    processed = staging.get("rows_staged") or staging.get("processed")
-    if isinstance(processed, int) and processed > 0:
-        return "STAGING_IN_PROGRESS"
-    return None
-
-
-def classify_lifecycle(observation: ReleaseObservation) -> dict[str, Any]:
-    """Classify the exact release. Pure, so the fail-closed rules are testable."""
-    unavailable = observation.unavailable_evidence
-    expected_release = {
+    expected = {
         "filename": EXPECTED_FILENAME,
+        "sha256": EXPECTED_SHA256,
+        "size_bytes": EXPECTED_SIZE_BYTES,
         "version_label": EXPECTED_VERSION_LABEL,
+        "acquired_at": EXPECTED_ACQUIRED_AT,
+    }
+    if source is None:
+        return {
+            "verified": None,
+            "reason": UNAVAILABLE,
+            "expected": expected,
+            "observed": None,
+            "mismatches": [],
+        }
+
+    observed_map = _mapping(source)
+    snapshot = _mapping(observed_map.get("snapshot")) or observed_map
+    observed = {
+        "filename": snapshot.get("filename"),
+        "sha256": snapshot.get("sha256") or observed_map.get("release_id"),
+        "size_bytes": snapshot.get("size_bytes"),
+        "version_label": snapshot.get("version_label"),
+        "acquired_at": snapshot.get("acquired_at"),
+    }
+    mismatches: list[dict[str, Any]] = []
+    for field, expected_value in expected.items():
+        actual = observed.get(field)
+        if actual is None:
+            # Missing evidence is not a contradiction; record it as such.
+            mismatches.append(
+                {"field": field, "expected": expected_value, "observed": UNAVAILABLE}
+            )
+            continue
+        if field == "size_bytes":
+            try:
+                actual = int(actual)
+            except (TypeError, ValueError):
+                mismatches.append(
+                    {
+                        "field": field,
+                        "expected": expected_value,
+                        "observed": str(actual),
+                    }
+                )
+                continue
+        if actual != expected_value:
+            mismatches.append(
+                {"field": field, "expected": expected_value, "observed": actual}
+            )
+    hard_mismatches = [item for item in mismatches if item["observed"] != UNAVAILABLE]
+    return {
+        "verified": not mismatches,
+        "reason": (
+            "identity_matches_exact_release"
+            if not mismatches
+            else (
+                "identity_conflict"
+                if hard_mismatches
+                else "identity_evidence_incomplete"
+            )
+        ),
+        "expected": expected,
+        "observed": observed,
+        "mismatches": mismatches,
     }
 
-    # Could not read the inventory at all: we know nothing about this release.
-    if observation.releases is None:
+
+def _superseding_releases(entries: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
+    """Return durable releases acquired strictly after the exact release."""
+    newer: list[dict[str, Any]] = []
+    for entry in entries:
+        release_id = str(entry.get("release_id") or "")
+        if release_id == EXPECTED_SHA256:
+            continue
+        snapshot = _mapping(entry.get("snapshot"))
+        acquired_at = str(snapshot.get("acquired_at") or "")
+        if acquired_at and acquired_at > EXPECTED_ACQUIRED_AT:
+            newer.append(
+                {
+                    "release_id": release_id,
+                    "filename": snapshot.get("filename"),
+                    "version_label": snapshot.get("version_label"),
+                    "acquired_at": acquired_at,
+                    "state": entry.get("state"),
+                }
+            )
+    return sorted(newer, key=lambda item: str(item["acquired_at"]))
+
+
+def _staging_view(staging: Evidence, expected_rows: int | None) -> dict[str, Any]:
+    if not staging.available:
         return {
-            "lifecycle_state": "UNAVAILABLE",
-            "lifecycle_states": list(LIFECYCLE_STATES),
-            "lifecycle_rationale": (
-                "The release inventory could not be read, so the pipeline cannot "
-                "establish whether the exact release is present. This is not the "
-                "same as the release being absent."
-            ),
-            "expected_release": expected_release,
-            "active_vs_staged": {
-                "state": "unknown",
-                "active_release_id": None,
-                "staged_release_id": None,
-            },
-            "superseded": False,
-            "superseded_by": None,
-            "unavailable_evidence": unavailable,
-            "evidence_complete": False,
+            "evidence": UNAVAILABLE,
+            "detail": staging.detail,
+            "staged_rows": None,
+            "expected_rows": expected_rows,
+            "complete": None,
+            "next_row_index": None,
+            "open_review_items": None,
+            "change_report_present": None,
         }
+    payload = _mapping(staging.payload)
+    checkpoint = _mapping(payload.get("checkpoint"))
+    counts = _mapping(payload.get("counts"))
+    change_report = payload.get("change_report")
+    staged_rows = counts.get("staged")
+    return {
+        "evidence": "observed",
+        "detail": staging.detail,
+        "staged_rows": int(staged_rows) if staged_rows is not None else None,
+        "expected_rows": expected_rows,
+        "complete": (
+            bool(checkpoint.get("completed"))
+            if checkpoint.get("completed") is not None
+            else None
+        ),
+        "next_row_index": (
+            int(checkpoint["next_row_index"])
+            if checkpoint.get("next_row_index") is not None
+            else None
+        ),
+        "open_review_items": (
+            int(counts["open_review"])
+            if counts.get("open_review") is not None
+            else None
+        ),
+        "change_report_present": isinstance(change_report, Mapping),
+    }
 
-    report = find_expected_release(observation.releases)
 
-    if report is None:
+def _smoke_view(readiness: Evidence) -> dict[str, Any]:
+    if not readiness.available:
+        return {"evidence": UNAVAILABLE, "verified": None, "detail": readiness.detail}
+    payload = _mapping(readiness.payload)
+    gates = payload.get("gates")
+    if not isinstance(gates, Sequence):
         return {
-            "lifecycle_state": "ABSENT",
-            "lifecycle_states": list(LIFECYCLE_STATES),
-            "lifecycle_rationale": (
-                f"The release inventory was read ({len(observation.releases)} "
-                f"release(s) present) and does not contain {EXPECTED_FILENAME}."
-            ),
-            "expected_release": expected_release,
-            "active_vs_staged": {
-                "state": "no_release",
-                "active_release_id": observation.active_release_id,
-                "staged_release_id": None,
-            },
-            "superseded": False,
-            "superseded_by": None,
-            "unavailable_evidence": unavailable,
-            "evidence_complete": not unavailable,
+            "evidence": UNAVAILABLE,
+            "verified": None,
+            "detail": "readiness payload exposed no gate list",
         }
+    for gate in gates:
+        if isinstance(gate, Mapping) and gate.get("name") == "smoke_fixture":
+            return {
+                "evidence": "observed",
+                "verified": gate.get("status") == "passed",
+                "detail": str(gate.get("evidence") or ""),
+                "blocking_reason": gate.get("blocking_reason"),
+            }
+    return {
+        "evidence": UNAVAILABLE,
+        "verified": None,
+        "detail": "readiness payload exposed no smoke_fixture gate",
+    }
 
-    release_id = str(report.get("release_id") or "") or None
-    report_state = _normalize(report.get("state"))
 
-    # Activation is the top of the ladder and is owner-gated; we only report it
-    # when the canonical active pointer actually names this release.
-    activated = bool(
-        release_id
-        and observation.active_release_id
-        and observation.active_release_id == release_id
+def _activation_view(active_taxonomy: Evidence) -> dict[str, Any]:
+    """Interpret the canonical-taxonomy probe.
+
+    Activation is never inferred from intake or staging evidence. Without an
+    explicit canonical probe the answer is ``unavailable``.
+    """
+    if not active_taxonomy.available:
+        return {
+            "evidence": UNAVAILABLE,
+            "active_release_id": None,
+            "exact_release_is_active": None,
+            "detail": active_taxonomy.detail
+            or "no canonical taxonomy activation probe was supplied",
+        }
+    payload = _mapping(active_taxonomy.payload)
+    raw_active = payload.get("active_release_id")
+    active_release_id = str(raw_active) if raw_active else None
+    return {
+        "evidence": "observed",
+        "active_release_id": active_release_id,
+        "exact_release_is_active": active_release_id == EXPECTED_SHA256,
+        "detail": active_taxonomy.detail,
+    }
+
+
+def classify_release_lifecycle(
+    *,
+    releases: Evidence,
+    release_detail: Evidence | None = None,
+    readiness: Evidence | None = None,
+    staging: Evidence | None = None,
+    active_taxonomy: Evidence | None = None,
+) -> dict[str, Any]:
+    """Classify the exact Hassler release into exactly one lifecycle state."""
+    release_detail = release_detail or Evidence.unavailable("release detail not probed")
+    readiness = readiness or Evidence.unavailable("readiness not probed")
+    staging = staging or Evidence.unavailable("staging status not probed")
+    active_taxonomy = active_taxonomy or Evidence.unavailable(
+        "canonical taxonomy activation not probed"
     )
 
-    # Superseded: a different release holds the active pointer.
-    superseded_by = None
-    if (
-        not activated
-        and observation.active_release_id
-        and release_id
-        and observation.active_release_id != release_id
+    unavailable_evidence: list[dict[str, str]] = []
+    for name, evidence in (
+        ("release_list", releases),
+        ("release_detail", release_detail),
+        ("readiness", readiness),
+        ("staging", staging),
+        ("canonical_activation", active_taxonomy),
     ):
-        superseded_by = observation.active_release_id
+        if not evidence.available:
+            unavailable_evidence.append({"probe": name, "detail": evidence.detail})
 
-    staged_state = _staging_state(observation.staging)
+    entries = _release_entries(releases.payload) if releases.available else []
+    exact_entry: dict[str, Any] | None = None
+    for entry in entries:
+        snapshot = _mapping(entry.get("snapshot"))
+        if (
+            str(entry.get("release_id") or "") == EXPECTED_SHA256
+            or str(snapshot.get("sha256") or "") == EXPECTED_SHA256
+        ):
+            exact_entry = entry
+            break
+    if exact_entry is None and release_detail.available:
+        candidate = _mapping(release_detail.payload)
+        if candidate:
+            exact_entry = candidate
 
-    if activated:
+    identity = verify_source_identity(exact_entry)
+    durable_state = str(exact_entry.get("state") or "") if exact_entry else None
+    if durable_state and durable_state not in DURABLE_RELEASE_STATES:
+        durable_state_known = False
+    else:
+        durable_state_known = bool(durable_state)
+
+    snapshot = _mapping(exact_entry.get("snapshot")) if exact_entry else {}
+    raw_rows = snapshot.get("row_count")
+    expected_rows = int(raw_rows) if raw_rows is not None else None
+
+    staging_view = _staging_view(staging, expected_rows)
+    smoke_view = _smoke_view(readiness)
+    activation_view = _activation_view(active_taxonomy)
+    superseding = _superseding_releases(entries) if releases.available else []
+
+    present = exact_entry is not None
+    durably_uploaded: bool | None
+    if present:
+        durably_uploaded = True
+    elif releases.available:
+        durably_uploaded = False
+    else:
+        durably_uploaded = None
+
+    staged_rows = staging_view["staged_rows"]
+    staging_complete = staging_view["complete"]
+    fully_staged = bool(
+        staging_complete
+        and expected_rows is not None
+        and staged_rows is not None
+        and staged_rows == expected_rows
+    )
+
+    if activation_view["exact_release_is_active"] is True:
         state = "ACTIVATED"
         rationale = (
-            f"The canonical active taxonomy pointer names this release ({release_id})."
+            "The canonical taxonomy activation probe reports the exact release as "
+            "the active canonical release."
         )
-    elif superseded_by:
+    elif superseding:
         state = "SUPERSEDED"
         rationale = (
-            f"This release is present but the canonical active pointer names a "
-            f"different release ({superseded_by})."
+            f"{len(superseding)} durable release(s) acquired after "
+            f"{EXPECTED_ACQUIRED_AT} are present; the exact release is no longer "
+            "the current intake target."
         )
-    elif staged_state:
-        state = staged_state
+    elif fully_staged:
+        state = "STAGED_COMPLETE"
         rationale = (
-            "Staging projection evidence was read for this release."
-            if staged_state == "STAGED_COMPLETE"
-            else "A bounded staging projection has begun but is not complete."
+            "Durable staging reports a completed checkpoint with staged row count "
+            "equal to the inspected source row count."
         )
-    elif report.get("smoke_verified") is True:
+    elif present and staged_rows is not None and staged_rows > 0:
+        state = "STAGING_IN_PROGRESS"
+        rationale = (
+            "Durable staging has advanced past row zero but has not reported a "
+            "completed checkpoint matching the inspected row count."
+        )
+    elif present and smoke_view["verified"] is True:
         state = "SMOKE_VERIFIED"
-        rationale = "The release passed smoke verification; staging has not begun."
-    elif report_state in _INSPECTED_STATES or report.get("inspection"):
+        rationale = (
+            "The exact release is durably present and the smoke_fixture gate is "
+            "passed; no bounded staging batch has been observed."
+        )
+    elif present:
         state = "UPLOADED_INSPECTED"
         rationale = (
-            "The release is uploaded with a checksum record and inspection report; "
-            "no staging projection evidence was established."
+            "The exact release is durably present and inspected; the smoke gate is "
+            "not yet passed or not observable."
+        )
+    elif releases.available:
+        state = "ABSENT"
+        rationale = (
+            "The release list probe succeeded and contains no release matching the "
+            "exact SHA-256; the release has never been durably uploaded."
         )
     else:
-        # Present in the inventory but carrying no state we recognize. Saying
-        # UPLOADED_INSPECTED here would assert an inspection we did not see.
         state = "UNAVAILABLE"
         rationale = (
-            "The release is present in the inventory but carries no recognized "
-            "lifecycle state, so its position cannot be established."
-        )
-        unavailable = [
-            *unavailable,
-            f"release_state:unrecognized:{report.get('state')!r}",
-        ]
-
-    return {
-        "lifecycle_state": state,
-        "lifecycle_states": list(LIFECYCLE_STATES),
-        "lifecycle_rationale": rationale,
-        "expected_release": expected_release,
-        "release_id": release_id,
-        "active_vs_staged": {
-            "state": (
-                "active"
-                if activated
-                else "staged"
-                if staged_state
-                else "inspected_only"
-            ),
-            "active_release_id": observation.active_release_id,
-            "staged_release_id": release_id if staged_state else None,
-        },
-        "superseded": bool(superseded_by),
-        "superseded_by": superseded_by,
-        "unavailable_evidence": unavailable,
-        "evidence_complete": not unavailable,
-    }
-
-
-def build_downstream_relink_impact(observation: ReleaseObservation) -> dict[str, Any]:
-    """Describe what a relink would touch, counting only what was observed."""
-    counts = observation.relink_counts
-    domains: list[dict[str, Any]] = []
-    blockers: list[str] = []
-
-    for surface in RELINK_SURFACES:
-        if isinstance(counts, dict) and isinstance(counts.get(surface), int):
-            domains.append(
-                {
-                    "surface": surface,
-                    "count": counts[surface],
-                    "count_evidence": "observed",
-                }
-            )
-        else:
-            # Withheld, not zero. A zero here would read as "no downstream work".
-            domains.append(
-                {
-                    "surface": surface,
-                    "count": None,
-                    "count_evidence": "unavailable",
-                }
-            )
-
-    if observation.relink_error:
-        blockers.append(f"relink_counter_unavailable:{observation.relink_error}")
-    elif counts is None:
-        blockers.append(
-            "relink_counter_not_wired:no observed downstream relink counter is "
-            "connected to this surface yet"
+            "The release list probe did not succeed. Absence cannot be asserted "
+            "from an unavailable probe."
         )
 
-    return {
-        "domains": domains,
-        "counts_complete": all(d["count_evidence"] == "observed" for d in domains),
-        "unresolved_blockers": blockers,
-    }
-
-
-def build_hassler_release_status(observation: ReleaseObservation) -> dict[str, Any]:
-    """Compose the full payload the frontend consumer interprets."""
-    return {
-        "schema": SCHEMA,
-        # Stated as facts because the panel renders them as governance claims.
-        "read_only": True,
-        "automatic_promotion": False,
-        "storage_backend": observation.storage_backend,
-        "lifecycle": classify_lifecycle(observation),
-        "downstream_relink_impact": build_downstream_relink_impact(observation),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Evidence gathering (does IO; every source fails soft into "unavailable")
-# ---------------------------------------------------------------------------
-
-
-@dataclass
-class _Probe:
-    """Collects one evidence source, converting any fault into a reason string."""
-
-    errors: dict[str, str] = field(default_factory=dict)
-
-    def read(self, name: str, fn: Callable[[], Any]) -> Any:
-        try:
-            return fn()
-        except Exception as exc:  # noqa: BLE001 - any fault is "could not read"
-            self.errors[name] = f"{type(exc).__name__}"
-            return None
-
-
-def observe_release_state(
-    *,
-    list_releases: Callable[[], Any],
-    read_staging: Callable[[str], Any] | None = None,
-    read_active_release_id: Callable[[], Any] | None = None,
-    read_relink_counts: Callable[[], Any] | None = None,
-    storage_backend: str | None = None,
-) -> ReleaseObservation:
-    """Gather lifecycle evidence, degrading to "unavailable" rather than raising.
-
-    An observation surface that throws because a database is unreachable must
-    still produce a truthful report saying so. It must never take down the
-    Mission Control panel, and it must never guess.
-    """
-    probe = _Probe()
-
-    raw_releases = probe.read("inventory", list_releases)
-    releases: tuple[dict[str, Any], ...] | None
-    if raw_releases is None:
-        releases = None
-    elif isinstance(raw_releases, dict):
-        inner = raw_releases.get("releases")
-        releases = (
-            tuple(r for r in inner if isinstance(r, dict))
-            if isinstance(inner, list)
-            else ()
-        )
-    elif isinstance(raw_releases, list):
-        releases = tuple(r for r in raw_releases if isinstance(r, dict))
-    else:
-        releases = ()
-
-    active_id = None
-    if read_active_release_id is not None:
-        raw_active = probe.read("active", read_active_release_id)
-        active_id = (
-            str(raw_active) if isinstance(raw_active, str) and raw_active else None
-        )
-
-    staging = None
-    if read_staging is not None and releases:
-        found = find_expected_release(releases)
-        release_id = str(found.get("release_id") or "") if found else ""
-        if release_id:
-            raw_staging = probe.read("staging", lambda: read_staging(release_id))
-            staging = raw_staging if isinstance(raw_staging, dict) else None
-
-    relink_counts = None
-    if read_relink_counts is not None:
-        raw_counts = probe.read("relink", read_relink_counts)
-        if isinstance(raw_counts, dict):
-            relink_counts = {
-                str(k): v for k, v in raw_counts.items() if isinstance(v, int)
-            }
-
-    return ReleaseObservation(
-        releases=releases,
-        inventory_error=probe.errors.get("inventory"),
-        staging=staging,
-        staging_error=probe.errors.get("staging"),
-        active_release_id=active_id,
-        active_error=probe.errors.get("active"),
-        relink_counts=relink_counts,
-        relink_error=probe.errors.get("relink"),
-        storage_backend=storage_backend,
+    staged_release_id = (
+        EXPECTED_SHA256 if state in {"STAGING_IN_PROGRESS", "STAGED_COMPLETE"} else None
     )
+    active_release_id = activation_view["active_release_id"]
+    if activation_view["evidence"] == UNAVAILABLE:
+        active_vs_staged = UNAVAILABLE
+    elif active_release_id is None:
+        active_vs_staged = "no_active_canonical_release"
+    elif active_release_id == EXPECTED_SHA256:
+        active_vs_staged = "exact_release_is_active"
+    else:
+        active_vs_staged = "active_release_differs_from_exact_release"
+
+    return {
+        "contract": CONTRACT_VERSION,
+        "read_only": True,
+        "expected_release": {
+            "filename": EXPECTED_FILENAME,
+            "sha256": EXPECTED_SHA256,
+            "size_bytes": EXPECTED_SIZE_BYTES,
+            "version_label": EXPECTED_VERSION_LABEL,
+            "acquired_at": EXPECTED_ACQUIRED_AT,
+        },
+        "lifecycle_state": state,
+        "lifecycle_rationale": rationale,
+        "lifecycle_states": list(LIFECYCLE_STATES),
+        "identity": identity,
+        "durably_uploaded": durably_uploaded,
+        "durable_release_state": durable_state if durable_state_known else None,
+        "durable_release_state_recognized": durable_state_known
+        if durable_state
+        else None,
+        "smoke": smoke_view,
+        "staging": staging_view,
+        "superseded_by": superseding,
+        "superseded": bool(superseding),
+        "activation": activation_view,
+        "active_vs_staged": {
+            "state": active_vs_staged,
+            "active_release_id": active_release_id,
+            "staged_release_id": staged_release_id,
+        },
+        "unavailable_evidence": unavailable_evidence,
+        "evidence_complete": not unavailable_evidence,
+        # Governance invariants. These are constants, not derived observations.
+        "activation_authorized": False,
+        "activation_invoked": False,
+        "activation_implied_by_upload_or_staging": False,
+        "automatic_promotion": False,
+        "production_taxonomy_mutation_authorized": False,
+        "knowledge_graph_mutation_authorized": False,
+        "scientific_publication_authorized": False,
+    }
 
 
-def active_release_id_from_env() -> str | None:
-    """Read the canonical active taxonomy release pointer.
+def enumerate_downstream_relink_impact(
+    *,
+    change_report: Evidence,
+    domain_counts: Evidence | None = None,
+) -> dict[str, Any]:
+    """Enumerate the relink/backfill work each downstream surface would require.
 
-    Activation is owner-governed and recorded outside this surface. Reading the
-    pointer from configuration keeps this module incapable of setting it.
+    Counts are only ever reported when a read-only count probe supplied them.
+    An unsupplied count is ``unavailable``; it is never rendered as zero.
     """
-    value = os.getenv("CALYX_ACTIVE_TAXONOMY_RELEASE_ID", "").strip()
-    return value or None
+    domain_counts = domain_counts or Evidence.unavailable(
+        "no read-only downstream count probe was supplied"
+    )
+    counts_payload = _mapping(domain_counts.payload) if domain_counts.available else {}
+
+    if change_report.available:
+        report = _mapping(change_report.payload)
+        summary = _mapping(report.get("summary"))
+        drivers = {
+            "accepted_name_change_candidates": summary.get(
+                "accepted_name_change_candidates"
+            ),
+            "removed_taxa": summary.get("removed_taxa"),
+            "added_taxa": summary.get("added_taxa"),
+            "synonym_changes": summary.get("synonym_changes"),
+            "status_changes": summary.get("status_changes"),
+            "malformed_rows": summary.get("malformed_rows"),
+            "duplicate_identities": summary.get("duplicate_identities"),
+        }
+        drivers_evidence = "observed"
+    else:
+        drivers = dict.fromkeys(
+            (
+                "accepted_name_change_candidates",
+                "removed_taxa",
+                "added_taxa",
+                "synonym_changes",
+                "status_changes",
+                "malformed_rows",
+                "duplicate_identities",
+            ),
+            None,
+        )
+        drivers_evidence = UNAVAILABLE
+
+    domains: list[dict[str, Any]] = []
+    for surface, impact_domains in RELINK_DOMAINS:
+        if domain_counts.available:
+            observed = [counts_payload.get(name) for name in impact_domains]
+            if all(value is not None for value in observed):
+                affected: int | None = sum(int(value) for value in observed)
+                count_evidence = "observed"
+            else:
+                affected = None
+                count_evidence = UNAVAILABLE
+        else:
+            affected = None
+            count_evidence = UNAVAILABLE
+        domains.append(
+            {
+                "surface": surface,
+                "impact_domains": list(impact_domains),
+                "affected_records": affected,
+                "count_evidence": count_evidence,
+                "relink_required_when": [
+                    "accepted_name_change_candidates",
+                    "removed_taxa",
+                ],
+                "backfill_required_when": ["added_taxa"],
+                "review_required_when": [
+                    "synonym_changes",
+                    "status_changes",
+                    "duplicate_identities",
+                ],
+            }
+        )
+
+    unresolved_blockers: list[str] = []
+    for key in ("malformed_rows", "duplicate_identities"):
+        value = drivers.get(key)
+        if value is None:
+            unresolved_blockers.append(f"{key}_unavailable")
+        elif int(value) > 0:
+            unresolved_blockers.append(f"{key}_present")
+
+    return {
+        "contract": CONTRACT_VERSION,
+        "read_only": True,
+        "release_id": EXPECTED_SHA256,
+        "drivers": drivers,
+        "drivers_evidence": drivers_evidence,
+        "domains": domains,
+        "surfaces_enumerated": [surface for surface, _ in RELINK_DOMAINS],
+        "counts_complete": all(
+            item["count_evidence"] == "observed" for item in domains
+        ),
+        "unresolved_blockers": unresolved_blockers,
+        "relink_execution_authorized": False,
+        "backfill_execution_authorized": False,
+        "knowledge_graph_mutation_authorized": False,
+        "note": (
+            "Downstream relink and backfill are enumerated for owner review only. "
+            "No downstream surface is rewritten by intake, staging, or this audit."
+        ),
+    }
+
+
+def build_owner_exception_receipt(
+    *,
+    lifecycle: Mapping[str, Any],
+    blocking_reason: str,
+    next_executable_action: str,
+    responsible_party: str,
+    prepared_action: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Record that a bounded action was prepared and validated but not executed.
+
+    This is the honest alternative to assuming incorporation: the exact action,
+    its guards, why it stopped, and who can authorize it.
+    """
+    receipt: dict[str, Any] = {
+        "contract": CONTRACT_VERSION,
+        "receipt_type": "owner_exception",
+        "release_id": EXPECTED_SHA256,
+        "expected_filename": EXPECTED_FILENAME,
+        "lifecycle_state": lifecycle.get("lifecycle_state"),
+        "lifecycle_rationale": lifecycle.get("lifecycle_rationale"),
+        "unavailable_evidence": list(lifecycle.get("unavailable_evidence") or []),
+        "blocking_reason": blocking_reason,
+        "next_executable_action": next_executable_action,
+        "responsible_party": responsible_party,
+        "prepared_action": dict(prepared_action or {}),
+        "action_validated": bool(prepared_action),
+        "action_executed": False,
+        "upload_invoked": False,
+        "staging_invoked": False,
+        "production_mutation": False,
+        "incorporation_assumed": False,
+        "activation_authorized": False,
+        "activation_implied_by_upload_or_staging": False,
+        "knowledge_graph_mutation_authorized": False,
+        "scientific_publication_authorized": False,
+    }
+    receipt["artifact_hash"] = _artifact_hash(receipt)
+    return receipt
+
+
+def build_release_status_block(
+    *,
+    lifecycle: Mapping[str, Any],
+    downstream: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Compact Mission Control / portfolio status projection of the exact release."""
+    active_vs_staged = _mapping(lifecycle.get("active_vs_staged"))
+    staging = _mapping(lifecycle.get("staging"))
+    identity = _mapping(lifecycle.get("identity"))
+    block = {
+        "contract": CONTRACT_VERSION,
+        "component": "hassler_release_intake",
+        "release_identity": {
+            "filename": EXPECTED_FILENAME,
+            "sha256": EXPECTED_SHA256,
+            "version_label": EXPECTED_VERSION_LABEL,
+            "acquired_at": EXPECTED_ACQUIRED_AT,
+            "identity_verified": identity.get("verified"),
+        },
+        "lifecycle_state": lifecycle.get("lifecycle_state"),
+        "active_release_id": active_vs_staged.get("active_release_id"),
+        "staged_release_id": active_vs_staged.get("staged_release_id"),
+        "active_vs_staged": active_vs_staged.get("state"),
+        "staged_rows": staging.get("staged_rows"),
+        "expected_rows": staging.get("expected_rows"),
+        "resumable_from_row_index": staging.get("next_row_index"),
+        "open_review_items": staging.get("open_review_items"),
+        "change_report_present": staging.get("change_report_present"),
+        "evidence_complete": lifecycle.get("evidence_complete"),
+        "unavailable_evidence": [
+            item.get("probe") for item in (lifecycle.get("unavailable_evidence") or [])
+        ],
+        "downstream_relink_surfaces": (
+            list(downstream.get("surfaces_enumerated") or [])
+            if downstream is not None
+            else []
+        ),
+        "downstream_counts_complete": (
+            downstream.get("counts_complete") if downstream is not None else None
+        ),
+        "taxonomy_activation": "separately_protected_owner_gate",
+        "activation_authorized": False,
+        "activation_implied_by_upload_or_staging": False,
+        "read_only": True,
+    }
+    block["artifact_hash"] = _artifact_hash(block)
+    return block

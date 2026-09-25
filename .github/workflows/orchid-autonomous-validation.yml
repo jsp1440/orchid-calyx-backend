@@ -7,15 +7,74 @@ on:
 
 permissions:
   contents: read
+  issues: read
+  pull-requests: read
 
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The requires_postgres suites (tests/conftest.py) fail rather than skip
+    # when CI=true and PostgreSQL is unusable, so changed PostgreSQL-backed
+    # tests run here against a disposable database.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocvalidate
+          POSTGRES_PASSWORD: ocvalidate_test_only
+          POSTGRES_DB: oc_validate
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ocvalidate -d oc_validate"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+      - name: Swarm post-build write-set verification
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          # Only PRs actually dispatched by a versioned Swarm controller carry a
+          # durable lease receipt. Legacy/manual PRs remain valid.
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            pr="${{ github.event.pull_request.number }}"
+          else
+            pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+              --base oc-autonomous-integration --head "$HEAD_REF" \
+              --json number --jq '.[0].number // empty')
+          fi
+          if [[ -z "${pr:-}" ]]; then
+            echo "No integration PR for this head; write-set verification not applicable."
+            exit 0
+          fi
+
+          body=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json body --jq '.body // ""')
+          issue=$(sed -n 's/.*OC-AUTO-ISSUE: #\([0-9][0-9]*\).*/\1/p' <<<"$body" | sed -n '1p')
+          if [[ -z "$issue" ]]; then
+            echo "PR #$pr has no OC-AUTO-ISSUE marker; write-set verification not applicable."
+            exit 0
+          fi
+
+          lease=$(gh issue view "$issue" --repo "$GITHUB_REPOSITORY" --json comments \
+            --jq '[.comments[].body | select(test("^\\[OC-SWARM-V[0-9]+\\].*lease claimed:"; "i"))] | last // ""')
+          if [[ -z "$lease" ]]; then
+            echo "Issue #$issue has no versioned Swarm lease receipt; treating as legacy/manual work."
+            exit 0
+          fi
+
+          files=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json files --jq '[.files[].path]')
+          echo "Verifying PR #$pr actual changed files against issue #$issue resource lease."
+          python3 scripts/oc_swarm_write_set_verifier.py \
+            --lease-comment "$lease" \
+            --files-json "$files" \
+            --issue-number "$issue"
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -23,14 +82,20 @@ jobs:
       - name: Install runtime and validation dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest ruff
+          # requirements-scientific.txt includes requirements.txt and pins the
+          # reference-validated scipy that the CALYX-617 readiness tests require.
+          pip install -r requirements-scientific.txt
+          # Pinned so a local lint result means what CI will say (#1501).
+          pip install -r requirements-dev.txt
       - name: Diff hygiene
         run: git diff --check
       - name: Compile Python sources
         run: python -m compileall -q app runtime harvesters scripts
       - name: Validate changed Python files
         shell: bash
+        env:
+          DATABASE_URL: postgresql://ocvalidate:ocvalidate_test_only@localhost:5432/oc_validate
+          TEST_DATABASE_URL: postgresql://ocvalidate:ocvalidate_test_only@localhost:5432/oc_validate
         run: |
           set -euo pipefail
           base="${{ github.event.pull_request.base.sha || github.sha }}"
