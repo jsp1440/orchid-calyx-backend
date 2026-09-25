@@ -93,6 +93,17 @@ GRAPH_EDGES = {
             "from_is_active": True,
             "to_is_active": True,
         },
+        {
+            "edge_type": "supported_by_evidence",
+            "node_type": "evidence",
+            "canonical_key": "evidence:yong-gee:4242:notes",
+            "display_label": "Phalaenopsis amabilis — notes",
+            "evidence_class": "compiled_specialist_source",
+            "confidence_score": 1.0,
+            "confidence_label": "source_faithful",
+            "source_table": "federated.gary_yong_gee_workbook",
+            "source_pk": "yong-gee:4242:notes",
+        },
     ]
 }
 
@@ -172,6 +183,10 @@ class FakeCursor:
         elif "FROM oc_graph.kg_nodes n1" in compact:
             taxon_id = int(params[0].split(":", 1)[1])
             rows = list(GRAPH_EDGES.get(taxon_id, []))
+            if "e.edge_type <> 'supported_by_evidence'" in compact:
+                rows = [
+                    row for row in rows if row["edge_type"] != "supported_by_evidence"
+                ]
             if "n1.is_active IS TRUE" in compact:
                 rows = [
                     row
@@ -687,6 +702,8 @@ def test_yong_gee_evidence_populates_provisional_sections_with_receipts():
     assert graph_notes[0]["evidence_state"] == "provisional"
     assert dossier.knowledge_graph.items[0]["edge_type"] == "pollinated_by"
     assert "provisional" in dossier.knowledge_graph.summary
+    # Carrying un-reviewed compiled-specialist text makes the whole section provisional.
+    assert dossier.knowledge_graph.state == "provisional"
 
     # Sections without evidence keep the existing honest reason.
     for name in [
@@ -802,3 +819,15 @@ def test_federated_payload_still_satisfies_the_frontend_contract(monkeypatch):
         body["literature"]["receipts"][0]["attribution"] == "Gary Yong Gee (compiler)"
     )
     assert_no_sensitive_locality(body)
+
+
+def test_evidence_edges_are_not_listed_as_graph_relationships():
+    dossier = repository().get_dossier("101")
+    assert dossier.knowledge_graph.state == "available"  # no federated notes here
+    assert [item["edge_type"] for item in dossier.knowledge_graph.items] == [
+        "pollinated_by"
+    ]
+    assert all(
+        receipt.record_id != "yong-gee:4242:notes"
+        for receipt in dossier.knowledge_graph.receipts
+    )
