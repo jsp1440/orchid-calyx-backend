@@ -41,6 +41,7 @@ _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
 _MAX_TAXON_NAME_CHARS = 120
 _RANK_MARKERS = frozenset({"var.", "subsp.", "ssp.", "f.", "forma"})
 _HYBRID_MARKERS = frozenset({"×", "x"})
+_AUTHOR_CONNECTORS = frozenset({"ex", "et", "in"})
 _GENUS = re.compile(r"^×?[A-Z][a-z]+$")
 _EPITHET = re.compile(r"^[a-z]{2,}(?:-[a-z]+)?$")
 
@@ -62,11 +63,22 @@ def safe_taxon_name(taxon_name: str) -> str | None:
         return None
     name.append(tokens[index])
     index += 1
-    # Skip authorities up to an infraspecific rank; carry the rank only.
-    while index < len(tokens) and tokens[index] not in _RANK_MARKERS:
+    # Skip authorities; carry the first infraspecific rank that has an epithet.
+    # "f." straight after an abbreviated author ("Rchb. f.", "L. f.") is filius,
+    # part of the authority, not the forma rank.
+    while index + 1 < len(tokens):
+        token, following = tokens[index], tokens[index + 1]
+        previous = tokens[index - 1]
+        filius = token == "f." and previous.endswith(".") and previous[:1].isupper()
+        if (
+            token in _RANK_MARKERS
+            and not filius
+            and _EPITHET.match(following)
+            and following not in _AUTHOR_CONNECTORS
+        ):
+            name.extend([token, following])
+            break
         index += 1
-    if index + 1 < len(tokens) and _EPITHET.match(tokens[index + 1]):
-        name.extend([tokens[index], tokens[index + 1]])
     return " ".join(name)
 
 
