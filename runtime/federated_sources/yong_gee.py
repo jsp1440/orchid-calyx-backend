@@ -1,14 +1,12 @@
 """Federated ingestion for the Gary Yong Gee orchid database extract.
 
-The workbook is a *compiled specialist resource*, not a canonical taxonomy.
-This module preserves each source record for audit, resolves the record to an
-existing Orchid Continuum taxon node, and projects descriptive fields into the
-existing knowledge-graph evidence domain.
+The workbook is a compiled specialist resource, not a canonical taxonomy.
+Records are reconciled to the existing Orchid Continuum taxon spine and then
+projected as provenance-preserving evidence nodes.
 
 Nothing here mutates canonical taxonomy. Unmatched or ambiguous records remain
-review items. Graph publication uses the existing EVIDENCE_ADAPTER and
-therefore attaches evidence to the canonical taxon node without creating a
-parallel taxonomic spine.
+review items. Production publication must still pass through the existing
+controlled Knowledge Graph publication workflow.
 """
 
 from __future__ import annotations
@@ -23,13 +21,20 @@ from typing import Any, Iterable, Mapping
 
 from openpyxl import load_workbook
 
-from runtime.knowledge_graph.adapters import EVIDENCE_ADAPTER
 from runtime.knowledge_graph.canonical_taxonomy import canonical_name_of
 from runtime.knowledge_graph.models import Node
-from runtime.knowledge_graph.publisher import PublishResult, publish_domain
+from runtime.knowledge_graph.publisher import (
+    DomainAdapter,
+    EdgeSpec,
+    NodeSpec,
+    PublishResult,
+    canonical_key,
+    publish_domain,
+)
 
 SOURCE_NAME = "Gary Yong Gee Orchid Database"
 SOURCE_KIND = "specialist_compiled_resource"
+SOURCE_TABLE = "federated.gary_yong_gee_workbook"
 DEFAULT_SHEET = "Chosen"
 NULL_STRINGS = {"", "null", "none", "n/a", "na"}
 
@@ -69,8 +74,6 @@ def _none_if_null(value: Any) -> Any:
 
 
 def clean_html(value: Any) -> str | None:
-    """Convert database HTML fragments into readable plain text."""
-
     value = _none_if_null(value)
     if value is None:
         return None
@@ -78,12 +81,10 @@ def clean_html(value: Any) -> str | None:
     text = _BR_RE.sub("\n", text)
     text = _BLOCK_END_RE.sub("\n", text)
     text = _TAG_RE.sub("", text)
-    text = html.unescape(text)
-    text = text.replace("\xa0", " ")
+    text = html.unescape(text).replace("\xa0", " ")
     lines = [_WS_RE.sub(" ", line).strip() for line in text.splitlines()]
     text = "\n".join(line for line in lines if line)
-    text = _MULTI_NL_RE.sub("\n\n", text).strip()
-    return text or None
+    return _MULTI_NL_RE.sub("\n\n", text).strip() or None
 
 
 def stable_digest(value: Mapping[str, Any]) -> str:
@@ -92,8 +93,6 @@ def stable_digest(value: Mapping[str, Any]) -> str:
 
 
 def scientific_name_from_row(row: Mapping[str, Any]) -> str:
-    """Return the best authorless taxon name present in a source row."""
-
     informal = clean_html(row.get("websiteInformalName"))
     if informal:
         return canonical_name_of(informal)
@@ -112,7 +111,6 @@ def scientific_name_from_row(row: Mapping[str, Any]) -> str:
             if rank and epithet:
                 parts.extend([rank, epithet])
         return canonical_name_of(" ".join(parts))
-
     return ""
 
 
@@ -157,8 +155,6 @@ class ReconciliationReport:
 
 
 def read_workbook(path: str | Path, sheet_name: str = DEFAULT_SHEET) -> list[YongGeeRecord]:
-    """Read the selected workbook sheet without changing the source file."""
-
     workbook = load_workbook(filename=Path(path), read_only=True, data_only=True)
     if sheet_name not in workbook.sheetnames:
         raise ValueError(
@@ -283,8 +279,6 @@ def reconcile_records(
 def evidence_rows(
     reconciled: Iterable[tuple[YongGeeRecord, TaxonResolution]],
 ) -> list[dict[str, Any]]:
-    """Project matched workbook fields to the existing evidence adapter shape."""
-
     rows: list[dict[str, Any]] = []
     for record, resolution in reconciled:
         if resolution.state != "matched" or not resolution.taxon_pk:
@@ -326,14 +320,77 @@ def evidence_rows(
     return rows
 
 
+def _produce_yong_gee_evidence(
+    rows: Iterable[dict[str, Any]],
+) -> tuple[list[NodeSpec], list[EdgeSpec]]:
+    nodes: list[NodeSpec] = []
+    edges: list[EdgeSpec] = []
+    for row in rows:
+        source_pk = row["source_pk"]
+        taxon_pk = row["taxon_pk"]
+        payload = {
+            key: row.get(key)
+            for key in (
+                "claim_id",
+                "claim_label",
+                "evidence_type",
+                "citation",
+                "source_uri",
+                "excerpt",
+                "review_state",
+                "source_name",
+                "source_kind",
+                "source_record_id",
+                "source_digest",
+                "compiler",
+                "underlying_citation_status",
+            )
+        }
+        nodes.append(
+            NodeSpec(
+                node_type="evidence",
+                source_pk=source_pk,
+                display_label=row.get("title"),
+                source_table=SOURCE_TABLE,
+                evidence_class=row.get("evidence_class"),
+                confidence_score=row.get("confidence_score"),
+                confidence_label=row.get("confidence_label"),
+                payload=payload,
+            )
+        )
+        edges.append(
+            EdgeSpec(
+                edge_type="supported_by_evidence",
+                from_key=canonical_key("taxon", taxon_pk),
+                to_key=canonical_key("evidence", source_pk),
+                source_table=SOURCE_TABLE,
+                source_pk=source_pk,
+                evidence_class=row.get("evidence_class"),
+                confidence_score=row.get("confidence_score"),
+                confidence_label=row.get("confidence_label"),
+                rule_name="yong_gee_federated_ingestion",
+                payload={
+                    "source_name": SOURCE_NAME,
+                    "source_record_id": row.get("source_record_id"),
+                    "claim_label": row.get("claim_label"),
+                },
+            )
+        )
+    return nodes, edges
+
+
+YONG_GEE_EVIDENCE_ADAPTER = DomainAdapter(
+    domain="evidence",
+    source_table=SOURCE_TABLE,
+    produce=_produce_yong_gee_evidence,
+    required_identifiers=("source_pk", "taxon_pk"),
+)
+
+
 def publish_matched_evidence(repo: Any, rows: Iterable[dict[str, Any]]) -> PublishResult:
-    """Attach matched evidence through the existing KG publisher.
+    """Attach matched evidence through the existing KG publisher."""
 
-    The caller controls the repository. Production callers must use the existing
-    controlled publication workflow; this function intentionally adds no bypass.
-    """
-
-    return publish_domain(repo, EVIDENCE_ADAPTER, rows)
+    return publish_domain(repo, YONG_GEE_EVIDENCE_ADAPTER, rows)
 
 
 def build_dry_run(
