@@ -18,3 +18,10 @@
 # that morning.
 ruff==0.16.8
 pytest==9.1.1
+# Supplies @pytest.mark.asyncio. Without it pytest does not run those test
+# bodies at all -- it reports "async def functions are not natively supported"
+# and the assertions never execute, so eight Calyx literature/glossary/
+# evidence-matrix acceptance files were unverified while looking merely red.
+# Filed by work discovery as #1592 and proved by the deterministic lane in run
+# 36043971382: calyx-async-acceptance exit 1, 26 failed, 12 passed.
+pytest-asyncio==1.4.0

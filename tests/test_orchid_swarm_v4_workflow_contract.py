@@ -107,3 +107,79 @@ def test_v4_applies_only_authorized_blocked_release_plan():
     assert "oc_blocked_release_apply.py" in text
     assert "--apply" in text
     assert "blocked_reconciliation.release_plan" in text
+
+
+def test_v4_fills_its_own_queue_before_it_plans_a_wave():
+    """Intake must run before the snapshot, or work waits a whole pulse.
+
+    Discovery that files an issue after `Build repository snapshot` has read the
+    issue list files work the same wave cannot see, so every discovered task
+    idles until the next pulse for no reason.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    names = [step.get("name") for step in steps]
+    assert "Discover product work from repository evidence" in names
+    assert "File discovered work into the canonical queue" in names
+    assert names.index("File discovered work into the canonical queue") < names.index(
+        "Build repository snapshot"
+    )
+
+
+def test_v4_intake_is_bounded_and_cannot_stop_the_controller():
+    """A discoverer defect may not take the wave down with it.
+
+    Both intake steps are `continue-on-error`, so a bad pass costs this wave its
+    new work and nothing else: leases still reconcile, the queue still plans,
+    and the lanes still run.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    intake = [
+        step
+        for step in steps
+        if step.get("id") in {"discovery", "materialize"}
+    ]
+    assert len(intake) == 2
+    assert all(step.get("continue-on-error") is True for step in intake)
+    materialize = next(step for step in intake if step["id"] == "materialize")
+    assert "--max-new 3" in materialize["run"]
+    # Materialization must not run on a discovery pass that failed: the report
+    # file would be stale or absent and the plan would be read from neither.
+    assert "steps.discovery.outcome == 'success'" in materialize["if"]
+
+
+def test_v4_summary_reports_the_intake_outcome_not_its_conclusion():
+    """`continue-on-error` makes a failed step's conclusion `success`.
+
+    The first live intake pass failed and the summary said "work filed this
+    pass: 0" with nothing to indicate a failure had happened, which is an
+    absent result wearing a passing result's clothes.
+    """
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "steps.discovery.outcome }} materialize=${{ steps.materialize.outcome" in text
+
+
+def test_v4_provisions_the_environment_discovery_reads_before_reading_it():
+    """The undeclared-import source asks what is installed, not what it guesses.
+
+    Without the production requirements it reports nothing at all -- safe, but
+    not coverage, and the first continuation wave filed nothing for exactly
+    this reason.
+    """
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    names = [step.get("name") for step in steps]
+    assert names.index("Install production requirements for import discovery") < names.index(
+        "Discover product work from repository evidence"
+    )
+    install = next(
+        step for step in steps
+        if step.get("name") == "Install production requirements for import discovery"
+    )
+    # Provisioning is best-effort: a slow index must cost the wave its new
+    # import findings, never the wave.
+    assert install.get("continue-on-error") is True
