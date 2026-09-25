@@ -83,6 +83,10 @@ class SharedEvidenceCursor:
             self._rows = []
         elif "FROM public.orchid_images" in compact:
             self._rows = [dict(r) for r in IMAGES.get(int(params[0]), [])]
+        elif "FROM oc_graph.kg_nodes t JOIN oc_graph.kg_edges e" in compact:
+            # dossier only: compiled-specialist (federated) evidence nodes; this fixture has none
+            assert "e.edge_type = 'supported_by_evidence'" in compact
+            self._rows = []
         elif "FROM oc_graph.kg_nodes n1" in compact:
             self._rows = [dict(r) for r in GRAPH.get(int(params[0].split(":", 1)[1]), [])]
         elif "lower(genus) = lower(%s) AND id::text <> %s" in compact:
