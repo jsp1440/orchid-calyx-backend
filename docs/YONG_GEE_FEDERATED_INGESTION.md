@@ -8,7 +8,19 @@ The source is not treated as a competing taxonomy. World Plants (Hassler) remain
 
 ## Source workbook
 
-The September 2026 workbook supplied to Orchid Continuum contains three sheets (`Original extract`, `Chosen`, `Reduced`). The importer defaults to `Chosen`, which retains the stable source `id`, taxonomic presentation fields, botanical descriptions, habitat/distribution/phenology, similar-species notes, references, and website identifiers.
+The September 2026 workbook supplied to Orchid Continuum contains three sheets:
+
+- `Original extract`
+- `Chosen`
+- `Reduced`
+
+The usable structured sample is the `Chosen` sheet, with **23 records** selected to cover the database fields. The `Reduced` sheet also contains 23 rows.
+
+The `Original extract` sheet contains 11,098 physical rows, but inspection shows that it is not safely row-aligned to the structured column headers. It appears to contain raw/split export material rather than 11,098 clean database records. It must **not** be treated as 11,098 taxa or bulk-imported automatically.
+
+This matches the contributor's description of the attachment as an extract chosen to demonstrate the available fields.
+
+The importer therefore defaults to `Chosen`. A future full export from Gary/Roger should be ingested through the same pipeline once supplied in a clean structured form.
 
 The raw workbook is intentionally **not committed to this public repository**. The code expects an operator-provided local path.
 
@@ -19,7 +31,7 @@ The raw workbook is intentionally **not committed to this public repository**. T
 3. Derive the full taxon name from `websiteInformalName` (fallback: `websiteFormalName`).
 4. Resolve by exact canonical name/synonym against existing OC taxon nodes. No fuzzy name is auto-published.
 5. Leave ambiguous/unresolved names in the dry-run report.
-6. Project matched descriptive fields into the existing `EVIDENCE_ADAPTER` row contract.
+6. Project matched descriptive fields into a provenance-preserving evidence row contract.
 7. Attach evidence nodes to the canonical taxon node through `supported_by_evidence` edges using the existing Knowledge Graph publisher.
 
 ## Evidence fields
@@ -57,11 +69,11 @@ The report records totals for matched, ambiguous, and unresolved taxa plus the n
 
 ## Publication
 
-`publish_matched_evidence()` deliberately accepts a repository object and delegates to the existing `publish_domain(..., EVIDENCE_ADAPTER, ...)` path. Tests use the in-memory graph. Production publication must be invoked only by the existing authenticated/human-approved graph publication workflow; this importer adds no bypass.
+`publish_matched_evidence()` delegates to the existing idempotent Knowledge Graph publisher. Tests use the in-memory graph. Production publication must be invoked only by the existing authenticated/human-approved graph publication workflow; this importer adds no bypass.
 
 ## Attribution/provenance
 
-Every evidence row records:
+Every evidence node records:
 
 - `source_name = Gary Yong Gee Orchid Database`
 - `source_kind = specialist_compiled_resource`
@@ -75,3 +87,7 @@ Where the workbook includes `referencesp`, the record is marked as containing un
 ## Matrix relevance
 
 Once published, the Matrix does not query a special Gary database. It queries the same OC taxon node it already uses for images, taxonomy, Atlas, pollination, mycorrhizae, literature, conservation, and other evidence. Gary-derived morphology becomes one more provenance-preserving evidence stream on that taxon.
+
+## Full-database follow-up
+
+To import Gary's full database, request a clean structured export in XLSX, CSV, or database-dump form with one record per taxon and stable field names. The current 23-record sample is sufficient to validate the ingestion architecture but is not the complete source dataset.
