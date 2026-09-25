@@ -380,11 +380,10 @@ def test_a_label_without_genus_and_epithet_is_rejected(label):
 )
 def test_only_the_canonical_name_reaches_the_question(label, canonical):
     question = evidence_coverage_research_question("morphology", label)
+    # Byte-identical to the question for the bare canonical name: nothing else
+    # from the label can be in it.
+    assert question == evidence_coverage_research_question("morphology", canonical)
     assert f" for {canonical}? " in question
-    tail = label[len(canonical) :].strip() if label.startswith(canonical) else ""
-    for word in tail.replace("(", " ").replace(")", " ").split():
-        if word not in canonical.split():
-            assert f" {word} " not in f" {question} "
     candidate = evidence_gap_candidate(
         taxon_id="7", taxon_name=label, domain="morphology"
     )
