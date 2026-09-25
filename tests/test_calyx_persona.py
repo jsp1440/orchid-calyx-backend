@@ -52,4 +52,10 @@ def test_generative_system_prompt_includes_persona_and_governance():
     assert "internal machinery" in prompt
     assert "answer-first rule" in prompt
     assert "fcos voice" in prompt
-    assert "do not publish" in prompt
+    # The governance sentence is asserted whole so that no clause (evidence
+    # scope, causation, publication, KG mutation) can be dropped unnoticed.
+    assert (
+        "do not generalize beyond the evidence, convert correlation into causation, "
+        "publish candidate knowledge, or mutate the knowledge graph"
+        in prompt
+    )
