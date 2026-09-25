@@ -64,13 +64,18 @@ jobs:
             detail="claude step outcome=${OUTCOME}; ${detail}"
           fi
 
-          {
-            echo "### Orchid Claude Runtime Canary"
-            echo ""
-            echo "Verdict: **${verdict}**"
-            echo "Detail: ${detail}"
-            echo "Run: ${RUN_URL}"
-          } >> "$GITHUB_STEP_SUMMARY"
+          # The verdict line is the durable, testable record of what the canary
+          # decided; the step summary only exists on a hosted runner.
+          echo "canary verdict: ${verdict} (${detail})"
+          if [[ -n "${GITHUB_STEP_SUMMARY:-}" ]]; then
+            {
+              echo "### Orchid Claude Runtime Canary"
+              echo ""
+              echo "Verdict: **${verdict}**"
+              echo "Detail: ${detail}"
+              echo "Run: ${RUN_URL}"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
           case "$verdict" in
             pass)
@@ -81,6 +86,11 @@ jobs:
               exit 1
               ;;
             *)
+              # Never move the circuit on an inconclusive probe, in either direction.
+              # Routine pass/fail comments stay silenced; an INDETERMINATE probe is not
+              # routine - it is the signature of a workflow-validation skip, and a silent
+              # skip is exactly the failure mode this canary exists to expose.
+              gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID AUTOMATION CANARY — **INDETERMINATE**. ${detail}, so this run proves nothing about the Claude runtime and the circuit is left exactly as it was. Run: ${RUN_URL}"
               exit 1
               ;;
           esac
