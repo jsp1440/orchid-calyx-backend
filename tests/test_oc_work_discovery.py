@@ -226,6 +226,14 @@ class TestReportShape:
             "invented_work": False,
         }
 
+    def test_the_report_names_only_the_sources_it_evaluated(self, tmp_path: Path) -> None:
+        """Absence is evidence only for a source that ran; the materializer reads this."""
+        without = discovery.discover(tmp_path)["sources_evaluated"]
+        assert "failing-test" not in without
+        assert {"dependency-gap", "undeclared-import", "binding-gap"} <= set(without)
+        report = "tests/test_calyx_x.py::test_a FAILED\n=== 1 failed in 0.1s ===\n"
+        assert "failing-test" in discovery.discover(tmp_path, pytest_report=report)["sources_evaluated"]
+
     def test_this_repository_is_covered_by_the_lane_table(self) -> None:
         """A live check, not a fixture: the table must place this repo's own tests."""
         root = Path(__file__).resolve().parents[1]

@@ -649,6 +649,14 @@ def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
     return {
         "schema": REPORT_SCHEMA,
         "brain": brain_observations(root),
+        # Which sources this pass actually evaluated. The materializer treats a
+        # condition's absence as evidence only when its source ran: without a
+        # pytest report the failing-test source saw nothing, which is not the
+        # same as seeing no failures.
+        "sources_evaluated": sorted(
+            {"dependency-gap", "undeclared-import", "binding-gap"}
+            | ({"failing-test"} if pytest_report.strip() else set())
+        ),
         "candidate_count": len(deduplicated),
         "candidates": [candidate.to_record() for candidate in deduplicated],
         "suppressed_by_dependency_gap": sorted(suppressed),
