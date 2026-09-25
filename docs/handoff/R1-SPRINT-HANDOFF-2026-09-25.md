@@ -2,12 +2,12 @@
 
 Written from repository state, not recollection. Supersede it at the next session start; don't extend it.
 
-## Heads (updated 2026-09-25 ~16:10 UTC)
+## Heads (updated 2026-09-25 ~16:15 UTC)
 
 | Repo | main | Notes |
 |---|---|---|
-| orchid-calyx-backend | 64a8bfe | integration `oc-autonomous-integration` @ e9473b7 (main synced via #1624) |
-| orchid-continuum-frontend | 975dda0 | |
+| orchid-calyx-backend | 64a8bfe | integration `oc-autonomous-integration` @ b067f2e (main synced via #1624; #1621, #1623 merged) |
+| orchid-continuum-frontend | 6740659 | #767, #773 merged |
 | orchid-continuum-brain | b0e8b2c | agents may not merge here (Brain AGENTS.md:17) |
 
 ## Merged this sprint
@@ -21,12 +21,16 @@ Written from repository state, not recollection. Supersede it at the next sessio
   - #1606 + #1620: provider-free edit lane, with fixed receipts and PEP 503
   - #1608: production-import check
   - #1624: main sync
+  - #1621: evidence-gap reserve candidates, canonical taxon names only
+  - #1623: `GET /api/runner/knowledge-gaps/reserve-plan`
 - **Frontend main:**
   - #760, #761, #765
   - #764: graph discovery loop
   - #766: Matrix ranking basis and locality filter
   - #768: backend reserve-plan client
   - #772: dossier item evidence state and a single truncation marker
+  - #767: Research Station evidence chain
+  - #773: opt-in supervisor admission of the reserve plan (off until `OC_ADMIT_BACKEND_RESERVE=1`)
 
 ## Cross-repo path (read-only, provisional, human review required)
 
@@ -34,21 +38,17 @@ Written from repository state, not recollection. Supersede it at the next sessio
 2. → species dossier (#1618)
 3. → frontend excerpts (#765, #772)
 4. → KG evidence-coverage gaps (#1619)
-5. → reserve candidates using canonical taxon names only (#1621, open)
-6. → `GET /api/runner/knowledge-gaps/reserve-plan` (#1623, open)
+5. → reserve candidates using canonical taxon names only (#1621, integration)
+6. → `GET /api/runner/knowledge-gaps/reserve-plan` (#1623, integration)
 7. → frontend client (#768, merged)
-8. → opt-in supervisor admission, `OC_ADMIT_BACKEND_RESERVE=1` (#773, open)
+8. → opt-in supervisor admission, `OC_ADMIT_BACKEND_RESERVE=1` (#773, merged, off by default)
 
 ## Open PRs
 
 | PR | Repo | State |
 |---|---|---|
-| #1621 → integration | backend | Five checker rounds. The last findings were edge cases, all fixed with tests. Head 2280255 carries the integration sync; merge on green CI. |
-| #1623 → integration | backend | Q PASS; head 546bf59 carries #1621. Merge after #1621. |
-| #767 → main | frontend | Five checker rounds; the last findings were fixed (f6d8bfd). Merge on green CI. |
-| #773 → main | frontend | T PASS; build and test green. `mergeable_state` is blocked because the autonomy dispatcher's lane checks run on every PR event. A lane's budget-preflight drift refusal also recurs on main's own runs. Do not re-run: re-running dispatches paid lanes. |
 | #1610 + #1622 | backend | **owner-gated**: edit-lane workflow write permissions |
-| #1605, #1607, #1199 | backend | **owner** decisions (Brain ref, lane binding, integration → main) |
+| #1605, #1607, #1199 | backend | **owner** decisions: Brain ref, lane binding, integration → main. #1199 now also carries #1606/#1608/#1621/#1623, since the backend reserve-plan endpoint lives only on integration until it is promoted. |
 
 ## Owner gates (nothing else is blocked on the owner)
 
@@ -71,11 +71,11 @@ Written from repository state, not recollection. Supersede it at the next sessio
 
 ## Next 5 tasks, in priority order
 
-1. Merge #1621 → #1623 into integration, and #767 into frontend main, once CI is green.
-2. #773: decide whether the dispatcher lane checks should be required on PRs. A lane refusal blocks an unrelated PR, and this is an owner decision. Then merge.
-3. Owner gates: activate `OC_ADMIT_BACKEND_RESERVE`; set `DATABASE_URL` on the Calyx Render service; merge the Brain PRs #159 → #161 → #163 and #162; decide #1605.
-4. Run the locality-sensitivity review so that Yong Gee taxon_notes can be shown on the dossier.
-5. Surface `/api/research/traits` in the frontend trait explorer; the #767 client is in place.
+1. Owner: promote integration → main (#1199), so the Render backend serves `/api/runner/knowledge-gaps/reserve-plan`; then set `DATABASE_URL` on the Calyx Render service.
+2. Owner: set `OC_ADMIT_BACKEND_RESERVE: '1'` in the frontend supervisor step so KG evidence gaps become oc-prepared research issues. It is capped at 3 per pass and fails closed.
+3. Owner: merge the Brain PRs #159 → #161 → #163 and #162; decide #1605, reading the Brain at main.
+4. Run the locality-sensitivity review so Yong Gee taxon_notes can be shown on the dossier.
+5. Surface `/api/research/traits` (backend main) in the frontend trait explorer.
 
 ## First command for the next session
 
