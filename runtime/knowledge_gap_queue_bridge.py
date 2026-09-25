@@ -42,7 +42,43 @@ _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
 _MAX_TAXON_NAME_CHARS = 120
 _RANK_MARKERS = frozenset({"var.", "subsp.", "ssp.", "f.", "forma"})
 _HYBRID_MARKERS = frozenset({"×", "x"})
-_AUTHOR_CONNECTORS = frozenset({"ex", "et", "in"})
+# Lowercase words that occur in authority and nomenclatural-status text and are
+# never infraspecific epithets.
+_AUTHOR_CONNECTORS = frozenset(
+    {
+        "ex",
+        "et",
+        "in",
+        "non",
+        "nec",
+        "sensu",
+        "apud",
+        "emend",
+        "pro",
+        "parte",
+        "auct",
+        "hort",
+        "nom",
+        "illeg",
+        "inval",
+        "nud",
+        "cons",
+        "and",
+        "von",
+        "van",
+        "de",
+        "der",
+        "den",
+        "du",
+        "la",
+        "le",
+        "da",
+        "al",
+        "ms",
+        "sp",
+        "spp",
+    }
+)
 _GENUS = re.compile(r"^×?[A-Z][a-z]+$")
 _EPITHET = re.compile(r"^[a-z]{2,}(?:-[a-z]+)?$")
 

@@ -373,6 +373,8 @@ def test_a_label_without_genus_and_epithet_is_rejected(label):
         ),
         ("Orchis italica L. f.", "Orchis italica"),
         ("Laelia anceps Lindl. f. alba", "Laelia anceps f. alba"),
+        ("Oncidium flexuosum Rchb. f. non Lindl.", "Oncidium flexuosum"),
+        ("Orchis mascula L. f. sensu auct. non L.", "Orchis mascula"),
         ("Paphiopedilum × hybridum var. album", "Paphiopedilum × hybridum var. album"),
         # Everything after the canonical name is dropped, never interpreted.
         (
