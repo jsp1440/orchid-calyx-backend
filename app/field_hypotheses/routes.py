@@ -9,9 +9,10 @@ Two routers:
 - ``/api/field-hypotheses/...`` addresses individual hypotheses: read, record
   evidence, and (authenticated) human review.
 
-Generation and evidence recording are open to the observer flow; the review
-transition, which is the only path that changes a hypothesis' lifecycle by
-human decision, requires an owner session or API key.
+Generation and evidence recording are open to the observer flow, behind the
+same per-client public-write brake as community observations (both write to
+the store); the review transition, which is the only path that changes a
+hypothesis' lifecycle by human decision, requires an owner session or API key.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from app.rate_limit import public_write_rate_limit
 from app.security import verify_owner_or_api_key
 
 from .schemas import (
@@ -55,6 +57,7 @@ def get_service() -> FieldHypothesisService:
     "/{observation_id}/hypotheses",
     response_model=HypothesisSetOut,
     status_code=200,
+    dependencies=[Depends(public_write_rate_limit("field-hypotheses"))],
 )
 def generate_hypotheses(
     observation_id: str,
@@ -105,6 +108,7 @@ def get_hypothesis(
     "/{hypothesis_id}/evidence",
     response_model=HypothesisOut,
     status_code=200,
+    dependencies=[Depends(public_write_rate_limit("field-hypotheses"))],
 )
 def record_evidence(
     hypothesis_id: str,

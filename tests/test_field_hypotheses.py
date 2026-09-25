@@ -23,6 +23,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app import rate_limit
 from app.calyx_flywheel.locality import assert_no_sensitive_locality
 from app.field_hypotheses import library, service
 from app.field_hypotheses.routes import hypothesis_router, observation_router
@@ -43,6 +44,15 @@ def memory_store():
     service.configure_store(store)
     yield store
     service.configure_store(None)
+
+
+@pytest.fixture(autouse=True)
+def fresh_write_brake(monkeypatch):
+    """The public-write brake is process-wide; each test starts with a full allowance."""
+    monkeypatch.delenv("PUBLIC_WRITE_RATE_LIMIT", raising=False)
+    rate_limit.LIMITER.reset()
+    yield
+    rate_limit.LIMITER.reset()
 
 
 @pytest.fixture()
@@ -407,3 +417,33 @@ def test_main_app_registers_field_hypothesis_routes():
     assert "/api/field-hypotheses/{hypothesis_id}/evidence" in paths
     assert "/api/field-hypotheses/{hypothesis_id}/review" in paths
     assert "/api/field-hypotheses/library" in paths
+
+
+def test_open_writes_are_braked_per_client_and_reads_and_review_are_not(client, monkeypatch):
+    monkeypatch.setenv("PUBLIC_WRITE_RATE_LIMIT", "2")
+    first = _generate(client, SEXUAL_DECEPTION_CUES)
+    hypothesis_id = first["hypotheses"][0]["hypothesis_id"]
+    url = f"/api/field-hypotheses/{hypothesis_id}/evidence"
+    assert client.post(url, json=_evidence("UNKNOWN", "one")).status_code == 200
+    # Generation and evidence share one "field-hypotheses" allowance per client.
+    refused = client.post(url, json=_evidence("UNKNOWN", "two"))
+    assert refused.status_code == 429
+    assert refused.headers["Retry-After"].isdigit()
+    assert client.post(
+        f"/api/field-observations/{OBS}/hypotheses", json=NO_VISITOR
+    ).status_code == 429
+    # Another client address has its own allowance; reads are never braked.
+    other = client.post(
+        url, json=_evidence("UNKNOWN", "two"), headers={"X-Forwarded-For": "203.0.113.7"}
+    )
+    assert other.status_code == 200
+    assert client.get(f"/api/field-hypotheses/{hypothesis_id}").status_code == 200
+    assert client.get(f"/api/field-observations/{OBS}/hypotheses").status_code == 200
+    # The authenticated review route is not a public write and is not braked.
+    review = next(
+        route for route in hypothesis_router.routes if route.path.endswith("/review")
+    )
+    assert not any(
+        getattr(dep.dependency, "__name__", "").startswith("public_write_rate_limit_")
+        for dep in review.dependencies
+    )
