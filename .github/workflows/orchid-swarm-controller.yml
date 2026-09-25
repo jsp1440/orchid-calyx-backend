@@ -430,6 +430,7 @@ jobs:
       contents: write        # the edit lane pushes oc/discovered-<fingerprint> branches
       issues: write
       pull-requests: write   # the edit lane opens a draft pull request
+      actions: write         # dispatches exact-head validation for that pull request
     strategy:
       fail-fast: false
       max-parallel: 12
@@ -649,6 +650,42 @@ jobs:
           esac
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      # A pull request opened with GITHUB_TOKEN starts no pull_request workflow,
+      # so the edit lane's PR would carry no validation checks at all. Dispatch
+      # the same validation the paid lane dispatches, on the lane's branch, and
+      # only when that branch still points at the commit the lane recorded.
+      - name: Dispatch exact-head validation for the edit-lane pull request
+        if: steps.lease.outputs.execute == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          edit="$RUNNER_TEMP/provider-free-edit.json"
+          [[ -s "$edit" ]] || exit 0
+          outcome=$(jq -r '.outcome // empty' "$edit")
+          # already_open pushed nothing; its PR was validated when it was opened.
+          [[ "$outcome" == "pr_opened" ]] || exit 0
+          branch=$(jq -r '.branch // empty' "$edit")
+          commit=$(jq -r '.commit_sha // empty' "$edit")
+          pr=$(jq -r '.pr_number // empty' "$edit")
+          if [[ ! "$branch" =~ ^oc/discovered-[0-9a-f]{16}$ || ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Edit receipt names no fenced branch and exact commit; not dispatching validation." >&2
+            exit 1
+          fi
+          remote=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          if [[ "$remote" != "$commit" ]]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Edit-lane branch \`$branch\` is at \`${remote:-missing}\`, not the recorded \`$commit\`; validation was not dispatched for a head the lane did not produce." >/dev/null
+            exit 1
+          fi
+          if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" >/dev/null; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Dispatched orchid-autonomous-validation for PR #${pr} at \`$commit\` (branch \`$branch\`). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          else
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Validation dispatch for PR #${pr} at \`$commit\` failed; the PR has no validation run and must not be integrated until one passes." >/dev/null
+            exit 1
+          fi
 
       - name: Retain deterministic execution evidence
         if: always() && steps.lease.outputs.execute == 'true'
