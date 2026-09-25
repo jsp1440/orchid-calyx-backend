@@ -81,12 +81,13 @@ FEDERATED_SECTION_TYPES: dict[str, tuple[str, ...]] = {
     "morphology": ("morphology", "fruit_capsule", "scent", "diagnostic_comparison"),
     "phenology": ("phenology",),
     "literature": ("bibliography",),
-    # Free-text notes have no obvious dossier section; they are listed with the
-    # knowledge-graph relations that carry them, still marked provisional.
-    "knowledge_graph": ("taxon_notes", "compiler_note"),
 }
-# Locality-sensitive: never selected, never emitted.
-WITHHELD_EVIDENCE_TYPES = ("distribution", "habitat")
+# Locality-sensitive: never selected, never emitted. Free-text notes are held
+# back with them: prose can name a collecting site, and the coordinate screen
+# only catches numeric coordinates, so they wait for locality-sensitivity review.
+WITHHELD_EVIDENCE_TYPES = ("distribution", "habitat", "taxon_notes", "compiler_note")
+# The evidence query spells out one placeholder per withheld type.
+assert len(WITHHELD_EVIDENCE_TYPES) == 4
 DISTRIBUTION_REASON = (
     "Distribution is not served through the dossier: occurrence and locality "
     "records are protected and are never emitted by this path. "
@@ -428,9 +429,9 @@ class PostgresSpeciesRepository:
     ) -> dict[str, DossierSection]:
         """Provisional sections from compiled-specialist evidence nodes (read-only).
 
-        Distribution/habitat evidence is excluded in SQL and again here, and any
-        excerpt with coordinate-looking text is withheld, so locality prose never
-        leaves the database through this path.
+        Withheld types (distribution, habitat, free-text notes) are excluded in SQL
+        and again here, and any excerpt with coordinate-looking text is withheld,
+        so locality prose never leaves the database through this path.
         """
         if graph.unavailable_reason == GRAPH_NOT_PROVISIONED:
             return {}
@@ -444,7 +445,7 @@ class PostgresSpeciesRepository:
               AND e.edge_type = 'supported_by_evidence'
               AND ev.node_type = 'evidence'
               AND ev.source_table = %s
-              AND COALESCE(ev.payload_json->>'evidence_type', '') NOT IN (%s, %s)
+              AND COALESCE(ev.payload_json->>'evidence_type', '') NOT IN (%s, %s, %s, %s)
               AND t.is_active IS TRUE
               AND e.is_active IS TRUE
               AND ev.is_active IS TRUE
