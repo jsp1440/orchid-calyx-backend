@@ -779,7 +779,11 @@ def test_coordinate_looking_excerpts_are_withheld_from_any_section():
     dossier = repository(FakeCursor(evidence={101: rows})).get_dossier("101")
     assert dossier.phenology.state == "unavailable"
     assert dossier.morphology.state == "unavailable"
-    assert "116" not in str(dossier.model_dump(mode="json"))
+    # Check the coordinate fragments themselves: a bare "116" also matches the
+    # generated_at timestamp whenever its microseconds contain those digits.
+    dumped = str(dossier.model_dump(mode="json"))
+    for fragment in ("5.9804", "116.0735", "6°05'N", "116°33'E", "Collected at", "Noted near"):
+        assert fragment not in dumped
 
 
 def test_federated_payload_still_satisfies_the_frontend_contract(monkeypatch):
