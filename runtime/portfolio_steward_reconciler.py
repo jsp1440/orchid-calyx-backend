@@ -47,6 +47,10 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskLeaf,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
+from app.calyx_orchestrator.durable_reservoir_models import (
+    DurableReservoirRun,
+    DurableReservoirTask,
+)
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.database import Base
 from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
@@ -273,13 +277,18 @@ def reconcile(
         connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
         poolclass=StaticPool if "sqlite" in db_url else None,
     )
-    # SQLite does not support schema-qualified table names; only create tables
-    # that belong to the default schema (schema is None) when running SQLite.
-    if "sqlite" in db_url:
-        sqlite_tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
-        Base.metadata.create_all(engine, tables=sqlite_tables)
-    else:
-        Base.metadata.create_all(engine)
+    # Provision only the two reservoir tables this pass writes. ``Base.metadata``
+    # is the application-wide registry: once ``app.main`` (or any Research
+    # Station / Reasoning Ledger model module) has been imported in the same
+    # process it also carries schema-qualified tables (``research_station.*``,
+    # ``reasoning_ledger.*``). SQLite has no schemas, so an unrestricted
+    # ``create_all`` fails with "unknown database research_station" depending on
+    # import order, and a production PostgreSQL URL must never get unrelated ORM
+    # tables created as a side effect of a steward pass.
+    Base.metadata.create_all(
+        engine,
+        tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__],
+    )
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
 
