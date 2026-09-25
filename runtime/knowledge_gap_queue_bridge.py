@@ -32,48 +32,42 @@ from scripts.oc_backlog_refiller import plan_refill
 
 _SCHEMA = "oc.knowledge-gap-reserve-source.v1"
 _SAFE_SOURCE_ID = re.compile(r"^[a-z0-9_.]{1,80}$")
-# A KG display label enters a question only if it has the structure of a
-# botanical name: a capitalised genus, optional lowercase epithet(s) (an
-# infraspecific epithet only after a rank marker), then author tokens only:
-# capitalised words or abbreviations, parenthesised authorities, "ex", "&",
-# "et", "in". No commas, no lowercase prose, no sentence text.
+# Only the canonical name of a KG taxon label ever enters a research question:
+# genus, species epithet and at most one infraspecific rank with its epithet.
+# Authorities and anything after them are dropped, not interpreted, so no
+# free text in a label can reach the question (title-case author words are
+# lexically indistinguishable from prose, so they are never carried). A label
+# that does not begin with a genus and a species epithet is rejected.
 _MAX_TAXON_NAME_CHARS = 120
-_MAX_TAXON_NAME_WORDS = 10
-_RANK_MARKERS = frozenset(
-    {"var.", "subsp.", "ssp.", "f.", "forma", "nothosubsp.", "nothovar."}
-)
-_AUTHOR_CONNECTORS = frozenset({"ex", "&", "et", "in", "f."})
-_GENUS = re.compile(r"^×?[A-Z][a-z]*(?:-[a-z]+)?\.?$")
-_EPITHET = re.compile(r"^[a-z]+(?:-[a-z]+)?$")
-# One author token: "L.", "Blume", "Rchb.f.", "(F.M.Bailey)", "O'Brien".
-_AUTHOR = re.compile(
-    r"^\(?[A-Z][A-Za-z'\u00c0-\u024f-]*\.?(?:[A-Za-z][A-Za-z'\u00c0-\u024f-]*\.?)*\)?$"
-)
+_RANK_MARKERS = frozenset({"var.", "subsp.", "ssp.", "f.", "forma"})
+_HYBRID_MARKERS = frozenset({"×", "x"})
+_GENUS = re.compile(r"^×?[A-Z][a-z]+$")
+_EPITHET = re.compile(r"^[a-z]{2,}(?:-[a-z]+)?$")
 
 
 def safe_taxon_name(taxon_name: str) -> str | None:
-    """The whitespace-normalised name, or ``None`` if it is not name-shaped."""
-    name = " ".join(str(taxon_name or "").split())
-    if not name or len(name) > _MAX_TAXON_NAME_CHARS:
+    """The canonical name (genus epithet [rank epithet]) of a label, or ``None``."""
+    label = " ".join(str(taxon_name or "").split())
+    if not label or len(label) > _MAX_TAXON_NAME_CHARS:
         return None
-    tokens = name.split(" ")
-    if len(tokens) > _MAX_TAXON_NAME_WORDS or not _GENUS.match(tokens[0]):
+    tokens = label.split(" ")
+    if not _GENUS.match(tokens[0]):
         return None
+    name = [tokens[0]]
     index = 1
-    if index < len(tokens) and tokens[index] in {"×", "x"}:
-        index += 1  # nothospecies marker before the epithet
-    if index < len(tokens) and _EPITHET.match(tokens[index]):
+    if index < len(tokens) and tokens[index] in _HYBRID_MARKERS:
+        name.append("×")
         index += 1
-    while index < len(tokens):
-        token = tokens[index]
-        following = tokens[index + 1] if index + 1 < len(tokens) else ""
-        if token in _RANK_MARKERS and _EPITHET.match(following):
-            index += 2  # an infraspecific rank and its epithet
-        elif token in _AUTHOR_CONNECTORS or _AUTHOR.match(token):
-            index += 1
-        else:
-            return None
-    return name
+    if index >= len(tokens) or not _EPITHET.match(tokens[index]):
+        return None
+    name.append(tokens[index])
+    index += 1
+    # Skip authorities up to an infraspecific rank; carry the rank only.
+    while index < len(tokens) and tokens[index] not in _RANK_MARKERS:
+        index += 1
+    if index + 1 < len(tokens) and _EPITHET.match(tokens[index + 1]):
+        name.extend([tokens[index], tokens[index + 1]])
+    return " ".join(name)
 
 
 #: Closed vocabulary of evidence-coverage research domains. Locality-gated
@@ -215,8 +209,10 @@ def evidence_gap_candidate(
         raise ValueError("CANONICAL_TAXON_ID_REQUIRED")
     if not normalized_taxon_name:
         raise ValueError("TAXON_NAME_REQUIRED")
-    if safe_taxon_name(normalized_taxon_name) is None:
+    canonical_name = safe_taxon_name(normalized_taxon_name)
+    if canonical_name is None:
         raise ValueError("TAXON_NAME_UNSAFE")
+    normalized_taxon_name = canonical_name
     if normalized_domain not in EVIDENCE_GAP_DOMAIN_LABELS:
         raise ValueError("UNSUPPORTED_EVIDENCE_DOMAIN")
     question = evidence_coverage_research_question(
