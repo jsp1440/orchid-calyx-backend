@@ -120,6 +120,11 @@ class Edit:
 # -- Derivation ---------------------------------------------------------------
 
 
+#: The distribution name at the start of a requirements line (comments and
+#: options such as ``-r`` never match).
+_REQUIREMENT_NAME = re.compile(r"^\s*([A-Za-z0-9][A-Za-z0-9._-]*)")
+
+
 def canonical_distribution(name: str) -> str:
     """PEP 503 normalised name: ``Foo.Bar_baz`` and ``foo-bar-baz`` are one.
 
@@ -186,14 +191,18 @@ def derive_edit(
 def apply_edit(edit: Edit, root: Path) -> bool:
     """Append the pinned line to the requirements file. True when it wrote.
 
-    Idempotent: a file that already carries the exact line is left alone. The
-    comment names the fingerprint so a reader can find the issue that filed
-    the condition without a search.
+    Idempotent: a file that already declares the distribution, under any PEP
+    503 spelling and any specifier, is left alone. The comment names the
+    fingerprint so a reader can find the issue that filed the condition
+    without a search.
     """
     target = root / edit.path
     existing = target.read_text(encoding="utf-8") if target.exists() else ""
-    if any(line.strip() == edit.line for line in existing.splitlines()):
-        return False
+    wanted = canonical_distribution(edit.distribution)
+    for line in existing.splitlines():
+        declared = _REQUIREMENT_NAME.match(line)
+        if declared and canonical_distribution(declared.group(1)) == wanted:
+            return False
     block = (
         f"# Declared by the provider-free edit lane from discovery fingerprint "
         f"{edit.fingerprint}: the installed version, pinned.\n{edit.line}\n"
@@ -711,22 +720,29 @@ def run_lane(
         before = run_validation(
             command_id, cwd=str(worktree), runner=runner, timeout=timeout
         )
-        if edit is None:
-            # Provision, then derive again: the version written is the one
-            # that actually arrived, read from the environment.
+        provisioned = edit is None
+        if provisioned:
+            # Provision first: the version written is the one that actually
+            # arrived, read from the environment.
             provision(candidate["remedy"]["distribution"], worktree)  # type: ignore[misc]
-            try:
-                edit = derive_edit(candidate, worktree, version_of=version_of)
-            except LaneRefusal as refusal:
-                return _receipt(
-                    outcome="refused",
-                    reason=refusal.reason,
-                    fingerprint=fingerprint,
-                    issue_number=number,
-                    validation_commands=commands,
-                    edit={"detail": refusal.detail, "provisioned": True},
-                    before=before,
-                )
+        # Derive again against the tree the edit lands in. The derivation
+        # above read the checkout, which is where discovery found the
+        # condition; ``base_sha`` may be another revision, and a requirements
+        # file that already declares the distribution there (under any pin)
+        # must refuse rather than receive a second line.
+        try:
+            edit = derive_edit(candidate, worktree, version_of=version_of)
+        except LaneRefusal as refusal:
+            return _receipt(
+                outcome="refused",
+                reason=refusal.reason,
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+                edit={"detail": refusal.detail, "provisioned": provisioned},
+                before=before,
+            )
+        if provisioned:
             edit = replace(edit, provisioned=True)
         if not apply_edit(edit, worktree):
             return _receipt(
