@@ -154,6 +154,23 @@ def _state(row: dict[str, Any]) -> str:
     return "AVAILABLE"
 
 
+def _unique_trait_id(candidate: str, unit: str | None, seen: set[str]) -> str:
+    """A trait identity no earlier distribution in this response already uses.
+
+    A collision is disambiguated by unit first, then by ordinal, so identity is
+    deterministic for a given row set and never silently merges two groups.
+    """
+    trait_id = candidate[:512]
+    if trait_id in seen and unit:
+        trait_id = f"{candidate} [{unit}]"[:512]
+    ordinal = 2
+    while trait_id in seen:
+        trait_id = f"{candidate} #{ordinal}"[:512]
+        ordinal += 1
+    seen.add(trait_id)
+    return trait_id
+
+
 def _receipt(row: dict[str, Any], source_table: str) -> dict[str, Any]:
     return {
         "source_id": _text(_first(row, SOURCE_ID_FIELDS)) or source_table,
@@ -179,11 +196,19 @@ def aggregate_trait_rows(
         grouped[(label, _text(_first(row, UNIT_FIELDS)))].append(row)
 
     distributions: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
     for (label, unit), members in sorted(
         grouped.items(), key=lambda item: item[0][0].lower()
     ):
         if len(distributions) >= MAX_DISTRIBUTIONS:
             break
+        # One identity per distribution, derived the same way in every branch:
+        # the frontend rejects a response with duplicate trait_id
+        # (researchTraits.ts:59-62), and two (label, unit) groups that share a
+        # label must not collide whether or not either is withheld.
+        trait_id = _unique_trait_id(
+            _text(_first(members[0], TRAIT_ID_FIELDS)) or label, unit, seen_ids
+        )
         states = {_state(row) for row in members}
         evidence_state = next(iter(states)) if len(states) == 1 else "CONTRADICTORY"
         evidence_state = next(
@@ -192,7 +217,7 @@ def aggregate_trait_rows(
         if evidence_state in NON_VALUE_STATES:
             distributions.append(
                 {
-                    "trait_id": label,
+                    "trait_id": trait_id,
                     "label": label,
                     "unit": unit,
                     "evidence_state": evidence_state,
@@ -208,7 +233,6 @@ def aggregate_trait_rows(
         receipts: list[dict[str, Any]] = []
         confidence_values: list[float] = []
         explicit_sample_sizes: list[int | None] = []
-        trait_id = _text(_first(members[0], TRAIT_ID_FIELDS)) or label
         for row in members:
             raw_value = _first(row, TRAIT_VALUE_FIELDS)
             numeric = _safe_number(raw_value)
