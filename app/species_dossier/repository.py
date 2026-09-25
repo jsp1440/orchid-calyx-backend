@@ -8,7 +8,9 @@ Reads only what Calyx already holds and says so section by section:
   receipts, marked provisional because a source record's identification is
   not independently verified here;
 * knowledge-graph relations from ``oc_graph.kg_nodes`` / ``kg_edges`` when
-  those tables exist, with their persisted source table and confidence;
+  those tables exist, with their persisted source table and confidence. The
+  graph taxon is found by exact accepted-name equality, never by the
+  orchid-taxonomy id, because the graph backbone uses a different id space;
 * federated compiled-specialist evidence (Gary Yong Gee, published by
   ``runtime/federated_sources/yong_gee.py`` as ``evidence`` nodes attached via
   ``supported_by_evidence`` edges) surfaced as ``provisional`` nomenclature,
@@ -32,7 +34,7 @@ from typing import Any
 from app.species_exhibit.service import (
     _split_scientific_name as split_display_name_and_authorship,
 )
-from app.species_exhibit.service import taxon_rank
+from app.species_exhibit.service import graph_taxon_keys, taxon_rank
 
 from .models import (
     DossierEvidenceState,
@@ -98,6 +100,15 @@ DISTRIBUTION_REASON = (
 GRAPH_NOT_PROVISIONED = (
     "The persisted knowledge graph is not provisioned in this database."
 )
+GRAPH_TAXON_UNLINKED = (
+    "No knowledge-graph taxon carries this accepted name, so no persisted relation "
+    "is linked to this taxon. Absence here is not evidence of absence in the "
+    "scientific literature."
+)
+GRAPH_TAXON_AMBIGUOUS = (
+    "More than one knowledge-graph taxon carries this accepted name; relations are "
+    "withheld until the identity link is reviewed."
+)
 MAX_FEDERATED_EVIDENCE = 200
 MAX_SECTION_ITEMS = 12
 MAX_EXCERPT_CHARS = 1200
@@ -148,8 +159,14 @@ class PostgresSpeciesRepository:
                 return None
             identity = self._identity(taxon)
             media = self._media(cur, taxon["id"])
-            graph = self._graph(cur, taxon["id"])
-            federated = self._federated_sections(cur, taxon["id"], graph)
+            graph_key, graph = self._graph_taxon_key(cur, identity.accepted_name)
+            if graph_key is not None:
+                graph = self._graph(cur, graph_key)
+            federated = (
+                self._federated_sections(cur, graph_key, graph)
+                if graph_key is not None
+                else {}
+            )
             if "knowledge_graph" in federated:
                 graph = federated.pop("knowledge_graph")
             related = self._related(cur, taxon["id"], identity.genus)
@@ -376,14 +393,35 @@ class PostgresSpeciesRepository:
             receipts=receipts,
         )
 
-    def _graph(self, cur: Any, taxon_id: Any) -> DossierSection:
+    @staticmethod
+    def _graph_taxon_key(
+        cur: Any, accepted_name: str
+    ) -> tuple[str | None, DossierSection]:
+        """The knowledge-graph taxon node that carries this taxon's accepted name.
+
+        ``public.orchid_taxonomy.id`` and the graph's ``taxon:<id>`` keys are
+        different identifier spaces: the graph backbone is keyed by
+        ``public.taxonomy_species``, and the two id ranges overlap. Joining on the
+        raw id would attach another species' relations and compiled evidence to
+        this dossier, so the link is made by exact accepted-name equality with a
+        single active graph taxon, and fails closed (no graph, no federated
+        sections) when there is no match or more than one.
+        """
         cur.execute(
             "SELECT to_regclass('oc_graph.kg_nodes') IS NOT NULL AS nodes_present, "
             "to_regclass('oc_graph.kg_edges') IS NOT NULL AS edges_present"
         )
         present = cur.fetchone()
         if not present or not present["nodes_present"] or not present["edges_present"]:
-            return _unavailable(GRAPH_NOT_PROVISIONED)
+            return None, _unavailable(GRAPH_NOT_PROVISIONED)
+        keys = graph_taxon_keys(cur, accepted_name)
+        if len(keys) > 1:
+            return None, _unavailable(GRAPH_TAXON_AMBIGUOUS)
+        if not keys:
+            return None, _unavailable(GRAPH_TAXON_UNLINKED)
+        return keys[0], _unavailable()
+
+    def _graph(self, cur: Any, graph_key: str) -> DossierSection:
         cur.execute(
             """
             SELECT e.edge_type, n2.node_type, n2.canonical_key, n2.display_label,
@@ -400,7 +438,7 @@ class PostgresSpeciesRepository:
             ORDER BY e.kg_edge_id
             LIMIT %s
             """,
-            (f"taxon:{taxon_id}", MAX_GRAPH_EDGES),
+            (graph_key, MAX_GRAPH_EDGES),
         )
         rows = [dict(row) for row in cur.fetchall()]
         if not rows:
@@ -439,7 +477,7 @@ class PostgresSpeciesRepository:
         )
 
     def _federated_sections(
-        self, cur: Any, taxon_id: Any, graph: DossierSection
+        self, cur: Any, graph_key: str, graph: DossierSection
     ) -> dict[str, DossierSection]:
         """Provisional sections from compiled-specialist evidence nodes (read-only).
 
@@ -467,7 +505,7 @@ class PostgresSpeciesRepository:
             LIMIT %s
             """,
             (
-                f"taxon:{taxon_id}",
+                graph_key,
                 YONG_GEE_SOURCE_TABLE,
                 *WITHHELD_EVIDENCE_TYPES,
                 MAX_FEDERATED_EVIDENCE,

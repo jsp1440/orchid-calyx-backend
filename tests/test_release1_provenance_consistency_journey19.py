@@ -83,6 +83,14 @@ class SharedEvidenceCursor:
             self._rows = []
         elif "FROM public.orchid_images" in compact:
             self._rows = [dict(r) for r in IMAGES.get(int(params[0]), [])]
+        elif "FROM oc_graph.kg_nodes WHERE node_type = 'taxon'" in compact:
+            # both modules link a taxon to the graph by accepted name; this fixture's
+            # graph backbone keys happen to equal the orchid-taxonomy ids
+            self._rows = [
+                {"canonical_key": f"taxon:{t['id']}"}
+                for t in TAXA
+                if " ".join(t["scientific_name"].split()[:2]).lower() == params[0].lower()
+            ]
         elif "FROM oc_graph.kg_nodes t JOIN oc_graph.kg_edges e" in compact:
             # dossier only: compiled-specialist (federated) evidence nodes; this fixture has none
             assert "e.edge_type = 'supported_by_evidence'" in compact

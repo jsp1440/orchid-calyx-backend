@@ -108,6 +108,18 @@ GRAPH_EDGES = {
 }
 
 
+# Graph taxon nodes by display label. The backbone keys here equal the
+# orchid-taxonomy ids only so the shared fixtures stay readable; the regression
+# test below exercises the production case where they differ.
+KG_TAXA = {
+    "phalaenopsis amabilis": ["taxon:101"],
+    "phalaenopsis aphrodite": ["taxon:102"],
+    "dracula vampira": ["taxon:103"],
+    "dendrobium nobile var. alba": ["taxon:104"],
+    "dendrobium nobile": ["taxon:105"],
+}
+
+
 def assert_no_sensitive_locality(value: Any) -> None:
     """Keep the route contract test independent of optional locality modules."""
     forbidden = {"latitude", "longitude", "coordinates", "locality", "exact_locality"}
@@ -129,8 +141,10 @@ class FakeCursor:
         graph_present: bool = True,
         evidence: dict[int, list[dict[str, Any]]] | None = None,
         honor_evidence_type_filter: bool = True,
+        kg_taxa: dict[str, list[str]] | None = None,
     ) -> None:
         self.graph_present = graph_present
+        self.kg_taxa = KG_TAXA if kg_taxa is None else kg_taxa
         self.evidence = evidence or {}
         self.honor_evidence_type_filter = honor_evidence_type_filter
         self._rows: list[dict[str, Any]] = []
@@ -146,6 +160,13 @@ class FakeCursor:
                     "edges_present": self.graph_present,
                 }
             ]
+        elif "FROM oc_graph.kg_nodes WHERE node_type = 'taxon'" in compact:
+            assert "is_active IS TRUE" in compact
+            assert "lower(display_label) = lower(%s)" in compact
+            self._rows = [
+                {"canonical_key": key}
+                for key in self.kg_taxa.get(params[0].lower(), [])
+            ][:2]
         elif "FROM public.orchid_taxonomy WHERE id::text = %s" in compact:
             self._rows = [dict(t) for t in TAXA if str(t["id"]) == params[0]]
         elif "lower(scientific_name) = lower(%s)" in compact:
@@ -834,3 +855,49 @@ def test_evidence_edges_are_not_listed_as_graph_relationships():
         receipt.record_id != "yong-gee:4242:notes"
         for receipt in dossier.knowledge_graph.receipts
     )
+
+
+# -- graph identity: orchid-taxonomy id is not the graph backbone id ------------------------
+
+
+def test_graph_and_federated_evidence_follow_the_accepted_name_not_the_raw_id():
+    """Production: orchid_taxonomy 7904 is Cattleya labiata, graph taxon:7904 is
+    Epidendrum milenae. A raw-id join put one species' relations on another's
+    dossier; the link must follow the accepted name."""
+    evidence = {101: yong_gee_kg_rows("101", YONG_GEE_CLEANED)}
+    # The graph node carrying "Dracula vampira" is taxon:101; nothing carries
+    # "Phalaenopsis amabilis", although orchid-taxonomy id 101 is that species.
+    cursor = FakeCursor(evidence=evidence, kg_taxa={"dracula vampira": ["taxon:101"]})
+
+    amabilis = repository(cursor).get_dossier("101")
+    assert amabilis is not None
+    assert amabilis.knowledge_graph.state == "unavailable"
+    assert "No knowledge-graph taxon carries this accepted name" in (
+        amabilis.knowledge_graph.unavailable_reason
+    )
+    assert amabilis.knowledge_graph.items == []
+    for name in ["nomenclature", "morphology", "phenology", "literature"]:
+        assert getattr(amabilis, name).state == "unavailable", name
+    assert "yong-gee" not in amabilis.model_dump_json()
+
+    vampira = repository(cursor).get_dossier("103")
+    assert vampira is not None
+    assert vampira.identity.accepted_name == "Dracula vampira"
+    assert vampira.knowledge_graph.state == "available"
+    assert vampira.knowledge_graph.items[0]["edge_type"] == "pollinated_by"
+
+
+def test_ambiguous_graph_taxon_name_withholds_relations_and_evidence():
+    cursor = FakeCursor(
+        evidence={101: yong_gee_kg_rows("101", YONG_GEE_CLEANED)},
+        kg_taxa={"phalaenopsis amabilis": ["taxon:101", "taxon:9101"]},
+    )
+    dossier = repository(cursor).get_dossier("101")
+    assert dossier is not None
+    assert dossier.knowledge_graph.state == "unavailable"
+    assert "More than one knowledge-graph taxon" in (
+        dossier.knowledge_graph.unavailable_reason
+    )
+    assert dossier.nomenclature.state == "unavailable"
+    assert not any("supported_by_evidence" in sql for sql in cursor.statements)
+    assert not any("FROM oc_graph.kg_nodes n1" in sql for sql in cursor.statements)

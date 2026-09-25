@@ -283,13 +283,42 @@ def _evidence_receipt(
     }
 
 
-def _graph_rows(cur, taxon_id: str) -> list[dict[str, Any]]:
+def graph_taxon_keys(cur, accepted_name: str) -> list[str]:
+    """Graph taxon keys whose node carries exactly this accepted name (at most two).
+
+    ``public.orchid_taxonomy.id`` is not the graph's identifier: ``taxon:<id>``
+    keys come from the ``public.taxonomy_species`` backbone and the two id ranges
+    overlap, so ``taxon:{orchid_taxonomy.id}`` names a different species. Callers
+    link a taxon to the graph only when exactly one key comes back.
+    """
+    name = " ".join(str(accepted_name or "").split())
+    if not name:
+        return []
+    cur.execute(
+        """
+        SELECT canonical_key
+        FROM oc_graph.kg_nodes
+        WHERE node_type = 'taxon'
+          AND is_active IS TRUE
+          AND lower(display_label) = lower(%s)
+        ORDER BY canonical_key
+        LIMIT 2
+        """,
+        (name,),
+    )
+    return [str(row["canonical_key"]) for row in cur.fetchall()]
+
+
+def _graph_rows(cur, display_name: str) -> list[dict[str, Any]]:
     cur.execute(
         "SELECT to_regclass('oc_graph.kg_nodes') IS NOT NULL AS nodes_present, "
         "to_regclass('oc_graph.kg_edges') IS NOT NULL AS edges_present"
     )
     present = cur.fetchone()
     if not present or not present["nodes_present"] or not present["edges_present"]:
+        return []
+    keys = graph_taxon_keys(cur, display_name)
+    if len(keys) != 1:
         return []
     cur.execute(
         """
@@ -303,7 +332,7 @@ def _graph_rows(cur, taxon_id: str) -> list[dict[str, Any]]:
         ORDER BY e.kg_edge_id
         LIMIT 100
         """,
-        (f"taxon:{taxon_id}",),
+        (keys[0],),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -474,7 +503,7 @@ def build_species_exhibit(dsn: str, genus: str, limit: int = 9) -> dict[str, Any
                 (taxon["id"],),
             )
             media = [dict(row) for row in cur.fetchall()]
-            graph = _graph_rows(cur, taxon_id)
+            graph = _graph_rows(cur, display_name)
             item = _build_card(taxon, media, graph, used_media_urls)
             items.append(item)
             seen_taxa.add(taxon_id)
