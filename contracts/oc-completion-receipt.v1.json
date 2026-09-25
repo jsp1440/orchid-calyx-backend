@@ -1,0 +1,65 @@
+{
+  "schema": "oc.completion-receipt.v1",
+  "version": "1.0.0",
+  "purpose": "Cross-repository shape of a durable completion receipt. A receipt that cannot be tied to an exact implementation revision and to a digest of its test evidence is not evidence of completion; every consumer must fail closed on it.",
+  "identity_rules": {
+    "implementation_sha": "Exactly 40 lowercase hexadecimal characters: the full git commit SHA of the implementation revision the receipt describes. Abbreviated, uppercase, branch-name or empty values are rejected.",
+    "test_evidence_digest": "Exactly 64 lowercase hexadecimal characters: sha256 of the canonical JSON (sorted keys, compact separators) of the test/validation evidence the receipt summarises.",
+    "terminal_state": "One of the terminal states below. Any non-completed state must carry failure_reason."
+  },
+  "receipt_fields": {
+    "task_id": {"type": "string", "required": true, "min_length": 1, "frontend_field": "taskId", "brain_evidence": "task_identity"},
+    "declared_capability": {"type": "string", "required": true, "min_length": 1, "frontend_field": "capability", "brain_evidence": "declared_capability"},
+    "implementation_sha": {"type": "string", "required": true, "pattern": "^[a-f0-9]{40}$", "frontend_field": "implementationSha", "brain_evidence": null},
+    "run_id": {"type": "string", "required": true, "min_length": 1, "frontend_field": "runId", "brain_evidence": null},
+    "lease_id": {"type": "string", "required": true, "min_length": 1, "frontend_field": "leaseId", "brain_evidence": null},
+    "execution_lane": {"type": "string", "required": true, "enum": ["provider", "provider-free"], "frontend_field": "lane", "brain_evidence": "execution_lane"},
+    "terminal_state": {"type": "string", "required": true, "enum": ["completed", "blocked", "failed", "not_executed"], "frontend_field": "lifecycleState", "brain_evidence": "terminal_state"},
+    "test_evidence_digest": {"type": "string", "required": true, "pattern": "^[a-f0-9]{64}$", "frontend_field": "testEvidenceDigest", "brain_evidence": "tests_or_validation"},
+    "provider_call_count": {"type": "integer", "required": true, "minimum": 0, "frontend_field": "providerCalls", "brain_evidence": "provider_call_count"},
+    "provider_cost_usd": {"type": "number", "required": true, "minimum": 0, "frontend_field": "providerCostUsd", "brain_evidence": null},
+    "changed_file_count": {"type": "integer", "required": true, "minimum": 0, "frontend_field": "changedFileCount", "brain_evidence": null},
+    "results": {"type": "object", "required": false, "frontend_field": "results", "brain_evidence": null},
+    "failure_reason": {"type": "string", "required": false, "min_length": 1, "frontend_field": "failureReason", "brain_evidence": "failure_reason_when_not_complete"}
+  },
+  "conditional_fields": {
+    "failure_reason": {"required_when_terminal_state_in": ["blocked", "failed", "not_executed"]}
+  },
+  "brain_required_evidence": [
+    "task_identity",
+    "declared_capability",
+    "execution_lane",
+    "tests_or_validation",
+    "provider_call_count",
+    "terminal_state",
+    "failure_reason_when_not_complete"
+  ],
+  "bindings": {
+    "backend": {
+      "repository": "jsp1440/orchid-calyx-backend",
+      "canonical_context": "contracts/oc-autonomy-context.v1.json#required_evidence",
+      "settlement_producer": "app/calyx_orchestrator/durable_reservoir.py::DurableOrchestrate.settle(evidence=...)",
+      "validator": "runtime/completion_receipt_contract.py::validate_completion_receipt"
+    },
+    "frontend": {
+      "repository": "jsp1440/orchid-continuum-frontend",
+      "contract_copy": "contracts/oc-completion-receipt.v1.json",
+      "supervisor_discovery": {
+        "file": "src/lib/control-plane/supervisorDiscovery.ts",
+        "required_fields": ["taskId", "implementationSha", "runId", "leaseId", "lifecycleState"]
+      },
+      "graph_issue_decision": {
+        "file": "src/lib/completion-graph/graphIssueDecision.ts",
+        "required_fields": ["taskId", "implementationSha", "runId", "leaseId", "results", "providerCalls", "providerCostUsd"]
+      },
+      "lease_sha_pattern": {
+        "file": "scripts/oc-dispatch-control.ts",
+        "pattern": "^[a-f0-9]{40}$"
+      }
+    },
+    "brain": {
+      "repository": "jsp1440/Orchid-Continuum-Brain",
+      "canonical_context": "contracts/autonomy_context_v1.json#required_evidence"
+    }
+  }
+}

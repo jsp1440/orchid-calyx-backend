@@ -42,14 +42,18 @@ jobs:
               sleep 20
               continue
             fi
+            # The heredoc body must stay indented to the YAML block level: a line
+            # at column 0 ends the `run: |` scalar and makes the workflow file
+            # unparseable, which GitHub records as a 0-second failed run on every
+            # push. YAML strips the block indentation before bash sees it.
             read -r count job_id status state attempts error_code next_action < <(python - <<'PY'
-import json
-p=json.load(open('/tmp/jobs.json'))
-j=(p.get('jobs') or [{}])[0]
-vals=[p.get('count',0),j.get('job_id','-'),j.get('status','-'),j.get('state','-'),j.get('attempt_count',0),j.get('error_code') or '-',j.get('next_action') or '-']
-print(*[str(v).replace(' ','_') for v in vals])
-PY
-)
+          import json
+          p=json.load(open('/tmp/jobs.json'))
+          j=(p.get('jobs') or [{}])[0]
+          vals=[p.get('count',0),j.get('job_id','-'),j.get('status','-'),j.get('state','-'),j.get('attempt_count',0),j.get('error_code') or '-',j.get('next_action') or '-']
+          print(*[str(v).replace(' ','_') for v in vals])
+          PY
+          )
             if [[ "$count" == "0" ]]; then
               signature="no_job"
               if [[ "$signature" != "$last_signature" ]]; then
