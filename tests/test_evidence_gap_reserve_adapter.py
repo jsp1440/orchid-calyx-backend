@@ -280,6 +280,94 @@ def test_held_work_does_not_consume_the_per_pass_cap(tmp_path):
     assert all(frontend_admits(p["source_payload"]) is None for p in second["proposals"])
 
 
+class _LabelSource:
+    """Minimal taxon-label reader for synthetic queues."""
+
+    def __init__(self, labels: dict[str, str]):
+        self.labels = labels
+        self.requested: list[str] = []
+
+    def taxon_labels(self, taxon_ids):
+        self.requested.extend(taxon_ids)
+        return {t: self.labels[t] for t in taxon_ids if t in self.labels}
+
+
+def _gap(gap_id: str, domain: str, taxon_ids: list[str]) -> dict:
+    return {
+        "gap_id": gap_id,
+        "priority": "HIGH",
+        "mission": {
+            "domain": domain,
+            "locality_gated": False,
+            "candidate_source": {},
+            "taxon_scope": {"example_taxon_ids": taxon_ids},
+        },
+    }
+
+
+def _morphology_first_queue() -> dict:
+    """Three morphology gaps ranked ahead of one nomenclature gap."""
+    return {
+        "gap_source": "evidence_coverage_kg",
+        "freshness": {"stale": False},
+        "queue": [
+            _gap("g-morph-1", "morphology", ["101"]),
+            _gap("g-morph-2", "morphology", ["102"]),
+            _gap("g-morph-3", "morphology", ["103"]),
+            _gap("g-nomen-1", "nomenclature", ["101"]),
+        ],
+    }
+
+
+def test_domain_filter_skips_unrequested_domains_before_the_cap():
+    """Regression (production, 2026-09-25): only nomenclature had an executor,
+    yet the planner filled every pass with morphology missions that could never
+    run. A caller that requests ``{"nomenclature"}`` must still get it."""
+    source = _LabelSource(LABELS)
+    candidates, rejections, reason = evidence_gap_candidates(
+        _morphology_first_queue(), source, cap=3, domains=frozenset({"nomenclature"})
+    )
+    assert reason is None
+    assert [
+        (c["source_payload"]["taxon_id"], c["source_payload"]["domain"])
+        for c in candidates
+    ] == [("101", "nomenclature")]
+    skipped = [r for r in rejections if r["reason"] == "domain_not_requested"]
+    assert [r["gap_id"] for r in skipped] == ["g-morph-1", "g-morph-2", "g-morph-3"]
+    assert all(r["domain"] == "morphology" for r in skipped)
+    # Unrequested domains never reach the KG label lookup.
+    assert source.requested == ["101"]
+
+
+def test_no_domain_filter_keeps_current_behavior():
+    source = _LabelSource(LABELS)
+    candidates, rejections, _ = evidence_gap_candidates(
+        _morphology_first_queue(), source, cap=3
+    )
+    assert [c["source_payload"]["domain"] for c in candidates] == ["morphology"] * 3
+    assert not [r for r in rejections if r["reason"] == "domain_not_requested"]
+    assert (
+        evidence_gap_candidates(
+            _morphology_first_queue(), _LabelSource(LABELS), cap=3, domains=None
+        )[0]
+        == candidates
+    )
+
+
+def test_plan_records_requested_domains(tmp_path):
+    source = source_for(labelled_kg())
+    engine = KnowledgeGapDiscoveryEngine(output_dir=tmp_path, kg_source=source)
+    result = plan_evidence_gap_refill(
+        snapshot(), source, engine=engine, reserve_depth=3, domains={"nomenclature"}
+    )
+    assert result["source_domains"] == ["nomenclature"]
+    assert result["proposals"]
+    assert {p["source_payload"]["domain"] for p in result["proposals"]} == {
+        "nomenclature"
+    }
+    assert plan(labelled_kg(), output_dir=tmp_path)["source_domains"] is None
+
+
 def test_kg_unavailable_yields_zero_candidates_never_stale_record_work(tmp_path):
     (tmp_path / "latest.json").write_text(
         RECORD.read_text(encoding="utf-8"), encoding="utf-8"
