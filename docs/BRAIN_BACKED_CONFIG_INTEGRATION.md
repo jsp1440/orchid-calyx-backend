@@ -21,7 +21,7 @@ Loads JSON configuration from the Brain repository using the GitHub Contents API
 Environment variables:
 
 - `CALYX_BRAIN_REPO` — defaults to `jsp1440/Orchid-Continuum-Brain`
-- `CALYX_BRAIN_REF` — defaults to `calyx-core-operational-foundation`
+- `CALYX_BRAIN_REF` — defaults to `main`, the ref the Brain declares it serves (`contracts/federation_records_v1.json` `served_ref.canonical`). Set it to pin a specific branch, tag or commit; a non-default value is reported as stale.
 - `GITHUB_TOKEN` or `CALYX_GITHUB_TOKEN` — required for private Brain repo access in production
 - `GITHUB_API_BASE` — optional GitHub API override
 
