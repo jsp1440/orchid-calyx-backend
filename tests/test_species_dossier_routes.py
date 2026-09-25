@@ -173,13 +173,13 @@ class FakeCursor:
                 if row["source_table"] == params[1] and row.get("is_active", True)
             ]
             if self.honor_evidence_type_filter:
-                assert "NOT IN (%s, %s)" in compact
+                assert "NOT IN (%s, %s, %s, %s)" in compact
                 rows = [
                     row
                     for row in rows
-                    if row["payload_json"].get("evidence_type") not in params[2:4]
+                    if row["payload_json"].get("evidence_type") not in params[2:6]
                 ]
-            self._rows = rows[: params[4]]
+            self._rows = rows[: params[6]]
         elif "FROM oc_graph.kg_nodes n1" in compact:
             taxon_id = int(params[0].split(":", 1)[1])
             rows = list(GRAPH_EDGES.get(taxon_id, []))
@@ -697,13 +697,12 @@ def test_yong_gee_evidence_populates_provisional_sections_with_receipts():
     assert morphology["excerpt"].endswith("[...]")
     assert len(morphology["excerpt"]) <= 1200
 
-    graph_notes = [i for i in dossier.knowledge_graph.items if "excerpt" in i]
-    assert [i["evidence_type"] for i in graph_notes] == ["taxon_notes"]
-    assert graph_notes[0]["evidence_state"] == "provisional"
+    # Free-text notes can name a locality in prose, so they are withheld with
+    # distribution and habitat until a locality-sensitivity review.
+    assert not [i for i in dossier.knowledge_graph.items if "excerpt" in i]
     assert dossier.knowledge_graph.items[0]["edge_type"] == "pollinated_by"
-    assert "provisional" in dossier.knowledge_graph.summary
-    # Carrying un-reviewed compiled-specialist text makes the whole section provisional.
-    assert dossier.knowledge_graph.state == "provisional"
+    assert "compiled specialist" not in (dossier.knowledge_graph.summary or "")
+    assert "A parent of many hybrids." not in dossier.model_dump_json()
 
     # Sections without evidence keep the existing honest reason.
     for name in [
