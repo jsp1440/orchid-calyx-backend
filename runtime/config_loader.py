@@ -11,7 +11,11 @@ from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_BRAIN_REPO = "jsp1440/Orchid-Continuum-Brain"
-DEFAULT_BRAIN_REF = "calyx-core-operational-foundation"
+#: The Brain serves its records on ``main`` (contracts/federation_records_v1.json,
+#: served_ref.canonical). Until 2026-09-25 this defaulted to
+#: ``calyx-core-operational-foundation``, a frozen ancestor of main (54692d7,
+#: 2026-07-03); CALYX_BRAIN_REF still overrides it for a deliberate pin.
+DEFAULT_BRAIN_REF = "main"
 DEFAULT_GITHUB_API = "https://api.github.com"
 
 #: The ref the Brain serves its records on (Orchid-Continuum-Brain
