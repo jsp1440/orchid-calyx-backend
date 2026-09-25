@@ -378,6 +378,7 @@ class PostgresSpeciesRepository:
             JOIN oc_graph.kg_edges e ON e.from_node_id = n1.kg_node_id
             JOIN oc_graph.kg_nodes n2 ON n2.kg_node_id = e.to_node_id
             WHERE n1.canonical_key = %s
+              AND e.edge_type <> 'supported_by_evidence'
               AND n1.is_active IS TRUE
               AND e.is_active IS TRUE
               AND n2.is_active IS TRUE
@@ -511,11 +512,9 @@ class PostgresSpeciesRepository:
             if section_name == "knowledge_graph":
                 noun = "note is" if len(items) == 1 else "notes are"
                 sections[section_name] = DossierSection(
-                    # Relations keep their own state; the notes carry "provisional"
-                    # on every item and receipt.
-                    state=DossierEvidenceState.PROVISIONAL
-                    if graph.state == DossierEvidenceState.UNAVAILABLE
-                    else graph.state,
+                    # The section now carries un-reviewed compiled-specialist text,
+                    # so it is provisional as a whole, whatever the relations' state.
+                    state=DossierEvidenceState.PROVISIONAL,
                     summary=(
                         f"{graph.summary or ''} {len(items)} compiled specialist "
                         f"{noun} provisional. {YONG_GEE_SUMMARY}"
