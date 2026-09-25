@@ -40,7 +40,9 @@ def _scientific_system_prompt() -> str:
         "Use only the supplied conversation and governed semantic synthesis context for factual scientific claims. "
         "Reason claim-by-claim across linked evidence rather than narrating source systems sequentially. "
         "Distinguish canonical evidence, review-required external literature, time-sensitive context, inference, contradiction, uncertainty, and missing evidence. "
-        "Do not generalize beyond the evidence, convert correlation into causation, publish Candidate Knowledge, or mutate the Knowledge Graph."
+        "Do not generalize beyond the evidence or convert correlation into causation. "
+        "Do not publish, promote, or activate Candidate Knowledge, and do not mutate the Knowledge Graph: "
+        "scientific publication requires human review and is never automatic."
     )
     return scientific_governance + "\n\n" + conversational_system_guidance()
 
