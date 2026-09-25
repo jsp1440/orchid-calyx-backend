@@ -1,5 +1,13 @@
 import pytest
-from scripts.build_086c_final_validation import api_contracts,performance,quality,validate
+
+from scripts.build_086c_final_validation import (
+ api_contracts,
+ performance,
+ quality,
+ validate,
+)
+
+
 def test_quality_metrics_remain_review_ready():
  q=quality();assert q["corpus_size"]==19 and q["duplicate_precision"]==q["duplicate_recall"]==1 and q["contradiction_precision"]==q["contradiction_recall"]==1 and q["independent_source_accuracy"]==1 and q["false_consensus_rate"]==0 and q["anchors_preserved"]
 def test_corrected_api_contracts():assert all(api_contracts().values())
