@@ -102,6 +102,17 @@ class MemoryCandidateRepository:
             None,
         )
 
+    def candidate_by_id(self, candidate_id: int) -> dict[str, Any] | None:
+        """Candidate by identity regardless of lifecycle (serving semantics of GET /candidates/{id})."""
+        return next(
+            (
+                candidate
+                for candidate in self.candidates
+                if candidate["candidate_id"] == candidate_id
+            ),
+            None,
+        )
+
     def candidates_for_run(self, run_id: int) -> list[dict[str, Any]]:
         if run_id not in self.items:
             return []
