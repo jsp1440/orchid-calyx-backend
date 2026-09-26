@@ -21,6 +21,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from pydantic import ValidationError
+
+from app.interaction_discovery.models import InteractionDiscoveryRecord
 from app.semantic_index.repository_runtime import get_repository_runtime
 from app.semantic_index.routes import get_repository_for_read
 
@@ -105,6 +108,20 @@ def _record_from_document(document: dict[str, Any]) -> dict[str, Any] | None:
     }
 
 
+def _readable_record(record: dict[str, Any]) -> dict[str, Any] | None:
+    """Validate one record against the published record contract.
+
+    Stored metadata is not schema-enforced, so a single record can carry a
+    value the contract cannot represent (e.g. a dict ``study_citation``). Such
+    a record is returned as ``None`` so the caller excludes and counts it,
+    instead of the response model rejecting the entire list with a 500.
+    """
+    try:
+        return InteractionDiscoveryRecord.model_validate(record).model_dump()
+    except ValidationError:
+        return None
+
+
 def _taxon_matches(record: dict[str, Any], taxon: str) -> bool:
     needle = taxon.casefold().strip()
     source = str(record.get("source_taxon_name") or "").casefold()
@@ -146,6 +163,7 @@ def discover_interactions(
     documents = [doc for doc in repository.documents if doc.get("active") and doc.get("source_object_type") == INTERACTION_DISCOVERY_TYPE]
 
     records: list[dict[str, Any]] = []
+    unreadable_count = 0
     for document in documents:
         record = _record_from_document(document)
         if record is None:
@@ -154,7 +172,11 @@ def discover_interactions(
             continue
         if taxon and not _taxon_matches(record, taxon):
             continue
-        records.append(record)
+        readable = _readable_record(record)
+        if readable is None:
+            unreadable_count += 1
+            continue
+        records.append(readable)
 
     records.sort(key=lambda item: (item["source_taxon_name"] or "", item["target_taxon_name"] or ""))
     truncated = len(records) > limit
@@ -167,6 +189,9 @@ def discover_interactions(
         "taxon_filter": taxon,
         "index_state": index_state,
         "index_note": UNPROVISIONED_INDEX_NOTE if index_state == "memory_unprovisioned" else None,
+        # Matched records excluded because they failed record validation; they
+        # are not in count/total_matched, so non-zero means an incomplete result.
+        "unreadable_count": unreadable_count,
         "review_bound": True,
         "knowledge_graph_mutation": False,
         "note": (

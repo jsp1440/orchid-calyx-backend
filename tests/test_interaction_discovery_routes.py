@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.calyx_conversation.interaction_discovery_ingest import (
     ingest_globi_interactions_for_canonical_dataset,
 )
+from app.interaction_discovery.models import InteractionDiscoveryRecord
 from app.interaction_discovery.routes import router
-from app.interaction_discovery.service import discover_interactions
+from app.interaction_discovery.service import (
+    _record_from_document,
+    discover_interactions,
+)
 from app.semantic_index import repository_runtime
 from app.semantic_index.memory_repository import MemoryIndexRepository
 
@@ -257,3 +263,126 @@ def test_response_model_keeps_every_legacy_field(monkeypatch):
         "revision_id", "locator",
     }
     assert legacy_record_keys <= set(body["interactions"][0])
+
+
+def _corrupt_stored_record(source_taxon_name: str, **metadata_overrides) -> None:
+    """Overwrite stored metadata of one ingested record with values the contract cannot represent."""
+    repository = repository_runtime.get_repository_runtime().read()
+    matches = [
+        document
+        for document in repository.documents
+        if document.get("source_object_type") == "INTERACTION_DISCOVERY_RECORD"
+        and (document.get("metadata") or {}).get("source_taxon_name") == source_taxon_name
+    ]
+    assert len(matches) == 1
+    matches[0]["metadata"].update(metadata_overrides)
+
+
+def _ingest_good_and_bad(**bad_metadata) -> None:
+    _ingest_sample()
+    _ingest_sample(sourceTaxonName="Ophrys apifera", targetTaxonName="Eucera longicornis", targetTaxonId="GBIF:999")
+    _corrupt_stored_record("Ophrys apifera", **bad_metadata)
+
+
+def test_non_scalar_study_citation_excludes_only_that_record(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested", "year": 2020})
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unreadable_count"] == 1
+    assert body["count"] == 1
+    assert body["total_matched"] == 1
+    assert body["truncated"] is False
+    assert [record["source_taxon_name"] for record in body["interactions"]] == ["Orchis mascula"]
+
+
+def test_string_locator_excludes_only_that_record(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(locator="not-a-mapping")
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unreadable_count"] == 1
+    assert [record["source_taxon_name"] for record in body["interactions"]] == ["Orchis mascula"]
+
+
+def test_unreadable_record_fixture_really_violates_the_record_contract(monkeypatch):
+    """Negative control: without per-record validation this record would reject the whole list."""
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+    repository = repository_runtime.get_repository_runtime().read()
+    raw_records = [_record_from_document(document) for document in repository.documents]
+    bad = [record for record in raw_records if record and record["source_taxon_name"] == "Ophrys apifera"]
+
+    assert len(bad) == 1
+    with pytest.raises(ValidationError):
+        InteractionDiscoveryRecord.model_validate(bad[0])
+
+
+def test_all_records_unreadable_is_not_reported_as_plain_empty(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+    _corrupt_stored_record("Orchis mascula", study_citation=["a", "list"])
+
+    body = client().get("/api/interactions/discovery").json()
+
+    assert body["count"] == 0
+    assert body["interactions"] == []
+    assert body["unreadable_count"] == 1
+
+
+def test_unreadable_records_outside_the_query_filter_are_not_counted(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Orchis mascula"}).json()
+
+    assert body["count"] == 1
+    assert body["unreadable_count"] == 0
+
+
+def test_truncation_counts_only_readable_records(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+
+    body = client().get("/api/interactions/discovery", params={"limit": 1}).json()
+
+    assert body["count"] == 1
+    assert body["total_matched"] == 1
+    assert body["truncated"] is False
+    assert body["unreadable_count"] == 1
+
+
+def test_numeric_string_fields_remain_readable(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+    _corrupt_stored_record("Orchis mascula", source_taxon_id=123, study_external_id=456)
+
+    body = client().get("/api/interactions/discovery").json()
+
+    assert body["unreadable_count"] == 0
+    record = body["interactions"][0]
+    assert record["source_taxon_id"] == "123"
+    assert record["study_external_id"] == "456"
+
+
+def test_readable_results_report_zero_unreadable(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    assert discover_interactions()["unreadable_count"] == 0
+    assert client().get("/api/interactions/discovery").json()["unreadable_count"] == 0
+
+
+def test_discovery_response_schema_declares_optional_unreadable_count():
+    schema = client().get("/openapi.json").json()
+    response_schema = schema["components"]["schemas"]["InteractionDiscoveryResponse"]
+
+    assert response_schema["properties"]["unreadable_count"]["type"] == "integer"
+    assert response_schema["properties"]["unreadable_count"]["default"] == 0
+    assert "unreadable_count" not in response_schema.get("required", [])
