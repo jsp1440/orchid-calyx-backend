@@ -5,7 +5,7 @@ from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.security import verify_owner_or_api_key
+from app.member_auth import member_readable, owner_or_member_read
 
 from .service import ResearchTraitsService
 
@@ -15,7 +15,7 @@ SPECIES_RE = re.compile(r"^[A-Z][A-Za-z-]{1,79} [a-z][A-Za-z-]{1,79}$")
 router = APIRouter(
     prefix="/api/research",
     tags=["research-traits"],
-    dependencies=[Depends(verify_owner_or_api_key)],
+    dependencies=[Depends(owner_or_member_read)],
 )
 
 
@@ -42,6 +42,7 @@ def _subject(genus: str | None, species: str | None) -> tuple[str, str]:
 
 
 @router.get("/traits")
+@member_readable
 def research_traits(
     genus: str | None = Query(default=None, min_length=2, max_length=80),
     species: str | None = Query(default=None, min_length=3, max_length=161),

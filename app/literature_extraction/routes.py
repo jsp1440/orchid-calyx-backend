@@ -7,6 +7,7 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
+from app.member_auth import member_readable, owner_or_member_read
 from app.security import verify_owner_or_api_key
 
 from .candidate_handoff import (
@@ -50,7 +51,7 @@ def get_candidate_handoff_service() -> LiteratureCandidateHandoffService:
 router = APIRouter(
     prefix="/api/literature-extraction",
     tags=["literature-extraction"],
-    dependencies=[Depends(verify_owner_or_api_key)],
+    dependencies=[Depends(owner_or_member_read)],
 )
 
 
@@ -161,6 +162,7 @@ def _candidate_handoff_http_error(exc: LiteratureCandidateHandoffError) -> HTTPE
     )
 
 
+# Owner-only read: operational telemetry that can echo raw database error text.
 @router.get("/coverage-audit")
 def literature_extraction_coverage_audit(
     repository: Annotated[
@@ -184,7 +186,10 @@ def literature_extraction_coverage_audit(
         )
 
 
+# Member-readable: PaperSummary rows -- paper_id, readable, reason code, title, authors,
+# journal, publication_year and three counts; bibliographic fields only.
 @router.get("/papers")
+@member_readable
 def list_papers(
     repository: Annotated[
         LiteratureResultRepository, Depends(get_literature_repository)
@@ -231,6 +236,7 @@ def list_papers(
     }
 
 
+# Owner-only read: full section text, including rights_status restricted/unknown papers.
 @router.get("/papers/{paper_id}")
 def get_paper(
     paper_id: str,
@@ -282,6 +288,8 @@ def create_source_binding(
         raise _source_binding_http_error(exc) from exc
 
 
+# Owner-only read: anchor_ids / evidence_integrity are keyed by extraction-defined ids and
+# carry section ids and a caller-supplied source_object_type (not a fixed schema).
 @router.get("/papers/{paper_id}/source-binding")
 def get_source_binding(
     paper_id: str,

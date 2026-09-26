@@ -11,7 +11,9 @@ from runtime.evidence_coverage_gaps import (
     EvidenceCoverageGapSource,
 )
 from runtime.evidence_gap_reserve_adapter import (
+    LACKING_PAGE_SIZE,
     MAX_CANDIDATES_PER_PASS,
+    MAX_PAGED_TAXA_PER_DOMAIN,
     evidence_gap_candidates,
     plan_evidence_gap_refill,
 )
@@ -253,6 +255,121 @@ def test_second_pass_does_not_replan_the_same_gap(tmp_path):
     )
 
 
+def test_held_work_does_not_consume_the_per_pass_cap(tmp_path):
+    """Regression (production, 2026-09-25): once the first three missions were
+    filed, every pass rebuilt the same three candidates, the planner rejected
+    them as duplicates and nothing new was ever planned (``queue_empty_healthy``)
+    although further (taxon, domain) gaps remained."""
+    first = plan(labelled_kg(), output_dir=tmp_path)
+    held = [p["material_fingerprint"] for p in first["proposals"]]
+    assert len(held) == MAX_CANDIDATES_PER_PASS
+    source = source_for(labelled_kg())
+    engine = KnowledgeGapDiscoveryEngine(output_dir=tmp_path, kg_source=source)
+    second = plan_evidence_gap_refill(
+        {**snapshot(), "dispatch_fingerprints": held},
+        source,
+        engine=engine,
+        reserve_depth=3,
+    )
+    fresh = [p["material_fingerprint"] for p in second["proposals"]]
+    assert second["status"] == "refill_planned"
+    assert fresh, "held work must not use up the cap for new work"
+    assert not set(fresh) & set(held)
+    assert len(fresh) <= MAX_CANDIDATES_PER_PASS
+    skipped = [r for r in second["source_rejections"] if r.get("reason") == "already_held_by_caller"]
+    assert len(skipped) == len(held)
+    # Nothing the caller holds is ever re-proposed, and every payload stays admissible.
+    assert all(frontend_admits(p["source_payload"]) is None for p in second["proposals"])
+
+
+class _LabelSource:
+    """Minimal taxon-label reader for synthetic queues."""
+
+    def __init__(self, labels: dict[str, str]):
+        self.labels = labels
+        self.requested: list[str] = []
+
+    def taxon_labels(self, taxon_ids):
+        self.requested.extend(taxon_ids)
+        return {t: self.labels[t] for t in taxon_ids if t in self.labels}
+
+
+def _gap(gap_id: str, domain: str, taxon_ids: list[str]) -> dict:
+    return {
+        "gap_id": gap_id,
+        "priority": "HIGH",
+        "mission": {
+            "domain": domain,
+            "locality_gated": False,
+            "candidate_source": {},
+            "taxon_scope": {"example_taxon_ids": taxon_ids},
+        },
+    }
+
+
+def _morphology_first_queue() -> dict:
+    """Three morphology gaps ranked ahead of one nomenclature gap."""
+    return {
+        "gap_source": "evidence_coverage_kg",
+        "freshness": {"stale": False},
+        "queue": [
+            _gap("g-morph-1", "morphology", ["101"]),
+            _gap("g-morph-2", "morphology", ["102"]),
+            _gap("g-morph-3", "morphology", ["103"]),
+            _gap("g-nomen-1", "nomenclature", ["101"]),
+        ],
+    }
+
+
+def test_domain_filter_skips_unrequested_domains_before_the_cap():
+    """Regression (production, 2026-09-25): only nomenclature had an executor,
+    yet the planner filled every pass with morphology missions that could never
+    run. A caller that requests ``{"nomenclature"}`` must still get it."""
+    source = _LabelSource(LABELS)
+    candidates, rejections, reason = evidence_gap_candidates(
+        _morphology_first_queue(), source, cap=3, domains=frozenset({"nomenclature"})
+    )
+    assert reason is None
+    assert [
+        (c["source_payload"]["taxon_id"], c["source_payload"]["domain"])
+        for c in candidates
+    ] == [("101", "nomenclature")]
+    skipped = [r for r in rejections if r["reason"] == "domain_not_requested"]
+    assert [r["gap_id"] for r in skipped] == ["g-morph-1", "g-morph-2", "g-morph-3"]
+    assert all(r["domain"] == "morphology" for r in skipped)
+    # Unrequested domains never reach the KG label lookup.
+    assert source.requested == ["101"]
+
+
+def test_no_domain_filter_keeps_current_behavior():
+    source = _LabelSource(LABELS)
+    candidates, rejections, _ = evidence_gap_candidates(
+        _morphology_first_queue(), source, cap=3
+    )
+    assert [c["source_payload"]["domain"] for c in candidates] == ["morphology"] * 3
+    assert not [r for r in rejections if r["reason"] == "domain_not_requested"]
+    assert (
+        evidence_gap_candidates(
+            _morphology_first_queue(), _LabelSource(LABELS), cap=3, domains=None
+        )[0]
+        == candidates
+    )
+
+
+def test_plan_records_requested_domains(tmp_path):
+    source = source_for(labelled_kg())
+    engine = KnowledgeGapDiscoveryEngine(output_dir=tmp_path, kg_source=source)
+    result = plan_evidence_gap_refill(
+        snapshot(), source, engine=engine, reserve_depth=3, domains={"nomenclature"}
+    )
+    assert result["source_domains"] == ["nomenclature"]
+    assert result["proposals"]
+    assert {p["source_payload"]["domain"] for p in result["proposals"]} == {
+        "nomenclature"
+    }
+    assert plan(labelled_kg(), output_dir=tmp_path)["source_domains"] is None
+
+
 def test_kg_unavailable_yields_zero_candidates_never_stale_record_work(tmp_path):
     (tmp_path / "latest.json").write_text(
         RECORD.read_text(encoding="utf-8"), encoding="utf-8"
@@ -419,3 +536,216 @@ def test_planned_proposals_keep_the_gap_priority(tmp_path):
         p["priority"] for p in result["proposals"]
     )
     assert all(p["priority"] in (1, 2, 3) for p in result["proposals"])
+
+
+# -- paging past held example taxa ------------------------------------------------------
+
+
+def _epithet(index: int) -> str:
+    return "x" + chr(ord("a") + index // 26) + chr(ord("a") + index % 26)
+
+
+def _many_taxa_kg(count: int = 80) -> FakeKG:
+    """``count`` taxa with no evidence at all, source_pk text order 1, 10, 100, ...
+
+    Mirrors production: ``SQL_DOMAIN_EXAMPLES`` orders by ``source_pk`` text, so
+    the five examples of every domain are taxa 1, 10, 100, 1000 and 10000.
+    """
+    taxa = ["1", "10", "100", "1000", "10000"] + [
+        str(10001 + i) for i in range(count - 5)
+    ]
+    return FakeKG(
+        taxa,
+        [],
+        labels={t: f"Orchis {_epithet(i)}" for i, t in enumerate(taxa)},
+    )
+
+
+def _fingerprints(taxa: list[str], domain: str) -> set[str]:
+    return {
+        evidence_gap_candidate(
+            taxon_id=t, taxon_name="Orchis mascula", domain=domain
+        )["material_fingerprint"]
+        for t in taxa
+    }
+
+
+class _PagerSpy(EvidenceCoverageGapSource):
+    def __init__(self, kg: FakeKG):
+        super().__init__(lambda callback: callback(kg.cursor()))
+        self.pages: list[tuple[str, str | None, int, int]] = []
+
+    def domain_lacking_taxa(self, domain_name, *, after_source_pk, limit):
+        page = super().domain_lacking_taxa(
+            domain_name, after_source_pk=after_source_pk, limit=limit
+        )
+        self.pages.append((domain_name, after_source_pk, limit, len(page)))
+        return page
+
+
+def _queue(kg: FakeKG, source, tmp_path) -> dict:
+    return KnowledgeGapDiscoveryEngine(
+        output_dir=tmp_path, kg_source=source
+    ).research_queue(limit=20)
+
+
+EXAMPLES = ["1", "10", "100", "1000", "10000"]
+
+
+def test_all_examples_held_pages_to_the_next_lacking_taxon(tmp_path):
+    """Regression (production, 2026-09-25 22:20 UTC): all five nomenclature
+    example taxa had filed missions, the name-only lookup never writes to the
+    KG, and the reserve plan returned ``queue_empty_healthy`` forever."""
+    kg = _many_taxa_kg()
+    source = source_for(kg)
+    engine = KnowledgeGapDiscoveryEngine(output_dir=tmp_path, kg_source=source)
+    nomenclature = [
+        g for g in engine.research_queue(limit=20)["queue"]
+        if g["mission"]["domain"] == "nomenclature"
+    ]
+    assert nomenclature[0]["mission"]["taxon_scope"]["example_taxon_ids"] == EXAMPLES
+    held = _fingerprints(EXAMPLES, "nomenclature")
+    result = plan_evidence_gap_refill(
+        {**snapshot(), "dispatch_fingerprints": sorted(held)},
+        source,
+        engine=engine,
+        reserve_depth=3,
+        domains={"nomenclature"},
+    )
+    assert result["status"] == "refill_planned"
+    got = [
+        (p["source_payload"]["taxon_id"], p["source_payload"]["taxon_name"])
+        for p in result["proposals"]
+    ]
+    assert got == [
+        ("10001", "Orchis xaf"),  # names come from the KG taxon node
+        ("10002", "Orchis xag"),
+        ("10003", "Orchis xah"),
+    ]
+    assert not {p["material_fingerprint"] for p in result["proposals"]} & held
+    assert all(frontend_admits(p["source_payload"]) is None for p in result["proposals"])
+    held_rejections = [
+        r["taxon_id"]
+        for r in result["source_rejections"]
+        if r.get("reason") == "already_held_by_caller"
+    ]
+    assert held_rejections == EXAMPLES
+    assert {p["source_payload"]["domain"] for p in result["proposals"]} == {
+        "nomenclature"
+    }
+
+
+def test_paging_is_bounded_per_domain_and_stops_at_the_cap(tmp_path):
+    kg = _many_taxa_kg(80)
+    source = _PagerSpy(kg)
+    queue = _queue(kg, source, tmp_path)
+    everything = _fingerprints(kg.taxa, "nomenclature")
+    candidates, rejections, reason = evidence_gap_candidates(
+        queue, source, held_fingerprints=everything, domains={"nomenclature"}
+    )
+    assert reason is None and candidates == []
+    scanned = sum(n for *_, n in source.pages)
+    assert scanned == MAX_PAGED_TAXA_PER_DOMAIN  # 75 more lacking taxa exist
+    assert all(limit <= LACKING_PAGE_SIZE for _, _, limit, _ in source.pages)
+    assert [after for _, after, _, _ in source.pages][:2] == ["10000", "10010"]
+    held = [r for r in rejections if r["reason"] == "already_held_by_caller"]
+    assert len(held) == len(EXAMPLES) + MAX_PAGED_TAXA_PER_DOMAIN
+
+    # Stops at the cap: one page is enough once taxa past the examples are free.
+    source = _PagerSpy(kg)
+    candidates, _, _ = evidence_gap_candidates(
+        _queue(kg, source, tmp_path),
+        source,
+        held_fingerprints=_fingerprints(EXAMPLES, "nomenclature"),
+        domains={"nomenclature"},
+    )
+    assert len(candidates) == MAX_CANDIDATES_PER_PASS
+    assert source.pages == [("nomenclature", "10000", LACKING_PAGE_SIZE, 10)]
+    assert [c["queue_rank"] for c in candidates] == [0, 1, 2]
+
+
+def test_no_paging_when_examples_still_produce_candidates(tmp_path):
+    kg = _many_taxa_kg()
+    source = _PagerSpy(kg)
+    # Four of five examples held: the fifth is new work, so the domain is not paged
+    # even though the cap is not reached.
+    candidates, _, _ = evidence_gap_candidates(
+        _queue(kg, source, tmp_path),
+        source,
+        held_fingerprints=_fingerprints(EXAMPLES[:4], "nomenclature"),
+        domains={"nomenclature"},
+    )
+    assert [c["source_payload"]["taxon_id"] for c in candidates] == ["10000"]
+    assert source.pages == []
+    # Nothing held at all: no paging either.
+    source = _PagerSpy(kg)
+    evidence_gap_candidates(_queue(kg, source, tmp_path), source)
+    assert source.pages == []
+
+
+def test_locality_gated_domains_are_never_paged(tmp_path):
+    kg = _many_taxa_kg()
+    source = _PagerSpy(kg)
+    queue = _queue(kg, source, tmp_path)
+    assert any(g["mission"]["locality_gated"] for g in queue["queue"])
+    all_domains = {g["mission"]["domain"] for g in queue["queue"]}
+    held: set[str] = set()
+    for domain in all_domains - {"distribution"}:
+        held |= _fingerprints(kg.taxa, domain)
+    candidates, _, _ = evidence_gap_candidates(queue, source, held_fingerprints=held)
+    assert candidates == []
+    paged = {domain for domain, *_ in source.pages}
+    assert paged and "distribution" not in paged
+    # Paged in gap-rank order.
+    ranked = []
+    for g in queue["queue"]:
+        d = g["mission"]["domain"]
+        if d in paged and d not in ranked:
+            ranked.append(d)
+    assert list(dict.fromkeys(d for d, *_ in source.pages)) == ranked
+
+
+def test_paging_respects_the_domain_filter_and_never_invents_names(tmp_path):
+    kg = _many_taxa_kg()
+    del kg.labels["10002"]  # no label on the KG node: rejected, never invented
+    source = _PagerSpy(kg)
+    held = _fingerprints(EXAMPLES, "nomenclature") | _fingerprints(
+        EXAMPLES, "morphology"
+    )
+    candidates, rejections, _ = evidence_gap_candidates(
+        _queue(kg, source, tmp_path), source, held_fingerprints=held, domains={"morphology"}
+    )
+    assert {domain for domain, *_ in source.pages} == {"morphology"}
+    assert [
+        (c["source_payload"]["taxon_id"], c["source_payload"]["domain"])
+        for c in candidates
+    ] == [("10001", "morphology"), ("10003", "morphology"), ("10004", "morphology")]
+    assert {
+        "taxon_id": "10002",
+        "domain": "morphology",
+        "reason": "taxon_name_unresolved",
+    } in rejections
+
+
+def test_sources_without_a_pager_skip_paging_and_page_errors_fail_closed(tmp_path):
+    queue = {
+        "gap_source": "evidence_coverage_kg",
+        "freshness": {"stale": False},
+        "queue": [_gap("g-nomen", "nomenclature", ["101"])],
+    }
+    held = _fingerprints(["101"], "nomenclature")
+    assert evidence_gap_candidates(
+        queue, _LabelSource(LABELS), held_fingerprints=held
+    )[0] == []
+
+    class Broken(_LabelSource):
+        def domain_lacking_taxa(self, *_args, **_kwargs):
+            from runtime.evidence_coverage_gaps import EvidenceCoverageUnavailable
+
+            raise EvidenceCoverageUnavailable("knowledge-graph read failed: X")
+
+    candidates, rejections, reason = evidence_gap_candidates(
+        queue, Broken(LABELS), held_fingerprints=held
+    )
+    assert candidates == [] and reason is None
+    assert rejections[-1]["reason"] == "lacking_taxa_unavailable"

@@ -13,12 +13,16 @@ from typing import Literal
 
 from fastapi import APIRouter, Query
 
+from app.interaction_discovery.models import (  # noqa: F401  (re-exported)
+    InteractionDiscoveryRecord,
+    InteractionDiscoveryResponse,
+)
 from app.interaction_discovery.service import discover_interactions
 
 router = APIRouter(prefix="/api/interactions", tags=["interaction-discovery"])
 
 
-@router.get("/discovery")
+@router.get("/discovery", response_model=InteractionDiscoveryResponse)
 def get_interaction_discovery(
     taxon: str | None = Query(default=None, max_length=200),
     category: Literal["pollinator", "mycorrhizal", "all"] = Query(default="all"),

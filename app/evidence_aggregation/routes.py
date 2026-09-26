@@ -1,20 +1,27 @@
 from __future__ import annotations
-from typing import Annotated,Any
-from fastapi import APIRouter,Depends,HTTPException,Query
-from pydantic import BaseModel,Field
+
+from typing import Annotated, Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
+
+from app.member_auth import member_readable, owner_or_member_read
+from app.member_redaction import MemberRedactingRoute
+from app.persistence.state_repository import configured_database_url
 from app.security import verify_owner_or_api_key
+
 from .models import CandidateInput
 from .repository import MemoryAggregateRepository
 from .service import EvidenceAggregationService
-from app.persistence.state_repository import configured_database_url
-router=APIRouter(prefix="/api/evidence-aggregation",tags=["evidence-aggregation"],dependencies=[Depends(verify_owner_or_api_key)])
+
+router=APIRouter(prefix="/api/evidence-aggregation",tags=["evidence-aggregation"],dependencies=[Depends(owner_or_member_read)],route_class=MemberRedactingRoute)
 def _build_repository():
  if configured_database_url():
   from .postgres_repository import PostgresAggregateRepository
   return PostgresAggregateRepository()
  return MemoryAggregateRepository()
 try:REPOSITORY=_build_repository();REPOSITORY_ERROR=None
-except Exception:REPOSITORY=None;REPOSITORY_ERROR="AGGREGATION_DATABASE_UNAVAILABLE"
+except Exception:REPOSITORY=None;REPOSITORY_ERROR="AGGREGATION_DATABASE_UNAVAILABLE"  # noqa: BLE001 -- any repository construction failure must fail closed to a 503 at request time, never crash app import
 SERVICE=EvidenceAggregationService(REPOSITORY) if REPOSITORY is not None else None
 def _available():
  if REPOSITORY is None or SERVICE is None:raise HTTPException(503,detail={"code":REPOSITORY_ERROR or "AGGREGATION_DATABASE_UNAVAILABLE"})
@@ -97,7 +104,7 @@ def aggregates(aggregate_type:str|None=None,status:str|None=None,review_state:st
  values=[x for x in _read().versions if x["active"]];values=sorted([x for x in values if (not aggregate_type or x["aggregate_type"]==aggregate_type) and (not status or x["aggregate_status"]==status) and (not review_state or x["review_state"]==review_state)],key=lambda x:(x["aggregate_id"],x["version"]));return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.get("/aggregates/{aid}")
 def aggregate(aid:int):
- value=next((x for x in reversed(_read().versions) if x["aggregate_id"]==aid and x["active"]),None)
+ value=_read().current_aggregate(aid)
  if value is None:raise HTTPException(404,detail={"code":"AGGREGATE_NOT_FOUND"})
  return value
 @router.get("/aggregates/{aid}/versions")
@@ -140,11 +147,16 @@ def withdraw(aid:int,p:Supersede,auth:Annotated[dict,Depends(verify_owner_or_api
  _,service=_available();return _write(lambda:service.supersede(aid,"WITHDRAWN: "+p.reason,str(auth.get("actor") or "operator"),p.replacement_aggregate_id))
 @router.get("/export")
 def export():return {"items":[{k:v for k,v in x.items() if k not in {"authorized_quote","source_text","text"}} for x in sorted(_read().versions,key=lambda x:(x["aggregate_id"],x["version"])) if x["active"]],"review_safe":True}
+# Member-readable: fixed schema {rulesets:{version:{deterministic}}, models:{version:{network}}},
+# written only by the repository constructor; no route writes it.
 @router.get("/registry")
+@member_readable
 def registry():
  repository=_read();return {"rulesets":repository.rulesets,"models":repository.models}
 @router.get("/tombstones")
 def tombstones(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted(_read().tombstones,key=lambda x:x["tombstone_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
+# Member-readable: constant keys, booleans and a fixed status literal.
 @router.get("/health")
+@member_readable
 def health():return {"status":"ok","candidate_only":True,"publishes_graph":False,"network_required":False,"persistent":hasattr(_read(),"atomic")}
