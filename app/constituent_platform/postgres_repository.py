@@ -82,13 +82,28 @@ class PostgresSocietyCRMRepository:
                 """
                 INSERT INTO oc_constituent.identity_links (constituent_id, auth_subject)
                 VALUES (%s, %s)
-                ON CONFLICT (auth_subject) DO UPDATE
-                    SET constituent_id = EXCLUDED.constituent_id
+                ON CONFLICT (auth_subject) DO NOTHING
                 RETURNING *
                 """,
                 (constituent_id, normalized),
             )
-            return dict(cur.fetchone())
+            row = cur.fetchone()
+            if row is not None:
+                return dict(row)
+            cur.execute(
+                """
+                SELECT *
+                FROM oc_constituent.identity_links
+                WHERE auth_subject = %s
+                """,
+                (normalized,),
+            )
+            existing = cur.fetchone()
+            if existing is None:
+                raise RuntimeError("IDENTITY_LINK_CONFLICT_NOT_READABLE")
+            if existing["constituent_id"] != constituent_id:
+                raise ValueError("AUTH_SUBJECT_ALREADY_LINKED")
+            return dict(existing)
 
     def grant_staff_role(
         self,
