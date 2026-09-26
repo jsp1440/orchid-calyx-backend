@@ -2,20 +2,30 @@
 
 from __future__ import annotations
 
+import logging
 import os
-from typing import Annotated, Any
+from threading import Lock
+from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from app.persistence.state_repository import configured_database_url
 from app.security import verify_owner_or_api_key
 
 from .models import FeedbackClass, ObjectType
 from .repository import (
+    EvidenceFeedbackRepository,
     EvidenceFeedbackRepositoryError,
+    EvidenceFeedbackStoreUnavailable,
     FileEvidenceFeedbackRepository,
 )
 from .service import EvidenceFeedbackService
+
+if TYPE_CHECKING:
+    from .postgres_repository import PostgresEvidenceFeedbackRepository
+
+logger = logging.getLogger(__name__)
 
 # Every product router is mounted under ``/api``. The owner session cookie is
 # scoped to ``path=/api/``, so a browser only sends it to routes below that
@@ -65,16 +75,87 @@ def _subject(auth: dict) -> str:
     return subject
 
 
+FEEDBACK_ROOT_ENV = "CALYX_EVIDENCE_FEEDBACK_ROOT"
+DEFAULT_FEEDBACK_ROOT = "data/evidence_feedback"
+NON_DURABLE_WARNING = (
+    "Evidence feedback is NOT durable: no DATABASE_URL and no "
+    f"{FEEDBACK_ROOT_ENV} are configured, so corrections are written under "
+    f"'{DEFAULT_FEEDBACK_ROOT}' on this instance's local filesystem and will be "
+    "lost when it restarts or redeploys. Configure DATABASE_URL (preferred) or "
+    f"point {FEEDBACK_ROOT_ENV} at persistent storage."
+)
+
+# One PostgreSQL repository per database URL, built lazily. A failed build is
+# not cached, so the next request retries instead of staying unavailable.
+_POSTGRES_REPOSITORIES: dict[str, PostgresEvidenceFeedbackRepository] = {}
+_POSTGRES_LOCK = Lock()
+
+
+def _production_like() -> bool:
+    env = (os.getenv("APP_ENV") or os.getenv("ENVIRONMENT") or "").strip().lower()
+    render = (os.getenv("RENDER") or "").strip().lower()
+    return env in {"prod", "production"} or render in {"1", "true", "yes", "on"}
+
+
+def non_durable_store_warning() -> str | None:
+    """The warning to log when production feedback would be non-durable."""
+
+    if configured_database_url() or (os.getenv(FEEDBACK_ROOT_ENV) or "").strip():
+        return None
+    return NON_DURABLE_WARNING if _production_like() else None
+
+
+def warn_if_non_durable() -> str | None:
+    message = non_durable_store_warning()
+    if message:
+        logger.warning(message)
+    return message
+
+
+def reset_repository_cache() -> None:
+    """Forget built PostgreSQL repositories (a fresh process after restart)."""
+
+    with _POSTGRES_LOCK:
+        _POSTGRES_REPOSITORIES.clear()
+
+
+def _postgres_repository(database_url: str) -> PostgresEvidenceFeedbackRepository:
+    with _POSTGRES_LOCK:
+        repository = _POSTGRES_REPOSITORIES.get(database_url)
+        if repository is None:
+            from .postgres_repository import PostgresEvidenceFeedbackRepository
+
+            repository = PostgresEvidenceFeedbackRepository(database_url)
+            _POSTGRES_REPOSITORIES[database_url] = repository
+        return repository
+
+
+def _repository() -> EvidenceFeedbackRepository:
+    """The durable database store when configured, else the file store.
+
+    A configured but unreachable database raises
+    ``EvidenceFeedbackStoreUnavailable`` (HTTP 503); it never falls back to
+    files, which would split feedback between two stores.
+    """
+
+    database_url = configured_database_url()
+    if database_url:
+        return _postgres_repository(database_url)
+    root = os.environ.get(FEEDBACK_ROOT_ENV, DEFAULT_FEEDBACK_ROOT)
+    return FileEvidenceFeedbackRepository(root)
+
+
 def _service() -> EvidenceFeedbackService:
-    root = os.environ.get(
-        "CALYX_EVIDENCE_FEEDBACK_ROOT",
-        "data/evidence_feedback",
-    )
-    return EvidenceFeedbackService(FileEvidenceFeedbackRepository(root))
+    return EvidenceFeedbackService(_repository())
+
+
+warn_if_non_durable()
 
 
 def _translate(exc: Exception) -> None:
     code = str(exc)
+    if isinstance(exc, EvidenceFeedbackStoreUnavailable):
+        raise HTTPException(status_code=503, detail={"code": code}) from exc
     if isinstance(exc, EvidenceFeedbackRepositoryError):
         status = 404 if code in {
             "CASE_NOT_FOUND",

@@ -18,7 +18,7 @@ from .models import (
     content_hash,
     feedback_fingerprint,
 )
-from .repository import FileEvidenceFeedbackRepository
+from .repository import EvidenceFeedbackRepository
 
 Clock = Callable[[], str]
 
@@ -39,7 +39,7 @@ class EvidenceFeedbackService:
 
     def __init__(
         self,
-        repository: FileEvidenceFeedbackRepository,
+        repository: EvidenceFeedbackRepository,
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -98,6 +98,45 @@ class EvidenceFeedbackService:
             proposed_replacement=proposed_replacement,
             citation=citation,
         )
+        # The duplicate check and the write are one serialized unit per
+        # fingerprint, so concurrent identical submissions yield one case and
+        # the case is never stored without its ``case_submitted`` event.
+        return self.repository.atomic(
+            lambda: self._submit_new_or_duplicate(
+                fingerprint=fingerprint,
+                object_id=object_id,
+                object_version_hash=object_version_hash,
+                object_type=object_type,
+                page_context=page_context,
+                feedback_class=feedback_class,
+                statement=statement,
+                proposed_replacement=proposed_replacement,
+                citation=citation,
+                submitter_id=submitter_id,
+                source_partner_id=source_partner_id,
+                defect_kind=defect_kind,
+                severity=severity,
+            ),
+            lock_key=f"fingerprint:{fingerprint}",
+        )
+
+    def _submit_new_or_duplicate(
+        self,
+        *,
+        fingerprint: str,
+        object_id: str,
+        object_version_hash: str,
+        object_type: ObjectType,
+        page_context: str,
+        feedback_class: FeedbackClass,
+        statement: str,
+        proposed_replacement: str | None,
+        citation: str | None,
+        submitter_id: str | None,
+        source_partner_id: str | None,
+        defect_kind: str | None,
+        severity: str,
+    ) -> SubmissionResult:
         existing = self.repository.find_by_fingerprint(fingerprint)
         if existing is not None:
             self.repository.append_event(
@@ -159,6 +198,23 @@ class EvidenceFeedbackService:
         return SubmissionResult(case=case, created=True)
 
     def accept_trivial_correction(
+        self,
+        *,
+        case_id: str,
+        reviewer_id: str,
+        corrected_payload: dict[str, Any],
+    ) -> EvidenceFeedbackCase:
+        # Serialized per case so two reviewers cannot both resolve it.
+        return self.repository.atomic(
+            lambda: self._accept_trivial_correction(
+                case_id=case_id,
+                reviewer_id=reviewer_id,
+                corrected_payload=corrected_payload,
+            ),
+            lock_key=f"case:{case_id.strip()}",
+        )
+
+    def _accept_trivial_correction(
         self,
         *,
         case_id: str,

@@ -4,29 +4,147 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from pathlib import Path
 from threading import RLock
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
 from .models import EvidenceFeedbackCase, EvidenceObjectVersion, canonical_json
+
+T = TypeVar("T")
+
+# Stable 503 code when the configured durable store cannot be reached.
+DATABASE_UNAVAILABLE_CODE = "EVIDENCE_FEEDBACK_DATABASE_UNAVAILABLE"
 
 
 class EvidenceFeedbackRepositoryError(ValueError):
     pass
 
 
+class EvidenceFeedbackStoreUnavailable(RuntimeError):
+    """The configured durable store is unreachable or unusable.
+
+    Deliberately not a ``ValueError``: callers must fail closed (HTTP 503)
+    rather than treat an outage as a client error or fall back to another
+    store, which would split feedback between two places.
+    """
+
+    def __init__(self, code: str = DATABASE_UNAVAILABLE_CODE) -> None:
+        super().__init__(code)
+
+
+class EvidenceFeedbackRepository(Protocol):
+    """Contract shared by the file and PostgreSQL stores."""
+
+    def atomic(
+        self, operation: Callable[[], T], *, lock_key: str | None = None
+    ) -> T: ...
+
+    def save_case(self, case: EvidenceFeedbackCase) -> None: ...
+
+    def get_case(self, case_id: str) -> EvidenceFeedbackCase: ...
+
+    def find_by_fingerprint(
+        self, fingerprint: str
+    ) -> EvidenceFeedbackCase | None: ...
+
+    def append_event(
+        self,
+        *,
+        case_id: str,
+        event: str,
+        timestamp: str,
+        actor_id: str | None,
+        details: dict[str, Any] | None = None,
+    ) -> None: ...
+
+    def list_events(self, case_id: str) -> list[dict[str, Any]]: ...
+
+    def save_object_version(
+        self, version: EvidenceObjectVersion
+    ) -> EvidenceObjectVersion: ...
+
+    def get_object_version(
+        self, object_id: str, version_hash: str
+    ) -> EvidenceObjectVersion: ...
+
+    def list_object_versions(
+        self, object_id: str
+    ) -> list[EvidenceObjectVersion]: ...
+
+
+def normalized_key(value: str, *, code: str) -> str:
+    """Identity used by every store: surrounding whitespace is not identity."""
+
+    normalized = value.strip()
+    if not normalized:
+        raise EvidenceFeedbackRepositoryError(code)
+    return normalized
+
+
+def normalized_version_hash(version_hash: str) -> str:
+    normalized = version_hash.strip().casefold()
+    if len(normalized) != 64 or any(
+        char not in "0123456789abcdef" for char in normalized
+    ):
+        raise EvidenceFeedbackRepositoryError("INVALID_OBJECT_VERSION_HASH")
+    return normalized
+
+
+def payload_version_hash(version: EvidenceObjectVersion) -> str:
+    """Verify ``version.version_hash`` is the content hash of its payload."""
+
+    expected = hashlib.sha256(
+        canonical_json(version.payload).encode("utf-8")
+    ).hexdigest()
+    if version.version_hash != expected:
+        raise EvidenceFeedbackRepositoryError("OBJECT_VERSION_HASH_MISMATCH")
+    return expected
+
+
+def is_same_version(
+    persisted: EvidenceObjectVersion, candidate: EvidenceObjectVersion
+) -> bool:
+    """True when ``candidate`` re-presents the persisted content version.
+
+    ``created_at`` is the first-registration time and is not part of the
+    version identity. A caller that makes no lineage claim
+    (``previous_version_hash is None``) does not contradict stored lineage;
+    a conflicting lineage claim, object type or payload does.
+    """
+
+    return (
+        persisted.object_id == candidate.object_id
+        and persisted.object_type is candidate.object_type
+        and persisted.version_hash == candidate.version_hash
+        and persisted.payload == candidate.payload
+        and candidate.previous_version_hash
+        in {None, persisted.previous_version_hash}
+    )
+
+
 class FileEvidenceFeedbackRepository:
-    """Content-addressed storage with atomic snapshots and append-only events."""
+    """Content-addressed storage with atomic snapshots and append-only events.
+
+    Durable only when ``root`` is on persistent storage. A deployment with a
+    configured database uses ``PostgresEvidenceFeedbackRepository`` instead.
+    """
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
         self._lock = RLock()
 
+    def atomic(
+        self, operation: Callable[[], T], *, lock_key: str | None = None
+    ) -> T:
+        """Run ``operation`` serialized against other writers in this process."""
+
+        with self._lock:
+            return operation()
+
     @staticmethod
     def _key(value: str, *, code: str) -> str:
-        normalized = value.strip()
-        if not normalized:
-            raise EvidenceFeedbackRepositoryError(code)
+        normalized = normalized_key(value, code=code)
         return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
 
     def _case_path(self, case_id: str) -> Path:
@@ -105,26 +223,7 @@ class FileEvidenceFeedbackRepository:
             if line.strip()
         ]
 
-    @staticmethod
-    def _is_same_version(
-        persisted: EvidenceObjectVersion, candidate: EvidenceObjectVersion
-    ) -> bool:
-        """True when ``candidate`` re-presents the persisted content version.
-
-        ``created_at`` is the first-registration time and is not part of the
-        version identity. A caller that makes no lineage claim
-        (``previous_version_hash is None``) does not contradict stored lineage;
-        a conflicting lineage claim, object type or payload does.
-        """
-
-        return (
-            persisted.object_id == candidate.object_id
-            and persisted.object_type is candidate.object_type
-            and persisted.version_hash == candidate.version_hash
-            and persisted.payload == candidate.payload
-            and candidate.previous_version_hash
-            in {None, persisted.previous_version_hash}
-        )
+    _is_same_version = staticmethod(is_same_version)
 
     def save_object_version(
         self, version: EvidenceObjectVersion
@@ -136,11 +235,7 @@ class FileEvidenceFeedbackRepository:
         before every feedback submission).
         """
 
-        expected = hashlib.sha256(
-            canonical_json(version.payload).encode("utf-8")
-        ).hexdigest()
-        if version.version_hash != expected:
-            raise EvidenceFeedbackRepositoryError("OBJECT_VERSION_HASH_MISMATCH")
+        expected = payload_version_hash(version)
         path = self._object_dir(version.object_id) / "versions" / f"{expected}.json"
         with self._lock:
             if path.is_file():
@@ -167,11 +262,7 @@ class FileEvidenceFeedbackRepository:
     def get_object_version(
         self, object_id: str, version_hash: str
     ) -> EvidenceObjectVersion:
-        normalized = version_hash.strip().casefold()
-        if len(normalized) != 64 or any(
-            char not in "0123456789abcdef" for char in normalized
-        ):
-            raise EvidenceFeedbackRepositoryError("INVALID_OBJECT_VERSION_HASH")
+        normalized = normalized_version_hash(version_hash)
         path = self._object_dir(object_id) / "versions" / f"{normalized}.json"
         if not path.is_file():
             raise EvidenceFeedbackRepositoryError("OBJECT_VERSION_NOT_FOUND")

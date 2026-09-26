@@ -1,14 +1,22 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.evidence_feedback.routes import router
 from app.security import verify_owner_or_api_key
+from tests.evidence_feedback_stores import STORES, make_store
 
 
-def client_for(tmp_path, monkeypatch, actor="member-1"):
-    monkeypatch.setenv("CALYX_EVIDENCE_FEEDBACK_ROOT", str(tmp_path))
+@pytest.fixture(params=STORES)
+def store(request, tmp_path, monkeypatch):
+    return make_store(request.param, tmp_path, monkeypatch)
+
+
+def client_for(store, actor="member-1", *, restart=False):
+    if restart:
+        store.restart()
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[verify_owner_or_api_key] = lambda: {
@@ -31,11 +39,8 @@ def register_object(client, *, object_id, object_type, payload):
     return response.json()
 
 
-def test_authenticated_lexicon_feedback_survives_new_client(
-    tmp_path,
-    monkeypatch,
-):
-    client = client_for(tmp_path, monkeypatch)
+def test_authenticated_lexicon_feedback_survives_new_client(store):
+    client = client_for(store)
     version = register_object(
         client,
         object_id="lexicon:labellum",
@@ -61,16 +66,22 @@ def test_authenticated_lexicon_feedback_survives_new_client(
     assert case["disposition"] == "auto_correctable"
     assert case["status"] == "pending_review"
 
-    restarted = client_for(tmp_path, monkeypatch)
+    restarted = client_for(store, restart=True)
     status = restarted.get(f"/api/evidence-feedback/cases/{case['case_id']}")
 
     assert status.status_code == 200
     assert status.json()["case_id"] == case["case_id"]
     assert status.json()["status"] == "pending_review"
+    # With a database configured nothing lands on the local filesystem, even
+    # though CALYX_EVIDENCE_FEEDBACK_ROOT is set; the file store writes there.
+    if store.kind == "postgres":
+        assert store.files_written() == []
+    else:
+        assert store.files_written()
 
 
-def test_duplicate_http_submission_is_suppressed(tmp_path, monkeypatch):
-    client = client_for(tmp_path, monkeypatch)
+def test_duplicate_http_submission_is_suppressed(store):
+    client = client_for(store)
     version = register_object(
         client,
         object_id="lexicon:column",
@@ -96,8 +107,8 @@ def test_duplicate_http_submission_is_suppressed(tmp_path, monkeypatch):
     assert second.json()["duplicate_of"] == first.json()["case"]["case_id"]
 
 
-def test_submitter_cannot_read_another_identity_case(tmp_path, monkeypatch):
-    owner = client_for(tmp_path, monkeypatch, actor="member-1")
+def test_submitter_cannot_read_another_identity_case(store):
+    owner = client_for(store, actor="member-1")
     version = register_object(
         owner,
         object_id="matrix:episode:7",
@@ -117,18 +128,15 @@ def test_submitter_cannot_read_another_identity_case(tmp_path, monkeypatch):
     )
     case_id = submitted.json()["case"]["case_id"]
 
-    other = client_for(tmp_path, monkeypatch, actor="member-2")
+    other = client_for(store, actor="member-2")
     response = other.get(f"/api/evidence-feedback/cases/{case_id}")
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "CASE_STATUS_NOT_VISIBLE"
 
 
-def test_scientific_case_cannot_use_trivial_correction_route(
-    tmp_path,
-    monkeypatch,
-):
-    client = client_for(tmp_path, monkeypatch)
+def test_scientific_case_cannot_use_trivial_correction_route(store):
+    client = client_for(store)
     version = register_object(
         client,
         object_id="image:annotation:9",
@@ -158,8 +166,8 @@ def test_scientific_case_cannot_use_trivial_correction_route(
     assert response.json()["detail"]["code"] == "GOVERNED_REVIEW_REQUIRED"
 
 
-def test_trivial_route_versions_instead_of_overwriting(tmp_path, monkeypatch):
-    client = client_for(tmp_path, monkeypatch, actor="reviewer-1")
+def test_trivial_route_versions_instead_of_overwriting(store):
+    client = client_for(store, actor="reviewer-1")
     original = register_object(
         client,
         object_id="lexicon:sepal",
@@ -195,3 +203,130 @@ def test_trivial_route_versions_instead_of_overwriting(tmp_path, monkeypatch):
     assert result["status"] == "resolved"
     assert result["object_version_hash"] == original["version_hash"]
     assert result["resulting_version_hash"] != original["version_hash"]
+
+
+UNREACHABLE_DATABASE_URL = (
+    "postgresql://feedback-test@127.0.0.1:9/unreachable?connect_timeout=2"
+)
+
+
+def test_configured_but_unreachable_database_fails_closed_without_file_fallback(
+    tmp_path, monkeypatch
+):
+    from app.evidence_feedback import routes
+
+    root = tmp_path / "feedback"
+    monkeypatch.setenv(routes.FEEDBACK_ROOT_ENV, str(root))
+    monkeypatch.setenv("DATABASE_URL", UNREACHABLE_DATABASE_URL)
+    monkeypatch.delenv("TEST_DATABASE_URL", raising=False)
+    monkeypatch.setattr(routes, "_POSTGRES_REPOSITORIES", {})
+    client = client_for(None)
+
+    registered = client.post(
+        "/api/evidence-feedback/objects",
+        json={"object_id": "lexicon:x", "object_type": "lexicon", "payload": {}},
+    )
+    submitted = client.post(
+        "/api/evidence-feedback/cases",
+        json={
+            "object_id": "lexicon:x",
+            "object_version_hash": "0" * 64,
+            "object_type": "lexicon",
+            "page_context": "/lexicon/x",
+            "feedback_class": "report_problem",
+            "statement": "Needs a citation.",
+        },
+    )
+    status = client.get("/api/evidence-feedback/cases/efc-anything")
+
+    for response in (registered, submitted, status):
+        assert response.status_code == 503
+        assert response.json()["detail"] == {
+            "code": "EVIDENCE_FEEDBACK_DATABASE_UNAVAILABLE"
+        }
+    # No silent fallback: splitting feedback across two stores is data loss.
+    assert not root.exists()
+    # A failed build is not cached; the next request retries the database.
+    assert routes._POSTGRES_REPOSITORIES == {}
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected_warning"),
+    [
+        ({"RENDER": "true"}, True),
+        ({"APP_ENV": "production"}, True),
+        ({"ENVIRONMENT": "prod"}, True),
+        ({"RENDER": "true", "DATABASE_URL": UNREACHABLE_DATABASE_URL}, False),
+        ({"RENDER": "true", "CALYX_EVIDENCE_FEEDBACK_ROOT": "/var/data/fb"}, False),
+        ({}, False),
+        ({"APP_ENV": "development"}, False),
+    ],
+)
+def test_non_durable_production_store_logs_a_startup_warning(
+    monkeypatch, caplog, environment, expected_warning
+):
+    from app.evidence_feedback import routes
+
+    for name in (
+        "RENDER",
+        "APP_ENV",
+        "ENVIRONMENT",
+        "DATABASE_URL",
+        "TEST_DATABASE_URL",
+        "CALYX_EVIDENCE_FEEDBACK_ROOT",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in environment.items():
+        monkeypatch.setenv(name, value)
+
+    with caplog.at_level("WARNING", logger=routes.logger.name):
+        message = routes.warn_if_non_durable()
+
+    if expected_warning:
+        assert message == routes.NON_DURABLE_WARNING
+        assert "NOT durable" in caplog.text
+        assert "DATABASE_URL" in message
+    else:
+        assert message is None
+        assert "NOT durable" not in caplog.text
+
+
+def test_startup_warning_is_logged_at_import_without_crashing(tmp_path):
+    """A production-like process with no durable store warns once and starts."""
+
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[1]
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if key
+        not in {
+            "DATABASE_URL",
+            "TEST_DATABASE_URL",
+            "CALYX_EVIDENCE_FEEDBACK_ROOT",
+            "APP_ENV",
+            "ENVIRONMENT",
+        }
+    }
+    env.update({"RENDER": "true", "PYTHONPATH": str(repo_root)})
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import app.evidence_feedback.routes as r; print(r.router.prefix)",
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "/api/evidence-feedback"
+    assert "Evidence feedback is NOT durable" in completed.stderr
