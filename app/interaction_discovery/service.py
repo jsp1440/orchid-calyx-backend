@@ -21,9 +21,23 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
+from app.semantic_index.repository_runtime import get_repository_runtime
 from app.semantic_index.routes import get_repository_for_read
 
 INTERACTION_DISCOVERY_TYPE = "INTERACTION_DISCOVERY_RECORD"
+
+IndexState = Literal["durable", "memory_unprovisioned"]
+
+# Durable index configured but unreachable is already a 503 raised by
+# SemanticIndexRepositoryRuntime.read() (SEMANTIC_INDEX_DATABASE_UNAVAILABLE),
+# so a 200 from this surface only ever comes from one of these two states.
+# The unprovisioned state keeps ``status: ok`` for backward compatibility but
+# must never be read as "no interactions are known".
+UNPROVISIONED_INDEX_NOTE = (
+    "No durable interaction index is configured; this result was served from an "
+    "empty-by-default in-process index. An empty result is not evidence that no "
+    "interactions are known."
+)
 
 # Best-effort keyword heuristic over the source-supplied ``interaction_type``
 # text, used only to group results for convenience (category=pollinator /
@@ -83,6 +97,10 @@ def _record_from_document(document: dict[str, Any]) -> dict[str, Any] | None:
         "verification_state": "UNVERIFIED",
         "knowledge_graph_mutation": False,
         "revision_id": document.get("revision_id"),
+        # revision_id is a 60-bit stable hash (see interaction_discovery_ingest
+        # ._stable_id), larger than JavaScript's Number.MAX_SAFE_INTEGER; the
+        # string form lets browser clients hold it exactly.
+        "revision_id_str": None if document.get("revision_id") is None else str(document.get("revision_id")),
         "locator": metadata.get("locator"),
     }
 
@@ -92,6 +110,20 @@ def _taxon_matches(record: dict[str, Any], taxon: str) -> bool:
     source = str(record.get("source_taxon_name") or "").casefold()
     target = str(record.get("target_taxon_name") or "").casefold()
     return needle in source or needle in target
+
+
+def _index_state(repository: Any) -> IndexState:
+    """Derive availability from the repository actually serving this read.
+
+    Mirrors SemanticIndexRepositoryRuntime.status(): durable means a database
+    URL is configured and the active repository is the transactional
+    (``atomic``) Postgres-backed one. Anything else is the in-process memory
+    fallback used when no durable index is provisioned.
+    """
+    runtime = get_repository_runtime()
+    if runtime.durable_mode_configured and hasattr(repository, "atomic"):
+        return "durable"
+    return "memory_unprovisioned"
 
 
 def discover_interactions(
@@ -110,6 +142,7 @@ def discover_interactions(
     ``all`` for no narrowing.
     """
     repository = get_repository_for_read()
+    index_state = _index_state(repository)
     documents = [doc for doc in repository.documents if doc.get("active") and doc.get("source_object_type") == INTERACTION_DISCOVERY_TYPE]
 
     records: list[dict[str, Any]] = []
@@ -132,6 +165,8 @@ def discover_interactions(
         "truncated": truncated,
         "category": category,
         "taxon_filter": taxon,
+        "index_state": index_state,
+        "index_note": UNPROVISIONED_INDEX_NOTE if index_state == "memory_unprovisioned" else None,
         "review_bound": True,
         "knowledge_graph_mutation": False,
         "note": (

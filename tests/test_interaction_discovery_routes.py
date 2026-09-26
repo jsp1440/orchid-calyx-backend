@@ -136,3 +136,124 @@ def test_discovery_endpoint_empty_when_nothing_ingested(monkeypatch):
     body = response.json()
     assert body["count"] == 0
     assert body["interactions"] == []
+
+
+class _FakeDurableRepository(MemoryIndexRepository):
+    """In-memory stand-in exposing the transactional surface of the Postgres repository."""
+
+    def atomic(self, operation):
+        return operation()
+
+    def refresh_for_read(self):
+        return None
+
+
+def _durable_repository(monkeypatch) -> None:
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+    runtime._activate(_FakeDurableRepository())
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+
+def test_unprovisioned_index_is_labelled_so_empty_is_not_absence(monkeypatch):
+    _fresh_repository(monkeypatch)
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Dendrobium nobile"}).json()
+
+    assert body["status"] == "ok"
+    assert body["count"] == 0
+    assert body["index_state"] == "memory_unprovisioned"
+    assert "not evidence that no interactions are known" in body["index_note"]
+
+
+def test_durable_index_is_labelled_durable_without_unprovisioned_note(monkeypatch):
+    _durable_repository(monkeypatch)
+    _ingest_sample()
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Orchis"}).json()
+
+    assert body["index_state"] == "durable"
+    assert body["index_note"] is None
+    assert body["count"] == 1
+
+
+def test_durable_index_empty_result_is_still_durable(monkeypatch):
+    _durable_repository(monkeypatch)
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Nothing here"}).json()
+
+    assert body["count"] == 0
+    assert body["index_state"] == "durable"
+    assert body["index_note"] is None
+
+
+def test_configured_but_unreachable_durable_index_returns_503_not_empty_ok(monkeypatch):
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+
+    def _unreachable():
+        raise ConnectionError("database down")
+
+    monkeypatch.setattr(runtime, "_build_repository", _unreachable)
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "SEMANTIC_INDEX_DATABASE_UNAVAILABLE"
+
+
+def test_memory_repository_is_not_durable_even_when_database_url_configured(monkeypatch):
+    """Negative control: a non-transactional repository never reports durable."""
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+    runtime._activate(MemoryIndexRepository())
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+    assert discover_interactions()["index_state"] == "memory_unprovisioned"
+
+
+def test_revision_id_string_is_exact_beyond_javascript_safe_integer(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    response = client().get("/api/interactions/discovery", params={"taxon": "Orchis"})
+    record = response.json()["interactions"][0]
+
+    assert record["revision_id"] > 2**53
+    assert record["revision_id_str"] == str(record["revision_id"])
+    # The raw JSON text carries the full integer; the string form survives a
+    # float64 round-trip where the integer would not.
+    assert f'"revision_id":{record["revision_id"]}' in response.text.replace(" ", "")
+    assert int(float(record["revision_id"])) != record["revision_id"]
+    assert int(record["revision_id_str"]) == record["revision_id"]
+
+
+def test_discovery_response_schema_declares_index_state_and_revision_id_str():
+    schema = client().get("/openapi.json").json()
+    components = schema["components"]["schemas"]
+    response_schema = components["InteractionDiscoveryResponse"]
+    record_schema = components["InteractionDiscoveryRecord"]
+
+    assert "index_state" in response_schema["required"]
+    assert set(response_schema["properties"]["index_state"]["enum"]) == {"durable", "memory_unprovisioned"}
+    assert "index_note" in response_schema["properties"]
+    assert "revision_id" in record_schema["properties"]
+    assert "revision_id_str" in record_schema["properties"]
+    route = schema["paths"]["/api/interactions/discovery"]["get"]
+    assert route["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("InteractionDiscoveryResponse")
+
+
+def test_response_model_keeps_every_legacy_field(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    body = client().get("/api/interactions/discovery").json()
+
+    for key in ("status", "count", "total_matched", "truncated", "category", "taxon_filter",
+                "review_bound", "knowledge_graph_mutation", "note", "interactions"):
+        assert key in body
+    legacy_record_keys = {
+        "source_taxon_name", "source_taxon_id", "target_taxon_name", "target_taxon_id", "interaction_type",
+        "categories", "study_citation", "study_source_citation", "study_external_id", "provider",
+        "provider_stability", "dataset_version", "verification_state", "knowledge_graph_mutation",
+        "revision_id", "locator",
+    }
+    assert legacy_record_keys <= set(body["interactions"][0])
