@@ -263,7 +263,13 @@ def test_cache_hit_expiry_and_no_raw_token(client, supabase, monkeypatch):
     assert supabase.call_count == 1
     stored = json.dumps(list(member_auth._member_cache.items()))
     assert token not in stored
-    assert list(member_auth._member_cache) == [member_auth._cache_key(token)]
+    assert list(member_auth._member_cache) == [
+        member_auth._cache_key(
+            token,
+            base_url="https://project.supabase.co",
+            anon_key="anon-key",
+        )
+    ]
     clock[0] += 61
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
     assert supabase.call_count == 2
@@ -292,6 +298,26 @@ def test_cache_not_used_when_supabase_config_removed(client, supabase, monkeypat
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
     monkeypatch.delenv("OC_SUPABASE_URL")
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 503
+
+
+def test_cache_is_scoped_to_supabase_configuration(client, supabase, monkeypatch):
+    token = _jwt()
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 1
+
+    monkeypatch.setenv("OC_SUPABASE_URL", "https://other-project.supabase.co")
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 2
+    assert supabase.call_args.args[0] == "https://other-project.supabase.co/auth/v1/user"
+
+    monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "rotated-anon-key")
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 3
+    assert supabase.call_args.kwargs["headers"]["apikey"] == "rotated-anon-key"
+    stored = json.dumps(list(member_auth._member_cache.items()))
+    assert token not in stored
+    assert "anon-key" not in stored
+    assert "rotated-anon-key" not in stored
 
 
 # --- feature switch -----------------------------------------------------------------
@@ -425,20 +451,86 @@ def test_owner_only_route_keeps_401_when_member_cannot_be_verified(client, supab
     assert client.get(url).json()["detail"] == "Owner session or API key is required"
 
 
-_NON_REDACTING = ("/api/research/traits", "/api/literature-extraction")
+_NON_REDACTING = ("/api/literature-extraction",)
 
 
 def test_member_read_matches_owner_read(client, owner_token, supabase):
     """Members get the owner's response, except for the locality fields redacted for members."""
-    assert client.get(READ_URL, headers=_bearer(_jwt())).json() == TRAITS_PAYLOAD
+    traits = client.get(READ_URL, headers=_bearer(_jwt())).json()
+    assert traits == {
+        "contract_version": None,
+        "subject": None,
+        "state": "WITHHELD",
+        "generated_at": None,
+        "distributions": [],
+    }
     for method, path in sorted(EXPECTED_MEMBER_READS):
         owner_response = _call(client, method, path, _bearer(owner_token))
         member_response = _call(client, method, path, _bearer(_jwt()))
         assert owner_response.status_code == member_response.status_code, path
-        if path.startswith(_NON_REDACTING) or owner_response.status_code >= 400:
+        if path == "/api/research/traits" and owner_response.status_code < 400:
+            assert member_response.json() == {
+                "contract_version": owner_response.json().get("contract_version"),
+                "subject": owner_response.json().get("subject"),
+                "state": "WITHHELD",
+                "generated_at": owner_response.json().get("generated_at"),
+                "distributions": [],
+            }
+        elif path.startswith(_NON_REDACTING) or owner_response.status_code >= 400:
             assert owner_response.content == member_response.content, path
         else:
             assert member_response.json() == redact_member_locality(owner_response.json()), path
+
+
+def test_member_trait_read_withholds_all_free_form_scientific_fields(
+    client, owner_token, supabase, monkeypatch
+):
+    from app.research_traits import routes as traits_routes
+
+    payload = {
+        "contract_version": "oc-research-traits-v1",
+        "subject": {"rank": "genus", "name": "Dracula"},
+        "state": "AVAILABLE",
+        "generated_at": "2026-09-26T00:00:00+00:00",
+        "distributions": [
+            {
+                "trait_id": "private-site-trait",
+                "label": "Seen at Cerro Toledo",
+                "unit": None,
+                "evidence_state": "VERIFIED",
+                "confidence": 1.0,
+                "sample_size": 1,
+                "buckets": [{"value": "-4.0123,-79.1234", "count": 1}],
+                "receipts": [
+                    {
+                        "source_id": "private-observation",
+                        "source_name": "Collector notebook at exact locality",
+                        "record_id": "restricted-1",
+                        "source_url": "https://example.org/private-site",
+                        "retrieved_at": "2026-09-26",
+                        "license": "restricted",
+                    }
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        traits_routes, "get_service", lambda: Mock(get=Mock(return_value=payload))
+    )
+
+    owner_response = client.get(READ_URL, headers=_bearer(owner_token))
+    assert owner_response.json() == payload
+    member_response = client.get(READ_URL, headers=_bearer(_jwt(marker="traits")))
+    assert member_response.json() == {
+        "contract_version": "oc-research-traits-v1",
+        "subject": {"rank": "genus", "name": "Dracula"},
+        "state": "WITHHELD",
+        "generated_at": "2026-09-26T00:00:00+00:00",
+        "distributions": [],
+    }
+    assert "Cerro Toledo" not in member_response.text
+    assert "-4.0123" not in member_response.text
+    assert "Collector notebook" not in member_response.text
 
 
 # --- CORS ---------------------------------------------------------------------------
