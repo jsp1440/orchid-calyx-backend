@@ -133,7 +133,7 @@ def candidates(kind: str | None = None, review_state: str | None = None, active:
 
 @router.get("/candidates/{candidate_id}")
 def candidate(candidate_id: int):
-    repository=_read(); value = next((x for x in repository.candidates if x["candidate_id"] == candidate_id), None)
+    repository=_read(); value = repository.candidate_by_id(candidate_id)
     if value is None:
         raise HTTPException(404, "CANDIDATE_NOT_FOUND")
     return {**value, "evidence": sorted([x for x in repository.evidence_links if x["candidate_id"] == candidate_id],key=lambda x:x["evidence_link_id"])}

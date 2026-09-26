@@ -97,7 +97,7 @@ def aggregates(aggregate_type:str|None=None,status:str|None=None,review_state:st
  values=[x for x in _read().versions if x["active"]];values=sorted([x for x in values if (not aggregate_type or x["aggregate_type"]==aggregate_type) and (not status or x["aggregate_status"]==status) and (not review_state or x["review_state"]==review_state)],key=lambda x:(x["aggregate_id"],x["version"]));return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.get("/aggregates/{aid}")
 def aggregate(aid:int):
- value=next((x for x in reversed(_read().versions) if x["aggregate_id"]==aid and x["active"]),None)
+ value=_read().current_aggregate(aid)
  if value is None:raise HTTPException(404,detail={"code":"AGGREGATE_NOT_FOUND"})
  return value
 @router.get("/aggregates/{aid}/versions")
