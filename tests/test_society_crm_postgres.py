@@ -242,3 +242,21 @@ def test_staff_authorization_is_identity_bound_and_tenant_scoped() -> None:
 
 def test_admin_role_has_all_society_capabilities_but_only_in_its_tenant() -> None:
     assert capabilities_for_roles({SocietyRole.ADMIN}) == frozenset(SocietyCapability)
+
+
+def test_identity_subject_cannot_be_silently_reassigned() -> None:
+    dsn = os.environ["DATABASE_URL"]
+    _apply_migrations(dsn)
+    repo = PostgresSocietyCRMRepository(dsn)
+
+    first = repo.create_person(display_name="First Identity")
+    second = repo.create_person(display_name="Second Identity")
+    subject = "custom:stable-user-identity"
+    repo.link_identity(constituent_id=first["id"], auth_subject=subject)
+
+    with pytest.raises(ValueError, match="AUTH_SUBJECT_ALREADY_LINKED"):
+        repo.link_identity(constituent_id=second["id"], auth_subject=subject)
+
+    # Idempotent retry for the same person remains safe.
+    linked = repo.link_identity(constituent_id=first["id"], auth_subject=subject)
+    assert linked["constituent_id"] == first["id"]
