@@ -1,16 +1,36 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+import logging
 import re
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from sqlalchemy import text
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.database import get_engine
 from app.readiness.live_graph_audit import run_live_graph_audit
 
 router = APIRouter(prefix="/api", tags=["Orchid Widgets"])
+
+logger = logging.getLogger(__name__)
+
+# A missing or unreachable canonical database is an expected degraded state for
+# these public, read-only widgets (for example a local run with no DATABASE_URL,
+# where the engine falls back to an empty SQLite file, or a Postgres outage).
+# SQLAlchemy reports both as OperationalError/InterfaceError, so only those are
+# mapped to an honest 503 with a stable code. Any other failure keeps its
+# existing 500 so genuine programming or schema defects stay visible.
+DATABASE_ABSENT_ERRORS = (OperationalError, InterfaceError)
+GENUS_OF_DAY_DATABASE_UNAVAILABLE = "GENUS_OF_DAY_DATABASE_UNAVAILABLE"
+GENUS_MEDIA_DATABASE_UNAVAILABLE = "GENUS_MEDIA_DATABASE_UNAVAILABLE"
+
+
+def _database_unavailable(code: str, exc: Exception) -> HTTPException:
+    # Log the exception class only: driver messages can carry host names.
+    logger.warning("orchid widget database unavailable (%s): %s", code, type(exc).__name__)
+    return HTTPException(status_code=503, detail={"code": code})
 
 _ALLOWED_MEDIA_ORIGINS = {
     "https://orchidcontinuum.org",
@@ -93,6 +113,8 @@ def genus_of_day(limit: int = 25):
         with get_engine().connect() as conn:
             rows = conn.execute(sql, {"limit": limit}).mappings().all()
         return {"widget": "genus_of_day", "count": len(rows), "items": [dict(row) for row in rows]}
+    except DATABASE_ABSENT_ERRORS as exc:
+        raise _database_unavailable(GENUS_OF_DAY_DATABASE_UNAVAILABLE, exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Unable to load genus-of-day widget data.") from exc
 
@@ -202,6 +224,8 @@ def genus_media(
                 media_sql,
                 {"genus": accepted_genus, "scan_limit": max(limit * 12, 120)},
             ).mappings().all()
+    except DATABASE_ABSENT_ERRORS as exc:
+        raise _database_unavailable(GENUS_MEDIA_DATABASE_UNAVAILABLE, exc) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Unable to query canonical Orchid Continuum media.") from exc
 
