@@ -36,7 +36,7 @@ class FakeDb:
         self.rollbacks += 1
 
 
-def revision(version: int, *, title: str = "Thermal niche reasoning"):
+def stand_in(version: int, *, title: str = "Thermal niche reasoning"):
     """A stand-in for one persisted ReasoningLedger revision."""
     return SimpleNamespace(version=version, title=title)
 
@@ -48,10 +48,25 @@ def install_service(monkeypatch, *, revisions=None, raises=None):
         def __init__(self, _db):
             pass
 
-        def history(self, ledger_id, owner):
+        def revision(self, ledger_id, owner, version):
             if raises is not None:
                 raise raises
-            return {"revisions": list(revisions or []), "audit_events": []}
+            matching = next(
+                (item for item in revisions or [] if item.version == version), None
+            )
+            if matching is None:
+                raise routes.LedgerRevisionNotFoundError(
+                    ledger_id,
+                    version,
+                    sorted(item.version for item in revisions or []),
+                )
+            return matching
+
+        def history(self, *_args):
+            raise AssertionError("exact retrieval must not load full history")
+
+        def audit_history(self, *_args):
+            raise AssertionError("exact retrieval must not load audit history")
 
     monkeypatch.setattr(routes, "OperationalReasoningLedgerService", FakeService)
 
@@ -79,7 +94,7 @@ def call(ledger_id="ledger-1", version=2, db=None):
 
 
 def test_returns_the_exact_revision_requested(monkeypatch):
-    install_service(monkeypatch, revisions=[revision(1), revision(2), revision(7)])
+    install_service(monkeypatch, revisions=[stand_in(1), stand_in(2), stand_in(7)])
 
     body = call(version=2)
 
@@ -92,7 +107,7 @@ def test_never_falls_back_to_the_latest_revision(monkeypatch):
     # The core contract. A ledger at version 7 asked for version 3 must fail,
     # not answer with 7 — a claim verified against the wrong reasoning is a
     # scientific error, not a convenience.
-    install_service(monkeypatch, revisions=[revision(1), revision(7)])
+    install_service(monkeypatch, revisions=[stand_in(1), stand_in(7)])
 
     with pytest.raises(HTTPException) as excinfo:
         call(version=3)
@@ -105,7 +120,7 @@ def test_never_falls_back_to_the_latest_revision(monkeypatch):
 def test_reports_which_revisions_exist_so_missing_is_not_empty(monkeypatch):
     # "That revision is gone" and "this ledger has no reasoning" are different
     # facts. The caller must be able to tell them apart.
-    install_service(monkeypatch, revisions=[revision(1), revision(2)])
+    install_service(monkeypatch, revisions=[stand_in(1), stand_in(2)])
 
     with pytest.raises(HTTPException) as excinfo:
         call(version=9)
@@ -127,7 +142,7 @@ def test_an_empty_ledger_history_is_still_a_not_found(monkeypatch):
 def test_rejects_a_non_positive_version_as_malformed(monkeypatch, version):
     # Versions are 1-based. Treating 0 as "the first one" would answer a
     # malformed request with real reasoning.
-    install_service(monkeypatch, revisions=[revision(1)])
+    install_service(monkeypatch, revisions=[stand_in(1)])
 
     with pytest.raises(HTTPException) as excinfo:
         call(version=version)
@@ -163,7 +178,7 @@ def test_persistence_failure_is_unavailable_not_empty_reasoning(monkeypatch):
 def test_retrieval_does_not_certify_the_reasoning(monkeypatch):
     # Inspectable is not verified. A consumer must not be able to read a
     # successful retrieval as a scientific endorsement.
-    install_service(monkeypatch, revisions=[revision(2)])
+    install_service(monkeypatch, revisions=[stand_in(2)])
 
     body = call(version=2)
 
@@ -182,7 +197,7 @@ def test_returns_only_the_canonical_projection(monkeypatch):
         return {"version": ledger.version}
 
     monkeypatch.setattr(routes, "ledger_to_dict", spy)
-    install_service(monkeypatch, revisions=[revision(4)])
+    install_service(monkeypatch, revisions=[stand_in(4)])
 
     body = call(version=4)
 
@@ -197,23 +212,54 @@ def test_returns_only_the_canonical_projection(monkeypatch):
 
 
 def test_enforces_the_owner_boundary_through_the_shared_path(monkeypatch):
-    # history() calls current() first, so ownership is checked by the same code
-    # path as every other ledger read rather than by a second rule here.
+    # The repository's exact query receives the authenticated owner, so the
+    # owner boundary remains part of the retrieval path rather than a second
+    # unscoped lookup.
     calls = []
 
     class RecordingService:
         def __init__(self, _db):
             pass
 
-        def history(self, ledger_id, owner):
-            calls.append((ledger_id, owner))
-            return {"revisions": [revision(1)], "audit_events": []}
+        def revision(self, ledger_id, owner, version):
+            calls.append((ledger_id, owner, version))
+            return stand_in(1)
+
+        def history(self, *_args):
+            raise AssertionError("exact retrieval must not load full history")
+
+        def audit_history(self, *_args):
+            raise AssertionError("exact retrieval must not load audit history")
 
     monkeypatch.setattr(routes, "OperationalReasoningLedgerService", RecordingService)
 
     call(ledger_id="ledger-9", version=1)
 
-    assert calls == [("ledger-9", "owner@example.com")]
+    assert calls == [("ledger-9", "owner@example.com", 1)]
+
+
+def test_exact_retrieval_never_calls_full_history_or_audit_history(monkeypatch):
+    calls = []
+
+    class ExactOnlyService:
+        def __init__(self, _db):
+            pass
+
+        def revision(self, ledger_id, owner, version):
+            calls.append((ledger_id, owner, version))
+            return stand_in(version)
+
+        def history(self, *_args):
+            raise AssertionError("history path called")
+
+        def audit_history(self, *_args):
+            raise AssertionError("audit path called")
+
+    monkeypatch.setattr(routes, "OperationalReasoningLedgerService", ExactOnlyService)
+    body = call(version=7)
+
+    assert calls == [("ledger-1", "owner@example.com", 7)]
+    assert body["revision"]["version"] == 7
 
 
 def test_withheld_evidence_keeps_its_reference_identity_and_hash(monkeypatch):

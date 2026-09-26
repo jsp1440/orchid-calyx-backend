@@ -35,7 +35,24 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   issues:
-    types: [closed, reopened, labeled, unlabeled]
+    # Deliberately not `labeled`/`unlabeled`. This controller relabels issues
+    # itself: `oc-queued` -> `oc-running` on every claim, and `oc-running` ->
+    # `oc-done`/`oc-blocked`/`oc-owner-gate` on every settlement. With those two
+    # event types the controller is its own trigger, and one wave of three lanes
+    # emits about a dozen `issues` events.
+    #
+    # Every one of them enters the concurrency group below, and because GitHub
+    # keeps at most one PENDING run per group, each arrival cancels the run
+    # waiting there. Observed on 2026-09-24: run 35972010403 (the scheduled
+    # dispatch onto this branch) was cancelled three seconds after it was
+    # created, by the label events three issues had just emitted; run
+    # 35970187867 died the same way. The wave that would have done the work is
+    # the one that gets evicted, and the bounded refill wave a completed wave
+    # dispatches is evicted by that wave's own settlement labels.
+    #
+    # The `*/5` pulse below already owns queue latency, so nothing is lost but
+    # the self-inflicted churn.
+    types: [closed, reopened]
   pull_request:
     types: [closed]
 
@@ -103,6 +120,59 @@ jobs:
           done < <(gh issue list --repo "$REPO" --state open \
             --label oc-runtime-backoff --limit 200 --json number --jq '.[].number')
 
+      # Intake. Until now every TaskLeaf arrived because a person wrote an
+      # issue and attached a label, and the plan step said so every five
+      # minutes: free lanes, nothing admitted. This reads the repository and
+      # files bounded work from facts it can point at — a marker no requirements
+      # file declares, a node id a runner reported. It never reads prose, never
+      # calls a provider, and files at most three issues per pass, each carrying
+      # a fingerprint of the condition so the next pass files none of them again.
+      # Discovery asks the environment which distribution provides a module,
+      # rather than guessing from its name. That answer is only as complete as
+      # what is installed, so the production requirements are installed here:
+      # without them the undeclared-import source reports nothing at all, which
+      # is safe but is not coverage. Cached, so it costs a pulse very little.
+      - name: Provision the environment discovery reads
+        id: discovery_env
+        continue-on-error: true
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install production requirements for import discovery
+        if: steps.discovery_env.outcome == 'success'
+        continue-on-error: true
+        run: python3 -m pip install --quiet -r requirements.txt
+
+      - name: Discover product work from repository evidence
+        id: discovery
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_discovery --root . \
+            > "$RUNNER_TEMP/work-discovery.json"
+          jq '{schema, candidate_count,
+               candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
+            "$RUNNER_TEMP/work-discovery.json"
+
+      - name: File discovered work into the canonical queue
+        id: materialize
+        if: steps.discovery.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/work-discovery.json" \
+            --max-new 3 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/work-materialization.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/work-materialization.json")" -eq 0
+
       - name: Reconcile stale execution leases
         id: leases
         shell: bash
@@ -126,12 +196,101 @@ jobs:
           # portfolio. The canonical scheduler itself still ignores closed work.
           gh issue list --repo "$REPO" --state all --limit 1000 \
             --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
-          gh pr list --repo "$REPO" --state open --base "$INTEGRATION_BRANCH" --limit 200 \
-            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft > "$RUNNER_TEMP/prs.json"
+
+          # Blocked-work reconciliation reads machine-readable blocker lineage
+          # from issue bodies/comments. Fetch comments only for currently blocked
+          # issues. The REST endpoint supplies numeric comment IDs and its
+          # deterministic order; failures become an empty comment set so the
+          # reconciler holds the issue instead of releasing on incomplete state.
+          blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
+          gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
+            --json number --jq '.[].number' > "$blocked_numbers"
+          echo '[]' > "$RUNNER_TEMP/blocked-comments.json"
+          while read -r issue_number; do
+            [[ -n "$issue_number" ]] || continue
+            comments_file="$RUNNER_TEMP/comments-$issue_number.json"
+            if gh api --paginate \
+              "repos/$REPO/issues/$issue_number/comments?per_page=100" \
+              --jq '.[] | {id: .id, body: .body}' | jq -s '.' > "$comments_file"; then
+              :
+            else
+              echo '[]' > "$comments_file"
+              echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
+            fi
+            jq --argjson number "$issue_number" --slurpfile comments "$comments_file" \
+              '. + [{number: $number, comments: ($comments[0] // [])}]' \
+              "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
+            mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
+          done < "$blocked_numbers"
+
+          jq \
+            --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
+            'INDEX($blocked[0][]; (.number|tostring)) as $idx
+             | map(. as $issue
+                 | ($idx[($issue.number|tostring)] // null) as $blocked_issue
+                 | if $blocked_issue
+                   then . + {comments: ($blocked_issue.comments // [])}
+                   else .
+                   end)' \
+            "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
+
+          gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
+            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
           jq -n \
-            --slurpfile issues "$RUNNER_TEMP/issues.json" \
+            --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
             --slurpfile prs "$RUNNER_TEMP/prs.json" \
             '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Read governed spend ledger for blocked-work observation
+        id: budget_ledger
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 scripts/swarm_governor_github_ledger.py \
+            --ledger-issue 1330 \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Observe current governed budget conditions
+        id: budget_observation
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+          OC_CLAUDE_DEFAULT_TIER: ${{ vars.OC_CLAUDE_DEFAULT_TIER }}
+          OC_CLAUDE_MAXIMUM_TIER: ${{ vars.OC_CLAUDE_MAXIMUM_TIER }}
+          OC_CLAUDE_CHEAP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_CHEAP_ESTIMATED_COST_USD }}
+          OC_CLAUDE_STANDARD_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_STANDARD_ESTIMATED_COST_USD }}
+          OC_CLAUDE_DEEP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_DEEP_ESTIMATED_COST_USD }}
+        run: |
+          set -euo pipefail
+          # The observer is deliberately allowed to produce an empty map. A
+          # missing ledger or malformed policy must keep blocked work parked,
+          # never turn an observation failure into permission to requeue.
+          echo '{}' > "$RUNNER_TEMP/budget-observation.json"
+          python3 scripts/oc_budget_observe.py \
+            --issues-json "$RUNNER_TEMP/issues-enriched.json" \
+            --output "$RUNNER_TEMP/budget-observation.json"
+
+      - name: Attach issue-specific budget observations
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile budget "$RUNNER_TEMP/budget-observation.json" \
+            '. + {budget_fingerprints: ($budget[0] // {})}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
       - name: Plan dependency-aware resource wave
         id: plan
@@ -142,12 +301,34 @@ jobs:
           if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
             provider_args+=(--provider-free-only)
           fi
+          # The edit lane executes only on a run of the integration ref (see the
+          # provider_free_workers guard). Any other run leaves edit-mode issues
+          # queued and unleased for that run instead of claiming and parking them.
+          if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
+            provider_args+=(--defer-edit-mode)
+          fi
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \
             "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"
+
+      - name: Apply demonstrably cleared blocked-work releases
+        shell: bash
+        env:
+          CONTROLLER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq '.blocked_reconciliation.release_plan' "$RUNNER_TEMP/swarm-plan.json" \
+            > "$RUNNER_TEMP/blocked-release-plan.json"
+          python3 scripts/oc_blocked_release_apply.py \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/blocked-release-plan.json" \
+            --controller-run-url "$CONTROLLER_RUN_URL" \
+            --apply \
+            | tee "$RUNNER_TEMP/blocked-release-apply.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/blocked-release-apply.json")" -eq 0
 
       - name: Claim selected worker leases
         id: claim
@@ -195,6 +376,15 @@ jobs:
             echo "- dependency blocked: $(jq -r '.dependency_suppressed | length' <<<"$PLAN")"
             echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<"$PLAN")"
             echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<"$PLAN")"
+            echo "- discovered candidates: $(jq -r '.candidate_count' "$RUNNER_TEMP/work-discovery.json" 2>/dev/null || echo unavailable)"
+            # The OUTCOME, not the conclusion. Both intake steps are
+            # continue-on-error, so their conclusion is success even when they
+            # failed -- the first live pass filed nothing and reported
+            # "0 filed" with no indication anything had gone wrong, which is an
+            # absent result wearing a passing result's clothes.
+            echo "- intake: discovery=${{ steps.discovery.outcome }} materialize=${{ steps.materialize.outcome }}"
+            echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
+            echo "- recurred work requeued this pass: ${{ steps.materialize.outputs.requeued_count || '0' }} ${{ steps.materialize.outputs.requeued_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"
@@ -229,12 +419,18 @@ jobs:
   provider_free_workers:
     needs: plan
     # Deterministic lane. Runs for every confirmed provider-free claim whether or
-    # not paid providers are enabled; it never calls a provider or edits files.
+    # not paid providers are enabled; it never calls a provider. The `edit` mode
+    # (scripts/oc_work_edit_lane.py) may write exactly one mechanically derived
+    # line on an isolated `oc/discovered-<fingerprint>` branch and open a draft
+    # pull request against the integration branch; it never pushes anywhere
+    # else, which the pre-push fence below enforces at the git level.
     if: needs.plan.outputs.provider_free_launch_count != '0'
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write        # the edit lane pushes oc/discovered-<fingerprint> branches
       issues: write
+      pull-requests: write   # the edit lane opens a draft pull request
+      actions: write         # dispatches exact-head validation for that pull request
     strategy:
       fail-fast: false
       max-parallel: 12
@@ -244,12 +440,57 @@ jobs:
       ISSUE_NUMBER: ${{ matrix.issue_number }}
       LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
       INTEGRATION_SHA: ${{ github.sha }}
+      # The edit lane's PR base. Pinned like plan/refill: github.ref_name is
+      # `main` on schedule/issues runs and `<N>/merge` on pull_request runs.
+      INTEGRATION_BRANCH: oc-autonomous-integration
     steps:
+      # Full history: the edit lane creates `git worktree add --detach <base>`
+      # and pushes from it, and the pre-push fence needs a real remote.
       - name: Checkout controller revision
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 1
+          fetch-depth: 0
+          persist-credentials: true
+
+      # The token can write to this repository; git itself must not. Every push
+      # from this checkout (worktrees share the hooks directory) is refused
+      # unless every ref it updates is refs/heads/oc/discovered-*, and forced
+      # updates are refused outright. main and the integration branch are
+      # therefore unreachable from this job even by a defective lane.
+      - name: Fence pushes to oc/discovered-* branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          hooks_dir=$(git rev-parse --git-path hooks)
+          mkdir -p "$hooks_dir"
+          hooks_dir=$(cd "$hooks_dir" && pwd)   # absolute: the lane pushes from a detached worktree
+          cat > "$hooks_dir/pre-push" <<'HOOK'
+          #!/usr/bin/env bash
+          # Refuse any push whose remote ref is not an oc/discovered-* branch,
+          # and any forced update (non-fast-forward or delete).
+          set -euo pipefail
+          status=0
+          while read -r local_ref local_sha remote_ref remote_sha; do
+            [[ -n "${remote_ref:-}" ]] || continue
+            if [[ "$remote_ref" != refs/heads/oc/discovered-* ]]; then
+              echo "pre-push fence: refusing push to $remote_ref (only refs/heads/oc/discovered-* is allowed)" >&2
+              status=1
+            fi
+            if [[ "$local_sha" == "0000000000000000000000000000000000000000" ]]; then
+              echo "pre-push fence: refusing branch deletion of $remote_ref" >&2
+              status=1
+            fi
+            if [[ "$remote_sha" != "0000000000000000000000000000000000000000" ]] \
+               && ! git merge-base --is-ancestor "$remote_sha" "$local_sha" 2>/dev/null; then
+              echo "pre-push fence: refusing non-fast-forward update of $remote_ref" >&2
+              status=1
+            fi
+          done
+          exit "$status"
+          HOOK
+          chmod +x "$hooks_dir/pre-push"
+          git config --local core.hooksPath "$hooks_dir"
 
       - name: Verify provider-free worker claim
         id: lease
@@ -265,7 +506,22 @@ jobs:
             echo "execute=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Execute deterministic provider-free reconciliation
+      # Validation tasks run this repository's own checks, so the lane needs the
+      # interpreter and test dependencies. Reconcile-only tasks pay for the
+      # setup too; it is a bounded, cached cost and it keeps one lane
+      # definition rather than two that can drift.
+      - name: Prepare deterministic validation runtime
+        if: steps.lease.outputs.execute == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install deterministic validation dependencies
+        if: steps.lease.outputs.execute == 'true'
+        run: python3 -m pip install --quiet -r requirements.txt -r requirements-dev.txt
+
+      - name: Execute deterministic provider-free work
         if: steps.lease.outputs.execute == 'true'
         id: reconcile
         shell: bash
@@ -284,11 +540,73 @@ jobs:
             echo "Issue #$ISSUE_NUMBER has no durable Swarm lease receipt." >&2
             exit 2
           }
+
+          # One parser decides the mode and the declared command ids. Re-reading
+          # the markers in shell is how the job and the worker would come to
+          # disagree about what this task asked for.
+          python3 scripts/oc_swarm_provider_free_worker.py \
+            --plan --issue-json "$issue" > "$RUNNER_TEMP/provider-free-plan.json"
+          mode=$(jq -r '.mode' "$RUNNER_TEMP/provider-free-plan.json")
+
+          validation_args=()
+          if [[ "$mode" == "validate" ]]; then
+            command_args=()
+            while read -r command_id; do
+              [[ -n "$command_id" ]] || continue
+              command_args+=(--command "$command_id")
+            done < <(jq -r '.commands[]' "$RUNNER_TEMP/provider-free-plan.json")
+            # The executor exits non-zero when a command fails. That is a
+            # finding about the revision, not a broken job, so the receipt is
+            # still written and the worker settles the issue from it.
+            set +e
+            python3 scripts/oc_provider_free_validate.py "${command_args[@]}" \
+              > "$RUNNER_TEMP/provider-free-validation.json"
+            set -e
+            jq '{schema, passed, command_count, failed_command_ids,
+                 results: [.results[] | {command_id, exit_code, passed, timed_out,
+                                         duration_seconds, output_digest}]}' \
+              "$RUNNER_TEMP/provider-free-validation.json"
+            validation_args=(--validation-json "$(jq -c . "$RUNNER_TEMP/provider-free-validation.json")")
+          fi
+
+          # Edit mode: one mechanically derived line on an isolated worktree and
+          # branch, validated before and after, filed as a draft PR against the
+          # integration branch. The lane's exit code is a finding about the
+          # revision, not a broken job; the worker settles the issue from the
+          # receipt and verifies the changed files against the lease write set.
+          edit_args=()
+          files_json='[]'
+          if [[ "$mode" == "edit" ]]; then
+            # The lane branches from INTEGRATION_SHA and files against
+            # INTEGRATION_BRANCH; both mean the integration head only on a run
+            # of that ref. Any other trigger fails closed before any git write.
+            if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
+              echo "Edit lane runs only on refs/heads/$INTEGRATION_BRANCH (this run: $GITHUB_REF)." >&2
+              exit 2
+            fi
+            set +e
+            python3 -m scripts.oc_work_edit_lane \
+              --issue-json "$issue" \
+              --repository "$GITHUB_REPOSITORY" \
+              --root . \
+              --base-sha "$INTEGRATION_SHA" \
+              --lease-comment "$lease" \
+              --integration-branch "$INTEGRATION_BRANCH" \
+              --github-output "$GITHUB_OUTPUT" \
+              > "$RUNNER_TEMP/provider-free-edit.json"
+            set -e
+            jq '{outcome, disposition, reason, changed_file_count, pr_number, commit_sha, diff_sha256}' \
+              "$RUNNER_TEMP/provider-free-edit.json"
+            edit_args=(--edit-json "$(jq -c . "$RUNNER_TEMP/provider-free-edit.json")")
+            files_json="$(jq -c '.changed_files // []' "$RUNNER_TEMP/provider-free-edit.json")"
+          fi
+
           python3 scripts/oc_swarm_provider_free_worker.py \
             --issue-json "$issue" \
             --lease-comment "$lease" \
-            --files-json '[]' \
+            --files-json "$files_json" \
             --integration-sha "$INTEGRATION_SHA" \
+            "${validation_args[@]}" "${edit_args[@]}" \
             | tee "$RUNNER_TEMP/provider-free-result.json"
           disposition=$(jq -r '.disposition' "$RUNNER_TEMP/provider-free-result.json")
           echo "disposition=$disposition" >> "$GITHUB_OUTPUT"
@@ -317,6 +635,13 @@ jobs:
               gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
                 --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
                 --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
+              # An edit lane that opened a pull request parks the issue on it;
+              # the blocked-work reconciler releases `pr#N` when it merges.
+              blocked_on=$(jq -r '.blocked_on // empty' "$RUNNER_TEMP/provider-free-result.json")
+              if [[ -n "$blocked_on" ]]; then
+                gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+                  --body "[OC-SWARM-V4] Provider-free edit lane opened a pull request for this condition; the issue waits on it. OC-BLOCKED-ON: ${blocked_on}" >/dev/null
+              fi
               ;;
             *)
               echo "Unknown provider-free disposition: $DISPOSITION" >&2
@@ -325,6 +650,73 @@ jobs:
           esac
           gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+
+      # A pull request opened with GITHUB_TOKEN starts no pull_request workflow,
+      # so the edit lane's PR would carry no validation checks at all. Dispatch
+      # the same validation the paid lane dispatches, on the lane's fenced
+      # branch, and only for a head the dispatch can name exactly: the commit
+      # the lane just pushed (pr_opened), or the current head of the PR it
+      # found already open (already_open -- a PR from before this step existed,
+      # or a retry after a failed dispatch, would otherwise never be validated).
+      - name: Dispatch exact-head validation for the edit-lane pull request
+        if: steps.lease.outputs.execute == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          edit="$RUNNER_TEMP/provider-free-edit.json"
+          [[ -s "$edit" ]] || exit 0
+          outcome=$(jq -r '.outcome // empty' "$edit")
+          pr=$(jq -r '.pr_number // empty' "$edit")
+          case "$outcome" in
+            pr_opened)
+              branch=$(jq -r '.branch // empty' "$edit")
+              commit=$(jq -r '.commit_sha // empty' "$edit")
+              ;;
+            already_open)
+              [[ "$pr" =~ ^[0-9]+$ ]] || { echo "already_open receipt names no pull request." >&2; exit 1; }
+              view=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json state,headRefName,headRefOid,baseRefName)
+              if [[ "$(jq -r .state <<<"$view")" != "OPEN" || "$(jq -r .baseRefName <<<"$view")" != "$INTEGRATION_BRANCH" ]]; then
+                echo "PR #$pr is not an open pull request against $INTEGRATION_BRANCH; nothing to validate." >&2
+                exit 0
+              fi
+              branch=$(jq -r .headRefName <<<"$view")
+              commit=$(jq -r .headRefOid <<<"$view")
+              ;;
+            *)
+              exit 0
+              ;;
+          esac
+          if [[ ! "$branch" =~ ^oc/discovered-[0-9a-f]{16}$ || ! "$commit" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Edit PR names no fenced branch and exact commit; not dispatching validation." >&2
+            exit 1
+          fi
+          remote=$(git ls-remote origin "refs/heads/$branch" | cut -f1)
+          if [[ "$remote" != "$commit" ]]; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Edit-lane branch \`$branch\` is at \`${remote:-missing}\`, not \`$commit\`; validation was not dispatched for a head that could not be named exactly." >/dev/null
+            exit 1
+          fi
+          if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$branch" >/dev/null; then
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Dispatched orchid-autonomous-validation for PR #${pr} at \`$commit\` (branch \`$branch\`, outcome $outcome). Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          else
+            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --body "[OC-SWARM-V4] Validation dispatch for PR #${pr} at \`$commit\` failed; the PR has no validation run and must not be integrated until one passes." >/dev/null
+            exit 1
+          fi
+
+      - name: Retain deterministic execution evidence
+        if: always() && steps.lease.outputs.execute == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: provider-free-evidence-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.issue_number }}
+          path: |
+            ${{ runner.temp }}/provider-free-plan.json
+            ${{ runner.temp }}/provider-free-validation.json
+            ${{ runner.temp }}/provider-free-edit.json
+            ${{ runner.temp }}/provider-free-result.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Fail closed and release lease after reconciliation error
         if: failure() && steps.lease.outputs.execute == 'true'

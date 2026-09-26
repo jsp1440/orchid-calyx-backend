@@ -608,11 +608,46 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
         believed in a lane the worker did not implement.
         """
         worker = _load_script("oc_swarm_provider_free_worker")
-        for task in routing.DETERMINISTIC_EXECUTORS:
+        # Each executor's own minimum input, so the invariant stays "the worker
+        # accepts every advertised executor" rather than softening into "the
+        # worker accepts a bare mode line". An executor added to the registry
+        # without an entry here fails this test, which is the point.
+        minimum_inputs = {
+            "reconcile": ("", {}),
+            "validate": (
+                "\nOC-SWARM-VALIDATE: control-plane-compiles",
+                {
+                    "validation": {
+                        "schema": "oc.provider-free-validation-evidence.v1",
+                        "passed": True,
+                        "results": [{"command_id": "control-plane-compiles", "passed": True}],
+                    }
+                },
+            ),
+            "edit": (
+                "\nOC-SWARM-VALIDATE: control-plane-compiles",
+                {
+                    "edit": {
+                        "schema": "oc.provider-free-edit-result.v1",
+                        "outcome": "condition_absent_validated",
+                        "validation_commands": ["control-plane-compiles"],
+                        "validation_passed": True,
+                        "changed_file_count": 0,
+                        "changed_files": [],
+                        "pr_number": None,
+                    }
+                },
+            ),
+        }
+        assert set(minimum_inputs) == set(routing.DETERMINISTIC_EXECUTORS)
+        for task in sorted(routing.DETERMINISTIC_EXECUTORS):
+            extra_body, extra_kwargs = minimum_inputs[task]
             issue = {
                 "number": 1,
                 "state": "OPEN",
-                "body": f"OC-SWARM-PROVIDER-FREE: {task}\nOC-SWARM-DISPOSITION: done",
+                "body": (
+                    f"OC-SWARM-PROVIDER-FREE: {task}\nOC-SWARM-DISPOSITION: done" + extra_body
+                ),
             }
             # Must not raise the "missing or unsupported" marker error.
             receipt = worker.build_receipt(
@@ -620,6 +655,7 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
                 lease_comment=_RECONCILE_LEASE_COMMENT,
                 changed_files=[],
                 integration_sha="0" * 40,
+                **extra_kwargs,
             )
             assert receipt["mode"] == task
 

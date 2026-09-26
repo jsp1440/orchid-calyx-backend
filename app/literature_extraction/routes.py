@@ -4,7 +4,7 @@ import os
 from typing import Annotated, Any
 
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 
 from app.security import verify_owner_or_api_key
@@ -189,26 +189,45 @@ def list_papers(
     repository: Annotated[
         LiteratureResultRepository, Depends(get_literature_repository)
     ],
-    limit: int = 50,
-    offset: int = 0,
-):
-    if limit < 1 or offset < 0:
+    limit: Annotated[int, Query(ge=1, le=200)] = 25,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """Page through the literature corpus.
+
+    Discovery was the missing half of this API: papers could be fetched by id
+    and nothing could learn which ids existed, so the /literature page had no
+    way to show what the Continuum actually holds.
+
+    Two distinctions the response preserves:
+
+    ``total`` is the size of the whole corpus, not of this page, so a caller
+    can tell "no more results" from "no results".
+
+    An unreadable extraction is returned as a row with ``readable: false`` and
+    a reason, not omitted. Skipping it would make the corpus look smaller than
+    it is and would hide a damaged record instead of surfacing it for repair.
+
+    The query bounds are enforced twice on purpose: by the ``Query`` contract
+    for HTTP callers (so ``limit=abc`` and ``limit=201`` are 422s) and here for
+    direct callers, so a page request outside the documented bounds is refused
+    rather than clamped.
+    """
+    if limit < 1 or limit > 200 or offset < 0:
         raise HTTPException(
             status_code=422,
             detail={
                 "code": "INVALID_PAGE_BOUNDS",
-                "message": "limit must be >= 1 and offset >= 0",
+                "message": "limit must be between 1 and 200 and offset >= 0",
             },
         )
     summaries, total = repository.list_summaries(limit=limit, offset=offset)
+    rows = [dict(summary) for summary in summaries]
     return {
-        "papers": summaries,
+        "papers": rows,
         "total": total,
         "limit": limit,
         "offset": offset,
-        "unreadable_count": sum(
-            1 for item in summaries if not item.get("readable", False)
-        ),
+        "unreadable_count": sum(1 for row in rows if not row.get("readable", False)),
     }
 
 

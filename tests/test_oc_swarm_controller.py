@@ -298,6 +298,33 @@ def test_blocked_reconciliation_holds_unknown_and_owner_gated_work():
     assert by_number[201]["release_authorized"] is False
 
 
+def test_blocked_budget_observations_are_scoped_by_issue_number():
+    snapshot = {
+        "issues": [
+            {
+                "number": 200,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + "a" * 24}],
+            },
+            {
+                "number": 201,
+                "state": "OPEN",
+                "labels": ["oc-blocked"],
+                "body": "",
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + "a" * 24}],
+            },
+        ],
+        "budget_fingerprints": {"200": "b" * 24, "201": "a" * 24},
+    }
+
+    report = swarm.blocked_reconciliation_report(snapshot)
+    by_number = {row["issue_number"]: row for row in report["results"]}
+    assert by_number[200]["disposition"] == "release"
+    assert by_number[201]["disposition"] == "hold"
+
+
 def test_swarm_plan_carries_blocked_report_without_relabelling(monkeypatch):
     snapshot = _snapshot()
     snapshot["issues"].append(
@@ -357,3 +384,80 @@ def test_blocked_report_drives_enrichment_then_one_idempotent_release():
     assert action["issue_number"] == 200
     assert action["requires_labels"] == ["oc-blocked"]
     assert action["idempotency_key"] == "blocked-release:200:pr#300"
+
+
+def _edit_snapshot():
+    snapshot = _snapshot()
+    snapshot["issues"][1]["body"] = (
+        "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-DISPOSITION: done\nOC-SWARM-VALIDATE: ruff-check"
+    )
+    return snapshot
+
+
+def test_edit_mode_issues_stay_queued_on_runs_off_the_integration_ref(monkeypatch):
+    """A run that cannot execute the edit lane must not offer its issues for claim."""
+    captured = {}
+
+    class CapturingScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            captured.update(snapshot)
+            queued = [
+                issue["number"]
+                for issue in snapshot["issues"]
+                if "oc-queued" in issue["labels"]
+            ]
+            return {
+                "ranking": [
+                    {"number": number, "lane_id": "L3", "priority": 0, "repair": False}
+                    for number in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return CapturingScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = _edit_snapshot()
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=8, defer_edit_mode=True)
+    deferred = next(issue for issue in captured["issues"] if issue["number"] == 100)
+    assert "oc-queued" not in deferred["labels"]
+    assert plan["selected_numbers"] == [101, 102]
+    assert plan["edit_mode_deferred_numbers"] == [100]
+    assert plan["safety"]["edit_mode_deferred"] is True
+    # Deferral is a planning view: the durable snapshot is untouched.
+    assert "oc-queued" in snapshot["issues"][1]["labels"]
+
+
+def test_edit_mode_issues_are_planned_on_the_integration_ref(monkeypatch):
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_edit_snapshot(), worker_slots=8)
+    assert 100 in plan["selected_numbers"]
+    assert plan["edit_mode_deferred_numbers"] == []
+    assert plan["safety"]["edit_mode_deferred"] is False
+
+
+def test_edit_mode_marker_matches_the_worker_parser():
+    assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: EDIT\n"}) is True
+    assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: reconcile"}) is False
+    assert swarm.is_edit_mode({"body": "text OC-SWARM-PROVIDER-FREE: edit"}) is False
+    assert swarm.is_edit_mode({"body": None}) is False
+    # The first marker decides, exactly as the worker's MODE.search does.
+    validate_first = "OC-SWARM-PROVIDER-FREE: validate\nOC-SWARM-PROVIDER-FREE: edit"
+    edit_first = "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-PROVIDER-FREE: validate"
+    assert swarm.is_edit_mode({"body": validate_first}) is False
+    assert swarm.is_edit_mode({"body": edit_first}) is True
+    worker = importlib.util.spec_from_file_location(
+        "oc_swarm_provider_free_worker", ROOT / "scripts" / "oc_swarm_provider_free_worker.py"
+    )
+    module = importlib.util.module_from_spec(worker)
+    worker.loader.exec_module(module)
+    for body in (validate_first, edit_first, "OC-SWARM-PROVIDER-FREE: EDIT"):
+        planned = module.execution_plan({"number": 1, "body": body})["mode"]
+        assert swarm.is_edit_mode({"body": body}) is (planned == "edit")

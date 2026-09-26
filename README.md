@@ -18,6 +18,31 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 | `CORS_ALLOW_ORIGINS` | No | `*` | Comma-separated allowed origins, or `*` for all |
 | `CALYX_API_KEY` | No | None | If set, requires `X-API-Key` header for `/api/*` routes |
 | `AUTO_CREATE_TABLES` | No | `1` | Set to `0` to disable auto table creation |
+| `LITERATURE_EXTRACTION_ROOT` | No | `runtime/literature_extraction` | Directory holding literature-extraction runs and receipts. Read by `app/literature_extraction/routes.py`, `app/reasoning_ledger/operational_service.py`, `runtime/graph_pipeline_readiness.py`, `runtime/calyx_core_certification.py`. On a host without a persistent disk the default is ephemeral. |
+| `SOURCE_DATE_EPOCH` | No | unset | Integer Unix timestamp that pins taxonomy-preflight artifact timestamps for reproducible builds (`runtime/taxonomy_preflight_governance.py`; set and cleared by `runtime/taxonomy_preflight_reproducibility.py`). A non-integer value is rejected. |
+
+## Render deployment contract
+
+Render is the deployment target (service `orchid-calyx-backend`,
+`https://orchid-calyx-backend.onrender.com`, per the Brain
+`config/infrastructure_registry.json`). This repository ships no `render.yaml`,
+`Dockerfile` or `Procfile`: the service's build and start commands live in the
+Render dashboard and cannot be verified from the repository. What the
+repository supports is:
+
+- Start command: `uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}`
+  (Render supplies `PORT`).
+- Health check path: `/health` (`app/routers/health.py`), returning
+  `{"status":"ok"}`. The Brain registry declares the same `health_path`; use it
+  for infrastructure checks rather than `/api/runtime/heartbeat`.
+- Dependency profile: `requirements.txt` is the base runtime;
+  `requirements-scientific.txt` includes it and pins `scipy==1.18.0`, the
+  version `runtime/scientific_runtime_readiness.py` requires before the
+  mean-CI scientific surface reports itself ready. A build from
+  `requirements.txt` alone drifts to the newest scipy and reports
+  `scipy_compatible: false`.
+- `DATABASE_URL` must point at the production PostgreSQL (Neon) database;
+  the SQLite default is for local development only.
 
 ## API Endpoints
 

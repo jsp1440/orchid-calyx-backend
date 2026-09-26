@@ -48,7 +48,10 @@ def issue(number: int, *, body: str = "", labels=("oc-blocked",), comments=()) -
         "state": "OPEN",
         "body": body,
         "labels": list(labels),
-        "comments": [{"body": c} for c in comments],
+        "comments": [
+            c if isinstance(c, dict) else {"body": c}
+            for c in comments
+        ],
     }
 
 
@@ -282,3 +285,98 @@ class TestDurableHandoff:
 
         after = [issue(1, labels=("oc-queued",), comments=["OC-BLOCKED-ON: #20"])]
         assert release_plan(reconcile(after, world))["action_count"] == 0
+
+
+def test_latest_machine_readable_blocker_supersedes_historical_marker() -> None:
+    result = reconcile_issue(
+        issue(
+            77,
+            comments=[
+                "OC-BLOCKED-ON: #10",
+                "repair landed; current gate changed\nOC-BLOCKED-ON: owner-decision",
+            ],
+        ),
+        WorldState(closed_issues={10}),
+    )
+    assert result.disposition is Disposition.OWNER_GATE
+    assert result.blocker == "owner-decision"
+
+
+def test_budget_denial_supersedes_an_older_cleared_dependency_and_stays_parked() -> None:
+    fingerprint = "a" * 24
+    result = reconcile_issue(
+        issue(
+            1401,
+            comments=[
+                "OC-BLOCKED-ON: pr#1464",
+                (
+                    "[OC-SWARM-V4] Provider admission denied; execution lease released: `{}.`\n"
+                    f"OC-BLOCKED-ON: budget:{fingerprint}"
+                ),
+            ],
+        ),
+        WorldState(merged_prs={1464}),
+    )
+    assert result.disposition is Disposition.HOLD
+    assert result.blocker == f"budget:{fingerprint}"
+    assert "unchanged" in result.reason
+
+
+def test_budget_denial_releases_only_after_an_observed_condition_change() -> None:
+    fingerprint = "b" * 24
+    blocked = issue(1401, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])
+    same = reconcile_issue(blocked, WorldState(budget_fingerprint=fingerprint))
+    changed = reconcile_issue(blocked, WorldState(budget_fingerprint="c" * 24))
+    assert same.disposition is Disposition.HOLD
+    assert changed.disposition is Disposition.RELEASE
+    assert "condition fingerprint changed" in changed.reason
+
+
+def test_budget_marker_wins_when_github_returns_comments_newest_first() -> None:
+    fingerprint = "e" * 24
+    # GitHub can return full comment objects newest-first. The larger ID is the
+    # newer budget denial and must supersede the older cleared dependency.
+    blocked = issue(
+        1401,
+        comments=[
+            {"id": 200, "body": f"OC-BLOCKED-ON: budget:{fingerprint}"},
+            {"id": 100, "body": "OC-BLOCKED-ON: pr#1464"},
+        ],
+    )
+    result = reconcile_issue(blocked, WorldState(merged_prs={1464}))
+    assert result.disposition is Disposition.HOLD
+    assert result.blocker == f"budget:{fingerprint}"
+
+
+def test_budget_marker_wins_for_hosted_graphql_comment_shape() -> None:
+    fingerprint = "f" * 24
+    # The hosted gh issue-list payload uses opaque GraphQL IDs and returns the
+    # newest comment first. It must not resurrect an older cleared dependency.
+    blocked = issue(
+        1401,
+        comments=[
+            {"id": "IC_kwDOnewer", "body": f"OC-BLOCKED-ON: budget:{fingerprint}"},
+            {"id": "IC_kwDOolder", "body": "OC-BLOCKED-ON: pr#1464"},
+        ],
+    )
+    result = reconcile_issue(blocked, WorldState(merged_prs={1464}))
+    assert result.disposition is Disposition.HOLD
+    assert result.blocker == f"budget:{fingerprint}"
+
+
+def test_budget_observation_is_scoped_to_the_blocked_issue() -> None:
+    fingerprint = "d" * 24
+    issue_one = issue(1401, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])
+    issue_two = issue(1402, comments=[f"OC-BLOCKED-ON: budget:{fingerprint}"])
+    world = WorldState(budget_fingerprints={1401: "e" * 24})
+    assert reconcile_issue(issue_one, world).disposition is Disposition.RELEASE
+    assert reconcile_issue(issue_two, world).disposition is Disposition.HOLD
+
+
+def test_non_budget_governor_denial_is_a_permanent_policy_hold() -> None:
+    result = reconcile_issue(
+        issue(1401, comments=["OC-BLOCKED-ON: governor:BLOCKED_KILL_SWITCH"]),
+        WorldState(budget_fingerprints={1401: "f" * 24}),
+    )
+    assert result.disposition is Disposition.OWNER_GATE
+    assert not result.releases

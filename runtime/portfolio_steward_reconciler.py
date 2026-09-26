@@ -28,9 +28,11 @@ separately using the audited dispatcher in runtime/github_connector_dispatcher.p
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import create_engine
@@ -45,12 +47,39 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskLeaf,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
+from app.calyx_orchestrator.durable_reservoir_models import (
+    DurableReservoirRun,
+    DurableReservoirTask,
+)
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.database import Base
 from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
 from scripts.oc_portfolio_scheduler import label_names
 
 _SCHEMA = "oc.portfolio-steward-reconciler.v1"
+_CONTEXT_PATH = (
+    Path(__file__).resolve().parents[1] / "contracts" / "oc-autonomy-context.v1.json"
+)
+
+
+def _load_canonical_context() -> dict[str, Any]:
+    """Load and minimally validate the provider-neutral autonomy context.
+
+    This fails closed: a missing, malformed, or wrong-schema contract prevents
+    autonomous reconciliation rather than silently running without its rules.
+    """
+    with _CONTEXT_PATH.open(encoding="utf-8") as fh:
+        context = json.load(fh)
+    if context.get("schema") != "oc.autonomy-context.v1":
+        raise RuntimeError("invalid canonical autonomy context schema")
+    if not context.get("provider_neutral"):
+        raise RuntimeError("canonical autonomy context must be provider-neutral")
+    if not context.get("operating_rules", {}).get("require_evidence_for_completion"):
+        raise RuntimeError(
+            "canonical autonomy context must require completion evidence"
+        )
+    return context
+
 
 # Labels that disqualify an issue from the oc-prepared pool.
 _BLOCKING_LABELS = frozenset(
@@ -111,6 +140,8 @@ class PortfolioStewardReport:
     provider_launch_authorized: bool
     no_api_mode: bool
     generated_at_utc: str
+    canonical_context_schema: str
+    canonical_context_version: str
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -127,6 +158,8 @@ class PortfolioStewardReport:
             "provider_launch_authorized": self.provider_launch_authorized,
             "no_api_mode": self.no_api_mode,
             "generated_at_utc": self.generated_at_utc,
+            "canonical_context_schema": self.canonical_context_schema,
+            "canonical_context_version": self.canonical_context_version,
         }
 
 
@@ -213,6 +246,7 @@ def reconcile(
         Complete evidence of this reconciliation pass.
     """
     run_id = run_id or f"psr-{uuid.uuid4().hex[:12]}"
+    canonical_context = _load_canonical_context()
 
     # 1. Filter to oc-prepared eligible items
     prepared = _filter_prepared(issues)
@@ -243,13 +277,18 @@ def reconcile(
         connect_args={"check_same_thread": False} if "sqlite" in db_url else {},
         poolclass=StaticPool if "sqlite" in db_url else None,
     )
-    # SQLite does not support schema-qualified table names; only create tables
-    # that belong to the default schema (schema is None) when running SQLite.
-    if "sqlite" in db_url:
-        sqlite_tables = [t for t in Base.metadata.sorted_tables if t.schema is None]
-        Base.metadata.create_all(engine, tables=sqlite_tables)
-    else:
-        Base.metadata.create_all(engine)
+    # Provision only the two reservoir tables this pass writes. ``Base.metadata``
+    # is the application-wide registry: once ``app.main`` (or any Research
+    # Station / Reasoning Ledger model module) has been imported in the same
+    # process it also carries schema-qualified tables (``research_station.*``,
+    # ``reasoning_ledger.*``). SQLite has no schemas, so an unrestricted
+    # ``create_all`` fails with "unknown database research_station" depending on
+    # import order, and a production PostgreSQL URL must never get unrelated ORM
+    # tables created as a side effect of a steward pass.
+    Base.metadata.create_all(
+        engine,
+        tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__],
+    )
     session_factory = sessionmaker(bind=engine, autocommit=False, autoflush=False)
     session = session_factory()
 
@@ -312,4 +351,6 @@ def reconcile(
         provider_launch_authorized=False,
         no_api_mode=True,
         generated_at_utc=datetime.now(timezone.utc).isoformat(),
+        canonical_context_schema=canonical_context["schema"],
+        canonical_context_version=canonical_context["version"],
     )

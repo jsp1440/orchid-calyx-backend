@@ -17,6 +17,7 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
 from typing import Any
 
@@ -181,11 +182,19 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
             merged = True
         (merged_prs if merged else unmerged_prs).add(number)
 
+    raw_budget_fingerprints = snapshot.get("budget_fingerprints") or {}
+    budget_fingerprints = {
+        int(number): str(fingerprint)
+        for number, fingerprint in raw_budget_fingerprints.items()
+        if str(number).isdigit() and fingerprint
+    }
     world = _BLOCKED_RECONCILER.WorldState(
         closed_issues=closed_issues,
         open_issues=open_issues,
         merged_prs=merged_prs,
         unmerged_prs=unmerged_prs,
+        budget_fingerprints=budget_fingerprints,
+        budget_fingerprint=str(snapshot.get("budget_fingerprint") or "") or None,
     )
     results = _BLOCKED_RECONCILER.reconcile(issues, world)
     observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)
@@ -239,6 +248,45 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
     return numbers
 
 
+_PROVIDER_FREE_MODE = re.compile(
+    r"^OC-SWARM-PROVIDER-FREE:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
+)
+
+
+def is_edit_mode(issue: dict) -> bool:
+    """True when the issue asks for the provider-free edit lane.
+
+    Read exactly as the worker reads it (``oc_swarm_provider_free_worker.MODE``):
+    the FIRST ``OC-SWARM-PROVIDER-FREE:`` line decides the mode. Matching any
+    line that says ``edit`` deferred a body whose first marker was ``validate``,
+    which the worker would have run as validate.
+    """
+    match = _PROVIDER_FREE_MODE.search(str(issue.get("body") or ""))
+    return bool(match) and match.group(1).lower() == "edit"
+
+
+def edit_deferred_numbers(snapshot: dict) -> list[int]:
+    """Queued edit-mode issues a run off the integration ref must not claim.
+
+    The edit lane branches from the run's SHA and files against the integration
+    branch, so it refuses to run on any other ref. A run on another ref that
+    claimed the issue anyway would settle it ``oc-blocked`` or fail the job,
+    taking it away from the integration-ref run that can execute it. Deferring
+    leaves the issue queued and unleased; nothing about it is changed.
+    """
+    numbers: list[int] = []
+    for issue in snapshot.get("issues") or []:
+        if str(issue.get("state") or "").upper() != "OPEN":
+            continue
+        names = {
+            label if isinstance(label, str) else label.get("name")
+            for label in issue.get("labels") or []
+        }
+        if "oc-queued" in names and is_edit_mode(issue) and issue.get("number") is not None:
+            numbers.append(int(issue["number"]))
+    return numbers
+
+
 def _provider_free_snapshot(snapshot: dict) -> dict:
     """Hide entries this lane cannot execute, without losing dependency state.
 
@@ -271,8 +319,13 @@ def build_swarm_plan(
     *,
     worker_slots: int = DEFAULT_WORKER_SLOTS,
     provider_free_only: bool = False,
+    defer_edit_mode: bool = False,
 ) -> dict:
-    """Return a dependency- and resource-aware worker matrix."""
+    """Return a dependency- and resource-aware worker matrix.
+
+    ``defer_edit_mode`` is set by runs that are not on the integration ref: the
+    edit lane cannot execute there, so its issues stay queued for a run that can.
+    """
     slots = _bounded_slots(worker_slots)
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
@@ -280,6 +333,16 @@ def build_swarm_plan(
     blocked_report = blocked_reconciliation_report(snapshot)
 
     planning_snapshot = _provider_free_snapshot(snapshot) if provider_free_only else snapshot
+
+    deferred_edit = set(edit_deferred_numbers(planning_snapshot)) if defer_edit_mode else set()
+    if deferred_edit:
+        planning_snapshot = dict(planning_snapshot)
+        planning_snapshot["issues"] = [
+            _strip_queue_label(issue)
+            if int(issue.get("number") or 0) in deferred_edit
+            else issue
+            for issue in planning_snapshot.get("issues") or []
+        ]
 
     # Work nothing can execute is withdrawn from candidacy before selection, so
     # it cannot take a lane or hold a resource lock away from work that can run.
@@ -415,6 +478,7 @@ def build_swarm_plan(
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
+        "edit_mode_deferred_numbers": sorted(deferred_edit),
         "generated_at": plan.get("generated_at"),
         "safety": {
             "merge_to_main": False,
@@ -429,6 +493,7 @@ def build_swarm_plan(
             "read_read_parallelism": True,
             "write_conflicts_fail_closed": True,
             "provider_free_only": provider_free_only,
+            "edit_mode_deferred": defer_edit_mode,
             "provider_free_lane_split": True,
             "blocked_work_fail_closed": True,
             "blocked_reconciliation_mutates": False,
@@ -464,6 +529,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--input", required=True, help="JSON snapshot path, or - for stdin")
     parser.add_argument("--worker-slots", type=int, default=DEFAULT_WORKER_SLOTS)
     parser.add_argument("--provider-free-only", action="store_true")
+    parser.add_argument(
+        "--defer-edit-mode",
+        action="store_true",
+        help="leave edit-mode issues queued (runs not on the integration ref)",
+    )
     parser.add_argument("--github-output", help="optional GITHUB_OUTPUT path")
     args = parser.parse_args(argv)
 
@@ -477,6 +547,7 @@ def main(argv: list[str] | None = None) -> int:
         snapshot,
         worker_slots=args.worker_slots,
         provider_free_only=args.provider_free_only,
+        defer_edit_mode=args.defer_edit_mode,
     )
     if args.github_output:
         _write_github_output(args.github_output, plan)

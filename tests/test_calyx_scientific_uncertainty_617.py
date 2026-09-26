@@ -4,6 +4,7 @@ import math
 
 import pytest
 
+from runtime.scientific_runtime_readiness import MEAN_CI_SCIPY_REQUIRED_VERSION
 from runtime.scientific_uncertainty import (
     MEAN_CI_CANDIDATE_METHOD,
     NUMPY_VERSION,
@@ -48,7 +49,13 @@ def test_mean_ci_records_exact_numerical_environment():
     }
     assert result["numerical_environment"]["python_version"]
     assert result["numerical_environment"]["numpy_version"]
-    assert result["numerical_environment"]["scipy_version"] == "1.18.0"
+    # The validated SciPy build is pinned once, in requirements-scientific.txt;
+    # the recorded environment must match that pin, not a copy of it.
+    assert MEAN_CI_SCIPY_REQUIRED_VERSION is not None
+    assert (
+        result["numerical_environment"]["scipy_version"]
+        == MEAN_CI_SCIPY_REQUIRED_VERSION
+    )
 
 
 def test_mean_ci_matches_nist_ten_observation_reference():

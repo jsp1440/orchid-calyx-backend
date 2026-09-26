@@ -56,6 +56,8 @@ NO_REQUEUE = re.compile(r"^OC-AUTO-REQUEUE:\s*false\s*$", re.IGNORECASE | re.MUL
 #: Blocker forms this module can check.
 ISSUE_REF = re.compile(r"^(?:issue)?#(?P<number>\d+)$", re.IGNORECASE)
 PR_REF = re.compile(r"^pr#(?P<number>\d+)$", re.IGNORECASE)
+BUDGET_REF = re.compile(r"^budget:(?P<fingerprint>[a-f0-9]{24})$", re.IGNORECASE)
+GOVERNOR_REF = re.compile(r"^governor:(?P<reason>[A-Z0-9_]+)$", re.IGNORECASE)
 
 #: Blocker forms that are a person's decision. Recognised so they are held
 #: deliberately and reported as owner-gated, rather than falling into the
@@ -128,6 +130,9 @@ class WorldState:
     open_issues: set[int] = field(default_factory=set)
     merged_prs: set[int] = field(default_factory=set)
     unmerged_prs: set[int] = field(default_factory=set)
+    budget_fingerprints: dict[int, str] = field(default_factory=dict)
+    # Kept for callers and fixtures predating issue-specific observations.
+    budget_fingerprint: str | None = None
 
 
 def _labels(issue: dict[str, Any]) -> set[str]:
@@ -137,6 +142,81 @@ def _labels(issue: dict[str, Any]) -> set[str]:
         if name:
             names.add(str(name))
     return names
+
+
+def _latest_blocker_ref(text: str) -> str | None:
+    """Return the most recently recorded machine-readable blocker.
+
+    Blockers evolve. Using the first historical marker would make a cleared
+    dependency permanent even after a later comment records the replacement
+    blocker. The caller normalizes full GitHub comment payloads before building
+    the text because the API may return those rows newest-first.
+    """
+    matches = list(BLOCKED_ON.finditer(text))
+    return matches[-1].group("ref") if matches else None
+
+
+# Hosted GraphQL comment payloads expose an opaque node ID; REST-shaped
+# payloads expose a numeric database ID or a numeric issue-comment URL suffix.
+_COMMENT_URL_ID = re.compile(
+    r"(?:/issues/comments/|#issuecomment-)(?P<id>\d+)(?:[/?#]|$)"
+)
+
+
+def _comment_sequence_number(comment: Any) -> int | None:
+    """Return a durable GitHub comment sequence when the payload exposes one."""
+    if not isinstance(comment, dict):
+        return None
+
+    for key in ("databaseId", "database_id", "id"):
+        value = comment.get(key)
+        if (
+            value is not None
+            and not isinstance(value, bool)
+            and str(value).isdigit()
+        ):
+            return int(value)
+
+    for key in ("url", "html_url"):
+        value = comment.get(key)
+        match = _COMMENT_URL_ID.search(str(value or ""))
+        if match:
+            return int(match.group("id"))
+    return None
+
+
+def _ordered_comments(comments: list[Any]) -> list[Any]:
+    """Put hosted GitHub comment payloads in durable creation order.
+
+    REST-shaped rows expose a numeric database ID, and GraphQL-shaped rows may
+    expose that ID only in the issue-comment URL. Both are sorted oldest-first.
+    The hosted gh issue list --json comments adapter otherwise returns full
+    GraphQL comment objects with opaque node IDs newest-first, so that known
+    shape is reversed. Bare strings and partial rows retain their explicit
+    order; they are test/fixture inputs, not a release authority.
+    """
+    if len(comments) <= 1:
+        return list(comments)
+
+    sequence_numbers = [_comment_sequence_number(comment) for comment in comments]
+    if all(number is not None for number in sequence_numbers):
+        return [
+            comment
+            for _, comment in sorted(
+                zip(sequence_numbers, comments), key=lambda pair: pair[0]
+            )
+        ]
+
+    if all(
+        isinstance(comment, dict)
+        and comment.get("body") is not None
+        and isinstance(comment.get("id"), str)
+        and comment["id"]
+        for comment in comments
+    ):
+        return list(reversed(comments))
+
+    return list(comments)
 
 
 def _blocker_text(issue: dict[str, Any]) -> str:
@@ -151,7 +231,7 @@ def _blocker_text(issue: dict[str, Any]) -> str:
     parts = [str(issue.get("body") or "")]
     comments = issue.get("comments")
     if isinstance(comments, (list, tuple)):
-        for comment in comments:
+        for comment in _ordered_comments(list(comments)):
             if isinstance(comment, dict):
                 parts.append(str(comment.get("body") or ""))
             elif isinstance(comment, str):
@@ -179,8 +259,8 @@ def reconcile_issue(issue: dict[str, Any], world: WorldState) -> Reconciliation:
             "labelled as waiting on the owner; not this module's to clear",
         )
 
-    match = BLOCKED_ON.search(text)
-    if not match:
+    ref = _latest_blocker_ref(text)
+    if ref is None:
         return Reconciliation(
             number,
             Disposition.UNVERIFIABLE,
@@ -190,8 +270,37 @@ def reconcile_issue(issue: dict[str, Any], world: WorldState) -> Reconciliation:
             ),
         )
 
-    ref = match.group("ref")
     lowered = ref.lower()
+
+    budget_match = BUDGET_REF.match(lowered)
+    if budget_match:
+        observed = (
+            world.budget_fingerprints.get(number)
+            if world.budget_fingerprints
+            else world.budget_fingerprint
+        )
+        if observed and observed != budget_match.group("fingerprint"):
+            return Reconciliation(
+                number,
+                Disposition.RELEASE,
+                "the governed budget condition fingerprint changed",
+                blocker=ref,
+            )
+        return Reconciliation(
+            number,
+            Disposition.HOLD,
+            "the governed budget condition is unchanged or has not been observed as cleared",
+            blocker=ref,
+        )
+
+    governor_match = GOVERNOR_REF.match(ref)
+    if governor_match:
+        return Reconciliation(
+            number,
+            Disposition.OWNER_GATE,
+            f"governor policy hold {governor_match.group('reason').upper()} is not budget-releasable",
+            blocker=ref,
+        )
 
     if lowered in OWNER_FORMS:
         return Reconciliation(

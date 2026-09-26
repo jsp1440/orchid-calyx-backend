@@ -11,6 +11,7 @@ from app.community_observation import routes as community_routes
 from app.community_observation import service as community_service
 from app.constituent_platform import service as constituent_service
 from app.constituent_platform.routes import router as constituent_router
+from app.field_hypotheses.routes import hypothesis_router, observation_router
 from app.rate_limit import SlidingWindowLimiter, public_write_rate_limit
 from app.routers.health import add_mission_control_cors_headers
 
@@ -113,7 +114,12 @@ def test_brake_can_be_disabled_by_configuration(app, monkeypatch):
 def test_dependency_is_attached_to_exactly_the_public_write_routes():
     braked = {
         (route.path, method)
-        for route in [*constituent_router.routes, *community_routes.router.routes]
+        for route in [
+            *constituent_router.routes,
+            *community_routes.router.routes,
+            *observation_router.routes,
+            *hypothesis_router.routes,
+        ]
         for method in getattr(route, "methods", set())
         if any(
             getattr(dep.dependency, "__name__", "").startswith("public_write_rate_limit_")
@@ -125,6 +131,8 @@ def test_dependency_is_attached_to_exactly_the_public_write_routes():
         ("/api/constituent/unsubscribe", "POST"),
         ("/api/constituent/contact", "POST"),
         ("/api/community/observations", "POST"),
+        ("/api/field-observations/{observation_id}/hypotheses", "POST"),
+        ("/api/field-hypotheses/{hypothesis_id}/evidence", "POST"),
     }
 
 
