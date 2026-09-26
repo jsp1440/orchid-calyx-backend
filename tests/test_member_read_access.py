@@ -9,6 +9,7 @@ import base64
 import json
 import re
 import time
+from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
@@ -34,9 +35,17 @@ PREFIXES = (
 # Exact (method, path) set opened to members. Anything not listed stays owner-only.
 EXPECTED_MEMBER_READS = {
     ("GET", "/api/research/traits"),
+    ("GET", "/api/literature-extraction/papers"),
+    ("GET", "/api/evidence-aggregation/health"),
+    ("GET", "/api/evidence-aggregation/registry"),
+}
+# Every other GET on the four prefixes is owner-only (owner decision "Narrow the scope").
+EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/candidate-knowledge/runs/{run_id}"),
     ("GET", "/api/candidate-knowledge/runs"),
+    ("GET", "/api/candidate-knowledge/runs/{run_id}/items"),
     ("GET", "/api/candidate-knowledge/candidates"),
+    ("GET", "/api/candidate-knowledge/candidates/{candidate_id}"),
     ("GET", "/api/candidate-knowledge/reviews"),
     ("GET", "/api/candidate-knowledge/duplicates"),
     ("GET", "/api/candidate-knowledge/conflicts"),
@@ -44,6 +53,7 @@ EXPECTED_MEMBER_READS = {
     ("GET", "/api/candidate-knowledge/health"),
     ("GET", "/api/evidence-aggregation/runs/{rid}"),
     ("GET", "/api/evidence-aggregation/runs"),
+    ("GET", "/api/evidence-aggregation/runs/{rid}/items"),
     ("GET", "/api/evidence-aggregation/clusters"),
     ("GET", "/api/evidence-aggregation/clusters/{cid}"),
     ("GET", "/api/evidence-aggregation/aggregates"),
@@ -57,19 +67,10 @@ EXPECTED_MEMBER_READS = {
     ("GET", "/api/evidence-aggregation/conflicts"),
     ("GET", "/api/evidence-aggregation/reviews"),
     ("GET", "/api/evidence-aggregation/export"),
-    ("GET", "/api/evidence-aggregation/registry"),
     ("GET", "/api/evidence-aggregation/tombstones"),
-    ("GET", "/api/evidence-aggregation/health"),
-    ("GET", "/api/literature-extraction/papers"),
-    ("GET", "/api/literature-extraction/papers/{paper_id}/source-binding"),
-}
-# GET routes deliberately left owner-only (unredacted licensed text, raw DB errors).
-EXPECTED_OWNER_ONLY_READS = {
-    ("GET", "/api/candidate-knowledge/candidates/{candidate_id}"),
-    ("GET", "/api/candidate-knowledge/runs/{run_id}/items"),
     ("GET", "/api/literature-extraction/papers/{paper_id}"),
+    ("GET", "/api/literature-extraction/papers/{paper_id}/source-binding"),
     ("GET", "/api/literature-extraction/coverage-audit"),
-    ("GET", "/api/evidence-aggregation/runs/{rid}/items"),
 }
 
 
@@ -349,6 +350,9 @@ def test_route_enumeration_matches_the_declared_member_surface():
     }
     assert marked == EXPECTED_MEMBER_READS
     assert EXPECTED_OWNER_ONLY_READS <= routes
+    gets = {(method, path) for method, path in routes if method == "GET"}
+    assert gets == EXPECTED_MEMBER_READS | EXPECTED_OWNER_ONLY_READS
+    assert not EXPECTED_MEMBER_READS & EXPECTED_OWNER_ONLY_READS
     assert all(method == "GET" for method, _ in marked)
     assert any(method != "GET" for method, _ in routes)
 
@@ -486,6 +490,20 @@ def test_member_marker_never_opens_a_write_method(supabase, owner_token):
 
 
 # --- member redaction ------------------------------------------------------------------
+#
+# Owner decision 2026-09-26 ("Narrow the scope"): candidate-knowledge and most
+# evidence-aggregation routes are owner-only again, so a member receives 403 there.
+# The redaction layer is still exercised as defence in depth: ``_mv`` returns what a
+# member WOULD see if the route were member-readable, i.e. the owner response passed
+# through ``redact_member_locality``.
+
+
+def _mv(client, url):
+    token = str(create_owner_session_token("owner")["token"])
+    response = client.get(url, headers=_bearer(token))
+    assert response.status_code == 200, (url, response.text)
+    return redact_member_locality(response.json())
+
 
 # Context plants: every one must reach the owner and never a member.
 CONTEXT_PLANTS = (
@@ -723,6 +741,7 @@ def seeded(client, owner_token, monkeypatch):
         "numeric_aid": numeric_aid,
         "elevation_aid": elevation_aid,
         "ck_rid": ck_rid,
+        "candidate_id": client.get("/api/candidate-knowledge/candidates", headers=owner).json()["items"][0]["candidate_id"],
         "ea_redacted": ea_redacted,
         "ck_redacted": ck_redacted,
         "ck_resolved": ck_resolved.status_code,
@@ -730,9 +749,14 @@ def seeded(client, owner_token, monkeypatch):
 
 
 def _seeded_urls(seeded) -> list[str]:
-    values = {"rid": seeded["rid"], "aid": seeded["aid"], "cid": seeded["cid"], "run_id": seeded["ck_rid"]}
+    values = {
+        "rid": seeded["rid"], "aid": seeded["aid"], "cid": seeded["cid"], "run_id": seeded["ck_rid"],
+        "candidate_id": seeded["candidate_id"],
+    }
     urls = []
-    for method, path in sorted(EXPECTED_MEMBER_READS):
+    # Every GET on these two routers -- member-readable or not -- so the redaction layer
+    # is exercised as defence in depth over all of their payload shapes.
+    for method, path in sorted(EXPECTED_MEMBER_READS | EXPECTED_OWNER_ONLY_READS):
         if not path.startswith(("/api/evidence-aggregation", "/api/candidate-knowledge")):
             continue
         if path.endswith("/{dimension}"):
@@ -768,13 +792,16 @@ def _collect(client, urls, headers) -> str:
 def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded):
     assert seeded["ck_resolved"] == 200
     urls = _seeded_urls(seeded)
+    member_paths = {path for _, path in EXPECTED_MEMBER_READS}
     for url in urls:
-        owner_response = client.get(url, headers=_bearer(owner_token))
+        if url.split("?")[0] in member_paths:
+            continue
+        # Narrowed scope: every other one of these routes is owner-only for members now.
         member_response = client.get(url, headers=_bearer(_jwt()))
-        assert owner_response.status_code == member_response.status_code == 200, (url, owner_response.text)
-        assert member_response.json() == redact_member_locality(owner_response.json()), url
+        assert member_response.status_code == 403, (url, member_response.status_code)
+        assert member_response.json() == OWNER_ACCESS_REQUIRED_BODY
     owner_text = _collect(client, urls, _bearer(owner_token)).lower()
-    member_text = _collect(client, urls, _bearer(_jwt())).lower()
+    member_text = json.dumps([_mv(client, url) for url in urls], ensure_ascii=False).lower()
     plants = (
         [p.lower() for p in CONTEXT_PLANTS]
         + sorted(seeded["ea_redacted"])
@@ -787,26 +814,26 @@ def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, 
     assert not leaked, leaked
 
 
-def test_grammar_valid_values_still_reach_members(client, supabase, seeded):
-    member_text = _collect(client, _seeded_urls(seeded), _bearer(_jwt()))
-    for value in ('"endangered"', '"12 mm"', '"Endangered"', '"Dracula vampira"'):
+def test_grammar_valid_values_survive_the_member_view(client, supabase, seeded):
+    member_text = json.dumps([_mv(client, url) for url in _seeded_urls(seeded)], ensure_ascii=False)
+    for value in ('"endangered"', '"12 mm"', '"Endangered"'):
         assert value in member_text, value
+    assert '"Dracula vampira"' not in member_text  # TAXON values and subjects never pass
 
 
 @pytest.mark.parametrize("kind", ALL_AGGREGATION_KINDS)
 def test_every_kind_on_every_aggregate_view(client, supabase, seeded, owner_token, kind):
-    member = _bearer(_jwt())
     owner_items = client.get("/api/evidence-aggregation/aggregates?limit=200", headers=_bearer(owner_token)).json()["items"]
     records = [x for x in owner_items if x["candidate_type"] == kind and x["normalized_predicate"].startswith("p")]
     assert len(records) == 2, (kind, len(records))
-    member_list = client.get("/api/evidence-aggregation/aggregates?limit=200", headers=member).json()["items"]
-    member_export = client.get("/api/evidence-aggregation/export", headers=member).json()["items"]
+    member_list = _mv(client, "/api/evidence-aggregation/aggregates?limit=200")["items"]
+    member_export = _mv(client, "/api/evidence-aggregation/export")["items"]
     for record in records:
         aid = record["aggregate_id"]
         expected = _expected_member_value(kind, record["normalized_object"])
         views = [
-            client.get(f"/api/evidence-aggregation/aggregates/{aid}", headers=member).json(),
-            *client.get(f"/api/evidence-aggregation/aggregates/{aid}/versions", headers=member).json()["items"],
+            _mv(client, f"/api/evidence-aggregation/aggregates/{aid}"),
+            *_mv(client, f"/api/evidence-aggregation/aggregates/{aid}/versions")["items"],
             next(x for x in member_list if x["aggregate_id"] == aid),
             next(x for x in member_export if x["aggregate_id"] == aid),
         ]
@@ -820,12 +847,12 @@ def test_every_candidate_kind_on_candidates(client, supabase, seeded, owner_toke
     owner_items = client.get("/api/candidate-knowledge/candidates?limit=200", headers=_bearer(owner_token)).json()["items"]
     mine = {x["candidate_id"]: x for x in owner_items if x["kind"] == kind.value and x["predicate"].startswith("p-")}
     assert len(mine) == 2
-    member_items = client.get("/api/candidate-knowledge/candidates?limit=200", headers=_bearer(_jwt())).json()["items"]
+    member_items = _mv(client, "/api/candidate-knowledge/candidates?limit=200")["items"]
     for item in member_items:
         if item["candidate_id"] not in mine:
             continue
         owner_value = mine[item["candidate_id"]]["object_value"]
-        keep = kind.value in VALID_VALUE and owner_value == VALID_VALUE[kind.value]
+        keep = kind.value in {"CONSERVATION_ASSERTION", "MEASUREMENT"} and owner_value == VALID_VALUE[kind.value]
         if keep:
             assert item["object_value"] == owner_value and "object_value_redacted" not in item
         else:
@@ -836,10 +863,9 @@ def test_every_candidate_kind_on_candidates(client, supabase, seeded, owner_toke
 
 
 def test_measurements_beyond_morphological_bounds_are_redacted(client, supabase, seeded):
-    member = _bearer(_jwt())
-    ok = client.get(f"/api/evidence-aggregation/aggregates/{seeded['numeric_aid']}/measurements", headers=member).json()
+    ok = _mv(client, f"/api/evidence-aggregation/aggregates/{seeded['numeric_aid']}/measurements")
     assert ok["measurements"][0]["original_value"] == 4.0 and ok["measurements"][0]["original_unit"] == "mm"
-    high = client.get(f"/api/evidence-aggregation/aggregates/{seeded['elevation_aid']}/measurements", headers=member).json()
+    high = _mv(client, f"/api/evidence-aggregation/aggregates/{seeded['elevation_aid']}/measurements")
     entry = high["measurements"][0]
     assert entry["original_value"] is None and entry["original_value_redacted"] is True
     assert entry["normalized_value"] is None and entry["normalized_value_redacted"] is True
@@ -847,37 +873,33 @@ def test_measurements_beyond_morphological_bounds_are_redacted(client, supabase,
 
 
 def test_distribution_keys_collapse_into_other_and_lineage_is_redacted(client, supabase, seeded, owner_token):
-    member = _bearer(_jwt())
-    aggregate = client.get(f"/api/evidence-aggregation/aggregates/{seeded['aid']}", headers=member).json()
+    aggregate = _mv(client, f"/api/evidence-aggregation/aggregates/{seeded['aid']}")
     assert aggregate["evidence_type_distribution"] == {"OTHER": 1}
     dims = aggregate["confidence_dimensions"]
     assert dims["evidence_directness_distribution"] == {"OTHER": 1}
     assert set(dims["source_reliability_distribution"]) <= {"HIGH", "MEDIUM", "LOW", "OTHER"}
-    independence = client.get(
-        f"/api/evidence-aggregation/aggregates/{seeded['aid']}/source-independence", headers=member
-    ).json()["items"]
+    independence = _mv(client, f"/api/evidence-aggregation/aggregates/{seeded['aid']}/source-independence")["items"]
     assert independence and all(x["lineage_root"] is None and x["shared_citation_lineage"] is None for x in independence)
-    run = client.get(f"/api/evidence-aggregation/runs/{seeded['rid']}", headers=member).json()
+    run = _mv(client, f"/api/evidence-aggregation/runs/{seeded['rid']}")
     assert run["policies"] is None and run["policies_redacted"] is True
 
 
 def test_reviewer_notes_and_error_echoes_are_redacted(client, supabase, seeded):
-    member = _bearer(_jwt())
-    ea_reviews = client.get("/api/evidence-aggregation/reviews?limit=200", headers=member).json()["items"]
+    ea_reviews = _mv(client, "/api/evidence-aggregation/reviews?limit=200")["items"]
     dependence = next(x for x in ea_reviews if x["category"] == "SOURCE_INDEPENDENCE_DECISION")
     assert dependence["evidence"]["rationale"] is None and dependence["evidence"]["rationale_redacted"] is True
     assert dependence["evidence"]["dependence"] is None and dependence["evidence"]["dependence_redacted"] is True
-    resolved = client.get("/api/evidence-aggregation/reviews?state=RESOLVED", headers=member).json()["items"]
+    resolved = _mv(client, "/api/evidence-aggregation/reviews?state=RESOLVED")["items"]
     assert resolved and all(x["rationale"] is None and x["rationale_redacted"] for x in resolved)
-    tombstones = client.get("/api/evidence-aggregation/tombstones", headers=member).json()["items"]
+    tombstones = _mv(client, "/api/evidence-aggregation/tombstones")["items"]
     assert tombstones and all(x["reason"] is None and x["reason_redacted"] for x in tombstones)
-    ck_reviews = client.get("/api/candidate-knowledge/reviews?limit=200", headers=member).json()["items"]
+    ck_reviews = _mv(client, "/api/candidate-knowledge/reviews?limit=200")["items"]
     failure = next(x for x in ck_reviews if x["category"] == "EXTRACTION_FAILURE")
     assert failure["evidence"]["message"] is None and failure["evidence"]["message_redacted"] is True
     assert failure["evidence"]["code"] == "ValueError"
-    ck_resolved = client.get("/api/candidate-knowledge/reviews?state=RESOLVED", headers=member).json()["items"]
+    ck_resolved = _mv(client, "/api/candidate-knowledge/reviews?state=RESOLVED")["items"]
     assert ck_resolved and all(x["rationale"] is None and x["rationale_redacted"] for x in ck_resolved)
-    aggregate = client.get(f"/api/evidence-aggregation/aggregates/{seeded['aid']}", headers=member).json()
+    aggregate = _mv(client, f"/api/evidence-aggregation/aggregates/{seeded['aid']}")
     assert aggregate["taxonomic_context"]["source_names"] is None
     assert aggregate["taxonomic_context"]["source_names_redacted"] is True
     assert aggregate["geographic_context"]["geographic_context_redacted"] is True
@@ -942,9 +964,13 @@ def test_distribution_maps_fold_unknown_keys_into_other():
     assert redact_member_locality({"candidate_types": {"found at Mindo": 2}}) == {"candidate_types": {"OTHER": 2}}
 
 
-def test_non_identifier_keys_are_dropped_everywhere():
-    out = redact_member_locality({"stats": {"Cerro Toledo": 1, "ok_key": 2, "Mindo-plot": 3}})
-    assert out == {"stats": {"ok_key": 2, "keys_redacted": 2}}
+def test_caller_chosen_field_names_are_dropped_everywhere():
+    out = redact_member_locality(
+        {"metrics": {"Cerro Toledo": 1, "planned": 2, "cerro_toledo_lat": -4.0123, "mindo_site": [-0.05, -78.77]}}
+    )
+    assert out == {"metrics": {"planned": 2, "keys_redacted": 3}}
+    assert redact_member_locality({"cerro_toledo_site": [-0.2134, -78.51]}) == {"keys_redacted": 1}
+    assert redact_member_locality({"42": 1, "planned": 3}) == {"42": 1, "planned": 3}
 
 
 def test_checker_probe6_end_to_end(client, owner_token, supabase, monkeypatch):
@@ -962,6 +988,7 @@ def test_checker_probe6_end_to_end(client, owner_token, supabase, monkeypatch):
     monkeypatch.setattr(ea_routes, "REPOSITORY", ea_repo)
     monkeypatch.setattr(ea_routes, "SERVICE", EvidenceAggregationService(ea_repo))
     owner, member = _bearer(owner_token), _bearer(_jwt())
+    assert member  # used below for the 403 check
 
     def candidate(ident, kind, value, **extra):
         return {
@@ -991,26 +1018,23 @@ def test_checker_probe6_end_to_end(client, owner_token, supabase, monkeypatch):
     for url in ("/api/evidence-aggregation/aggregates", "/api/evidence-aggregation/export",
                 f"/api/evidence-aggregation/runs/{rid}", "/api/candidate-knowledge/candidates"):
         owner_text += client.get(url, headers=owner).text.lower()
-        member_text += client.get(url, headers=member).text.lower()
+        assert client.get(url, headers=member).status_code == 403, url
+        member_text += json.dumps(_mv(client, url), ensure_ascii=False).lower()
     assert any(name in owner_text for name in names)
     assert [name for name in names if name in member_text] == []
 
 
 def test_value_grammars():
-    from app.member_redaction import _conservation_ok, _measurement_value_ok, _taxon_ok
+    from app.member_redaction import _conservation_ok, _measurement_value_ok
 
     for ok in ("Endangered", " least concern ", "CR", "en", "Extinct in the Wild"):
         assert _conservation_ok(ok), ok
     for bad in ("Endangered in Chiang Mai", "endangereds", "CRX", "vulnerable Cotopaxi", 3):
         assert not _conservation_ok(bad), bad
-    for ok in ("Dracula", "Dracula vampira", "Dracula vampira var. alba", "Epidendrum ibaguense subsp. x-y"):
-        assert _taxon_ok(ok), ok
-    for bad in ("Dracula vampira Pichincha", "dracula vampira", "Dracula sp Cerro", "Dracúla vampira", "Dracula  vampira"):
-        assert not _taxon_ok(bad), bad
     for ok in ("12 mm", "4.5cm", "50 m", "-3 °C", "20%", "12:length:base", "4:temperature:base"):
         assert _measurement_value_ok(ok), ok
     for bad in ("51 m", "2400 masl", "2400masl", "10 ft", "3-5 mm", "12 mm 14 mm", "1.2345", "-0.21 -78.5",
-                "2.4e+06:length:base", "12 mm near X", "１２ mm"):
+                "2.4e+06:length:base", "12 mm near X", "１２ mm", "-78.5 mm", "-3:length:base"):
         assert not _measurement_value_ok(bad), bad
 
 
@@ -1027,6 +1051,8 @@ def test_kind_fields_must_agree_and_be_known():
         {"kind": "MORPHOLOGY_TERM", "object_value": "saccate"},
         {"kind": "MOLECULAR_MARKER", "object_value": "ITS"},
         {"kind": "MEASUREMENT", "candidate_type": "TAXON", "object_value": "12 mm"},
+        {"kind": "TAXON", "object_value": "Dracula vampira"},
+        {"kind": "TAXON", "object_value": "Pichincha"},
     ):
         out = redact_member_locality(record)
         field = "object_value" if "object_value" in record else "normalized_object"
@@ -1082,3 +1108,151 @@ def test_lineage_keys_are_redacted_even_when_their_values_look_like_vocabulary()
     out = redact_member_locality(record)
     for key in record:
         assert out[key] is None and out[f"{key}_redacted"] is True, key
+
+
+
+def test_schema_defined_member_routes_return_the_owner_payload(client, owner_token, supabase, seeded):
+    for url in ("/api/evidence-aggregation/health", "/api/evidence-aggregation/registry"):
+        owner_response = client.get(url, headers=_bearer(owner_token))
+        member_response = client.get(url, headers=_bearer(_jwt()))
+        assert owner_response.status_code == member_response.status_code == 200, url
+        assert member_response.json() == owner_response.json(), url
+
+
+def test_confidence_components_and_sample_size_schema():
+    out = redact_member_locality(
+        {"confidence_components": {"extraction": 0.7, "source": {"yasuni_station_lat": -0.6741}, "anchor": 1.5}}
+    )
+    components = out["confidence_components"]
+    assert components["extraction"] == 0.7
+    assert components["source"] is None and components["source_redacted"] is True
+    assert components["anchor"] is None and components["anchor_redacted"] is True
+    for bad in ({"cerro_toledo_lat": -4.0123}, -3, 2.5, "12", True, 10**9):
+        entry = redact_member_locality({"conversion_rule_version": "086b-units-1", "sample_size": bad})
+        assert entry["sample_size"] is None and entry["sample_size_redacted"] is True, bad
+    assert redact_member_locality({"sample_size": 12})["sample_size"] == 12
+
+
+def test_service_vocabulary_is_built_and_guarded_at_import():
+    from app import member_redaction
+
+    assert {"OPEN", "REQUIRED", "items"} <= member_redaction.SERVICE_LITERALS
+    for broken in (frozenset(), frozenset({"OPEN"})):
+        with pytest.raises(RuntimeError):
+            member_redaction._require_vocabulary(broken)
+    source = Path(member_redaction.__file__).read_text(encoding="utf-8")
+    assert "\n_SOURCE_LITERALS = _require_vocabulary(_source_literals())\n" in source
+
+
+def test_only_sha256_shaped_hex_passes():
+    assert redact_member_locality({"status": "436572726f20546f6c65646f"})["status_redacted"] is True
+    digest = "a" * 64
+    assert redact_member_locality({"status": digest}) == {"status": digest}
+
+
+# Checker probes (scratchpad test_ck_probe7.py).
+PROBE7_CASES = [
+    ({"kind": "TAXON", "object_value": "Pichincha"}, "Pichincha"),
+    ({"kind": "TAXON", "object_value": "Chiang mai"}, "Chiang"),
+    ({"kind": "TAXON", "object_value": "Dracula vampira var. pichincha"}, "pichincha"),
+    ({"kind": "CONSERVATION_ASSERTION", "object_value": "Endangered in Chiang Mai"}, "Chiang"),
+    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -0.2134, "unit": "mm"}, "78.5"),
+    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -0.2134, "unit": "mm"}, "0.2134"),
+    ({"kind": "MEASUREMENT", "object_value": "2400 m"}, "2400"),
+    ({"kind": "MEASUREMENT", "object_value": "Cotopaxi 12 mm"}, "Cotopaxi"),
+    ({"kind": "TRAIT", "object_value": "yellow"}, "yellow"),
+    ({"kind": "MOLECULAR_MARKER", "object_value": "ITS"}, "ITS"),
+    ({"normalized_subject": "Chiang mai"}, "Chiang"),
+    ({"normalized_subject": "pichincha"}, "pichincha"),
+    ({"x": "436572726f20546f6c65646f"}, "436572726f"),
+    ({"x": [[-0.2134, -78.51]]}, "78.51"),
+    ({"cerro_toledo_site": [-0.2134, -78.51]}, "cerro"),
+    ({"cerro_toledo_site": [-0.2134, -78.51]}, "78.51"),
+    ({"Cerro Toledo": 1}, "Cerro"),
+    ({"evidence_type_distribution": {"Cerro Toledo": 3, "PRIMARY": 1}}, "Cerro"),
+    ({"source_object_type": "Mindo herbarium"}, "Mindo"),
+    ({"kind": "conservatıon_assertıon", "object_value": "EN"}, "conservatıon"),
+    ({"x": "ｃｏｕｎｔｒｙ"}, "ｃｏｕｎｔｒｙ"),
+]
+
+
+@pytest.mark.parametrize(("record", "needle"), PROBE7_CASES)
+def test_checker_probe7_cases(record, needle):
+    assert needle not in json.dumps(redact_member_locality(record), ensure_ascii=False)
+
+
+def test_checker_probe7_distribution_keeps_vocabulary_and_folds_the_rest():
+    out = redact_member_locality({"evidence_type_distribution": {"Cerro Toledo": 3, "PRIMARY": 1}})
+    assert out == {"evidence_type_distribution": {"PRIMARY": 1, "OTHER": 3}}
+
+
+def test_checker_probe7_performance_and_depth():
+    big = {
+        "items": [
+            {"kind": "TRAIT", "object_value": "x" * 30, "metadata": {"a": list(range(50))},
+             "confidence_components": {"source": 0.5}, "candidate_id": i}
+            for i in range(20000)
+        ]
+    }
+    started = time.perf_counter()
+    out = redact_member_locality(big)
+    assert time.perf_counter() - started < 20
+    assert out["items"][0]["object_value"] is None and out["items"][0]["metadata"] is None
+    deep = cursor = {}
+    for _ in range(5000):  # far beyond the interpreter recursion limit
+        cursor["items"] = {}
+        cursor = cursor["items"]
+    out = redact_member_locality(deep)  # no RecursionError: depth is capped (fail closed)
+    depth = 0
+    while isinstance(out, dict) and isinstance(out.get("items"), dict):
+        out, depth = out["items"], depth + 1
+    assert depth < 40 and out.get("items_redacted") is True
+
+
+def test_checker_probe7_end_to_end(client, owner_token, supabase, monkeypatch):
+    from app.candidate_knowledge import routes as ck_routes
+    from app.candidate_knowledge.repository import MemoryCandidateRepository
+    from app.candidate_knowledge.service import CandidateExtractionService
+    from app.evidence_aggregation import routes as ea_routes
+    from app.evidence_aggregation.repository import MemoryAggregateRepository
+    from app.evidence_aggregation.service import EvidenceAggregationService
+
+    ck_repo = MemoryCandidateRepository()
+    monkeypatch.setattr(ck_routes, "REPOSITORY", ck_repo)
+    monkeypatch.setattr(ck_routes, "SERVICE", CandidateExtractionService(ck_repo))
+    ea_repo = MemoryAggregateRepository()
+    monkeypatch.setattr(ea_routes, "REPOSITORY", ea_repo)
+    monkeypatch.setattr(ea_routes, "SERVICE", EvidenceAggregationService(ea_repo))
+    owner, member = _bearer(owner_token), _bearer(_jwt())
+
+    def candidate(ident, kind, unit):
+        return {
+            "candidate_id": ident, "candidate_version": 1, "candidate_type": kind,
+            "normalized_subject": "Dracula vampira", "predicate": "width", "numeric_value": 4.0 + ident,
+            "unit": unit, "source_revision_id": 10 + ident, "source_anchor_ids": [ident],
+            "measurement_context": {"sample_size": {"cerro_toledo_lat": -4.0123, "cerro_toledo_lon": -79.1234}},
+        }
+
+    run = client.post("/api/evidence-aggregation/preview", headers=owner,
+                      json={"candidates": [candidate(1, "MEASUREMENT", "mm"), candidate(2, "MEASUREMENT", "g")]})
+    rid = run.json()["aggregate_run_id"]
+    client.post(f"/api/evidence-aggregation/runs/{rid}/execute", headers=owner)
+    ck = client.post("/api/candidate-knowledge/preview", headers=owner, json={"evidence": [{
+        "source_object_type": "document", "source_object_id": 1, "revision_id": 1, "extraction_run_id": 1,
+        "text": "x", "source_anchors": [{"anchor_id": 1, "locator": {"confidence": {"mindo_site": [-0.0521, -78.7753]}}}],
+        "metadata": {"source_confidence": {"yasuni_station_lat": -0.6741, "yasuni_station_lon": -76.3973},
+                     "candidate_facts": [{"kind": "TAXON", "subject": "Dracula vampira", "predicate": "taxon",
+                                          "object_value": "Pichincha"}]},
+    }]})
+    client.post(f"/api/candidate-knowledge/runs/{ck.json()['candidate_run_id']}/execute", headers=owner)
+    needles = ("cerro_toledo", "-4.0123", "-79.1234", "yasuni", "-76.3973", "mindo", "-78.7753", "Pichincha")
+    urls = ["/api/evidence-aggregation/aggregates", "/api/evidence-aggregation/export", "/api/candidate-knowledge/candidates"]
+    aggregates = client.get("/api/evidence-aggregation/aggregates", headers=owner).json()["items"]
+    if aggregates:
+        urls.append(f"/api/evidence-aggregation/aggregates/{aggregates[0]['aggregate_id']}/measurements")
+    for url in urls:
+        response = client.get(url, headers=member)
+        assert response.status_code == 403 and response.json() == OWNER_ACCESS_REQUIRED_BODY, url
+        assert response.text.count("OWNER_ACCESS_REQUIRED") == 1
+        view = json.dumps(_mv(client, url), ensure_ascii=False)
+        assert [n for n in needles if n in view] == [], url

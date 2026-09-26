@@ -5,13 +5,17 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from app.member_auth import member_readable, owner_or_member_read
+from app.member_auth import owner_or_member_read
 from app.member_redaction import MemberRedactingRoute
 from app.security import verify_owner_or_api_key
 
 from .dependencies import _REPOSITORY, _REPOSITORY_ERROR, _SERVICE
 from .models import EvidenceInput, SourceAnchor
 
+# Owner decision 2026-09-26 ("Narrow the scope"): no candidate-knowledge route is
+# member-readable -- every response carries caller-supplied free-form data. Verified
+# members get 403 OWNER_ACCESS_REQUIRED from owner_or_member_read. The redacting route
+# class stays as defence in depth.
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(owner_or_member_read)], route_class=MemberRedactingRoute)
 REPOSITORY = _REPOSITORY
 REPOSITORY_ERROR = _REPOSITORY_ERROR
@@ -91,19 +95,16 @@ def execute(run_id: int):
 
 
 @router.get("/runs/{run_id}")
-@member_readable
 def status(run_id: int):
     try: return _read().status(run_id)
     except KeyError as exc: raise HTTPException(404, detail={"code":"CANDIDATE_RUN_NOT_FOUND"}) from exc
 
 @router.get("/runs")
-@member_readable
 def history(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
     values=sorted(_read().runs.values(),key=lambda x:x["candidate_run_id"])
     return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
-# Owner-only read: items carry the raw submitted evidence text regardless of display policy.
 @router.get("/runs/{run_id}/items")
 def items(run_id: int):
     repository=_read()
@@ -126,7 +127,6 @@ def resume(run_id: int):
 
 
 @router.get("/candidates")
-@member_readable
 def candidates(kind: str | None = None, review_state: str | None = None, active: bool = True, limit:int=Query(50,ge=1,le=200), offset:int=Query(0,ge=0,le=10000)):
     values = [x for x in _read().candidates if x["active"] == active]
     if kind:
@@ -137,7 +137,6 @@ def candidates(kind: str | None = None, review_state: str | None = None, active:
     return {"items": values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
-# Owner-only read: evidence links include INTERNAL_RESEARCH_ONLY authorized quotes.
 @router.get("/candidates/{candidate_id}")
 def candidate(candidate_id: int):
     repository=_read(); value = repository.candidate_by_id(candidate_id)
@@ -147,7 +146,6 @@ def candidate(candidate_id: int):
 
 
 @router.get("/reviews")
-@member_readable
 def reviews(state: str = "OPEN",limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
     values=sorted([x for x in _read().reviews.values() if x["state"] == state],key=lambda x:x["review_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
@@ -164,24 +162,20 @@ def resolve(review_id: int, payload: ReviewDecision, auth: Annotated[dict, Depen
 
 
 @router.get("/duplicates")
-@member_readable
 def duplicates(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
     values=sorted(_read().duplicate_groups.values(),key=lambda x:x["duplicate_group_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/conflicts")
-@member_readable
 def conflicts(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
     values=sorted(_read().conflicts.values(),key=lambda x:x["conflict_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 @router.get("/tombstones")
-@member_readable
 def tombstones(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
     values=sorted(getattr(_read(),"tombstones",[]),key=lambda x:x.get("tombstone_id",0))
     return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 
 
 @router.get("/health")
-@member_readable
 def health():
     _,service=_available();return {"status": "ok", "candidate_only": True, "publishes_graph": False, "persistent":hasattr(REPOSITORY,"atomic"),"extractor_version": service.extractor_version, "ruleset_version": service.ruleset_version}

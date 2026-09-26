@@ -4,6 +4,11 @@ Owner and API-key responses are never touched: ``MemberRedactingRoute`` returns 
 original response object unchanged unless the authenticated principal recorded by
 ``app.member_auth`` has ``role == "member"``.
 
+Owner decision 2026-09-26 ("Narrow the scope"): on the candidate-knowledge and
+evidence-aggregation routers only ``/api/evidence-aggregation/health`` and
+``/registry`` are member-readable, and both have a fixed schema. This module is defence
+in depth for those routes, and for any route marked member-readable in the future.
+
 The member view is built by construction from POSITIVE rules, not a blocklist:
 
 * **Strings.** A string value reaches a member only if it is (a) a token that
@@ -13,14 +18,15 @@ The member view is built by construction from POSITIVE rules, not a blocklist:
   exact positive pattern below. Every other string -- i.e. anything a caller typed --
   is replaced with ``null`` and flagged ``<field>_redacted: true``.
 * **Extracted values** (``object_value`` / ``normalized_object`` / ``object_text``)
-  are kept only for three kinds with an exact grammar: CONSERVATION_ASSERTION (IUCN
-  vocabulary), TAXON (binomial / genus pattern) and MEASUREMENT (number + allowlisted
-  unit, bounded so elevations cannot pass). TRAIT, MORPHOLOGY_TERM, MOLECULAR_MARKER
-  and every other or unknown kind are always redacted: members see kinds, counts,
+  are kept only for two kinds with an exact grammar: CONSERVATION_ASSERTION (IUCN
+  vocabulary) and MEASUREMENT (non-negative number + allowlisted unit, bounded so
+  elevations cannot pass). TAXON, TRAIT, MORPHOLOGY_TERM, MOLECULAR_MARKER and every
+  other or unknown kind are always redacted: members see kinds, counts,
   statuses and structure, not extracted text. All kind fields present on a record
   must agree, otherwise the value is redacted.
-* **Keys.** Dict keys must be identifier-shaped (``^[a-z_][a-z0-9_]*$``) or service
-  literals; other keys are dropped and counted in ``keys_redacted``. Distribution
+* **Keys.** Dict keys must be service literals or all-digit ids; other keys --
+  including caller-chosen names such as ``cerro_toledo_lat`` -- are dropped with their
+  numbers/lists and counted in ``keys_redacted``. Distribution
   maps keep only service-vocabulary keys and fold every other key into ``OTHER``.
 * **Caller free-form structures** (contexts, metadata, qualifiers, policies, filters,
   lineage, taxon links, reviewer notes, error messages) are redacted whole.
@@ -53,7 +59,12 @@ _TOKEN_SHAPE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}")
 
 
 def _source_literals() -> frozenset[str]:
-    """Space-free string literals in the two service packages (enum values, states...)."""
+    """Space-free string literals and declared schema field names in the service packages.
+
+    Collected from source code only: string constants (enum values, states, versions,
+    dict keys the services build) and the annotated field names of classes (dataclass
+    and pydantic model fields). Nothing is ever learned from stored or request data.
+    """
     tokens: set[str] = set()
     for module in _VOCAB_MODULES:
         for path in sorted((_APP_DIR / module).glob("*.py")):
@@ -64,24 +75,40 @@ def _source_literals() -> frozenset[str]:
                     and _TOKEN_SHAPE.fullmatch(node.value)
                 ):
                     tokens.add(node.value)
+                elif isinstance(node, ast.ClassDef):
+                    for statement in node.body:
+                        if isinstance(statement, ast.AnnAssign) and isinstance(statement.target, ast.Name):
+                            tokens.add(statement.target.id)
     return frozenset(tokens)
 
 
+def _require_vocabulary(tokens: frozenset[str]) -> frozenset[str]:
+    """Fail loudly at import rather than silently over-redacting.
+
+    An empty or implausible vocabulary means the source scan is broken; refusing to
+    start is the fail-closed outcome.
+    """
+    if not tokens or not {"OPEN", "REQUIRED", "items"} <= tokens:
+        raise RuntimeError("member_redaction: service literal vocabulary could not be built from source")
+    return tokens
+
+
+_SOURCE_LITERALS = _require_vocabulary(_source_literals())
 KNOWN_KINDS = frozenset({kind.value for kind in CandidateKind} | set(CANDIDATE_TYPE_MAP))
 # Built-in exception class names: the services record ``type(exc).__name__`` as a code.
 _EXCEPTION_NAMES = frozenset(
     name for name, obj in vars(builtins).items() if isinstance(obj, type) and issubclass(obj, BaseException)
 )
 SERVICE_LITERALS = (
-    _source_literals() | KNOWN_KINDS | {t.value for t in CANDIDATE_TYPE_MAP.values()} | _EXCEPTION_NAMES
+    _SOURCE_LITERALS | KNOWN_KINDS | {t.value for t in CANDIDATE_TYPE_MAP.values()} | _EXCEPTION_NAMES
 )
 
 _TIMESTAMP = re.compile(
     r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2})?)?", re.ASCII
 )
-_HEX_DIGEST = re.compile(r"[0-9a-f]{16,128}")
+_HEX_DIGEST = re.compile(r"[0-9a-f]{64}")  # sha256 only
 _ID_PAIR = re.compile(r"\d{1,12}:\d{1,12}", re.ASCII)
-_IDENT_KEY = re.compile(r"[a-z_][a-z0-9_]*")
+_DIGIT_KEY = re.compile(r"[0-9]{1,12}", re.ASCII)
 
 
 def _safe_string(value: str) -> bool:
@@ -94,14 +121,17 @@ def _safe_string(value: str) -> bool:
 
 
 def _safe_key(key: Any) -> bool:
-    return isinstance(key, str) and (bool(_IDENT_KEY.fullmatch(key)) or key in SERVICE_LITERALS)
+    """Field names must be service literals or all-digit ids; anything else is caller-chosen."""
+    return isinstance(key, str) and (key in SERVICE_LITERALS or bool(_DIGIT_KEY.fullmatch(key)))
 
 
 # --- extracted values: exact positive grammar per kind -------------------------------
 
 
 def _normalized_kind(value: Any) -> str:
-    return str(value).strip().upper()
+    text = str(value)
+    # ASCII only: "ı".upper() == "I" would otherwise let look-alike kinds normalise.
+    return text.strip().upper() if text.isascii() else ""
 
 
 IUCN_NAMES = frozenset(
@@ -118,8 +148,6 @@ IUCN_NAMES = frozenset(
     }
 )
 IUCN_CODES = frozenset({"CR", "EN", "VU", "NT", "LC", "DD", "EX", "EW", "NE"})
-_TAXON_BINOMIAL = re.compile(r"[A-Z][a-z]+ [a-z][a-z-]+(?: (?:var\.|subsp\.|f\.) [a-z][a-z-]+)?")
-_TAXON_GENUS = re.compile(r"[A-Z][a-z]+")
 _MEASUREMENT = re.compile(r"(-?\d+(?:\.\d+)?) ?(mm|cm|m|µm|um|mg|g|kg|ml|l|%|°c)", re.IGNORECASE | re.ASCII)
 _AGGREGATED_MEASUREMENT = re.compile(r"(-?\d+(?:\.\d+)?(?:e[+-]?\d+)?):(length|temperature):base", re.ASCII)
 # Upper bounds (absolute value) per allowlisted unit. Lengths are capped at 50 m so an
@@ -142,8 +170,11 @@ BASE_DIMENSION_BOUNDS = {"length": 50_000.0, "temperature": 100.0}  # base units
 
 
 def _measurement_ok(number: float, unit: str) -> bool:
-    bound = UNIT_BOUNDS.get(unit.strip().lower())
-    return bound is not None and abs(number) <= bound
+    key = unit.strip().lower()
+    bound = UNIT_BOUNDS.get(key)
+    if bound is None or abs(number) > bound:
+        return False
+    return number >= 0 or key == "°c"  # only temperatures may be negative
 
 
 def _conservation_ok(value: Any) -> bool:
@@ -151,14 +182,6 @@ def _conservation_ok(value: Any) -> bool:
         return False
     text = value.strip()
     return text.lower() in IUCN_NAMES or text.upper() in IUCN_CODES
-
-
-def _taxon_ok(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and value.isascii()
-        and bool(_TAXON_BINOMIAL.fullmatch(value) or _TAXON_GENUS.fullmatch(value))
-    )
 
 
 def _measurement_value_ok(value: Any) -> bool:
@@ -169,16 +192,17 @@ def _measurement_value_ok(value: Any) -> bool:
         return _measurement_ok(float(match.group(1)), match.group(2))
     aggregated = _AGGREGATED_MEASUREMENT.fullmatch(value)
     if aggregated:
-        return abs(float(aggregated.group(1))) <= BASE_DIMENSION_BOUNDS[aggregated.group(2)]
+        number, dimension = float(aggregated.group(1)), aggregated.group(2)
+        return abs(number) <= BASE_DIMENSION_BOUNDS[dimension] and (number >= 0 or dimension == "temperature")
     return False
 
 
 # The only kinds whose extracted value a member may see, each with an exact grammar.
-# TRAIT, MORPHOLOGY_TERM and MOLECULAR_MARKER are deliberately absent: their values are
-# free text, so members see the kind, counts and status but never the text.
+# TRAIT, MORPHOLOGY_TERM and MOLECULAR_MARKER are free text. TAXON is also excluded: a
+# place name ("Pichincha", "Chiang mai") is indistinguishable from a genus/binomial by
+# shape, so no grammar can make it safe.
 VALUE_VALIDATORS: dict[str, Callable[[Any], bool]] = {
     "CONSERVATION_ASSERTION": _conservation_ok,
-    "TAXON": _taxon_ok,
     "MEASUREMENT": _measurement_value_ok,
 }
 _AGGREGATE_TO_KIND = {CANDIDATE_TYPE_MAP[kind].value: kind for kind in VALUE_VALIDATORS}
@@ -186,9 +210,11 @@ KIND_FIELDS = ("kind", "candidate_type")
 VALUE_FIELDS = ("object_value", "normalized_object", "object_text")
 UNIT_FIELDS = ("unit", "original_unit")
 SUBJECT_FIELDS = ("normalized_subject", "subject")
-# A subject is a genus or binomial with an optional infraspecific rank, ASCII only.
-# The first letter may be lower-case because aggregation casefolds subjects.
-_SUBJECT = re.compile(r"[A-Za-z][a-z]+(?: [a-z][a-z-]+(?: (?:var\.|subsp\.|f\.) [a-z][a-z-]+)?)?")
+SAMPLE_SIZE_KEYS = ("sample_size", "independent_sample_size_total")
+MAX_SAMPLE_SIZE = 10_000_000
+# Deeper structures than any service response are cut off (fail closed, no recursion
+# blow-up on adversarial nesting).
+MAX_DEPTH = 32
 
 
 def _record_value_kind(record: dict[str, Any]) -> str | None:
@@ -295,10 +321,12 @@ def _strings_safe(value: Any) -> bool:
     return True
 
 
-def redact_member_locality(value: Any) -> Any:
+def redact_member_locality(value: Any, _depth: int = 0) -> Any:
     """Return a copy of a JSON-compatible payload reduced to the member view."""
+    if isinstance(value, (dict, list)) and _depth >= MAX_DEPTH:
+        return None
     if isinstance(value, list):
-        return [redact_member_locality(item) for item in value]
+        return [redact_member_locality(item, _depth + 1) for item in value]
     if not isinstance(value, dict):
         return value
 
@@ -312,8 +340,11 @@ def redact_member_locality(value: Any) -> Any:
         if _is_distribution_map(key) and isinstance(item, dict):
             out[key] = _collapse_distribution(item)
             handled.add(key)
+        elif isinstance(item, (dict, list)) and _depth + 1 >= MAX_DEPTH:
+            _redact_field(out, key)
+            handled.add(key)
         else:
-            out[key] = redact_member_locality(item)
+            out[key] = redact_member_locality(item, _depth + 1)
     if dropped:
         out["keys_redacted"] = dropped
     present = {key for key in value if _safe_key(key)}
@@ -385,12 +416,30 @@ def redact_member_locality(value: Any) -> Any:
             if number is not None and not (_is_number(number) and abs(number) <= BASE_DIMENSION_BOUNDS["length"]):
                 _redact_field(out, key)
 
+    # Subjects: a place name can match any taxon-shaped grammar, so always redacted.
     for key in SUBJECT_FIELDS:
         if key in present:
             handled.add(key)
-            subject = value[key]
-            if subject is not None and not (
-                isinstance(subject, str) and subject.isascii() and _SUBJECT.fullmatch(subject)
+            if value[key] is not None:
+                _redact_field(out, key)
+
+    # Typed numeric sub-schemas.
+    components = value.get("confidence_components")
+    if "confidence_components" in present:
+        handled.add("confidence_components")
+        if isinstance(components, dict):
+            checked = out["confidence_components"] if isinstance(out.get("confidence_components"), dict) else {}
+            for name, number in components.items():
+                if name in checked and not (_is_number(number) and 0 <= number <= 1):
+                    _redact_field(checked, name)
+        elif components is not None:
+            _redact_field(out, "confidence_components")
+    for key in SAMPLE_SIZE_KEYS:
+        if key in present:
+            handled.add(key)
+            number = value[key]
+            if number is not None and not (
+                isinstance(number, int) and not isinstance(number, bool) and 0 <= number <= MAX_SAMPLE_SIZE
             ):
                 _redact_field(out, key)
 

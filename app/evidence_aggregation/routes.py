@@ -54,7 +54,6 @@ def execute(rid:int):
  try:return _write(lambda:service.execute(rid))
  except KeyError as exc:raise HTTPException(404,detail={"code":"AGGREGATE_RUN_NOT_FOUND"}) from exc
 @router.get("/runs/{rid}")
-@member_readable
 def status(rid:int):
  try:return _read().status(rid)
  except KeyError as exc:raise HTTPException(404,detail={"code":"AGGREGATE_RUN_NOT_FOUND"}) from exc
@@ -74,21 +73,17 @@ def retry(rid:int):
  try:return _write(lambda:service.retry(rid))
  except KeyError as exc:raise HTTPException(404,detail={"code":"AGGREGATE_RUN_NOT_FOUND"}) from exc
 @router.get("/runs")
-@member_readable
 def history(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted(_read().runs.values(),key=lambda x:x["aggregate_run_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
-# Owner-only read: items echo raw candidate inputs (taxon_links, lineages, contexts).
 @router.get("/runs/{rid}/items")
 def items(rid:int,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0,le=10000)):
  repository=_read()
  if rid not in repository.items:raise HTTPException(404,detail={"code":"AGGREGATE_RUN_NOT_FOUND"})
  values=sorted(repository.items[rid],key=lambda x:x["item_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset,"warnings":[x for x in repository.warnings if x.get("run_id")==rid]}
 @router.get("/clusters")
-@member_readable
 def clusters(aggregate_type:str|None=None,review_state:str|None=None,limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted([x for x in _read().clusters.values() if (not aggregate_type or x["aggregate_type"]==aggregate_type) and (not review_state or x["review_state"]==review_state)],key=lambda x:x["cluster_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.get("/clusters/{cid}")
-@member_readable
 def cluster(cid:int):
  repository=_read()
  if cid not in repository.clusters:raise HTTPException(404,detail={"code":"CLUSTER_NOT_FOUND"})
@@ -100,45 +95,35 @@ def split(p:ClusterAction):
 def merge(p:ClusterAction):
  repository,_=_available();return _write(lambda:{"review":repository.review(0,"MERGE_CLUSTERS_REQUESTED",p.model_dump(),cluster_id=p.cluster_ids[0])})
 @router.get("/aggregates")
-@member_readable
 def aggregates(aggregate_type:str|None=None,status:str|None=None,review_state:str|None=None,conflict_state:str|None=None,minimum_confidence:float|None=None,limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=[x for x in _read().versions if x["active"]];values=sorted([x for x in values if (not aggregate_type or x["aggregate_type"]==aggregate_type) and (not status or x["aggregate_status"]==status) and (not review_state or x["review_state"]==review_state)],key=lambda x:(x["aggregate_id"],x["version"]));return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.get("/aggregates/{aid}")
-@member_readable
 def aggregate(aid:int):
  value=_read().current_aggregate(aid)
  if value is None:raise HTTPException(404,detail={"code":"AGGREGATE_NOT_FOUND"})
  return value
 @router.get("/aggregates/{aid}/versions")
-@member_readable
 def versions(aid:int):
  values=sorted([x for x in _read().versions if x["aggregate_id"]==aid],key=lambda x:x["version"])
  if not values:raise HTTPException(404,detail={"code":"AGGREGATE_NOT_FOUND"})
  return {"items":values}
 @router.get("/aggregates/{aid}/summary")
-@member_readable
 def summary(aid:int):return aggregate(aid)["confidence_dimensions"]
 @router.get("/aggregates/{aid}/support-network")
-@member_readable
 def support(aid:int):return {"items":sorted([x for x in _read().relationships if x["cluster_id"]==aid and x["relationship_type"] in {"SUPPORTS","PARTIALLY_SUPPORTS","QUALIFIES","REFINES"}],key=lambda x:x["relationship_id"])}
 @router.get("/aggregates/{aid}/contradiction-network")
-@member_readable
 def contradictions(aid:int):return {"items":sorted([x for x in _read().relationships if x["cluster_id"]==aid and x["relationship_type"] in {"CONTRADICTS","DOES_NOT_SUPPORT","UNRESOLVED_RELATIONSHIP"}],key=lambda x:x["relationship_id"])}
 @router.get("/aggregates/{aid}/source-independence")
-@member_readable
 def independence(aid:int):return {"items":sorted([x for x in _read().independence if x["candidate_id"] in aggregate(aid)["contributing_candidate_ids"]],key=lambda x:x["candidate_id"])}
 @router.get("/aggregates/{aid}/{dimension}")
-@member_readable
 def reconciliation(aid:int,dimension:str):
  key={"taxonomy":"taxonomic_context","temporal":"temporal_context","geographic":"geographic_context","measurements":"measurement_summary"}.get(dimension)
  if not key:raise HTTPException(404,"RECONCILIATION_DIMENSION_NOT_FOUND")
  return aggregate(aid)[key]
 @router.get("/conflicts")
-@member_readable
 def conflicts(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted(_read().conflicts.values(),key=lambda x:x["conflict_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.get("/reviews")
-@member_readable
 def reviews(state:str="OPEN",limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted([x for x in _read().reviews.values() if x["state"]==state],key=lambda x:x["review_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
 @router.post("/reviews/{ident}/resolve")
@@ -156,16 +141,17 @@ def supersede(aid:int,p:Supersede,auth:Annotated[dict,Depends(verify_owner_or_ap
 def withdraw(aid:int,p:Supersede,auth:Annotated[dict,Depends(verify_owner_or_api_key)]):
  _,service=_available();return _write(lambda:service.supersede(aid,"WITHDRAWN: "+p.reason,str(auth.get("actor") or "operator"),p.replacement_aggregate_id))
 @router.get("/export")
-@member_readable
 def export():return {"items":[{k:v for k,v in x.items() if k not in {"authorized_quote","source_text","text"}} for x in sorted(_read().versions,key=lambda x:(x["aggregate_id"],x["version"])) if x["active"]],"review_safe":True}
+# Member-readable: fixed schema {rulesets:{version:{deterministic}}, models:{version:{network}}},
+# written only by the repository constructor; no route writes it.
 @router.get("/registry")
 @member_readable
 def registry():
  repository=_read();return {"rulesets":repository.rulesets,"models":repository.models}
 @router.get("/tombstones")
-@member_readable
 def tombstones(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted(_read().tombstones,key=lambda x:x["tombstone_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
+# Member-readable: constant keys, booleans and a fixed status literal.
 @router.get("/health")
 @member_readable
 def health():return {"status":"ok","candidate_only":True,"publishes_graph":False,"network_required":False,"persistent":hasattr(_read(),"atomic")}

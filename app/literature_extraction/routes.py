@@ -186,6 +186,8 @@ def literature_extraction_coverage_audit(
         )
 
 
+# Member-readable: PaperSummary rows -- paper_id, readable, reason code, title, authors,
+# journal, publication_year and three counts; bibliographic fields only.
 @router.get("/papers")
 @member_readable
 def list_papers(
@@ -286,8 +288,9 @@ def create_source_binding(
         raise _source_binding_http_error(exc) from exc
 
 
+# Owner-only read: anchor_ids / evidence_integrity are keyed by extraction-defined ids and
+# carry section ids and a caller-supplied source_object_type (not a fixed schema).
 @router.get("/papers/{paper_id}/source-binding")
-@member_readable
 def get_source_binding(
     paper_id: str,
     binding_repository: Annotated[
