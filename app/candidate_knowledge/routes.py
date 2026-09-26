@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from app.member_auth import member_readable, owner_or_member_read
+from app.member_redaction import MemberRedactingRoute
 from app.security import verify_owner_or_api_key
 
 from .dependencies import _REPOSITORY, _REPOSITORY_ERROR, _SERVICE
 from .models import EvidenceInput, SourceAnchor
 
-router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(owner_or_member_read)])
+router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(owner_or_member_read)], route_class=MemberRedactingRoute)
 REPOSITORY = _REPOSITORY
 REPOSITORY_ERROR = _REPOSITORY_ERROR
 SERVICE = _SERVICE

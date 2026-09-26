@@ -3,12 +3,13 @@ from typing import Annotated,Any
 from fastapi import APIRouter,Depends,HTTPException,Query
 from pydantic import BaseModel,Field
 from app.member_auth import member_readable,owner_or_member_read
+from app.member_redaction import MemberRedactingRoute
 from app.security import verify_owner_or_api_key
 from .models import CandidateInput
 from .repository import MemoryAggregateRepository
 from .service import EvidenceAggregationService
 from app.persistence.state_repository import configured_database_url
-router=APIRouter(prefix="/api/evidence-aggregation",tags=["evidence-aggregation"],dependencies=[Depends(owner_or_member_read)])
+router=APIRouter(prefix="/api/evidence-aggregation",tags=["evidence-aggregation"],dependencies=[Depends(owner_or_member_read)],route_class=MemberRedactingRoute)
 def _build_repository():
  if configured_database_url():
   from .postgres_repository import PostgresAggregateRepository

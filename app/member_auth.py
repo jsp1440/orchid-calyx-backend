@@ -9,7 +9,10 @@ the product endpoints." Scope is strictly read-only. This module provides:
   request is admitted on the member path only when its method is GET/HEAD *and* the
   matched endpoint was explicitly marked with ``@member_readable``. Every other
   request (all writes, and every unmarked GET) requires the owner session / API key
-  exactly as ``verify_owner_or_api_key`` does today.
+  exactly as ``verify_owner_or_api_key`` does today; a *verified* member reaching one
+  of those routes gets 403 ``OWNER_ACCESS_REQUIRED`` (anonymous/invalid stay 401).
+* Responses served to members on candidate-knowledge and evidence-aggregation routes
+  have caller-supplied locality/prose removed (``app.member_redaction``).
 
 Environment:
 
@@ -238,11 +241,50 @@ async def verify_member_or_owner_read(
     raise HTTPException(status_code=401, detail="Owner session, member session, or API key is required")
 
 
+OWNER_ACCESS_REQUIRED = {"code": "OWNER_ACCESS_REQUIRED", "message": "This view is limited to owner access"}
+
+
+def _record(request: Request, principal: dict[str, object]) -> dict[str, object]:
+    request.state.oc_principal = principal
+    return principal
+
+
+async def _verified_member_or_none(request: Request, api_key: str | None) -> dict[str, object] | None:
+    """Return the member principal when the request carries a VALID member bearer.
+
+    Used only after the owner path has rejected the request. Owner-shaped bearers are
+    never forwarded to Supabase. An unverifiable token (invalid, Supabase down or not
+    configured) yields ``None`` so the caller keeps the owner path's 401.
+    """
+    if api_key or not member_reads_enabled():
+        return None
+    _, bearer = _bearer(request)
+    if not bearer or _OWNER_TOKEN_SHAPE.fullmatch(bearer):
+        return None
+    try:
+        principal = await run_in_threadpool(verify_member_access_token, bearer)
+    except HTTPException:
+        return None
+    return principal if principal.get("role") == "member" else None
+
+
 async def owner_or_member_read(
     request: Request, api_key: str | None = Security(api_key_header)
 ) -> dict[str, object]:
-    """Router-level, default-deny dependency: member path only for marked GET routes."""
+    """Router-level, default-deny dependency: member path only for marked GET routes.
+
+    A verified member reaching any other route (every write, every unmarked GET) gets
+    403 ``OWNER_ACCESS_REQUIRED``. It runs as a router dependency, before path/body
+    validation and before any lookup, so the 403 never reveals whether a resource
+    exists. Anonymous and invalid-token requests keep the owner path's 401; owner and
+    API-key behaviour is unchanged.
+    """
     endpoint = request.scope.get("endpoint")
     if request.method.upper() in READ_METHODS and getattr(endpoint, MEMBER_READABLE_ATTR, False):
-        return await verify_member_or_owner_read(request, api_key)
-    return await verify_owner_or_api_key(request, api_key)
+        return _record(request, await verify_member_or_owner_read(request, api_key))
+    try:
+        return _record(request, await verify_owner_or_api_key(request, api_key))
+    except HTTPException as exc:
+        if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
+            raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
+        raise
