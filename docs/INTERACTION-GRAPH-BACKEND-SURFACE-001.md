@@ -93,6 +93,13 @@ evidence that no interactions are known. A durable index that is configured but
 unreachable returns 503 (`SEMANTIC_INDEX_DATABASE_UNAVAILABLE`), not an empty 200.
 Each record also carries `revision_id_str`, the exact decimal string of
 `revision_id` (a 60-bit value that JavaScript numbers cannot hold exactly).
+Records are validated one at a time against the record contract
+(`app/interaction_discovery/models.py`). A stored record that matches the query
+but cannot be represented (for example a non-scalar `study_citation` or a
+non-mapping `locator`) is excluded and counted in the top-level
+`unreadable_count` (integer, default `0`) instead of failing the whole list with
+a 500. `count`, `total_matched` and `truncated` cover readable records only, so a
+non-zero `unreadable_count` means the result is incomplete.
 
 Each element of `interactions` (`app/interaction_discovery/service.py`) has:
 `source_taxon_name`, `source_taxon_id`, `target_taxon_name`, `target_taxon_id`,
