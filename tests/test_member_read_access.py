@@ -6,10 +6,13 @@ Supabase is always mocked; these tests never reach the network.
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -705,8 +708,52 @@ def _ck_evidence(ident: int, text: str, metadata: dict) -> dict:
     }
 
 
+# The seeded services stamp records with the wall clock (``now()`` isoformat with
+# microseconds) and time run execution with ``time.perf_counter``. Left live, those
+# machine-generated digits occasionally contain a planted value (a created_at of
+# ``...45.712400+00:00`` contains "2400"), which made the planted-locality check fail
+# intermittently without any locality reaching a member. The clock is frozen so every
+# seeded payload is deterministic; collision clocks deliberately reproduce that
+# condition so the member view is proven safe under it.
+@dataclass(frozen=True)
+class Clock:
+    timestamp: str
+    elapsed_seconds: float
+    collides: bool = False
+
+
+NEUTRAL_CLOCK = Clock("2026-09-26T12:00:00.000000+00:00", 0.5)
+COLLISION_CLOCKS = {
+    # Both timestamps were captured from failing runs of the live-clock test.
+    "timestamp-microseconds": Clock("2026-09-26T20:26:45.712400+00:00", 0.5, True),
+    "timestamp-straddle": Clock("2026-09-26T20:26:38.024003+00:00", 0.5, True),
+    "elapsed-seconds": Clock(NEUTRAL_CLOCK.timestamp, 0.24003, True),
+}
+
+
 @pytest.fixture
-def seeded(client, owner_token, monkeypatch):
+def frozen_clock(request, monkeypatch) -> Clock:
+    from app.candidate_knowledge import repository as ck_repository
+    from app.candidate_knowledge import service as ck_service
+    from app.evidence_aggregation import repository as ea_repository
+    from app.evidence_aggregation import service as ea_service
+
+    clock = getattr(request, "param", NEUTRAL_CLOCK)
+    for module in (ck_repository, ck_service, ea_repository, ea_service):
+        monkeypatch.setattr(module, "now", lambda: clock.timestamp)
+    ticks = itertools.cycle((0.0, clock.elapsed_seconds))  # execute(): start, then end
+    monkeypatch.setattr(ea_service, "time", SimpleNamespace(perf_counter=lambda: next(ticks)))
+    return clock
+
+
+def _mask_clock(text: str, clock: Clock) -> str:
+    """Remove exactly the frozen clock's own output (lower-cased text), nothing else."""
+    text = text.replace(clock.timestamp.lower(), "<clock>")
+    return re.sub(r'"elapsed_seconds":\s*' + re.escape(repr(clock.elapsed_seconds)), '"elapsed_seconds":<clock>', text)
+
+
+@pytest.fixture
+def seeded(client, owner_token, monkeypatch, frozen_clock):
     from app.candidate_knowledge import routes as ck_routes
     from app.candidate_knowledge.repository import MemoryCandidateRepository
     from app.candidate_knowledge.service import CandidateExtractionService
@@ -881,7 +928,13 @@ def _collect(client, urls, headers) -> str:
     return text
 
 
-def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded):
+@pytest.mark.parametrize(
+    "frozen_clock",
+    [NEUTRAL_CLOCK, *COLLISION_CLOCKS.values()],
+    ids=["neutral-clock", *COLLISION_CLOCKS],
+    indirect=True,
+)
+def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded, frozen_clock):
     assert seeded["ck_resolved"] == 200
     urls = _seeded_urls(seeded)
     member_paths = {path for _, path in EXPECTED_MEMBER_READS}
@@ -892,8 +945,14 @@ def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, 
         member_response = client.get(url, headers=_bearer(_jwt()))
         assert member_response.status_code == 403, (url, member_response.status_code)
         assert member_response.json() == OWNER_ACCESS_REQUIRED_BODY
-    owner_text = _collect(client, urls, _bearer(owner_token)).lower()
-    member_text = json.dumps([_mv(client, url) for url in urls], ensure_ascii=False).lower()
+    owner_raw = _collect(client, urls, _bearer(owner_token)).lower()
+    member_raw = json.dumps([_mv(client, url) for url in urls], ensure_ascii=False).lower()
+    # The collision condition really is present in what the member view carries ...
+    assert ("2400" in _mask_clock(member_raw, NEUTRAL_CLOCK)) is frozen_clock.collides
+    # ... and only the frozen clock's own output is excluded: plants are matched as raw
+    # substrings everywhere else, so an owner hit must come from the plant itself.
+    owner_text = _mask_clock(owner_raw, frozen_clock)
+    member_text = _mask_clock(member_raw, frozen_clock)
     plants = (
         [p.lower() for p in CONTEXT_PLANTS]
         + sorted(seeded["ea_redacted"])
