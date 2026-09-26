@@ -17,12 +17,12 @@ from fastapi.testclient import TestClient
 from app import member_auth
 from app.evidence_feedback import (
     EvidenceFeedbackService,
-    FileEvidenceFeedbackRepository,
     ObjectType,
 )
 from app.evidence_feedback.repository import EvidenceFeedbackRepositoryError
 from app.main import app
 from app.security import OWNER_SESSION_COOKIE, verify_owner_or_api_key
+from tests.evidence_feedback_stores import STORES, make_store
 
 TEST_API_KEY = "local-test-api-key-not-a-credential"
 TEST_OWNER_CODE = "local-test-owner-code-not-a-credential"
@@ -100,9 +100,13 @@ def _dependency_calls(route: APIRoute) -> set:
     return calls
 
 
+@pytest.fixture(params=STORES)
+def store(request, tmp_path, monkeypatch):
+    return make_store(request.param, tmp_path, monkeypatch)
+
+
 @pytest.fixture
-def client(tmp_path, monkeypatch):
-    monkeypatch.setenv("CALYX_EVIDENCE_FEEDBACK_ROOT", str(tmp_path / "feedback"))
+def client(store, monkeypatch):
     monkeypatch.setenv("CALYX_API_KEY", TEST_API_KEY)
     monkeypatch.setenv("CALYX_OWNER_ACCESS_CODE", TEST_OWNER_CODE)
     monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", TEST_SESSION_SECRET)
@@ -250,10 +254,10 @@ def test_old_unprefixed_path_is_not_served(client):
     assert response.status_code == 404
 
 
-def test_reregistration_keeps_original_record_and_rejects_conflicting_lineage(tmp_path):
+def test_reregistration_keeps_original_record_and_rejects_conflicting_lineage(store):
     clock_values = iter(["2026-09-20T20:00:00+00:00", "2026-09-21T09:00:00+00:00"])
     service = EvidenceFeedbackService(
-        FileEvidenceFeedbackRepository(tmp_path),
+        store.repository(),
         clock=lambda: next(clock_values, "2026-09-22T00:00:00+00:00"),
     )
     base = service.register_object(
