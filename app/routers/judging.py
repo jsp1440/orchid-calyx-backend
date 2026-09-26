@@ -65,6 +65,30 @@ def _generate_qr_code(plant_id: str) -> str:
     return f"QR-{hashlib.sha256(plant_id.encode()).hexdigest()[:12].upper()}"
 
 
+def _ensure_show_unlocked(db: Session, show_id: str | None) -> None:
+    show = db.get(Show, show_id) if show_id else None
+    if show and show.judging_locked:
+        raise HTTPException(status_code=409, detail="Judging is locked for this show. Edits are frozen.")
+
+
+def _get_scorable_criterion(db: Session, criterion_id: str, value: float | None) -> JudgingCriterion:
+    criterion = db.get(JudgingCriterion, criterion_id)
+    if not criterion:
+        raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+    if value is not None:
+        if criterion.points_min is not None and value < criterion.points_min:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{criterion.criteria_name}: {value} is below the minimum of {criterion.points_min}",
+            )
+        if criterion.points_max is not None and value > criterion.points_max:
+            raise HTTPException(
+                status_code=422,
+                detail=f"{criterion.criteria_name}: {value} is above the maximum of {criterion.points_max}",
+            )
+    return criterion
+
+
 # ── Judging Events ────────────────────────────────────────────────
 
 @router.post("/shows/{show_id}/judging/events", response_model=JudgingEventOut)
@@ -321,14 +345,11 @@ def submit_scores(plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Sess
     event = db.get(JudgingEvent, plant.judging_event_id)
     if event and event.status == "closed":
         raise HTTPException(status_code=409, detail="Judging event is closed. Edits are frozen.")
+    _ensure_show_unlocked(db, event.show_id if event else None)
 
     results = []
     for sc in data.scores:
-        criterion = db.execute(
-            select(JudgingCriterion).where(JudgingCriterion.criteria_id == sc.criterion_id)
-        ).scalar_one_or_none()
-        if not criterion:
-            raise HTTPException(status_code=404, detail=f"Criterion {sc.criterion_id} not found")
+        _get_scorable_criterion(db, sc.criterion_id, sc.value)
 
         existing = db.execute(
             select(Score).where(
@@ -811,9 +832,11 @@ def judge_autosave_scorecard(
     event = db.get(JudgingEvent, scorecard.judging_event_id)
     if event and event.status == "closed":
         raise HTTPException(status_code=409, detail="Judging event is closed. Edits are frozen.")
+    _ensure_show_unlocked(db, event.show_id if event else None)
 
     changed_scores = []
     for item in data.scores:
+        _get_scorable_criterion(db, item.criterion_id, item.value)
         existing = db.execute(
             select(Score).where(
                 Score.plant_id == scorecard.plant_id,
@@ -878,6 +901,7 @@ def judge_submit_scorecard(
     event = db.get(JudgingEvent, scorecard.judging_event_id)
     if event and event.status == "closed":
         raise HTTPException(status_code=409, detail="Judging event is closed.")
+    _ensure_show_unlocked(db, event.show_id if event else None)
 
     all_scores = db.execute(
         select(Score).where(
