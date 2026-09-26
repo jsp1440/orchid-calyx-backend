@@ -77,8 +77,8 @@ def retry(rid:int):
 @member_readable
 def history(limit:int=Query(50,ge=1,le=200),offset:int=Query(0,ge=0,le=10000)):
  values=sorted(_read().runs.values(),key=lambda x:x["aggregate_run_id"]);return {"items":values[offset:offset+limit],"total":len(values),"limit":limit,"offset":offset}
+# Owner-only read: items echo raw candidate inputs (taxon_links, lineages, contexts).
 @router.get("/runs/{rid}/items")
-@member_readable
 def items(rid:int,limit:int=Query(100,ge=1,le=500),offset:int=Query(0,ge=0,le=10000)):
  repository=_read()
  if rid not in repository.items:raise HTTPException(404,detail={"code":"AGGREGATE_RUN_NOT_FOUND"})

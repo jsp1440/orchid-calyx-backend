@@ -6,6 +6,12 @@ scopes, method/population/measurement context, free-form metadata and qualifiers
 extracted "occurs in/found at ..." locality values, and reviewer/tombstone prose.
 Any of these can carry site or locality text, so a member never receives them.
 
+Extracted values (``object_value`` / ``normalized_object`` / ``object_text``) are
+redacted FAIL-CLOSED: they reach a member only for an allowlisted, structured,
+non-locality kind AND a bounded value shape free of locality markers. Reviewer notes,
+dependence decisions, tombstone reasons, free-text error messages and caller-supplied
+source/taxon labels are redacted wherever they appear.
+
 Owner and API-key responses are never touched: ``MemberRedactingRoute`` returns the
 original response object unchanged unless the authenticated principal recorded by
 ``app.member_auth`` has ``role == "member"``.
@@ -39,13 +45,152 @@ FREE_FORM_CONTEXT_KEYS = (
     "qualifiers",
 )
 _PLAIN_DATE = re.compile(r"\d{4}(-\d{2}){0,2}([T ][0-9:.]+(Z|[+-][0-9:]+)?)?")
-GEOGRAPHIC_KINDS = frozenset({"GEOGRAPHIC_OCCURRENCE"})
-GEOGRAPHIC_AGGREGATE_TYPES = frozenset({"GEOGRAPHIC_DISTRIBUTION_AGGREGATE"})
+
+# --- extracted value allowlist (fail closed) ----------------------------------------
+#
+# ``object_value`` / ``normalized_object`` / ``object_text`` reach a member only when
+# the record's kind is in this allowlist AND the value passes the bounded shape and
+# locality-marker screen below. Every kind not listed -- including unknown kinds and
+# kinds the aggregation service silently folds into TRAIT_AGGREGATE -- is redacted.
+# Kinds are compared after ``str(kind).strip().upper()``.
+MEMBER_VALUE_KINDS = frozenset(
+    {
+        # Numeric morphological measurement (value + unit), e.g. "4.5 mm".
+        "MEASUREMENT",
+        # Categorical morphological character term, e.g. "saccate", "fimbriate".
+        "MORPHOLOGY_TERM",
+        # Categorical trait state, e.g. "hairy sepals"; free-text trait prose is
+        # still caught by the shape/marker screen.
+        "TRAIT",
+        # Molecular marker/locus token, e.g. "ITS", "matK" (extractor bounds it to
+        # [A-Za-z0-9_-]{2,40}); names a locus, never a place.
+        "MOLECULAR_MARKER",
+        # Controlled threat-category token, e.g. "endangered"; a category, not a site.
+        "CONSERVATION_ASSERTION",
+        # Taxon identity value: a scientific name.
+        "TAXON",
+    }
+)
+# Deliberately OUT: GEOGRAPHIC_OCCURRENCE, OCCURRENCE, SPECIMEN_REFERENCE, HABITAT,
+# ENVIRONMENTAL_TOLERANCE (elevation/climate ranges), ECOLOGICAL_RELATIONSHIP,
+# POLLINATOR_ASSOCIATION, MYCORRHIZAL_ASSOCIATION, CULTIVATION_OBSERVATION,
+# PHENOLOGY_EVENT ("flowers in March near <ridge>"), CONSERVATION_ACTION,
+# MECHANISTIC_RELATIONSHIP, MOLECULAR_RESULT, GLOSSARY, TAXON_NAME_USAGE and anything
+# unknown.
+# Aggregate types that correspond one-to-one to the allowed kinds (CANDIDATE_TYPE_MAP).
+MEMBER_VALUE_AGGREGATE_TYPES = frozenset(
+    {
+        "MEASUREMENT_AGGREGATE",
+        "MORPHOLOGICAL_CHARACTER_AGGREGATE",
+        "TRAIT_AGGREGATE",
+        "DNA_MARKER_AGGREGATE",
+        "CONSERVATION_THREAT_AGGREGATE",
+        "TAXON_IDENTITY_AGGREGATE",
+    }
+)
+KIND_FIELDS = ("kind", "candidate_type")
+VALUE_FIELDS = ("object_value", "normalized_object", "object_text")
+UNIT_FIELDS = ("unit", "original_unit")
+# Caller-supplied labels screened for locality markers (kept when clean).
+SCREENED_LABEL_FIELDS = ("normalized_subject", "normalized_predicate", "predicate")
+
+# Ported from the frontend morphology citation screen
+# (orchid-continuum-frontend scripts/oc-morphology-source-lookup.mjs,
+# CITATION_LOCALITY_MARKERS) plus explicit site/coordinate words.
+LOCALITY_MARKERS = tuple(
+    re.compile(pattern, flags)
+    for pattern, flags in (
+        (r"\d+\s?m\b", re.IGNORECASE),  # elevation / distance in metres
+        (r"\d+\s?(?:ft|feet)\b", re.IGNORECASE),
+        (r"\balt\.|\baltitude\b|\belev", re.IGNORECASE),
+        (r"\bkm\b", re.IGNORECASE),
+        (r"\bnear\b", re.IGNORECASE),
+        (r"\bcoll\.|\bleg\.|\bcollect(?:ed|or|ing)\b|\bholotype\b|\bspecimens?\b", re.IGNORECASE),
+        (r"\btype locality\b|\blocality\b|\blocalities\b", re.IGNORECASE),
+        (r"[°º]|\bdeg(?:rees?)?\b", re.IGNORECASE),  # degrees
+        (r"\d\s*['′’\"″]", 0),  # minutes / seconds
+        (r"\b\d{1,3}(?:[\s.:]\d{1,2}){0,2}\s*[NSEW]\b", 0),  # 12 30 N, 77.15 W
+        (r"-?\b\d{1,3}\.\d{3,}\b", 0),  # decimal coordinates
+        (r"\bmi(?:les?)?\b", re.IGNORECASE),  # distance in miles
+        (r"\b[NSEW]\s+of\b", 0),  # "15 mi E of ...", "S of ..."
+        (r"\blat\b|\blong?\b", re.IGNORECASE),  # lat / lon / long
+        (
+            r"\b(?:ridges?|trails?|roads?|villages?|summits?|streams?|rivers?|valleys?|mountains?|hills?)\b",
+            re.IGNORECASE,
+        ),
+        (
+            (
+                r"\b(?:sites?|gps|coordinates?|reserves?|parks?|stations?|lakes?|slopes?|cliffs?|peaks?|creeks?"
+                r"|towns?|province|district|county|municipality|locations?|located|found at|occurs? (?:in|at))\b"
+            ),
+            re.IGNORECASE,
+        ),
+    )
+)
+_NUMBER_WITH_UNIT = re.compile(
+    r"-?\d+(?:\.\d+)?(?:\s*(?:-|–|to)\s*-?\d+(?:\.\d+)?)?(?:\s*[A-Za-zµ%]{1,6})?"
+)
+_AGGREGATED_NUMBER = re.compile(r"-?\d+(?:\.\d+)?(?:e[+-]?\d+)?:[a-z_]+:base")
+_CONTROLLED_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9 _/+-]{0,39}")
+_UNIT_TOKEN = re.compile(r"[A-Za-zµ%/^0-9.-]{1,10}")
+
+
+def _normalized_kind(value: Any) -> str:
+    return str(value).strip().upper()
+
+
+def _has_locality_marker(text: str) -> bool:
+    return any(marker.search(text) for marker in LOCALITY_MARKERS)
+
+
+def _value_shape_ok(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, (int, float)):
+        return True
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    if not text or len(text) > 40 or _has_locality_marker(text):
+        return False
+    if _NUMBER_WITH_UNIT.fullmatch(text) or _AGGREGATED_NUMBER.fullmatch(text):
+        return True
+    return bool(_CONTROLLED_TOKEN.fullmatch(text)) and len(text.split()) <= 4
+
+
+def _kind_allows_value(record: dict[str, Any]) -> bool:
+    """True only when every kind/type field present is allowlisted, and one is present."""
+    seen = False
+    for field_name in KIND_FIELDS:
+        if field_name in record:
+            seen = True
+            if _normalized_kind(record[field_name]) not in MEMBER_VALUE_KINDS:
+                return False
+    if "aggregate_type" in record:
+        seen = True
+        if _normalized_kind(record["aggregate_type"]) not in MEMBER_VALUE_AGGREGATE_TYPES:
+            return False
+    return seen
 
 
 GEOGRAPHIC_SUMMARY_KEYS = frozenset({"contexts", "scopes", "universalized"})
 TEMPORAL_SUMMARY_KEYS = frozenset(
     {"contexts", "earliest_evidence_date", "latest_evidence_date", "superseded_candidate_ids", "trend_conclusion"}
+)
+# Reviewer notes, tombstone reasons, dependence decisions, free-text error echoes
+# (e.g. EXTRACTION_FAILURE ``str(exc)``) and caller-supplied source/taxon labels are
+# redacted wherever they appear, at any depth.
+ALWAYS_REDACTED_KEYS = (
+    "rationale",
+    "resolution_rationale",
+    "reason",
+    "dependence",
+    "message",
+    "source_name",
+    "source_names",
+    "match_candidates",
+    "taxon_links",
+    "cluster_key",
 )
 
 
@@ -92,30 +237,29 @@ def redact_member_locality(value: Any) -> Any:
         if key in value and not _is_geographic_summary(value[key]) and not _is_temporal_summary(value[key]):
             _redact_field(out, key)
 
-    # Extracted locality values: "occurs in / found at <prose>".
-    kind = value.get("kind") or value.get("candidate_type")
-    if kind in GEOGRAPHIC_KINDS and "object_value" in value:
-        _redact_field(out, "object_value")
-    if value.get("aggregate_type") in GEOGRAPHIC_AGGREGATE_TYPES and "normalized_object" in value:
-        _redact_field(out, "normalized_object")
+    for key in ALWAYS_REDACTED_KEYS:
+        if key in value:
+            _redact_field(out, key)
 
-    # Aggregation cluster keys embed the region/country string at index 3.
-    cluster_key = value.get("cluster_key")
-    if isinstance(cluster_key, list) and len(cluster_key) > 3:
-        out["cluster_key"] = [None if index == 3 else item for index, item in enumerate(out["cluster_key"])]
-        out["cluster_key_redacted"] = True
+    # Extracted values: fail-closed allowlist by kind AND bounded value shape.
+    kind_ok = _kind_allows_value(value)
+    for key in VALUE_FIELDS:
+        if key in value and value[key] is not None and not (kind_ok and _value_shape_ok(value[key])):
+            _redact_field(out, key)
+    for key in UNIT_FIELDS:
+        unit = value.get(key)
+        if unit is not None and not (
+            isinstance(unit, str) and _UNIT_TOKEN.fullmatch(unit.strip()) and not _has_locality_marker(unit)
+        ):
+            _redact_field(out, key)
+    for key in SCREENED_LABEL_FIELDS:
+        label = value.get(key)
+        if label is not None and not (isinstance(label, str) and len(label) <= 120 and not _has_locality_marker(label)):
+            _redact_field(out, key)
 
     # Measurement summaries echo the caller's method context as "method".
     if "conversion_rule_version" in value and "method" in value:
         _redact_field(out, "method")
-
-    # Reviewer and tombstone prose is caller-supplied free text.
-    if "review_id" in value and "rationale" in value:
-        _redact_field(out, "rationale")
-    if "resolution_rationale" in value:
-        _redact_field(out, "resolution_rationale")
-    if "tombstone_id" in value and "reason" in value:
-        _redact_field(out, "reason")
     return out
 
 

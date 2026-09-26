@@ -17,6 +17,8 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 from app import member_auth
+from app.candidate_knowledge.models import CandidateKind
+from app.evidence_aggregation.models import CANDIDATE_TYPE_MAP
 from app.main import app
 from app.member_redaction import redact_member_locality
 from app.security import OWNER_SESSION_COOKIE, create_owner_session_token
@@ -42,7 +44,6 @@ EXPECTED_MEMBER_READS = {
     ("GET", "/api/candidate-knowledge/health"),
     ("GET", "/api/evidence-aggregation/runs/{rid}"),
     ("GET", "/api/evidence-aggregation/runs"),
-    ("GET", "/api/evidence-aggregation/runs/{rid}/items"),
     ("GET", "/api/evidence-aggregation/clusters"),
     ("GET", "/api/evidence-aggregation/clusters/{cid}"),
     ("GET", "/api/evidence-aggregation/aggregates"),
@@ -68,6 +69,7 @@ EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/candidate-knowledge/runs/{run_id}/items"),
     ("GET", "/api/literature-extraction/papers/{paper_id}"),
     ("GET", "/api/literature-extraction/coverage-audit"),
+    ("GET", "/api/evidence-aggregation/runs/{rid}/items"),
 }
 
 
@@ -485,21 +487,52 @@ def test_member_marker_never_opens_a_write_method(supabase, owner_token):
 
 # --- locality redaction for members ---------------------------------------------------
 
-PLANTED = (
+
+# Context plants: every one must reach the owner and never a member.
+CONTEXT_PLANTS = (
     "PLANT-GEO-SITE",
     "PLANT-REGION",
     "PLANT-METHOD-TRANSECT",
-    "PLANT-POPULATION-SITE",
-    "PLANT-MEASURE-SITE",
-    "PLANT-META-SITE",
     "PLANT-TEMPORAL-SITE",
     "PLANT-DATE-PROSE",
-    "PLANT-OCCURS-OBJECT",
+    "PLANT-SOURCE-NAME",
+    "PLANT-TAXON-LINK",
     "PLANT-QUALIFIER-SITE",
     "PLANT-OCCURS-EXTRACTED",
-    "PLANT-RATIONALE-SITE",
-    "PLANT-TOMBSTONE-SITE",
+    "PLANT-ERR-ECHO",
+    "PLANT-EA-RATIONALE",
+    "PLANT-EA-DEPENDENCE",
+    "PLANT-EA-DEP-RATIONALE",
+    "PLANT-TOMBSTONE",
+    "PLANT-CK-RATIONALE",
 )
+# Every candidate kind the code knows, plus kinds it does not: occurrence/specimen/
+# habitat aliases, lower-case spellings, and unknown kinds (folded into TRAIT_AGGREGATE).
+EXTRA_KINDS = (
+    "OCCURRENCE",
+    "SPECIMEN_REFERENCE",
+    "HABITAT",
+    "geographic_occurrence",
+    "trait",
+    " measurement ",
+    "Phenology_Event",
+    "HABITAT_NOTE",
+    "FIELD_NOTE",
+)
+ALL_AGGREGATION_KINDS = tuple(dict.fromkeys([*CANDIDATE_TYPE_MAP, *CandidateKind, *EXTRA_KINDS]))
+ALLOWED = {"MEASUREMENT", "MORPHOLOGY_TERM", "TRAIT", "MOLECULAR_MARKER", "CONSERVATION_ASSERTION", "TAXON"}
+
+
+def _slug(kind: str) -> str:
+    return re.sub(r"[^A-Za-z]", "", str(kind)).upper()
+
+
+def _prose_plant(kind: str) -> str:
+    return f"LOCPROSE{_slug(kind)} near the ridge"
+
+
+def _clean_plant(kind: str) -> str:
+    return f"clean{_slug(kind).lower()}"
 
 
 def _aggregation_candidate(candidate_id: int, revision: int, **overrides):
@@ -508,20 +541,30 @@ def _aggregation_candidate(candidate_id: int, revision: int, **overrides):
         "candidate_version": 1,
         "candidate_type": "GEOGRAPHIC_OCCURRENCE",
         "normalized_subject": "Dracula vampira",
-        "predicate": "occurs_in",
-        "object_value": "PLANT-OCCURS-OBJECT ridge",
+        "predicate": f"p{candidate_id}",
+        "object_value": "value",
         "source_revision_id": revision,
         "source_anchor_ids": [revision],
         "geographic_context": {"region": "PLANT-REGION", "site": "PLANT-GEO-SITE", "lat": -1.23},
         "method_context": {"protocol": "PLANT-METHOD-TRANSECT"},
-        "population_context": {"population": "PLANT-POPULATION-SITE"},
-        "measurement_context": {"note": "PLANT-MEASURE-SITE", "sample_size": 3},
         "temporal_context": {"observed_date": "PLANT-DATE-PROSE", "note": "PLANT-TEMPORAL-SITE"},
-        "metadata": {"collector_note": "PLANT-META-SITE"},
-        "taxon_links": [{"candidate_taxon_id": "t-1", "confidence": 0.9}],
+        "metadata": {"source_name": "PLANT-SOURCE-NAME"},
+        "taxon_links": [{"candidate_taxon_id": "t-1", "source_name": "PLANT-TAXON-LINK", "confidence": 0.9}],
     }
     value.update(overrides)
     return value
+
+
+def _ck_evidence(ident: int, text: str, metadata: dict) -> dict:
+    return {
+        "source_object_type": "document",
+        "source_object_id": ident,
+        "revision_id": ident,
+        "extraction_run_id": 1,
+        "text": text,
+        "source_anchors": [{"anchor_id": ident}],
+        "metadata": metadata,
+    }
 
 
 @pytest.fixture
@@ -541,82 +584,104 @@ def seeded(client, owner_token, monkeypatch):
     monkeypatch.setattr(ea_routes, "SERVICE", EvidenceAggregationService(ea_repo))
     owner = _bearer(owner_token)
 
-    measurement = _aggregation_candidate(
-        3, 13, candidate_type="MEASUREMENT", predicate="width", object_value=None, numeric_value=4.0, unit="mm"
+    # Evidence aggregation: one prose and one clean value per kind, each its own cluster.
+    candidates, expected_kept, expected_redacted = [], set(), set()
+    next_id = 1
+    for kind in ALL_AGGREGATION_KINDS:
+        for value in (_prose_plant(kind), _clean_plant(kind)):
+            candidates.append(_aggregation_candidate(next_id, 100 + next_id, candidate_type=kind, object_value=value))
+            next_id += 1
+            if value == _clean_plant(kind) and str(kind).strip().upper() in ALLOWED:
+                expected_kept.add(value.lower())
+            else:
+                expected_redacted.add(value.lower())
+    numeric = _aggregation_candidate(
+        next_id, 100 + next_id, candidate_type="MEASUREMENT", object_value=None, numeric_value=4.0, unit="mm"
     )
-    measurement_2 = _aggregation_candidate(
-        4, 14, candidate_type="MEASUREMENT", predicate="width", object_value=None, numeric_value=5.0, unit="mm"
-    )
-    run = client.post(
-        "/api/evidence-aggregation/preview",
-        headers=owner,
-        json={"candidates": [_aggregation_candidate(1, 11), _aggregation_candidate(2, 12), measurement, measurement_2]},
-    )
+    withdraw_target = _aggregation_candidate(next_id + 1, 101 + next_id, candidate_type="TRAIT", object_value="target")
+    candidates += [numeric, withdraw_target]
+    run = client.post("/api/evidence-aggregation/preview", headers=owner, json={"candidates": candidates})
     assert run.status_code == 201, run.text
     rid = run.json()["aggregate_run_id"]
     assert client.post(f"/api/evidence-aggregation/runs/{rid}/execute", headers=owner).status_code == 200
-    aggregates = client.get("/api/evidence-aggregation/aggregates", headers=owner).json()["items"]
-    assert aggregates
+    aggregates = client.get("/api/evidence-aggregation/aggregates?limit=200", headers=owner).json()["items"]
+    assert len(aggregates) == len(candidates)
+
+    dependence = client.post(
+        "/api/evidence-aggregation/sources/dependence",
+        headers=owner,
+        json={"candidate_ids": [1, 2], "dependence": "PLANT-EA-DEPENDENCE", "rationale": "PLANT-EA-DEP-RATIONALE"},
+    )
+    assert dependence.status_code == 200, dependence.text
     review = client.get("/api/evidence-aggregation/reviews", headers=owner).json()["items"][0]
     resolved = client.post(
         f"/api/evidence-aggregation/reviews/{review['review_id']}/resolve",
         headers=owner,
-        json={"action": "DEFER", "rationale": "PLANT-RATIONALE-SITE"},
+        json={"action": "DEFER", "rationale": "PLANT-EA-RATIONALE"},
     )
-    geo = next(x for x in aggregates if x["aggregate_type"] == "GEOGRAPHIC_DISTRIBUTION_AGGREGATE")
-    tombstoned = next(x for x in aggregates if x["aggregate_id"] != geo["aggregate_id"])
+    assert resolved.status_code == 200, resolved.text
     withdrawn = client.post(
-        f"/api/evidence-aggregation/aggregates/{tombstoned['aggregate_id']}/withdraw",
+        f"/api/evidence-aggregation/aggregates/{next(x for x in aggregates if x['normalized_object'] == 'target')['aggregate_id']}/withdraw",
         headers=owner,
-        json={"reason": "PLANT-TOMBSTONE-SITE"},
+        json={"reason": "PLANT-TOMBSTONE"},
     )
+    assert withdrawn.status_code == 200, withdrawn.text
 
+    # Candidate knowledge: declared facts for every CandidateKind (prose + clean value),
+    # a regex-extracted "occurs in" locality, qualifiers, and an EXTRACTION_FAILURE whose
+    # message echoes caller text.
+    ck_facts, ck_kept, ck_redacted = [], set(), set()
+    for kind in CandidateKind:
+        for value in (_prose_plant(kind), _clean_plant(kind)):
+            ck_facts.append(
+                {
+                    "kind": kind.value,
+                    "subject": "Dracula vampira",
+                    "predicate": f"p-{kind.value}-{len(ck_facts)}",
+                    "object_value": value,
+                    "qualifiers": {"site": "PLANT-QUALIFIER-SITE"},
+                }
+            )
+            (ck_kept if value == _clean_plant(kind) and kind.value in ALLOWED else ck_redacted).add(value)
     ck_run = client.post(
         "/api/candidate-knowledge/preview",
         headers=owner,
         json={
             "evidence": [
-                {
-                    "source_object_type": "document",
-                    "source_object_id": 1,
-                    "revision_id": 1,
-                    "extraction_run_id": 1,
-                    "text": "Dracula vampira occurs in PLANT-OCCURS-EXTRACTED valley.",
-                    "source_anchors": [{"anchor_id": 1}],
-                    "metadata": {"subject": "Dracula vampira"},
-                },
-                {
-                    "source_object_type": "document",
-                    "source_object_id": 2,
-                    "revision_id": 2,
-                    "extraction_run_id": 1,
-                    "text": "declared",
-                    "source_anchors": [{"anchor_id": 2}],
-                    "metadata": {
-                        "candidate_facts": [
-                            {
-                                "kind": "TRAIT",
-                                "subject": "Dracula vampira",
-                                "predicate": "has_trait",
-                                "object_value": "hairy sepals",
-                                "qualifiers": {"site": "PLANT-QUALIFIER-SITE"},
-                            }
-                        ]
-                    },
-                },
+                _ck_evidence(1, "Dracula vampira occurs in PLANT-OCCURS-EXTRACTED valley.", {"subject": "Dracula vampira"}),
+                _ck_evidence(2, "declared", {"candidate_facts": ck_facts}),
+                _ck_evidence(
+                    3,
+                    "failing",
+                    {"candidate_facts": [{"kind": "PLANT-ERR-ECHO near ridge", "subject": "x", "predicate": "y"}]},
+                ),
             ]
         },
     )
     assert ck_run.status_code == 201, ck_run.text
     ck_rid = ck_run.json()["candidate_run_id"]
     assert client.post(f"/api/candidate-knowledge/runs/{ck_rid}/execute", headers=owner).status_code == 200
+    ck_review = next(
+        x
+        for x in client.get("/api/candidate-knowledge/reviews", headers=owner).json()["items"]
+        if x["category"] == "CANDIDATE_REQUIRES_HUMAN_REVIEW"
+    )
+    ck_resolved = client.post(
+        f"/api/candidate-knowledge/reviews/{ck_review['review_id']}/resolve",
+        headers=owner,
+        json={"decision": "REQUEST_CHANGES", "rationale": "PLANT-CK-RATIONALE"},
+    )
     return {
         "rid": rid,
-        "aid": geo["aggregate_id"],
-        "cid": geo["cluster_id"],
+        "aid": aggregates[0]["aggregate_id"],
+        "numeric_aid": next(x for x in aggregates if x["measurement_summary"]["measurements"])["aggregate_id"],
+        "cid": aggregates[0]["cluster_id"],
         "ck_rid": ck_rid,
-        "resolved": resolved.status_code,
-        "withdrawn": withdrawn.status_code,
+        "ea_kept": expected_kept,
+        "ea_redacted": expected_redacted,
+        "ck_kept": ck_kept,
+        "ck_redacted": ck_redacted,
+        "ck_resolved": ck_resolved.status_code,
     }
 
 
@@ -631,46 +696,141 @@ def _seeded_urls(seeded) -> list[str]:
                 urls.append(path.replace("{aid}", str(seeded["aid"])).replace("{dimension}", dimension))
             continue
         urls.append(re.sub(r"\{(\w+)\}", lambda m: str(values[m.group(1)]), path))
+    numeric_aid = seeded["numeric_aid"]
     urls += [
+        f"/api/evidence-aggregation/aggregates/{numeric_aid}",
+        f"/api/evidence-aggregation/aggregates/{numeric_aid}/measurements",
         "/api/evidence-aggregation/reviews?state=RESOLVED",
+        "/api/evidence-aggregation/reviews?limit=200",
+        "/api/evidence-aggregation/aggregates?limit=200",
         "/api/evidence-aggregation/aggregates?status=SUPERSEDED",
-        "/api/candidate-knowledge/candidates?active=true&limit=200",
+        "/api/candidate-knowledge/candidates?limit=200",
+        "/api/candidate-knowledge/reviews?state=RESOLVED",
+        "/api/candidate-knowledge/reviews?limit=200",
+        "/api/candidate-knowledge/conflicts",
     ]
     return urls
 
 
+def _collect(client, urls, headers) -> str:
+    text = ""
+    for url in urls:
+        response = client.get(url, headers=headers)
+        assert response.status_code == 200, (url, response.text)
+        text += response.text
+    return text
+
+
 def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded):
-    assert seeded["resolved"] == 200 and seeded["withdrawn"] == 200
-    owner_text, member_text = "", ""
-    for url in _seeded_urls(seeded):
+    assert seeded["ck_resolved"] == 200
+    urls = _seeded_urls(seeded)
+    for url in urls:
         owner_response = client.get(url, headers=_bearer(owner_token))
         member_response = client.get(url, headers=_bearer(_jwt()))
         assert owner_response.status_code == member_response.status_code == 200, (url, owner_response.text)
         assert member_response.json() == redact_member_locality(owner_response.json()), url
-        owner_text += owner_response.text
-        member_text += member_response.text
-    # Every plant reaches the owner (the test exercises real data paths) ...
-    missing_for_owner = [plant for plant in PLANTED if plant not in owner_text]
+    owner_text = _collect(client, urls, _bearer(owner_token)).lower()
+    member_text = _collect(client, urls, _bearer(_jwt())).lower()
+    plants = [p.lower() for p in CONTEXT_PLANTS] + sorted(seeded["ea_redacted"]) + [p.lower() for p in seeded["ck_redacted"]]
+    missing_for_owner = [p for p in plants if p not in owner_text]
     assert not missing_for_owner, missing_for_owner
-    # ... and none reaches a member.
-    leaked = [plant for plant in PLANTED if plant in member_text]
+    leaked = [p for p in plants if p in member_text]
     assert not leaked, leaked
-    assert '"geographic_context_redacted":true' in member_text
 
 
-def test_member_redaction_flags_are_placed_beside_the_redacted_fields(client, supabase, seeded):
+def test_allowlisted_clean_values_still_reach_members(client, supabase, seeded):
+    member_text = _collect(client, _seeded_urls(seeded), _bearer(_jwt())).lower()
+    assert seeded["ea_kept"] and seeded["ck_kept"]
+    missing = [v for v in sorted(seeded["ea_kept"]) + sorted(v.lower() for v in seeded["ck_kept"]) if v not in member_text]
+    assert not missing, missing
+
+
+@pytest.mark.parametrize("kind", ALL_AGGREGATION_KINDS)
+def test_every_kind_is_allowlisted_or_redacted_on_each_aggregate_view(client, supabase, seeded, owner_token, kind):
     member = _bearer(_jwt())
+    owner_items = client.get("/api/evidence-aggregation/aggregates?limit=200", headers=_bearer(owner_token)).json()["items"]
+    prose = next(x for x in owner_items if x["normalized_object"] == _prose_plant(kind).lower())
+    clean = next(x for x in owner_items if x["normalized_object"] == _clean_plant(kind).lower())
+    keep_clean = str(kind).strip().upper() in ALLOWED
+    for record in (prose, clean):
+        aid = record["aggregate_id"]
+        views = [
+            client.get(f"/api/evidence-aggregation/aggregates/{aid}", headers=member).json(),
+            *client.get(f"/api/evidence-aggregation/aggregates/{aid}/versions", headers=member).json()["items"],
+            next(
+                x
+                for x in client.get("/api/evidence-aggregation/aggregates?limit=200", headers=member).json()["items"]
+                if x["aggregate_id"] == aid
+            ),
+            next(
+                x
+                for x in client.get("/api/evidence-aggregation/export", headers=member).json()["items"]
+                if x["aggregate_id"] == aid
+            ),
+        ]
+        for view in views:
+            if record is clean and keep_clean:
+                assert view["normalized_object"] == record["normalized_object"], (kind, view)
+                assert "normalized_object_redacted" not in view
+            else:
+                assert view["normalized_object"] is None and view["normalized_object_redacted"] is True, (kind, view)
+
+
+@pytest.mark.parametrize("kind", list(CandidateKind))
+def test_every_candidate_kind_is_allowlisted_or_redacted(client, supabase, seeded, kind):
+    items = client.get("/api/candidate-knowledge/candidates?limit=200", headers=_bearer(_jwt())).json()["items"]
+    mine = [x for x in items if x["kind"] == kind.value and x["predicate"].startswith(f"p-{kind.value}-")]
+    assert len(mine) == 2
+    for item in mine:
+        if kind.value in ALLOWED and item["object_value"] is not None:
+            assert item["object_value"] == _clean_plant(kind)
+        else:
+            assert item["object_value"] is None and item["object_value_redacted"] is True
+        assert item["qualifiers"] is None and item["qualifiers_redacted"] is True
+
+
+def test_reviewer_notes_and_error_echoes_are_redacted(client, supabase, seeded):
+    member = _bearer(_jwt())
+    ea_reviews = client.get("/api/evidence-aggregation/reviews?limit=200", headers=member).json()["items"]
+    dependence = next(x for x in ea_reviews if x["category"] == "SOURCE_INDEPENDENCE_DECISION")
+    assert dependence["evidence"]["rationale"] is None and dependence["evidence"]["rationale_redacted"] is True
+    assert dependence["evidence"]["dependence"] is None and dependence["evidence"]["dependence_redacted"] is True
+    resolved = client.get("/api/evidence-aggregation/reviews?state=RESOLVED", headers=member).json()["items"]
+    assert resolved and all(x["rationale"] is None and x["rationale_redacted"] for x in resolved)
+    tombstones = client.get("/api/evidence-aggregation/tombstones", headers=member).json()["items"]
+    assert tombstones and all(x["reason"] is None and x["reason_redacted"] for x in tombstones)
+    ck_reviews = client.get("/api/candidate-knowledge/reviews?limit=200", headers=member).json()["items"]
+    failure = next(x for x in ck_reviews if x["category"] == "EXTRACTION_FAILURE")
+    assert failure["evidence"]["message"] is None and failure["evidence"]["message_redacted"] is True
+    assert failure["evidence"]["code"] == "ValueError"
+    ck_resolved = client.get("/api/candidate-knowledge/reviews?state=RESOLVED", headers=member).json()["items"]
+    assert ck_resolved and all(x["rationale"] is None and x["rationale_redacted"] for x in ck_resolved)
     aggregate = client.get(f"/api/evidence-aggregation/aggregates/{seeded['aid']}", headers=member).json()
-    assert aggregate["geographic_context"]["contexts"] is None
-    assert aggregate["geographic_context"]["scopes"] is None
+    assert aggregate["taxonomic_context"]["source_names"] is None
+    assert aggregate["taxonomic_context"]["source_names_redacted"] is True
     assert aggregate["geographic_context"]["geographic_context_redacted"] is True
-    assert aggregate["normalized_object"] is None and aggregate["normalized_object_redacted"] is True
-    geographic = client.get(f"/api/evidence-aggregation/aggregates/{seeded['aid']}/geographic", headers=member).json()
-    assert geographic == {"contexts": None, "scopes": None, "universalized": False, "geographic_context_redacted": True}
-    items = client.get(f"/api/evidence-aggregation/runs/{seeded['rid']}/items", headers=member).json()["items"]
-    first = items[0]["candidates"][0]
-    assert first["geographic_context"] is None and first["geographic_context_redacted"] is True
-    assert items[0]["cluster_key_redacted"] is True
+
+
+def test_value_shape_and_marker_screen():
+    from app.member_redaction import _value_shape_ok
+
+    for ok in ("4.5 mm", "3-5 cm", "saccate", "hairy sepals", "matK", 12, 4.25, "4:length:base", "MULTIPLE_VALUES"):
+        assert _value_shape_ok(ok), ok
+    for bad in (
+        "March near LOC-PHEN-RIDGE",
+        "1200 m",
+        "12 30 N",
+        "-12.3456",
+        "5 km N of town",
+        "found at the ridge trail",
+        "collected on slope",
+        "x" * 41,
+        "one two three four five",
+        True,
+        None,
+        {"a": 1},
+    ):
+        assert not _value_shape_ok(bad), bad
 
 
 def test_owner_and_api_key_responses_are_the_unmodified_handler_output(client, owner_token, supabase, seeded):
@@ -706,3 +866,15 @@ def test_redaction_does_not_trust_a_caller_context_that_mimics_the_summary_shape
                 "superseded_candidate_ids": [], "trend_conclusion": None}
     redacted = redact_member_locality(temporal)
     assert redacted["earliest_evidence_date"] is None and redacted["latest_evidence_date"] == "2024-05-01"
+
+
+def test_value_redaction_fails_closed_on_missing_or_conflicting_type_fields():
+    assert redact_member_locality({"object_value": "clean"})["object_value_redacted"] is True
+    folded = {"aggregate_type": "TRAIT_AGGREGATE", "candidate_type": "habitat_note", "normalized_object": "clean"}
+    assert redact_member_locality(folded)["normalized_object_redacted"] is True
+    habitat = {"aggregate_type": "HABITAT_AGGREGATE", "normalized_object": "clean"}
+    assert redact_member_locality(habitat)["normalized_object_redacted"] is True
+    kept = redact_member_locality({"kind": " trait ", "object_value": "hairy sepals", "unit": "mm"})
+    assert kept == {"kind": " trait ", "object_value": "hairy sepals", "unit": "mm"}
+    unit = redact_member_locality({"kind": "MEASUREMENT", "object_value": "4", "unit": "m above the ridge"})
+    assert unit["unit"] is None and unit["unit_redacted"] is True
