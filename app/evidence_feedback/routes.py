@@ -17,7 +17,12 @@ from .repository import (
 )
 from .service import EvidenceFeedbackService
 
-router = APIRouter(prefix="/evidence-feedback", tags=["evidence-feedback"])
+# Every product router is mounted under ``/api``. The owner session cookie is
+# scoped to ``path=/api/``, so a browser only sends it to routes below that
+# prefix; the frontend client (src/lib/evidenceFeedback.ts) calls
+# ``/api/evidence-feedback``. Auth stays owner session or backend API key.
+EVIDENCE_FEEDBACK_PREFIX = "/api/evidence-feedback"
+router = APIRouter(prefix=EVIDENCE_FEEDBACK_PREFIX, tags=["evidence-feedback"])
 Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
 
 

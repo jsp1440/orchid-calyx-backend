@@ -63,8 +63,7 @@ class EvidenceFeedbackService:
             created_at=now,
             previous_version_hash=previous_version_hash,
         )
-        self.repository.save_object_version(version)
-        return version
+        return self.repository.save_object_version(version)
 
     def submit(
         self,

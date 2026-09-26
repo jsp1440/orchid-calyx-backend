@@ -105,7 +105,37 @@ class FileEvidenceFeedbackRepository:
             if line.strip()
         ]
 
-    def save_object_version(self, version: EvidenceObjectVersion) -> None:
+    @staticmethod
+    def _is_same_version(
+        persisted: EvidenceObjectVersion, candidate: EvidenceObjectVersion
+    ) -> bool:
+        """True when ``candidate`` re-presents the persisted content version.
+
+        ``created_at`` is the first-registration time and is not part of the
+        version identity. A caller that makes no lineage claim
+        (``previous_version_hash is None``) does not contradict stored lineage;
+        a conflicting lineage claim, object type or payload does.
+        """
+
+        return (
+            persisted.object_id == candidate.object_id
+            and persisted.object_type is candidate.object_type
+            and persisted.version_hash == candidate.version_hash
+            and persisted.payload == candidate.payload
+            and candidate.previous_version_hash
+            in {None, persisted.previous_version_hash}
+        )
+
+    def save_object_version(
+        self, version: EvidenceObjectVersion
+    ) -> EvidenceObjectVersion:
+        """Persist ``version`` once and return the authoritative stored record.
+
+        Re-registering the same displayed content is idempotent and returns the
+        original record unchanged (the product registers the displayed version
+        before every feedback submission).
+        """
+
         expected = hashlib.sha256(
             canonical_json(version.payload).encode("utf-8")
         ).hexdigest()
@@ -117,11 +147,11 @@ class FileEvidenceFeedbackRepository:
                 persisted = EvidenceObjectVersion.from_dict(
                     json.loads(path.read_text(encoding="utf-8"))
                 )
-                if persisted != version:
+                if not self._is_same_version(persisted, version):
                     raise EvidenceFeedbackRepositoryError(
                         "OBJECT_VERSION_IMMUTABILITY_VIOLATION"
                     )
-                return
+                return persisted
             if version.previous_version_hash is not None:
                 self.get_object_version(
                     version.object_id,
@@ -132,6 +162,7 @@ class FileEvidenceFeedbackRepository:
                 self._object_dir(version.object_id) / "latest.json",
                 {"version_hash": expected},
             )
+            return version
 
     def get_object_version(
         self, object_id: str, version_hash: str
