@@ -37,6 +37,12 @@ FRONTEND_ROUTES = {
 }
 # Backend-only reviewer route; not called by the frontend.
 REVIEWER_ROUTES = {("POST", f"{FRONTEND_BASE}/cases/{{case_id}}/accept-trivial")}
+# Owner review queue: owner session only (the API key cannot review).
+OWNER_REVIEW_ROUTES = {
+    ("GET", f"{FRONTEND_BASE}/review/cases"),
+    ("GET", f"{FRONTEND_BASE}/review/cases/{{case_id}}"),
+    ("POST", f"{FRONTEND_BASE}/review/cases/{{case_id}}/decision"),
+}
 # Whole-application member-readable surface (see test_member_read_access.py).
 MEMBER_READABLE_ROUTES = {
     ("GET", "/api/research/traits"),
@@ -155,10 +161,15 @@ def _frontend_case_body(version_hash: str, statement: str) -> dict:
 
 def test_route_surface_matches_frontend_paths_and_stays_owner_or_api_key_only():
     routes = _feedback_routes()
-    assert set(routes) == FRONTEND_ROUTES | REVIEWER_ROUTES
+    assert set(routes) == FRONTEND_ROUTES | REVIEWER_ROUTES | OWNER_REVIEW_ROUTES
     assert not any(path.startswith("/evidence-feedback") for _, path in routes)
     for key, route in routes.items():
-        assert verify_owner_or_api_key in _dependency_calls(route), key
+        calls = _dependency_calls(route)
+        if key in OWNER_REVIEW_ROUTES:
+            assert member_auth.owner_session_only in calls, key
+            assert verify_owner_or_api_key not in calls, key
+        else:
+            assert verify_owner_or_api_key in calls, key
         assert not getattr(route.endpoint, member_auth.MEMBER_READABLE_ATTR, False), key
     member_readable = {
         (method, route.path)

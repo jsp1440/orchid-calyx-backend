@@ -46,6 +46,7 @@ from app.security import (
     api_key_header,
     get_api_key,
     verify_owner_or_api_key,
+    verify_owner_session,
 )
 from app.university.learner_auth import resolve_supabase_actor
 
@@ -310,3 +311,37 @@ async def owner_or_member_read(
         if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
             raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
         raise
+
+
+OWNER_SESSION_REQUIRED = {
+    "code": "OWNER_SESSION_REQUIRED",
+    "message": "This action requires the owner session; the backend API key is not accepted",
+}
+
+
+async def owner_session_only(
+    request: Request, api_key: str | None = Security(api_key_header)
+) -> dict[str, object]:
+    """Router-level dependency for owner-session-only routes (owner review).
+
+    Stricter than ``verify_owner_or_api_key``: the backend API key is a
+    service credential, not the owner, so a request carrying only a valid key
+    gets 403 ``OWNER_SESSION_REQUIRED`` (an invalid key stays 401). A verified
+    member gets 403 ``OWNER_ACCESS_REQUIRED`` exactly as on other owner-only
+    routes; anonymous and invalid tokens stay 401. It runs before path/body
+    validation and before any lookup, so a 403 never reveals whether a
+    resource exists.
+    """
+    if request.cookies.get(OWNER_SESSION_COOKIE) or request.headers.get("authorization"):
+        try:
+            return _record(request, {**await verify_owner_session(request), "role": "owner"})
+        except HTTPException as exc:
+            if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
+                raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
+            raise
+    if api_key:
+        expected_key = get_api_key()
+        if expected_key and hmac.compare_digest(api_key, expected_key):
+            raise HTTPException(status_code=403, detail=dict(OWNER_SESSION_REQUIRED))
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    raise HTTPException(status_code=401, detail="Owner session is required")

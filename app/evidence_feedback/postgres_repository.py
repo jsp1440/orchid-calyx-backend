@@ -13,8 +13,9 @@ payload never changes on a round trip.
 
 The module owns its tables in the ``oc_evidence_feedback`` schema and creates
 them with additive, idempotent DDL only when they are absent (the pattern of
-``app.persistence.state_repository``). It never drops, rewrites or migrates
-existing tables. A database that already has the tables (for example
+``app.persistence.state_repository``). An index added later
+(``ADDITIVE_INDEXES``) is created on an existing database when missing. It
+never drops, rewrites or migrates existing tables. A database that already has the tables (for example
 pre-provisioned by the owner with ``SCHEMA_STATEMENTS``) needs no DDL
 privilege at runtime.
 
@@ -25,8 +26,9 @@ HTTP layer answers 503 instead of falling back to files and splitting data.
 from __future__ import annotations
 
 import json
+import logging
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, TypeVar
 
@@ -45,12 +47,32 @@ from .repository import (
 
 T = TypeVar("T")
 
+logger = logging.getLogger(__name__)
+
 SCHEMA = "oc_evidence_feedback"
 TABLES = ("object_versions", "cases", "case_fingerprints", "case_events")
 # First key of the two-integer advisory locks; distinct from the BUILD-086
 # runtime snapshot locks (8601, 8602).
 LOCK_NAMESPACE = 8612
 BOOTSTRAP_LOCK_KEY = "schema-bootstrap"
+
+# Owner review queue order (see ``repository.review_order_key``): the case's
+# ``created_at`` then its key, compared by code point so both stores agree.
+CASE_CREATED_AT_SQL = "(((record_json::jsonb)->>'created_at') COLLATE \"C\")"
+CASE_KEY_ORDER_SQL = '(case_key COLLATE "C")'
+CASE_OBJECT_TYPE_SQL = "((record_json::jsonb)->>'object_type')"
+
+# Indexes added after the tables first shipped. ``ensure_schema`` creates any
+# that are missing on an existing database (additively, best effort).
+ADDITIVE_INDEXES: tuple[tuple[str, str], ...] = (
+    (
+        "cases_review_order_idx",
+        (
+            "CREATE INDEX IF NOT EXISTS cases_review_order_idx "
+            f"ON {SCHEMA}.cases({CASE_CREATED_AT_SQL} DESC, {CASE_KEY_ORDER_SQL} DESC)"
+        ),
+    ),
+)
 
 # Additive and idempotent. Nothing here drops, truncates, or alters an
 # existing object; an owner can run these statements verbatim to pre-provision.
@@ -103,6 +125,7 @@ SCHEMA_STATEMENTS: tuple[str, ...] = (
         "CREATE INDEX IF NOT EXISTS cases_status_idx "
         f"ON {SCHEMA}.cases(status, updated_at)"
     ),
+    *(statement for _, statement in ADDITIVE_INDEXES),
 )
 
 
@@ -180,14 +203,42 @@ class PostgresEvidenceFeedbackRepository:
         try:
             with self._connect() as conn, conn.cursor() as cur:
                 if self._tables_present(cur):
+                    self._ensure_additive_indexes(conn, cur)
                     return
                 self._lock(cur, BOOTSTRAP_LOCK_KEY)
                 if self._tables_present(cur):
+                    self._ensure_additive_indexes(conn, cur)
                     return
                 for statement in SCHEMA_STATEMENTS:
                     cur.execute(statement)
         except psycopg.Error as exc:
             raise EvidenceFeedbackStoreUnavailable() from exc
+
+    def _ensure_additive_indexes(
+        self, conn: psycopg.Connection, cur: psycopg.Cursor
+    ) -> None:
+        """Create any missing later-added index; never alter anything else.
+
+        Indexes only speed up queries, so a role without DDL privilege on
+        owner-provisioned tables keeps working (unindexed) with a warning.
+        """
+
+        for name, statement in ADDITIVE_INDEXES:
+            cur.execute("SELECT to_regclass(%s) AS relation", (f"{SCHEMA}.{name}",))
+            row = cur.fetchone()
+            if row and row.get("relation"):
+                continue
+            try:
+                with conn.transaction():
+                    self._lock(cur, BOOTSTRAP_LOCK_KEY)
+                    cur.execute(statement)
+            except psycopg.errors.InsufficientPrivilege:
+                logger.warning(
+                    "Evidence feedback index %s.%s is missing and this role "
+                    "cannot create it; review listing still works unindexed.",
+                    SCHEMA,
+                    name,
+                )
 
     @staticmethod
     def _tables_present(cur: psycopg.Cursor) -> bool:
@@ -304,6 +355,67 @@ class PostgresEvidenceFeedbackRepository:
                 (case_id.strip(),),
             )
             return [json.loads(row["record_json"]) for row in cur.fetchall()]
+
+    def list_cases(
+        self,
+        *,
+        status: str | None,
+        object_type: str | None,
+        limit: int,
+        before: tuple[str, str] | None,
+    ) -> list[EvidenceFeedbackCase]:
+        """Cases newest first, strictly after the ``before`` keyset cursor.
+
+        Served by ``cases_review_order_idx`` (``cases_status_idx`` when the
+        status filter is the most selective); ``limit`` bounds every read.
+        """
+
+        clauses: list[str] = []
+        params: list[Any] = []
+        if status is not None:
+            clauses.append("status = %s")
+            params.append(status)
+        if object_type is not None:
+            clauses.append(f"{CASE_OBJECT_TYPE_SQL} = %s")
+            params.append(object_type)
+        if before is not None:
+            clauses.append(
+                f"({CASE_CREATED_AT_SQL} < %s OR ({CASE_CREATED_AT_SQL} = %s "
+                f"AND {CASE_KEY_ORDER_SQL} < %s))"
+            )
+            params.extend((before[0], before[0], before[1]))
+        where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+        params.append(max(0, limit))
+        with self._cursor() as cur:
+            cur.execute(
+                f"SELECT record_json FROM {SCHEMA}.cases {where} "
+                f"ORDER BY {CASE_CREATED_AT_SQL} DESC, {CASE_KEY_ORDER_SQL} DESC "
+                "LIMIT %s",
+                params,
+            )
+            rows = cur.fetchall()
+        return [
+            EvidenceFeedbackCase.from_dict(json.loads(row["record_json"]))
+            for row in rows
+        ]
+
+    def count_case_events(
+        self, case_ids: Sequence[str], event: str
+    ) -> dict[str, int]:
+        keys = [case_id.strip() for case_id in case_ids]
+        counts = dict.fromkeys(case_ids, 0)
+        if not keys:
+            return counts
+        with self._cursor() as cur:
+            cur.execute(
+                f"SELECT case_key, count(*) AS total FROM {SCHEMA}.case_events "
+                "WHERE case_key = ANY(%s) "
+                "AND (record_json::jsonb)->>'event' = %s "
+                "GROUP BY case_key",
+                (keys, event),
+            )
+            totals = {row["case_key"]: int(row["total"]) for row in cur.fetchall()}
+        return {case_id: totals.get(case_id.strip(), 0) for case_id in case_ids}
 
     # -- object versions -------------------------------------------------------
 

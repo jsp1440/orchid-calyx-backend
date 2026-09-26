@@ -23,6 +23,9 @@ from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
 from app.engineering_memory.routes import router as engineering_memory_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
+from app.evidence_feedback.routes import (
+    review_router as evidence_feedback_review_router,
+)
 from app.evidence_feedback.routes import router as evidence_feedback_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
@@ -612,6 +615,7 @@ app.include_router(evidence_retrieval_router)
 app.include_router(candidate_knowledge_router)
 app.include_router(evidence_aggregation_router)
 app.include_router(evidence_feedback_router)
+app.include_router(evidence_feedback_review_router)
 app.include_router(design_intelligence_router)
 app.include_router(design_planning_router)
 app.include_router(implementation_planning_router)

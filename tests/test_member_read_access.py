@@ -34,6 +34,8 @@ PREFIXES = (
     "/api/candidate-knowledge",
     "/api/evidence-aggregation",
     "/api/literature-extraction",
+    # Owner review queue for submitted feedback: owner session only, never members.
+    "/api/evidence-feedback/review",
 )
 # Exact (method, path) set opened to members. Anything not listed stays owner-only.
 EXPECTED_MEMBER_READS = {
@@ -42,7 +44,7 @@ EXPECTED_MEMBER_READS = {
     ("GET", "/api/evidence-aggregation/health"),
     ("GET", "/api/evidence-aggregation/registry"),
 }
-# Every other GET on the four prefixes is owner-only (owner decision "Narrow the scope").
+# Every other GET on the scoped prefixes is owner-only (owner decision "Narrow the scope").
 EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/candidate-knowledge/runs/{run_id}"),
     ("GET", "/api/candidate-knowledge/runs"),
@@ -74,6 +76,8 @@ EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/literature-extraction/papers/{paper_id}"),
     ("GET", "/api/literature-extraction/papers/{paper_id}/source-binding"),
     ("GET", "/api/literature-extraction/coverage-audit"),
+    ("GET", "/api/evidence-feedback/review/cases"),
+    ("GET", "/api/evidence-feedback/review/cases/{case_id}"),
 }
 
 
@@ -95,7 +99,7 @@ def _supabase_ok(user_id: str = MEMBER_UUID) -> Mock:
 
 
 @pytest.fixture(autouse=True)
-def _env(monkeypatch):
+def _env(monkeypatch, tmp_path):
     for name in (
         "OC_MEMBER_READS_ENABLED",
         "OC_SUPABASE_URL",
@@ -108,6 +112,8 @@ def _env(monkeypatch):
     monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "test-owner-secret")
     monkeypatch.setenv("OC_SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "anon-key")
+    # Owner calls to the feedback review queue read an isolated file store.
+    monkeypatch.setenv("CALYX_EVIDENCE_FEEDBACK_ROOT", str(tmp_path / "evidence-feedback"))
     member_auth.clear_member_token_cache()
     yield
     member_auth.clear_member_token_cache()
@@ -432,6 +438,8 @@ def test_owner_only_403_is_identical_whether_or_not_the_resource_exists(client, 
         ("POST", "/api/candidate-knowledge/preview"),
         ("POST", "/api/evidence-aggregation/aggregates/999999/withdraw"),
         ("PUT", "/api/literature-extraction/papers/x/source-binding"),
+        ("GET", "/api/evidence-feedback/review/cases/efc-does-not-exist"),
+        ("POST", "/api/evidence-feedback/review/cases/efc-does-not-exist/decision"),
     ]
     bodies = set()
     for method, url in urls:

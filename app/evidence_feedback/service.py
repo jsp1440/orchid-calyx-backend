@@ -222,12 +222,9 @@ class EvidenceFeedbackService:
         corrected_payload: dict[str, Any],
     ) -> EvidenceFeedbackCase:
         case = self.repository.get_case(case_id)
-        if case.disposition is not Disposition.AUTO_CORRECTABLE:
-            raise ValueError("GOVERNED_REVIEW_REQUIRED")
-        if case.object_type is not ObjectType.LEXICON:
-            raise ValueError("SCIENTIFIC_OBJECT_CANNOT_AUTO_CORRECT")
-        if case.defect_kind not in {"typo", "format"}:
-            raise ValueError("DEFECT_CLASS_NOT_AUTO_CORRECTABLE")
+        blocker = self.trivial_correction_blocker(case)
+        if blocker is not None:
+            raise ValueError(blocker)
         previous = self.repository.get_object_version(
             case.object_id,
             case.object_version_hash,
@@ -266,6 +263,25 @@ class EvidenceFeedbackService:
             },
         )
         return resolved
+
+    @staticmethod
+    def trivial_correction_blocker(case: EvidenceFeedbackCase) -> str | None:
+        """Why ``case`` cannot take the deterministic trivial path, or ``None``.
+
+        Only a lexicon typo/format defect triaged as auto-correctable and not
+        routed to governed review qualifies; everything else stays with
+        governed review.
+        """
+
+        if case.status is CaseStatus.GOVERNED_REVIEW_REQUIRED:
+            return "GOVERNED_REVIEW_REQUIRED"
+        if case.disposition is not Disposition.AUTO_CORRECTABLE:
+            return "GOVERNED_REVIEW_REQUIRED"
+        if case.object_type is not ObjectType.LEXICON:
+            return "SCIENTIFIC_OBJECT_CANNOT_AUTO_CORRECT"
+        if case.defect_kind not in {"typo", "format"}:
+            return "DEFECT_CLASS_NOT_AUTO_CORRECTABLE"
+        return None
 
     def status_for_submitter(
         self,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol, TypeVar
@@ -60,6 +60,19 @@ class EvidenceFeedbackRepository(Protocol):
 
     def list_events(self, case_id: str) -> list[dict[str, Any]]: ...
 
+    def list_cases(
+        self,
+        *,
+        status: str | None,
+        object_type: str | None,
+        limit: int,
+        before: tuple[str, str] | None,
+    ) -> list[EvidenceFeedbackCase]: ...
+
+    def count_case_events(
+        self, case_ids: Sequence[str], event: str
+    ) -> dict[str, int]: ...
+
     def save_object_version(
         self, version: EvidenceObjectVersion
     ) -> EvidenceObjectVersion: ...
@@ -71,6 +84,16 @@ class EvidenceFeedbackRepository(Protocol):
     def list_object_versions(
         self, object_id: str
     ) -> list[EvidenceObjectVersion]: ...
+
+
+def review_order_key(case: EvidenceFeedbackCase) -> tuple[str, str]:
+    """Owner review queue order: newest ``created_at`` first, then case id.
+
+    Both stores compare these strings by code point (PostgreSQL uses the "C"
+    collation), so the order and every cursor are identical across stores.
+    """
+
+    return (case.created_at, case.case_id)
 
 
 def normalized_key(value: str, *, code: str) -> str:
@@ -222,6 +245,57 @@ class FileEvidenceFeedbackRepository:
             for line in path.read_text(encoding="utf-8").splitlines()
             if line.strip()
         ]
+
+    def list_cases(
+        self,
+        *,
+        status: str | None,
+        object_type: str | None,
+        limit: int,
+        before: tuple[str, str] | None,
+    ) -> list[EvidenceFeedbackCase]:
+        """Cases newest first, strictly after the ``before`` keyset cursor.
+
+        A full scan: the file store is the local/dev store. The durable
+        PostgreSQL store answers the same query from an index.
+        """
+
+        directory = self.root / "cases"
+        if not directory.is_dir():
+            return []
+        cases = [
+            EvidenceFeedbackCase.from_dict(
+                json.loads(path.read_text(encoding="utf-8"))
+            )
+            for path in directory.glob("*.json")
+        ]
+        selected = [
+            case
+            for case in cases
+            if (status is None or case.status.value == status)
+            and (object_type is None or case.object_type.value == object_type)
+            and (before is None or review_order_key(case) < before)
+        ]
+        selected.sort(key=review_order_key, reverse=True)
+        return selected[: max(0, limit)]
+
+    def count_case_events(
+        self, case_ids: Sequence[str], event: str
+    ) -> dict[str, int]:
+        counts: dict[str, int] = {}
+        for case_id in case_ids:
+            path = (
+                self.root
+                / "events"
+                / f"{self._key(case_id, code='CASE_ID_REQUIRED')}.jsonl"
+            )
+            total = 0
+            if path.is_file():
+                for line in path.read_text(encoding="utf-8").splitlines():
+                    if line.strip() and json.loads(line).get("event") == event:
+                        total += 1
+            counts[case_id] = total
+        return counts
 
     _is_same_version = staticmethod(is_same_version)
 
