@@ -79,8 +79,8 @@ def test_brain_registry_exposes_verified_language_layer_without_authority():
     assert registry.orchestrator_view()["publication_authority"] is False
 
 
-def test_reasoning_ledger_is_still_not_promoted_by_dependency_completion():
+def test_reasoning_ledger_remains_eligible_after_dependency_completion():
     result = canonical_brain_registry().eligibility("reasoning_ledger")
 
-    assert result["eligible"] is False
-    assert result["reasons"] == ["status is PARTIAL, not OPERATIONAL"]
+    assert result["eligible"] is True
+    assert result["reasons"] == []
