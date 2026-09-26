@@ -67,7 +67,9 @@ from app.routers import (
     health,
     judging,
     reference_docs,
+    show_day,
     shows,
+    tiles,
     volunteer_ops,
 )
 from app.routers.health import (
@@ -599,6 +601,8 @@ app.include_router(entries.router)
 app.include_router(feedback.router)
 app.include_router(harvesters.router, dependencies=[Depends(add_mission_control_cors_headers)])
 app.include_router(judging.router)
+app.include_router(show_day.router)
+app.include_router(tiles.router)
 app.include_router(reference_docs.router)
 app.include_router(intake_router)
 app.include_router(semantic_router)

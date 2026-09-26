@@ -136,10 +136,10 @@ def test_gap_capabilities_exist():
     assert len(get_capabilities_by_status("GAP")) >= 8
 
 
-def test_judging_lock_gap_documented():
+def test_judging_lock_enforcement_documented():
     cap = next(c for c in CAPABILITY_INVENTORY if c["capability_id"] == "show_judging_lock_enforcement")
-    assert cap["status"] == "GAP"
-    assert "judging_locked" in cap["gap_description"]
+    assert cap["status"] == "KEEP"
+    assert "judging_locked" in cap["notes"]
 
 
 def test_judge_auth_gap_documented_as_high_risk():

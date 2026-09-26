@@ -57,17 +57,12 @@ CAPABILITY_INVENTORY: list[dict] = [
         "capability": "Show judging lock — judging_locked field enforced in judging endpoints",
         "area": "shows",
         "module": "app/models.py + app/routers/judging.py",
-        "status": "GAP",
-        "accessible": False,
-        "gap_description": (
-            "judging_locked Boolean exists on Show model but is never read in any judging "
-            "endpoint; lock has no effect on score writes or scorecard submission"
+        "status": "KEEP",
+        "accessible": True,
+        "notes": (
+            "Show Day Phase 1: judging_locked returns 409 on judge autosave, judge submit and "
+            "the per-criterion score write (tests/test_show_day_phase1.py)"
         ),
-        "child_task": (
-            "Enforce Show.judging_locked in judging endpoints — block Score/Scorecard "
-            "writes when the parent show is locked"
-        ),
-        "notes": "Field can be set via shows.py PATCH (itself unregistered); end-to-end lock is absent",
     },
     # -------------------------------------------------------------------------
     # Entries / Exhibitors / Registration
@@ -125,30 +120,24 @@ CAPABILITY_INVENTORY: list[dict] = [
         "capability_id": "judging_qr_scan_resolution",
         "capability": "QR scan resolution in judging flow",
         "area": "plant_qr",
-        "module": "app/routers/judging.py",
-        "status": "GAP",
-        "accessible": False,
-        "gap_description": (
-            "No endpoint to resolve a scanned judging QR token back to a plant record; "
-            "conservatory has scan resolution, judging flow does not"
-        ),
-        "child_task": (
-            "Add GET /api/judging/scan/{qr_token} to resolve token to plant + scorecard state"
+        "module": "app/routers/show_day.py",
+        "status": "KEEP",
+        "accessible": True,
+        "notes": (
+            "GET /api/judging/scan/{qr_token} resolves a token to plant, class and scorecard "
+            "counts; blind events withhold the exhibitor name"
         ),
     },
     {
         "capability_id": "judging_qr_image_render",
         "capability": "QR image rendering in judging flow",
         "area": "plant_qr",
-        "module": "app/routers/judging.py",
-        "status": "GAP",
-        "accessible": False,
-        "gap_description": (
-            "Judging QR is a text token only; no endpoint renders it as an image or SVG "
-            "suitable for printing or display on registration labels"
-        ),
-        "child_task": (
-            "Add GET /api/judging/plants/{plant_id}/qr.svg to render QR as printable SVG image"
+        "module": "app/routers/show_day.py",
+        "status": "KEEP",
+        "accessible": True,
+        "notes": (
+            "GET /api/judging/plants/{plant_id}/qr.svg renders one code; "
+            "GET /api/judging/events/{event_id}/tags renders a printable tag sheet by class"
         ),
     },
     # -------------------------------------------------------------------------
