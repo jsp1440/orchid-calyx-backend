@@ -20,7 +20,7 @@ def client_for(tmp_path, monkeypatch, actor="member-1"):
 
 def register_object(client, *, object_id, object_type, payload):
     response = client.post(
-        "/evidence-feedback/objects",
+        "/api/evidence-feedback/objects",
         json={
             "object_id": object_id,
             "object_type": object_type,
@@ -44,7 +44,7 @@ def test_authenticated_lexicon_feedback_survives_new_client(
     )
 
     submitted = client.post(
-        "/evidence-feedback/cases",
+        "/api/evidence-feedback/cases",
         json={
             "object_id": version["object_id"],
             "object_version_hash": version["version_hash"],
@@ -62,7 +62,7 @@ def test_authenticated_lexicon_feedback_survives_new_client(
     assert case["status"] == "pending_review"
 
     restarted = client_for(tmp_path, monkeypatch)
-    status = restarted.get(f"/evidence-feedback/cases/{case['case_id']}")
+    status = restarted.get(f"/api/evidence-feedback/cases/{case['case_id']}")
 
     assert status.status_code == 200
     assert status.json()["case_id"] == case["case_id"]
@@ -86,8 +86,8 @@ def test_duplicate_http_submission_is_suppressed(tmp_path, monkeypatch):
         "statement": "This definition needs a citation.",
     }
 
-    first = client.post("/evidence-feedback/cases", json=request)
-    second = client.post("/evidence-feedback/cases", json=request)
+    first = client.post("/api/evidence-feedback/cases", json=request)
+    second = client.post("/api/evidence-feedback/cases", json=request)
 
     assert first.status_code == 201
     assert first.json()["created"] is True
@@ -105,7 +105,7 @@ def test_submitter_cannot_read_another_identity_case(tmp_path, monkeypatch):
         payload={"candidates": ["taxon:1", "taxon:2"]},
     )
     submitted = owner.post(
-        "/evidence-feedback/cases",
+        "/api/evidence-feedback/cases",
         json={
             "object_id": version["object_id"],
             "object_version_hash": version["version_hash"],
@@ -118,7 +118,7 @@ def test_submitter_cannot_read_another_identity_case(tmp_path, monkeypatch):
     case_id = submitted.json()["case"]["case_id"]
 
     other = client_for(tmp_path, monkeypatch, actor="member-2")
-    response = other.get(f"/evidence-feedback/cases/{case_id}")
+    response = other.get(f"/api/evidence-feedback/cases/{case_id}")
 
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "CASE_STATUS_NOT_VISIBLE"
@@ -136,7 +136,7 @@ def test_scientific_case_cannot_use_trivial_correction_route(
         payload={"taxon_id": "taxon:1"},
     )
     submitted = client.post(
-        "/evidence-feedback/cases",
+        "/api/evidence-feedback/cases",
         json={
             "object_id": version["object_id"],
             "object_version_hash": version["version_hash"],
@@ -150,7 +150,7 @@ def test_scientific_case_cannot_use_trivial_correction_route(
     assert case["disposition"] == "needs_scientific_review"
 
     response = client.post(
-        f"/evidence-feedback/cases/{case['case_id']}/accept-trivial",
+        f"/api/evidence-feedback/cases/{case['case_id']}/accept-trivial",
         json={"corrected_payload": {"taxon_id": "taxon:2"}},
     )
 
@@ -167,7 +167,7 @@ def test_trivial_route_versions_instead_of_overwriting(tmp_path, monkeypatch):
         payload={"definition": "outer floral whorl partt"},
     )
     submitted = client.post(
-        "/evidence-feedback/cases",
+        "/api/evidence-feedback/cases",
         json={
             "object_id": original["object_id"],
             "object_version_hash": original["version_hash"],
@@ -182,7 +182,7 @@ def test_trivial_route_versions_instead_of_overwriting(tmp_path, monkeypatch):
     case_id = submitted.json()["case"]["case_id"]
 
     accepted = client.post(
-        f"/evidence-feedback/cases/{case_id}/accept-trivial",
+        f"/api/evidence-feedback/cases/{case_id}/accept-trivial",
         json={
             "corrected_payload": {
                 "definition": "outer floral whorl part",
