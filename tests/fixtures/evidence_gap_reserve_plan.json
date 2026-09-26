@@ -87,6 +87,7 @@
   "snapshot_basis": "empty_queue_snapshot_with_caller_fingerprints: the backend holds no queue snapshot; the frontend admission bridge reconciles against existing work",
   "source_candidate_count": 3,
   "source_cap": 3,
+  "source_domains": null,
   "source_gap_source": "evidence_coverage_kg",
   "source_rejections": [
     {

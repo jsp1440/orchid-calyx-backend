@@ -20,9 +20,15 @@ from .connector_planner import BrainConnectorPlanner
 from .connector_runtime import ConnectorRuntimeBuilder
 from .discovery_memory import DiscoveryMemoryStore
 from .evidence_coverage_gaps import EvidenceCoverageGapSource
-from .evidence_gap_reserve_plan import evidence_gap_reserve_plan, valid_fingerprints
+from .evidence_gap_reserve_plan import (
+    MAX_CALLER_DOMAINS,
+    evidence_gap_reserve_plan,
+    valid_domains,
+    valid_fingerprints,
+)
 from .knowledge_gap_diagnostics import KnowledgeGapDiagnosticsEngine
 from .knowledge_gap_discovery import KnowledgeGapDiscoveryEngine
+from .knowledge_gap_queue_bridge import EVIDENCE_GAP_DOMAIN_LABELS
 from .runtime_executor import RuntimeExecutor
 from .runtime_planner import RuntimePlanner
 
@@ -334,16 +340,33 @@ def knowledge_gap_queue(limit: int = Query(default=10, ge=1, le=50)):
 def knowledge_gap_reserve_plan(
     reserve_depth: int = Query(default=3, ge=0, le=3),
     fingerprint: Annotated[list[str] | None, Query()] = None,
+    domain: Annotated[list[str] | None, Query()] = None,
 ):
-    """Read-only reserve plan of KG evidence-gap missions (oc.reserve-refill.v1)."""
+    """Read-only reserve plan of KG evidence-gap missions (oc.reserve-refill.v1).
+
+    Repeat ``domain`` to plan only evidence domains the caller can execute;
+    absent means every supported domain.
+    """
     fingerprints = valid_fingerprints(fingerprint or [])
     if fingerprints is None:
         raise HTTPException(
             status_code=422,
             detail="fingerprint must be up to 100 lowercase 64-hex material fingerprints",
         )
+    domains = valid_domains(domain) if domain else None
+    if domain and domains is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"domain must be up to {MAX_CALLER_DOMAINS} of: "
+                + ", ".join(sorted(EVIDENCE_GAP_DOMAIN_LABELS))
+            ),
+        )
     return evidence_gap_reserve_plan(
-        evidence_coverage_source(), reserve_depth=reserve_depth, fingerprints=fingerprints
+        evidence_coverage_source(),
+        reserve_depth=reserve_depth,
+        fingerprints=fingerprints,
+        domains=domains,
     )
 
 

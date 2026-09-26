@@ -32,6 +32,7 @@ from app.literature_extraction.routes import (
 from app.literature_extraction.routes import (
     router as literature_router,
 )
+from app.member_auth import owner_or_member_read
 from app.security import verify_owner_or_api_key
 
 
@@ -218,6 +219,7 @@ def client(corpus: Path) -> TestClient:
         LiteratureResultRepository(corpus)
     )
     app.dependency_overrides[verify_owner_or_api_key] = lambda: {"owner": "test"}
+    app.dependency_overrides[owner_or_member_read] = lambda: {"owner": "test"}
     return TestClient(app)
 
 

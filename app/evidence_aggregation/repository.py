@@ -23,3 +23,9 @@ class MemoryAggregateRepository:
   value=self.reviews[ident]; value.update(state="RESOLVED",action=action,rationale=rationale,actor=actor,resolved_at=now()); self.events.append({"event_id":self.next(),"event_type":"REVIEW_RESOLVED","review_id":ident,"actor":actor,"created_at":now()}); return deepcopy(value)
  def request_cancel(self,rid): self.cancelled.add(rid); return self.transition(rid,"CANCELLING")
  def clear_cancel(self,rid): self.cancelled.discard(rid)
+ def current_aggregate(self,aggregate_id):
+  """Latest active version of an aggregate, or None (serving semantics of GET /aggregates/{id})."""
+  return next((x for x in reversed(self.versions) if x["aggregate_id"]==aggregate_id and x["active"]),None)
+ def aggregate_version(self,aggregate_version_id):
+  """Exact immutable aggregate version by identity, or None; lifecycle state is left to the caller."""
+  return next((x for x in reversed(self.versions) if x["aggregate_version_id"]==aggregate_version_id),None)
