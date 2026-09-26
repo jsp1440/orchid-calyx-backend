@@ -7,18 +7,26 @@ import os
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.member_auth import owner_session_only
 from app.persistence.state_repository import configured_database_url
 from app.security import verify_owner_or_api_key
 
-from .models import FeedbackClass, ObjectType
+from .models import CaseStatus, FeedbackClass, ObjectType
 from .repository import (
     EvidenceFeedbackRepository,
     EvidenceFeedbackRepositoryError,
     EvidenceFeedbackStoreUnavailable,
     FileEvidenceFeedbackRepository,
+)
+from .review import (
+    REVIEW_DEFAULT_LIMIT,
+    REVIEW_MAX_LIMIT,
+    EvidenceFeedbackReviewService,
+    InvalidCaseTransition,
+    ReviewDecision,
 )
 from .service import EvidenceFeedbackService
 
@@ -154,6 +162,8 @@ warn_if_non_durable()
 
 def _translate(exc: Exception) -> None:
     code = str(exc)
+    if isinstance(exc, InvalidCaseTransition):
+        raise HTTPException(status_code=409, detail=exc.detail()) from exc
     if isinstance(exc, EvidenceFeedbackStoreUnavailable):
         raise HTTPException(status_code=503, detail={"code": code}) from exc
     if isinstance(exc, EvidenceFeedbackRepositoryError):
@@ -246,6 +256,97 @@ def accept_trivial_correction(
             reviewer_id=reviewer_id,
             corrected_payload=payload.corrected_payload,
         ).to_dict()
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+# -- owner review queue ----------------------------------------------------------
+#
+# Owner session only (``owner_session_only``): the backend API key is a service
+# credential, not the owner, so it cannot review; members get 403
+# OWNER_ACCESS_REQUIRED. Decisions never publish to the knowledge graph, change
+# taxonomy or apply scientific corrections (see ``review.PUBLICATION_BOUNDARY``).
+EVIDENCE_FEEDBACK_REVIEW_PREFIX = f"{EVIDENCE_FEEDBACK_PREFIX}/review"
+review_router = APIRouter(
+    prefix=EVIDENCE_FEEDBACK_REVIEW_PREFIX,
+    tags=["evidence-feedback-review"],
+    dependencies=[Depends(owner_session_only)],
+)
+OwnerSession = Annotated[dict, Depends(owner_session_only)]
+REVIEW_TEXT_MAX = 4000
+
+
+class ReviewDecisionIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: ReviewDecision
+    reason: str | None = Field(default=None, max_length=REVIEW_TEXT_MAX)
+    note: str | None = Field(default=None, max_length=REVIEW_TEXT_MAX)
+    corrected_payload: dict[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _fields_match_decision(self) -> ReviewDecisionIn:
+        required = {
+            ReviewDecision.REJECT: "reason",
+            ReviewDecision.NEEDS_GOVERNED_REVIEW: "note",
+            ReviewDecision.ACCEPT_TRIVIAL: "corrected_payload",
+        }[self.decision]
+        for name in ("reason", "note", "corrected_payload"):
+            value = getattr(self, name)
+            present = bool(value.strip()) if isinstance(value, str) else value is not None
+            if name == required and not present:
+                raise ValueError(f"{name} is required for decision {self.decision.value}")
+            if name != required and value is not None:
+                raise ValueError(f"{name} is not accepted for decision {self.decision.value}")
+        return self
+
+
+def _review_service() -> EvidenceFeedbackReviewService:
+    return EvidenceFeedbackReviewService(_service())
+
+
+@review_router.get("/cases")
+def list_review_cases(
+    auth: OwnerSession,
+    status: CaseStatus | None = None,
+    object_type: ObjectType | None = None,
+    limit: int = Query(default=REVIEW_DEFAULT_LIMIT, ge=1, le=REVIEW_MAX_LIMIT),
+    cursor: str | None = Query(default=None, min_length=1, max_length=512),
+):
+    try:
+        return _review_service().list_cases(
+            status=status,
+            object_type=object_type.value if object_type is not None else None,
+            limit=limit,
+            cursor=cursor,
+        )
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@review_router.get("/cases/{case_id}")
+def get_review_case(case_id: str, auth: OwnerSession):
+    try:
+        return _review_service().case_detail(case_id)
+    except Exception as exc:
+        _translate(exc)
+        raise
+
+
+@review_router.post("/cases/{case_id}/decision")
+def decide_review_case(case_id: str, payload: ReviewDecisionIn, auth: OwnerSession):
+    reviewer_id = _subject(auth)
+    try:
+        return _review_service().decide(
+            case_id=case_id,
+            reviewer_id=reviewer_id,
+            decision=payload.decision,
+            reason=payload.reason,
+            note=payload.note,
+            corrected_payload=payload.corrected_payload,
+        )
     except Exception as exc:
         _translate(exc)
         raise
