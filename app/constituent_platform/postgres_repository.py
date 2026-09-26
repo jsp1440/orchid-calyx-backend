@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 import psycopg
@@ -28,6 +28,16 @@ def database_url() -> str:
     value = os.environ.get("DATABASE_URL")
     if not value:
         raise RuntimeError("DATABASE_URL is required for society CRM operations")
+    return value
+
+
+def _jsonable(value: Any) -> Any:
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _jsonable(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable(item) for item in value]
     return value
 
 
@@ -129,7 +139,7 @@ class PostgresSocietyCRMRepository:
         verification_state: str = "unverified",
     ) -> dict[str, Any]:
         normalized = normalize_email(email)
-        verified_at = datetime.utcnow() if verification_state == "verified" else None
+        verified_at = datetime.now(timezone.utc) if verification_state == "verified" else None
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute(
                 """
@@ -344,8 +354,8 @@ class PostgresSocietyCRMRepository:
                 action,
                 entity_type,
                 entity_id,
-                Jsonb(before_state) if before_state is not None else None,
-                Jsonb(after_state) if after_state is not None else None,
-                Jsonb(metadata or {}),
+                Jsonb(_jsonable(before_state)) if before_state is not None else None,
+                Jsonb(_jsonable(after_state)) if after_state is not None else None,
+                Jsonb(_jsonable(metadata or {})),
             ),
         )
