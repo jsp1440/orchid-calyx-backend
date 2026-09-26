@@ -86,7 +86,15 @@ Captured response for `?taxon=Dendrobium%20nobile&category=pollinator&limit=2`
 }
 ```
 
-Each element of `interactions` (`app/interaction_discovery/service.py:65-86`) has:
+Since this capture the response also carries `index_state`
+(`"durable"` or `"memory_unprovisioned"`) and `index_note`. When `index_state` is
+`memory_unprovisioned`, no durable index is configured and an empty result is not
+evidence that no interactions are known. A durable index that is configured but
+unreachable returns 503 (`SEMANTIC_INDEX_DATABASE_UNAVAILABLE`), not an empty 200.
+Each record also carries `revision_id_str`, the exact decimal string of
+`revision_id` (a 60-bit value that JavaScript numbers cannot hold exactly).
+
+Each element of `interactions` (`app/interaction_discovery/service.py`) has:
 `source_taxon_name`, `source_taxon_id`, `target_taxon_name`, `target_taxon_id`,
 `interaction_type`, `categories`, `study_citation`, `study_source_citation`,
 `study_external_id`, `provider`, `provider_stability`, `dataset_version`,
