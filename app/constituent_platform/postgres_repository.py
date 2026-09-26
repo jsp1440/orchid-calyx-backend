@@ -19,7 +19,8 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .domain import MembershipStatus, normalize_email
+from .authorization import SocietyRole
+from .domain import MembershipStatus, normalize_auth_subject, normalize_email
 
 _LEVEL_CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 
@@ -68,6 +69,152 @@ class PostgresSocietyCRMRepository:
                 (normalized_slug, display_name.strip(), kind),
             )
             return dict(cur.fetchone())
+
+    def link_identity(
+        self,
+        *,
+        constituent_id: int,
+        auth_subject: str,
+    ) -> dict[str, Any]:
+        normalized = normalize_auth_subject(auth_subject)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_constituent.identity_links (constituent_id, auth_subject)
+                VALUES (%s, %s)
+                ON CONFLICT (auth_subject) DO NOTHING
+                RETURNING *
+                """,
+                (constituent_id, normalized),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                return dict(row)
+            cur.execute(
+                """
+                SELECT *
+                FROM oc_constituent.identity_links
+                WHERE auth_subject = %s
+                """,
+                (normalized,),
+            )
+            existing = cur.fetchone()
+            if existing is None:
+                raise RuntimeError("IDENTITY_LINK_CONFLICT_NOT_READABLE")
+            if existing["constituent_id"] != constituent_id:
+                raise ValueError("AUTH_SUBJECT_ALREADY_LINKED")
+            return dict(existing)
+
+    def grant_staff_role(
+        self,
+        *,
+        organization_id: int,
+        constituent_id: int,
+        role: SocietyRole,
+        granted_by_subject: str,
+    ) -> dict[str, Any]:
+        actor = normalize_auth_subject(granted_by_subject)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_constituent.organization_staff_roles
+                    (organization_id, constituent_id, role_code, status,
+                     granted_by_subject, granted_at, revoked_at)
+                VALUES (%s, %s, %s, 'active', %s, NOW(), NULL)
+                ON CONFLICT (organization_id, constituent_id, role_code)
+                DO UPDATE SET
+                    status = 'active',
+                    granted_by_subject = EXCLUDED.granted_by_subject,
+                    granted_at = NOW(),
+                    revoked_at = NULL
+                RETURNING *
+                """,
+                (organization_id, constituent_id, role.value, actor),
+            )
+            role_row = dict(cur.fetchone())
+            self._audit(
+                cur,
+                organization_id=organization_id,
+                actor_subject=actor,
+                action="staff_role.granted",
+                entity_type="staff_role",
+                entity_id=str(role_row["id"]),
+                before_state=None,
+                after_state=role_row,
+            )
+            return role_row
+
+    def revoke_staff_role(
+        self,
+        *,
+        organization_id: int,
+        constituent_id: int,
+        role: SocietyRole,
+        actor_subject: str,
+    ) -> dict[str, Any] | None:
+        actor = normalize_auth_subject(actor_subject)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT *
+                FROM oc_constituent.organization_staff_roles
+                WHERE organization_id = %s
+                  AND constituent_id = %s
+                  AND role_code = %s
+                  AND status <> 'revoked'
+                FOR UPDATE
+                """,
+                (organization_id, constituent_id, role.value),
+            )
+            before = cur.fetchone()
+            if before is None:
+                return None
+            cur.execute(
+                """
+                UPDATE oc_constituent.organization_staff_roles
+                SET status = 'revoked', revoked_at = NOW()
+                WHERE organization_id = %s
+                  AND constituent_id = %s
+                  AND role_code = %s
+                RETURNING *
+                """,
+                (organization_id, constituent_id, role.value),
+            )
+            after = dict(cur.fetchone())
+            self._audit(
+                cur,
+                organization_id=organization_id,
+                actor_subject=actor,
+                action="staff_role.revoked",
+                entity_type="staff_role",
+                entity_id=str(after["id"]),
+                before_state=dict(before),
+                after_state=after,
+            )
+            return after
+
+    def staff_roles_for_subject(
+        self,
+        *,
+        organization_id: int,
+        auth_subject: str,
+    ) -> frozenset[SocietyRole]:
+        normalized = normalize_auth_subject(auth_subject)
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.role_code
+                FROM oc_constituent.organization_staff_roles r
+                JOIN oc_constituent.identity_links i
+                  ON i.constituent_id = r.constituent_id
+                WHERE r.organization_id = %s
+                  AND i.auth_subject = %s
+                  AND r.status = 'active'
+                ORDER BY r.role_code
+                """,
+                (organization_id, normalized),
+            )
+            return frozenset(SocietyRole(row["role_code"]) for row in cur.fetchall())
 
     def create_membership_level(
         self,
