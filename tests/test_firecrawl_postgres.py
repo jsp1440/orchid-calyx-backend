@@ -140,8 +140,9 @@ def database_url(monkeypatch):
     with psycopg.connect(dsn, autocommit=True) as conn:
         for filename in migrations:
             conn.execute(Path("migrations", filename).read_text())
-        # These are the deployed canonical taxonomy table contracts. Their DDL
-        # predates the migration set; the fixture does not activate a release.
+        # Expected canonical taxonomy read contract, not independently verified
+        # deployed DDL: snapshot_id explicitly associates source rows with the
+        # pinned release. These synthetic rows do not prove release activation.
         conn.execute("CREATE SCHEMA IF NOT EXISTS oc_source")
         conn.execute("""CREATE TABLE IF NOT EXISTS oc_source.source_snapshots (
             snapshot_id text PRIMARY KEY, source_system text,
@@ -299,12 +300,62 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     }
     assert all(not candidate["published"] for candidate in persisted.candidates)
     assert len(persisted.conflicts) >= 1
+    assert persisted_aggregates.conflicts
+    assert all(
+        link["relationship_type"] != "DUPLICATES"
+        for link in persisted_aggregates.relationships
+    )
     serialized = json.dumps(persisted.candidates)
     assert "Paphiopedilum delenatii leaf length 10-12 cm." in serialized
     assert "Paphiopedilum delenatii leaf length 15 cm." in serialized
     assert "Paphiopedilum armeniacum" in serialized
     for aggregate in persisted_aggregates.aggregates:
-        assert aggregate.get("measurements", {}).get("unweighted_mean") is None
+        assert aggregate["measurement_summary"]["unweighted_mean"] is None
+        assert aggregate["measurement_summary"]["pooled_estimate"] is None
+        assert aggregate["measurement_summary"]["pooled_estimate_prohibited"] is True
+    aggregate_inputs = [
+        candidate
+        for items in persisted_aggregates.items.values()
+        for item in items
+        for candidate in item["candidates"]
+    ]
+    conflicting = [
+        candidate
+        for candidate in aggregate_inputs
+        if candidate.normalized_subject == "local:orchid_taxonomy:91001"
+    ]
+    assert {candidate.object_value for candidate in conflicting} == {
+        "Paphiopedilum delenatii leaf length 10-12 cm.",
+        "Paphiopedilum delenatii leaf length 15 cm.",
+    }
+    assert len({candidate.candidate_id for candidate in conflicting}) == 2
+    assert all(candidate.source_anchor_ids for candidate in conflicting)
+    aggregate_ids = {
+        ident
+        for aggregate in persisted_aggregates.aggregates
+        for ident in aggregate["contributing_candidate_ids"]
+    }
+    assert {candidate.candidate_id for candidate in conflicting} <= aggregate_ids
+
+    # Exercise actual importer hash dedup and immutable binding replay, in
+    # addition to the backend receipt replay above (which skips acquisition).
+    from app.literature_extraction.canonical_binding_resolver import BindingScope
+    from app.literature_extraction.firecrawl_provider import AcquiredSource
+    from app.literature_extraction.firecrawl_registration import (
+        PostgresFirecrawlRegistration,
+    )
+    from app.literature_extraction.repository import LiteratureResultRepository
+
+    source_receipt = receipts[0]["sources"][0]
+    paper = LiteratureResultRepository(tmp_path / "literature").get(
+        source_receipt["paper_id"]
+    )
+    rebound = PostgresFirecrawlRegistration(
+        connect,
+        scope=BindingScope("oc-autonomy", "firecrawl"),
+    )(AcquiredSource(URL, TEXT, True), paper)
+    assert rebound.fingerprint == source_receipt["binding_fingerprint"]
+    assert rebound.revision_id == source_receipt["revision_id"]
     with connect() as conn:
         assert (
             conn.execute(

@@ -7,6 +7,7 @@ Swarm. External transports are the only replaceable test boundary.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 from hashlib import sha256
@@ -220,6 +221,27 @@ async def execute_acquisition(
         )
 
         taxonomy = load_persistent_canonical_registry(connection)
+        target_markers = re.findall(
+            r"^OC-ACQUISITION-TARGETS:\s*(\[[^\n]*\])\s*$",
+            issue.get("body", ""),
+            re.MULTILINE,
+        )
+        if len(target_markers) > 1:
+            raise AcquisitionBlocked("AMBIGUOUS_TARGETED_GAP")
+        targets = json.loads(target_markers[0]) if target_markers else []
+        if not isinstance(targets, list) or len(targets) > 5:
+            raise AcquisitionBlocked("INVALID_TARGETED_GAP")
+        for name in targets:
+            if not isinstance(name, str):
+                raise AcquisitionBlocked("INVALID_TARGETED_GAP")
+            taxon = taxonomy.resolve(name)
+            if (
+                taxon is None
+                or taxon.status != "accepted"
+                or taxon.canonical_name != name
+                or not name.startswith(genera[0] + " ")
+            ):
+                raise AcquisitionBlocked("UNBOUND_TARGETED_GAP")
         database_url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
         candidate_repository = PostgresCandidateRepository(database_url)
         aggregate_repository = PostgresAggregateRepository(database_url)
@@ -227,6 +249,7 @@ async def execute_acquisition(
             **lease,
             provider=provider,
             genus=genera[0],
+            target_names=targets,
             taxonomy=taxonomy,
             literature_repository=literature,
             register_and_bind=PostgresFirecrawlRegistration(connection, scope=SCOPE),

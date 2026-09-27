@@ -36,6 +36,7 @@ async def acquire_matrix_sources(
     handoff_service,
     aggregation_service,
     verify_lease,
+    target_names=(),
 ):
     """Acquire once per source, extracting multiple taxa without species crawls.
 
@@ -46,7 +47,7 @@ async def acquire_matrix_sources(
     """
     verify_lease()
     provider.lease_check = verify_lease
-    urls = provider.search(genus, task_id=task_id)
+    urls = provider.search(genus, task_id=task_id, target_names=target_names)
     if not urls:
         raise AcquisitionBlocked("NO_APPROVED_SOURCES")
     receipts = []

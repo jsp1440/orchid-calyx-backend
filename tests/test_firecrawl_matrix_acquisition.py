@@ -356,3 +356,66 @@ async def test_canonical_worker_rechecks_real_claim_contract_before_acquisition(
     with pytest.raises(ValueError, match="exclusive running"):
         await acquisition.acquire_for_swarm_issue(**kwargs)
     assert len(calls) == 1
+
+
+def test_targeted_gap_uses_one_bounded_multi_taxon_source_query():
+    calls = []
+
+    def record(endpoint, payload):
+        calls.append((endpoint, payload))
+        return transport(endpoint, payload)
+
+    provider = FirecrawlProvider(CONFIG, fixture_transport=record)
+    provider.search(
+        "Paphiopedilum",
+        task_id="gap",
+        target_names=(
+            "Paphiopedilum delenatii",
+            "Paphiopedilum armeniacum",
+        ),
+    )
+    assert len(calls) == 1
+    assert (
+        '"Paphiopedilum delenatii" OR "Paphiopedilum armeniacum"'
+        in calls[0][1]["query"]
+    )
+    assert "monograph OR revision OR flora OR key" in calls[0][1]["query"]
+    with pytest.raises(AcquisitionBlocked, match="INVALID_TARGETED_GAP"):
+        FirecrawlProvider(CONFIG, fixture_transport=record).search(
+            "Paphiopedilum",
+            task_id="gap",
+            target_names=("Othergenus species",),
+        )
+    assert len(calls) == 1
+
+
+def test_differing_measurements_in_one_document_are_not_duplicates():
+    from app.evidence_aggregation.models import CandidateInput
+
+    repository = MemoryAggregateRepository()
+    service = EvidenceAggregationService(repository)
+    candidates = [
+        CandidateInput(
+            candidate_id=index,
+            candidate_version=1,
+            candidate_type="TRAIT_ASSERTION",
+            normalized_subject="local:orchid_taxonomy:1",
+            predicate="leaf_length",
+            object_value=statement,
+            source_revision_id=1,
+            source_anchor_ids=(index,),
+            document_hash="a" * 64,
+        )
+        for index, statement in enumerate(
+            (
+                "Paphiopedilum delenatii leaf length 10-12 cm.",
+                "Paphiopedilum delenatii leaf length 15 cm.",
+            ),
+            1,
+        )
+    ]
+    plan = service.preview(candidates)
+    assert service.execute(plan["aggregate_run_id"])["state"] == "COMPLETED"
+    assert repository.relationships[0]["relationship_type"] == "UNRESOLVED_RELATIONSHIP"
+    assert repository.conflicts
+    assert repository.aggregates[0]["measurement_summary"]["unweighted_mean"] is None

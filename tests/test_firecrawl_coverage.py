@@ -64,3 +64,21 @@ def test_taxonomy_requires_explicit_source_selection(monkeypatch):
     monkeypatch.delenv("FIRECRAWL_TAXONOMY_SNAPSHOT_ID", raising=False)
     with pytest.raises(ValueError, match="PINNED_CANONICAL"):
         load_persistent_canonical_registry(lambda: pytest.fail("must fail before database access"))
+
+
+def test_targeted_species_followup_requires_prior_genus_evidence():
+    first = export_matrix_acquisition_coverage(registry(), coverage_repository(anchors=()))
+    assert first["gaps"][0]["strategy"] == "genus-source-first"
+    assert "target_taxon_names" not in first["gaps"][0]
+    followup = export_matrix_acquisition_coverage(registry(), coverage_repository())
+    assert followup["gaps"][0]["strategy"] == "targeted-species-gap"
+    assert followup["gaps"][0]["target_taxon_names"] == ["Paphiopedilum armeniacum"]
+    candidate, = discover_matrix_coverage(followup)
+    assert 'OC-ACQUISITION-TARGETS: ["Paphiopedilum armeniacum"]' in candidate.summary
+
+
+def test_targeted_species_from_another_genus_are_rejected():
+    report = export_matrix_acquisition_coverage(registry(), coverage_repository())
+    report["gaps"][0]["target_taxon_names"] = ["Cattleya labiata"]
+    with pytest.raises(ValueError, match="INVALID_MATRIX_GAP_TARGETS"):
+        discover_matrix_coverage(report)

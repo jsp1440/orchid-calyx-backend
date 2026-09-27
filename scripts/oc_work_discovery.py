@@ -709,10 +709,17 @@ def discover_matrix_coverage(coverage: dict[str, Any]) -> list[Candidate]:
         genus = gap["genus"]
         if not re.fullmatch(r"[A-Z][a-z]{2,40}", genus) or not gap["missing_taxon_ids"] or not gap["taxonomy_snapshot"]:
             raise ValueError("INVALID_MATRIX_GAP")
+        targets = gap.get("target_taxon_names", [])
+        if (not isinstance(targets, list) or len(targets) > 5
+                or any(not isinstance(name, str) or not re.fullmatch(re.escape(genus) + r" [a-z][a-z-]{1,80}", name) for name in targets)
+                or (targets and gap.get("strategy") != "targeted-species-gap")
+                or (gap.get("strategy") == "targeted-species-gap" and not targets)):
+            raise ValueError("INVALID_MATRIX_GAP_TARGETS")
+        target_marker = "\nOC-ACQUISITION-TARGETS: " + json.dumps(targets) if targets else ""
         key = json.dumps(gap, sort_keys=True, separators=(",", ":"))
         result.append(Candidate(
             source="matrix-coverage", title=f"Acquire missing {genus} morphology sources",
-            summary=f"Acquire monographs, revisions, floras or keys for {genus}; multi-taxon extraction remains review-only.\nOC-ACQUISITION-GENUS: {genus}",
+            summary=f"Acquire monographs, revisions, floras or keys for {genus}; multi-taxon extraction remains review-only.\nOC-ACQUISITION-GENUS: {genus}{target_marker}",
             lane=lane_for_path("app/literature_extraction/firecrawl_acquisition.py"),
             evidence=(Evidence("canonical-coverage", "runtime/matrix_coverage/latest.json", key),),
             semantic_key="matrix-coverage:" + key,

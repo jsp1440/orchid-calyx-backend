@@ -244,9 +244,22 @@ def matrix_acquisition_gaps(taxonomy, covered_taxon_ids: set[int]) -> list[dict[
         if taxon.rank == "species" and taxon.canonical_id not in covered_taxon_ids:
             genus = taxon.canonical_name.split()[0]
             grouped.setdefault(genus, []).append(taxon.canonical_id)
-    return [{"genus": genus, "missing_taxon_ids": sorted(ids),
-             "taxonomy_snapshot": taxonomy.canonical_release.snapshot_id,
-             "strategy": "genus-source-first"} for genus, ids in sorted(grouped.items())]
+    covered_genera = {
+        taxon.canonical_name.split()[0] for taxon in taxonomy.accepted()
+        if taxon.canonical_id in covered_taxon_ids and taxon.rank == "species"
+    }
+    gaps = []
+    for genus, ids in sorted(grouped.items()):
+        targeted = genus in covered_genera and len(ids) <= 5
+        gap = {
+            "genus": genus, "missing_taxon_ids": sorted(ids),
+            "taxonomy_snapshot": taxonomy.canonical_release.snapshot_id,
+            "strategy": "targeted-species-gap" if targeted else "genus-source-first",
+        }
+        if targeted:
+            gap["target_taxon_names"] = sorted(taxonomy.taxa[ident].canonical_name for ident in ids)
+        gaps.append(gap)
+    return gaps
 
 
 def export_matrix_acquisition_coverage(

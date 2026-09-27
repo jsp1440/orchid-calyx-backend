@@ -57,7 +57,7 @@ class EvidenceAggregationService:
   for i,left in enumerate(members):
    for right in members[i+1:]:
     same=self._value(left)==self._value(right); same_doc=bool(left.document_hash and left.document_hash==right.document_hash) or left.source_revision_id==right.source_revision_id
-    if same_doc: rel=EvidenceRelationship.DUPLICATES
+    if same_doc and same: rel=EvidenceRelationship.DUPLICATES
     elif same: rel=EvidenceRelationship.SUPPORTS
     elif left.geographic_context!=right.geographic_context and left.geographic_context and right.geographic_context: rel=EvidenceRelationship.GEOGRAPHICALLY_LIMITS
     elif left.temporal_context!=right.temporal_context and left.temporal_context and right.temporal_context: rel=EvidenceRelationship.QUALIFIES

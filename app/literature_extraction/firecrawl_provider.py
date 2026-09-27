@@ -254,11 +254,21 @@ class FirecrawlProvider:
                     )
         raise AcquisitionBlocked("RETRIES_EXHAUSTED")
 
-    def search(self, genus: str, *, task_id: str) -> list[str]:
+    def search(self, genus: str, *, task_id: str, target_names=()) -> list[str]:
         import re
 
         if not re.fullmatch(r"[A-Z][a-z]{2,40}", genus):
             raise AcquisitionBlocked("GENUS_REQUIRED")
+        if len(target_names) > 5 or any(
+            not re.fullmatch(re.escape(genus) + r" [a-z][a-z-]+", name)
+            for name in target_names
+        ):
+            raise AcquisitionBlocked("INVALID_TARGETED_GAP")
+        subject = genus
+        if target_names:
+            subject += (
+                " (" + " OR ".join('"' + name + '"' for name in target_names) + ")"
+            )
         if self.searches >= self.config.max_searches or not self.config.domains:
             raise AcquisitionBlocked("SEARCH_LIMIT_OR_DOMAINS_MISSING")
         self.searches += 1
@@ -266,7 +276,7 @@ class FirecrawlProvider:
         data = self._request(
             "search",
             {
-                "query": f"{genus} (monograph OR revision OR flora OR key) ({sites})",
+                "query": f"{subject} (monograph OR revision OR flora OR key) ({sites})",
                 "limit": min(self.config.max_documents, 2)
                 if self.config.pilot_mode
                 else self.config.max_documents,
