@@ -198,6 +198,7 @@ _SPACED_NAME = re.compile(
     r"(?<![A-Za-z0-9_\-])-{0,2}(?P<name>[A-Za-z][A-Za-z0-9_\-]{0,40})\s{1,8}(?=\S)"
 )
 _SPACED_VALUE = re.compile(rf"{_QUOTED_VALUE}|[^\s\"']+")
+_SPACED_SEPARATOR_GAP = re.compile(r"\s{0,8}")
 # A value that runs to its closing quote, or (unquoted) to the next separator. Each
 # branch always matches (the closing quote is optional), so a match attempt cannot fail
 # after a long scan, and a match consumes what it scanned.
@@ -222,11 +223,17 @@ _CLI_HEADERS = (
     re.compile(_CLI_HEADER_PREFIX.replace("{quote}", "'") + r"(?P<value>[^'\r\n]*)"),
 )
 # ``curl -u user:password``, ``--user user:pw``, ``--user=user:pw``, ``-ualice:pw``,
-# ``-su user:pw``, ``--proxy-user`` / ``-U`` and quoted forms.
+# ``-su user:pw``, ``--proxy-user`` / ``-U`` and quoted forms, including a value only
+# partly quoted (``admin:"hunter2!"``, ``admin:hun"ter2"``). The value is one shell
+# word: up to ``_MAX_CLI_WORD_SEGMENTS`` unquoted runs and quoted segments. Each
+# segment kind starts on its own character (unquoted, ``"`` or ``'``) and every
+# segment always matches, so the word is split exactly one way and never backtracks.
+_MAX_CLI_WORD_SEGMENTS = 64
+_NON_SPACE_RUN = re.compile(r"\S*")
 _CLI_USER = re.compile(
     r"(?<![A-Za-z0-9_\-])(?P<flag>--(?:proxy-)?user(?:\s{1,8}|=)"
     r"|-[A-Za-z]{0,6}[uU]\s{1,8}|-[uU]=?)"
-    rf"(?P<value>{_QUOTED_TO_CLOSE}|[^\s\"']+)"
+    rf"(?P<value>(?:[^\s\"']+|{_QUOTED_TO_CLOSE}){{1,{_MAX_CLI_WORD_SEGMENTS}}})"
 )
 # HTTP Digest (RFC 7616): ``response`` and ``cnonce`` are masked whatever their length
 # once a ``Digest <param>=`` credential appears; only the text from there on is scanned.
@@ -327,6 +334,17 @@ def _mask_spaced_values(text: str) -> str:
         value = _SPACED_VALUE.match(text, match.end())
         if value is None:
             continue
+        if value.group(0) in {":", "="}:
+            # ``X-Auth-Token : a`` / ``password = a``: mask the word after the
+            # separator, keeping the separator itself.
+            after = _SPACED_SEPARATOR_GAP.match(text, value.end())
+            following = _SPACED_VALUE.match(text, after.end())
+            if following is None:
+                continue
+            parts.append(text[position : after.end()])
+            parts.append(REDACTED)
+            position = following.end()
+            continue
         parts.append(text[position : match.end()])
         parts.append(REDACTED)
         position = value.end()
@@ -348,18 +366,47 @@ def _mask_header_value(match: re.Match) -> str:
 
 
 def _mask_cli_user(match: re.Match) -> str:
-    """``-u user:pw`` -> ``-u user:***``; ``-u sk_key:`` (key as username) -> ``***:``."""
+    """Mask everything after the first ``:`` of a ``-u`` value, quoted parts included.
+
+    ``-u user:pw`` -> ``-u user:***``; ``-u admin:"pw"`` -> ``-u admin:***``;
+    ``-u "user:pw"`` -> ``-u "user:***"``; ``-u sk_key:`` (a key as the username,
+    empty password) -> ``-u ***:``.
+    """
     value = match.group("value")
-    quote = value[:1] if value[:1] in {'"', "'"} else ""
-    inner = value[1:] if quote else value
-    closing = ""
-    if quote and inner.endswith(quote):
-        inner, closing = inner[:-1], quote
-    user, separator, password = inner.partition(":")
-    if not separator:
+    colon = value.find(":")
+    if colon < 0:
         return match.group(0)  # no password on the command line
-    masked = f"{user}:{REDACTED}" if password else f"{REDACTED}:"
-    return f"{match.group('flag')}{quote}{masked}{closing}"
+    user, password = value[:colon], value[colon + 1 :]
+    # The colon sits inside a quoted segment when the user part opens a quote it does
+    # not close (``"user:pw"``); that segment's closing quote is kept for balance.
+    opening = user[:1] if user[:1] in {'"', "'"} and user.count(user[0]) % 2 else ""
+    closing = opening if opening and password.endswith(opening) else ""
+    secret = password[: len(password) - len(closing)]
+    if secret.strip("\"'"):
+        return f"{match.group('flag')}{user}:{REDACTED}{closing}"
+    return f"{match.group('flag')}{opening}{REDACTED}:{password}"
+
+
+def _mask_cli_users(text: str) -> str:
+    """Apply ``_mask_cli_user`` to every ``-u`` value; fail closed past the bound.
+
+    A shell word longer than ``_MAX_CLI_WORD_SEGMENTS`` segments is masked whole, to
+    the next whitespace, so a tail beyond the bound can never leak.
+    """
+    parts: list[str] = []
+    position = 0
+    for match in _CLI_USER.finditer(text):
+        if match.start() < position:
+            continue
+        word_end = _NON_SPACE_RUN.match(text, match.end()).end()
+        parts.append(text[position : match.start()])
+        if word_end > match.end():
+            parts.append(f"{match.group('flag')}{REDACTED}")
+        else:
+            parts.append(_mask_cli_user(match))
+        position = word_end
+    parts.append(text[position:])
+    return "".join(parts)
 
 
 def _mask_digest_params(text: str) -> str:
@@ -393,7 +440,7 @@ def _redact_string(value: str, depth: int) -> Any:
     text = _HEADER_LINE.sub(_mask_header_value, value)
     for pattern in _CLI_HEADERS:
         text = pattern.sub(_mask_header_value, text)
-    text = _CLI_USER.sub(_mask_cli_user, text)
+    text = _mask_cli_users(text)
     text = _mask_digest_params(text)
     text = _URL_USERINFO_PASSWORD.sub(lambda m: f"{m.group('prefix')}{REDACTED}@", text)
     text = _URL_USERINFO_USERNAME.sub(lambda m: f"{m.group('prefix')}{REDACTED}@", text)
@@ -451,7 +498,8 @@ def _is_list_header_name(item: object) -> bool:
 
 
 def _redact_list(value: list, depth: int) -> list:
-    scalars = all(isinstance(item, (str, int, float)) for item in value)
+    # null and booleans count as scalar values (``["Via", null]``).
+    scalars = all(item is None or isinstance(item, (str, int, float)) for item in value)
     # ["Authorization", "Bearer x"] and ["Authorization", "Bearer", "x"]: a short
     # header tuple whose first element names a secret keeps only that name. A whole
     # header line (``"Authorization: Bearer x"``) is not a name: each element of such

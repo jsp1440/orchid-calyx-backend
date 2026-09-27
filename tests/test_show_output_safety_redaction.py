@@ -400,6 +400,12 @@ def test_digest_words_without_a_digest_credential_stay_readable(value):
         ("curl -su alice:Tr0ub4dor -s", "curl -su alice:*** -s"),
         ("curl --proxy-user bob:Tr0ub4dor", "curl --proxy-user bob:***"),
         ("curl -U bob:Tr0ub4dor", "curl -U bob:***"),
+        # only the password part quoted, or quoted mid-word
+        ('curl -u admin:"hunter2!" -s', "curl -u admin:*** -s"),
+        ('curl --user=admin:"hunter2"', "curl --user=admin:***"),
+        ("curl -u admin:'p@ss w0rd' -s", "curl -u admin:*** -s"),
+        ('curl -u admin:hun"ter2" -s', "curl -u admin:*** -s"),
+        ('curl -u "admin":"p w" -s', 'curl -u "admin":*** -s'),
         # an API key passed as the username with an empty password
         (
             "curl -u sk_synthetic: https://x.example.invalid",
@@ -502,3 +508,38 @@ def test_cli_header_arguments_mask_the_whole_quoted_value():
 )
 def test_header_lists_without_secrets_stay_readable(value):
     assert _redact({"headers": value}) == {"headers": value}
+
+
+def test_partly_quoted_cli_passwords_never_leak():
+    for value in (
+        'curl -u admin:"hunter2!" https://x.example.invalid',
+        "curl --user=admin:'p@ss w0rd'",
+        "curl -u admin:hun\"ter2\"x'yz' -s",
+    ):
+        out = _redact({"note": value})["note"]
+        assert "hunter2" not in out and "p@ss" not in out and "ter2" not in out
+        assert "admin:***" in out
+
+
+def test_flat_header_lists_treat_null_as_a_value():
+    raw = ["Accept", "a", "X-Api-Key", "synthetic-key", "Via", None]
+    assert _redact({"raw": raw}) == {
+        "raw": ["Accept", "a", "X-Api-Key", REDACTED, "Via", None]
+    }
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("  X-Auth-Token : a b", "  X-Auth-Token : ***"),
+        ("password = hunter2", "password = ***"),
+        ("--password : hunter2", "--password : ***"),
+    ],
+)
+def test_spaced_separators_are_kept_and_the_value_is_masked(value, expected):
+    assert _redact({"note": value}) == {"note": expected}
+
+
+def test_cli_user_words_past_the_segment_bound_are_masked_whole():
+    word = "admin:" + "x'y'" * 100 + "tailsecret"
+    assert _redact({"note": f"curl -u {word} -s"}) == {"note": "curl -u *** -s"}
