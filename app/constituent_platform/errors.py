@@ -78,6 +78,7 @@ _MESSAGES: dict[str, str] = {
     "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND": "A donation receipt was issued for this payment. Record a refund instead of voiding it.",
     "PAYMENT_CONFLICT": "This payment conflicts with an existing record. Check the payment list before retrying.",
     "ORGANIZATION_NAME_REQUIRED": "The society name cannot be empty.",
+    "IDENTITY_REATTESTATION_REQUIRED": "This person's login was linked through a member invite, not by an administrator. Confirm it is really them, then unlink and re-link their login under Staff before granting a role.",
     "PLATFORM_OPERATOR_REQUIRED": "Only the Orchid Continuum platform operator can do this.",
     "SOCIETY_CRM_DISABLED": "The society CRM is not enabled on this server yet.",
     "CRM_DATABASE_UNAVAILABLE": "The CRM database could not be reached, so nothing was changed. Try again in a few minutes; if it continues, check the system status page.",
@@ -131,6 +132,6 @@ CONFLICT_CODES = frozenset(
         "MEMBERSHIP_ALREADY_EXISTS", "RENEWAL_KEY_CONFLICT", "LAST_ADMIN_REQUIRED",
         "AUTH_SUBJECT_ALREADY_BOUND", "CONSTITUENT_ALREADY_BOUND", "PERSON_ALREADY_IN_HOUSEHOLD",
         "EXTERNAL_LINK_CONFLICT", "HOUSEHOLD_CAPACITY_EXCEEDED", "IDEMPOTENCY_KEY_CONFLICT",
-        "PAYMENT_CONFLICT", "PAYMENT_RENEWAL_APPLIED_USE_REFUND", "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND",
+        "PAYMENT_CONFLICT", "IDENTITY_REATTESTATION_REQUIRED", "PAYMENT_RENEWAL_APPLIED_USE_REFUND", "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND",
     }
 )

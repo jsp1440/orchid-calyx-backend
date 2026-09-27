@@ -229,3 +229,40 @@ def test_invite_issued_before_a_staff_grant_cannot_confer_that_role(
     repo_code = portal.issue_invite(admin, org, target["membership_id"])["code"]
     assert portal.redeem_invite(CRMPrincipal(f"supabase:{uuid.uuid4()}"), org, repo_code)["membership_id"] == \
         target["membership_id"]
+
+
+def test_login_prelinked_by_non_admin_invite_cannot_inherit_a_later_role(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, portal: MemberPortalService
+) -> None:
+    """Checker finding 6: editor pre-links an alt login, admin later promotes the member."""
+    org, admin = _society(crm)
+    editor_person = repo.create_person(organization_id=org, display_name="Eddie Editor", actor_subject=admin.subject)
+    editor_subject = f"supabase:{uuid.uuid4()}"
+    crm.bind_identity(admin, org, constituent_id=editor_person["id"], auth_subject=editor_subject)
+    crm.grant_role(admin, org, constituent_id=editor_person["id"], role=SocietyRole.MEMBERSHIP_EDITOR)
+    editor = CRMPrincipal(editor_subject)
+
+    target = _member(crm, org, admin, "Soon Treasurer", "soon@example.org")
+    alt_login = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    portal.redeem_invite(alt_login, org, portal.issue_invite(editor, org, target["membership_id"])["code"])
+
+    with pytest.raises(ValueError, match="IDENTITY_REATTESTATION_REQUIRED"):
+        crm.grant_role(admin, org, constituent_id=target["constituent_id"], role=SocietyRole.TREASURER)
+    assert crm.roles(org, alt_login) == frozenset()
+
+    # The administrator re-attests the real person's login, then grants the role.
+    real_login = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    crm.revoke_identity(admin, org, auth_subject=alt_login.subject)
+    crm.bind_identity(admin, org, constituent_id=target["constituent_id"], auth_subject=real_login.subject)
+    crm.grant_role(admin, org, constituent_id=target["constituent_id"], role=SocietyRole.TREASURER)
+    assert crm.roles(org, real_login) == frozenset({SocietyRole.TREASURER})
+    assert crm.roles(org, alt_login) == frozenset()
+    staff = {row["display_name"]: row for row in crm.list_staff(admin, org) if row["status"] == "active"}
+    assert staff["Soon Treasurer"]["login_linked_by"] == "admin_attested"
+
+    # An admin-issued invite is itself an attestation.
+    other = _member(crm, org, admin, "Admin Invited", "admin-invited@example.org")
+    login = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    portal.redeem_invite(login, org, portal.issue_invite(admin, org, other["membership_id"])["code"])
+    crm.grant_role(admin, org, constituent_id=other["constituent_id"], role=SocietyRole.VIEWER)
+    assert crm.roles(org, login) == frozenset({SocietyRole.VIEWER})

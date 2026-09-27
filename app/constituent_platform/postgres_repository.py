@@ -299,6 +299,7 @@ class PostgresSocietyCRMRepository:
         actor = _actor(granted_by_subject)
         with self._tenant(organization_id) as cur:
             self._require_constituent(cur, organization_id, constituent_id)
+            self._require_attested_login(cur, organization_id, constituent_id)
             cur.execute(
                 """
                 SELECT * FROM oc_constituent.organization_staff_roles
@@ -394,6 +395,32 @@ class PostgresSocietyCRMRepository:
                         entity_id=str(after["id"]), before_state=dict(before), after_state=after)
             return after
 
+    @staticmethod
+    def _require_attested_login(cur, organization_id: int, constituent_id: int) -> None:
+        """Staff authority flows to whichever login is bound to the person, so that login
+        must have been linked by someone entitled to confer staff authority.
+
+        A login linked through a member invite issued without role.admin (e.g. by a
+        membership editor) must be re-attested by an administrator before the person
+        can hold a role.
+        """
+        cur.execute(
+            """
+            SELECT b.auth_subject, b.verification_method,
+                   EXISTS (
+                       SELECT 1 FROM oc_constituent.member_portal_invites i
+                       WHERE i.organization_id = b.organization_id AND i.constituent_id = b.constituent_id
+                         AND i.redeemed_by_subject = b.auth_subject AND i.issued_with_role_admin
+                   ) AS admin_issued
+            FROM oc_constituent.organization_identity_bindings b
+            WHERE b.organization_id = %s AND b.constituent_id = %s AND b.status = 'active'
+            """,
+            (organization_id, constituent_id),
+        )
+        binding = cur.fetchone()
+        if binding is not None and binding["verification_method"] == "member_invite" and not binding["admin_issued"]:
+            raise ValueError("IDENTITY_REATTESTATION_REQUIRED")
+
     def staff_roles_for_subject(self, *, organization_id: int, auth_subject: str) -> frozenset[SocietyRole]:
         """Active roles reached only through an active identity binding in this organization."""
         normalized = normalize_auth_subject(auth_subject)
@@ -420,10 +447,15 @@ class PostgresSocietyCRMRepository:
             cur.execute(
                 """
                 SELECT r.id, r.constituent_id, r.role_code, r.status, r.granted_by_subject,
-                       r.granted_at, r.revoked_at, c.display_name
+                       r.granted_at, r.revoked_at, c.display_name,
+                       b.auth_subject AS login_subject, b.verification_method AS login_linked_by,
+                       b.bound_by_subject AS login_linked_by_subject
                 FROM oc_constituent.organization_staff_roles r
                 JOIN oc_constituent.constituents c
                   ON c.id = r.constituent_id AND c.owner_organization_id = r.organization_id
+                LEFT JOIN oc_constituent.organization_identity_bindings b
+                  ON b.organization_id = r.organization_id AND b.constituent_id = r.constituent_id
+                 AND b.status = 'active'
                 WHERE r.organization_id = %s
                 ORDER BY lower(c.display_name), r.role_code
                 """,
