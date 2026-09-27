@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response as StarletteResponse
@@ -94,6 +95,7 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.species_dossier.routes import router as species_dossier_router
+from app.validation_errors import request_validation_exception_handler
 from app.vision_lexicon.routes import router as vision_lexicon_router
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
@@ -117,6 +119,10 @@ from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
+
+# Malformed request input (a lone surrogate, NaN) is a 422, never a 500: the
+# default handler could not render the input it echoed.
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
 
 @app.exception_handler(ConversationStoreUnavailable)
