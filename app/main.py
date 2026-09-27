@@ -20,6 +20,7 @@ from app.constituent_platform.routes import router as constituent_platform_route
 from app.constituent_platform.society_routes import (
     platform_router as society_crm_platform_router,
 )
+from app.constituent_platform.payment_routes import router as society_crm_payment_webhook_router
 from app.constituent_platform.society_data_routes import router as society_crm_data_router
 from app.constituent_platform.society_routes import router as society_crm_router
 from app.design_intelligence.routes import router as design_intelligence_router
@@ -634,6 +635,7 @@ app.include_router(community_observation_router)
 app.include_router(constituent_platform_router)
 app.include_router(constituent_platform_owner_router)
 app.include_router(society_crm_platform_router)
+app.include_router(society_crm_payment_webhook_router)
 app.include_router(society_crm_router)
 app.include_router(society_crm_data_router)
 app.include_router(reasoning_ledger_router)

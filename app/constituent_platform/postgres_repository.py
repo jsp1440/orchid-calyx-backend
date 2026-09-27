@@ -52,6 +52,7 @@ __all__ = ["PostgresSocietyCRMRepository", "database_url"]
 
 _LEVEL_CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 _ORG_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
+_RESERVED_SLUGS = frozenset({"webhooks", "platform", "api", "admin", "orchid-continuum"})
 _RENEWAL_SOURCES = frozenset({"admin", "offline_payment", "online_payment", "import"})
 _IDENTITY_METHODS = frozenset({"platform_operator", "admin_attested", "verified_email_match", "member_invite"})
 _LEVEL_MUTABLE = frozenset(
@@ -137,7 +138,7 @@ class PostgresSocietyCRMRepository:
 
     def create_organization(self, *, slug: str, display_name: str, kind: str = "society") -> dict[str, Any]:
         normalized_slug = slug.strip().lower()
-        if not _ORG_SLUG.fullmatch(normalized_slug):
+        if not _ORG_SLUG.fullmatch(normalized_slug) or normalized_slug in _RESERVED_SLUGS:
             raise ValueError("INVALID_ORGANIZATION_SLUG")
         name = _clean_text(display_name, limit=200, required=True, code="ORGANIZATION_NAME_REQUIRED")
         with self._platform() as cur:
@@ -1708,6 +1709,11 @@ class PostgresSocietyCRMRepository:
         ("approval_events", "oc_communications.approval_events", "organization_id"),
         ("delivery_attempts", "oc_communications.delivery_attempts", "organization_id"),
         ("delivery_events", "oc_communications.delivery_events", "organization_id"),
+        ("payments", "oc_constituent.payments", "organization_id"),
+        ("payment_events", "oc_constituent.payment_events", "organization_id"),
+        ("refunds", "oc_constituent.refunds", "organization_id"),
+        ("donations", "oc_constituent.donations", "organization_id"),
+        ("provider_webhook_events", "oc_constituent.provider_webhook_events", "organization_id"),
     )
 
     def snapshot_tenant_tables(self, *, organization_id: int) -> dict[str, list[dict[str, Any]]]:

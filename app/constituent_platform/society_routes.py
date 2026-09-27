@@ -465,8 +465,10 @@ def portal_address(payload: AddressIn, org: OrgId, service: Service, principal: 
 
 
 def iter_routers() -> Iterator[APIRouter]:
-    from .society_data_routes import router as data_router  # imports this module; keep lazy
+    from .payment_routes import router as payment_webhook_router  # these import this module; keep lazy
+    from .society_data_routes import router as data_router
 
     yield platform_router
+    yield payment_webhook_router
     yield router
     yield data_router

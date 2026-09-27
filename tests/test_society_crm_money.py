@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform.authorization import SocietyAccessDenied, SocietyRole
 from app.constituent_platform.payment_routes import build_payment_webhook_router
 from app.constituent_platform.payments import (
@@ -37,12 +38,7 @@ from app.constituent_platform.tenant_db import tenant_transaction
 
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-    "migrations/20260928_society_crm_money.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 MONEY_TABLES = ("payments", "payment_events", "refunds", "donations", "donation_receipt_counters",
                 "provider_webhook_events")
 T0 = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
@@ -841,8 +837,9 @@ ANY_INT = _AnyInt()
 
 
 def test_webhook_route_status_codes(
-    crm: SocietyCRMService, ledger: PaymentLedgerService, dsn: str
+    crm: SocietyCRMService, ledger: PaymentLedgerService, dsn: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setenv("OC_SOCIETY_CRM_API_ENABLED", "true")
     org, admin = _society(crm)
     member = _pending_member(crm, org, admin)
     app = FastAPI()
@@ -851,6 +848,9 @@ def test_webhook_route_status_codes(
     client = TestClient(app)
     payload = _pi_succeeded(_pi(), 3000, _meta(org, member["membership_id"]))
     url = "/api/society/webhooks/stripe"
+    monkeypatch.delenv("OC_SOCIETY_CRM_API_ENABLED")
+    assert client.post(url, content=payload).status_code == 503  # CRM disabled: closed before any parsing
+    monkeypatch.setenv("OC_SOCIETY_CRM_API_ENABLED", "true")
 
     bad = client.post(url, content=payload, headers={"Stripe-Signature": _sign(payload, secret="whsec_nope")})
     assert bad.status_code == 400 and bad.json()["detail"] == "WEBHOOK_SIGNATURE_MISMATCH"

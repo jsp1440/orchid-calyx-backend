@@ -261,3 +261,30 @@ def test_import_export_and_communications_over_http(operator: TestClient, people
     assert self_approve.status_code == 422
     assert self_approve.json()["detail"]["code"] == "APPROVER_MUST_DIFFER_FROM_CREATOR"
     assert admin.get(f"{base}/communications/{intent['id']}/delivery").json()["state"] == "awaiting_approval"
+
+
+def test_offline_payment_over_http_renews_once_and_is_role_limited(operator: TestClient, people) -> None:
+    slug, admin, _ = _new_society(operator, people)
+    base = f"/api/society/{slug}"
+    member = admin.post(f"{base}/members", json={
+        "display_name": "Check Payer", "email": "payer@example.org", "level_code": "individual"}).json()
+    body = {"constituent_id": member["constituent_id"], "membership_id": member["membership_id"],
+            "amount_cents": 3000, "method": "check", "check_number": "1042",
+            "received_at": "2026-09-01T12:00:00+00:00", "idempotency_key": "check-1042"}
+    first = admin.post(f"{base}/payments/offline", json=body)
+    assert first.status_code == 201, first.text
+    second = admin.post(f"{base}/payments/offline", json=body)
+    assert second.status_code == 201
+    detail = admin.get(f"{base}/members/{member['membership_id']}").json()
+    assert detail["status"] == "active"
+    assert len(admin.get(f"{base}/members/{member['membership_id']}/history").json()["renewals"]) == 1
+    assert admin.get(f"{base}/payments").json()["total"] == 1
+
+    card = admin.post(f"{base}/payments/offline", json={**body, "idempotency_key": "x-1",
+                                                        "notes": "card 4111 1111 1111 1111"})
+    assert card.status_code == 422 and card.json()["detail"]["code"] == "CARD_LIKE_NUMBER_REJECTED"
+    stranger = people(f"supabase:{uuid.uuid4()}")
+    assert stranger.post(f"{base}/payments/offline", json={**body, "idempotency_key": "s-1"}).status_code == 403
+    assert stranger.get(f"{base}/payments").status_code == 403
+    # Webhooks are closed without a configured secret (and never accept unsigned bodies).
+    assert TestClient(operator.app).post("/api/society/webhooks/stripe", content=b"{}").status_code in (400, 503)

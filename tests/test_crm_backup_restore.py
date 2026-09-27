@@ -7,6 +7,7 @@ named and dropped.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -56,6 +57,12 @@ SEEDED_TABLES = (
     "oc_communications.audience_snapshots",
     "oc_communications.audience_members",
     "oc_communications.approval_events",
+    "oc_constituent.payments",
+    "oc_constituent.payment_events",
+    "oc_constituent.refunds",
+    "oc_constituent.donations",
+    "oc_constituent.donation_receipt_counters",
+    "oc_constituent.member_portal_invites",
 )
 
 
@@ -194,6 +201,38 @@ def seeded(dsn: str) -> dict[str, Any]:
         _insert(cur, "oc_constituent.membership_renewals", organization_id=b, membership_id=m_sam_b,
                 renewal_key=f"renew-{s}-1", level_code="individual", term_months=12, previous_status="active",
                 new_starts_at=now - year, new_expires_at=now, source_kind="admin", actor_subject="staff:admin")
+        # Money: a partially refunded check, a cash payment in the other tenant, and a receipted donation.
+        pay_a = _insert(cur, "oc_constituent.payments", organization_id=a, constituent_id=pat_a,
+                        membership_id=m_pat_a, purpose="membership_dues", amount_cents=4500, currency="USD",
+                        method="check", check_number="1042", status="partially_refunded",
+                        refunded_amount_cents=500, received_at=now, recorded_by_subject="staff:treasurer",
+                        idempotency_key=f"check-{s}-1042")
+        _insert(cur, "oc_constituent.payment_events", organization_id=a, payment_id=pay_a, to_status="succeeded",
+                reason="recorded", amount_cents=4500, actor_subject="staff:treasurer")
+        _insert(cur, "oc_constituent.payment_events", organization_id=a, payment_id=pay_a, from_status="succeeded",
+                to_status="partially_refunded", reason="duplicate dues", amount_cents=500,
+                actor_subject="staff:treasurer")
+        _insert(cur, "oc_constituent.refunds", organization_id=a, payment_id=pay_a, amount_cents=500,
+                reason="duplicate dues", idempotency_key=f"refund-{s}-1", recorded_by_subject="staff:treasurer")
+        _insert(cur, "oc_constituent.payments", organization_id=b, constituent_id=pat_b, purpose="other",
+                amount_cents=1200, currency="USD", method="cash", status="succeeded", received_at=now,
+                recorded_by_subject="staff:treasurer", idempotency_key=f"cash-{s}-1")
+        gift = _insert(cur, "oc_constituent.payments", organization_id=a, constituent_id=pat_a, purpose="donation",
+                       amount_cents=10000, currency="USD", method="check", check_number="1043", status="succeeded",
+                       received_at=now, recorded_by_subject="staff:treasurer", idempotency_key=f"gift-{s}-1")
+        cur.execute(
+            "INSERT INTO oc_constituent.donation_receipt_counters (organization_id, last_receipt_number) "
+            "VALUES (%s, 1) ON CONFLICT (organization_id) DO UPDATE SET last_receipt_number = "
+            "oc_constituent.donation_receipt_counters.last_receipt_number + 1 RETURNING last_receipt_number",
+            (a,),
+        )
+        receipt_number = cur.fetchone()[0]
+        _insert(cur, "oc_constituent.donations", organization_id=a, constituent_id=pat_a, payment_id=gift,
+                amount_cents=10000, currency="USD", designation="greenhouse-fund", tax_deductible_cents=10000,
+                receipt_number=receipt_number, receipt_issued_at=now)
+        _insert(cur, "oc_constituent.member_portal_invites", organization_id=a, constituent_id=pat_a,
+                code_sha256=hashlib.sha256(f"invite-{s}".encode()).hexdigest(), created_by_subject="staff:admin",
+                expires_at=now + year)
         _insert(cur, "oc_constituent.membership_household_members", organization_id=a, membership_id=m_pat_a,
                 constituent_id=robin_a, relationship="partner")
         _insert(cur, "oc_constituent.external_record_links", organization_id=a, constituent_id=pat_a,

@@ -53,6 +53,7 @@ jobs:
         migrations/20260927b_constituent_newsletter_canonical.sql
         migrations/20260927c_society_crm_portal_ops.sql
         migrations/20260927d_society_crm_communications.sql
+        migrations/20260928_society_crm_money.sql
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -60,7 +61,7 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install backend dependencies
-        run: pip install -r requirements.txt pytest
+        run: pip install -r requirements.txt pytest httpx
       - name: Apply CRM migration chain
         run: |
           for f in $CRM_MIGRATIONS; do
@@ -82,6 +83,7 @@ jobs:
           tests/test_society_crm_portal.py
           tests/test_society_crm_communications.py
           tests/test_society_crm_import_export.py
+          tests/test_society_crm_money.py
       - name: Re-run society CRM PostgreSQL tests against the same database
         run: >-
           pytest -q
@@ -89,6 +91,7 @@ jobs:
           tests/test_society_crm_portal.py
           tests/test_society_crm_communications.py
           tests/test_society_crm_import_export.py
+          tests/test_society_crm_money.py
       - name: Run canonical newsletter/contact tests
         run: >-
           pytest -q

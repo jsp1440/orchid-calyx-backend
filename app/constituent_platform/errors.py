@@ -57,6 +57,26 @@ _MESSAGES: dict[str, str] = {
     "UNTRUSTED_OUTBOUND_AUTHORIZATION_SOURCE": "Messages cannot be started or approved from inbound email or other untrusted content.",
     "PREFERENCE_PURPOSE_NOT_SELF_SERVICE": "Required society notices cannot be switched off here.",
     "INVALID_IMPORT_ID": "Import IDs use letters, digits and . _ : - (up to 100 characters).",
+    "PAYMENT_NOT_FOUND": "That payment does not exist in this society.",
+    "CARD_LIKE_NUMBER_REJECTED": "Card or account numbers must never be entered. Remove the long number and try again.",
+    "CHECK_NUMBER_ONLY_FOR_CHECKS": "A check number can only be recorded for check payments.",
+    "INVALID_CHECK_NUMBER": "Check numbers are up to 12 letters or digits.",
+    "IDEMPOTENCY_KEY_CONFLICT": "This payment reference was already used for a different payment. Use a new reference.",
+    "IDEMPOTENCY_KEY_REQUIRED": "A payment reference is required so the payment is recorded only once.",
+    "INVALID_OFFLINE_METHOD": "Offline payments are check, cash or other offline.",
+    "INVALID_PAYMENT_PURPOSE": "Choose what the payment is for (dues, event or other). Record gifts as donations.",
+    "USE_RECORD_DONATION": "Record gifts with 'Record donation' so a receipt is issued.",
+    "INVALID_DESIGNATION": "Choose a fund designation for the donation.",
+    "INVALID_TAX_DEDUCTIBLE_AMOUNT": "The deductible amount cannot exceed the donation.",
+    "PAYMENT_MEMBERSHIP_REQUIRED_FOR_RENEWAL": "Choose the membership this dues payment renews, or record it without renewal.",
+    "PAYMENT_MEMBERSHIP_CONSTITUENT_MISMATCH": "That membership belongs to a different person.",
+    "RECEIVED_AT_TIMEZONE_REQUIRED": "The received date must include a time zone.",
+    "REFUND_EXCEEDS_REMAINING": "The refund is larger than the amount that remains on this payment.",
+    "PROVIDER_REFUND_MUST_BE_ISSUED_AT_PROVIDER": "Refund card payments in Stripe; the refund appears here automatically.",
+    "PROVIDER_PAYMENT_CANNOT_BE_VOIDED": "Online payments cannot be voided here; refund them in Stripe.",
+    "PAYMENT_RENEWAL_APPLIED_USE_REFUND": "This payment already renewed a membership. Record a refund instead of voiding it.",
+    "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND": "A donation receipt was issued for this payment. Record a refund instead of voiding it.",
+    "PAYMENT_CONFLICT": "This payment conflicts with an existing record. Check the payment list before retrying.",
     "PLATFORM_OPERATOR_REQUIRED": "Only the Orchid Continuum platform operator can do this.",
     "SOCIETY_CRM_DISABLED": "The society CRM is not enabled on this server yet.",
     "CRM_DATABASE_UNAVAILABLE": "The CRM database could not be reached, so nothing was changed. Try again in a few minutes; if it continues, check the system status page.",
@@ -89,6 +109,8 @@ def message_for(code: str) -> str:
     if code.startswith("INVALID_MEMBERSHIP_TRANSITION:"):
         change = code.split(":", 1)[1].replace("->", " to ")
         return f"A membership cannot move directly from {change}."
+    if code.startswith(("PAYMENT_VOID_NOT_ALLOWED_FROM_STATUS:", "REFUND_NOT_ALLOWED_FROM_STATUS:")):
+        return f"This action is not possible while the payment is {code.split(':', 1)[1]}."
     if code.startswith("FORBIDDEN_SOCIETY_ENTITLEMENT:"):
         return "Society membership levels may only grant society benefits (codes starting with 'society.')."
     if code.startswith("MEMBERSHIP_LEVEL_FIELD_NOT_EDITABLE:") or code.startswith("MEMBER_FIELD_NOT_EDITABLE:"):
@@ -105,6 +127,7 @@ CONFLICT_CODES = frozenset(
         "ORGANIZATION_SLUG_TAKEN", "MEMBERSHIP_LEVEL_EXISTS", "DUPLICATE_MEMBER_EMAIL",
         "MEMBERSHIP_ALREADY_EXISTS", "RENEWAL_KEY_CONFLICT", "LAST_ADMIN_REQUIRED",
         "AUTH_SUBJECT_ALREADY_BOUND", "CONSTITUENT_ALREADY_BOUND", "PERSON_ALREADY_IN_HOUSEHOLD",
-        "EXTERNAL_LINK_CONFLICT", "HOUSEHOLD_CAPACITY_EXCEEDED",
+        "EXTERNAL_LINK_CONFLICT", "HOUSEHOLD_CAPACITY_EXCEEDED", "IDEMPOTENCY_KEY_CONFLICT",
+        "PAYMENT_CONFLICT", "PAYMENT_RENEWAL_APPLIED_USE_REFUND", "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND",
     }
 )

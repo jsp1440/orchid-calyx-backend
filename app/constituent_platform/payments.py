@@ -1452,3 +1452,41 @@ class PaymentLedgerService:
                         metadata={"provider": provider, "provider_rows": len(provider_rows), **counts})
             report["counts"] = counts
             return report
+
+
+def _register_diagnostics() -> None:
+    from .crm_diagnostics import register_organization_check
+
+    @register_organization_check
+    def payment_webhook_check(repo: PostgresSocietyCRMRepository, organization_id: int) -> list[dict[str, Any]]:
+        with tenant_transaction(organization_id, connect=repo._connect) as cur:  # noqa: SLF001
+            cur.execute(
+                "SELECT count(*) AS n FROM oc_constituent.provider_webhook_events "
+                "WHERE organization_id = %s AND processing_status = 'failed'",
+                (organization_id,),
+            )
+            failed = int(cur.fetchone()["n"])
+            cur.execute(
+                "SELECT count(*) AS n FROM oc_constituent.payments "
+                "WHERE organization_id = %s AND membership_review_required",
+                (organization_id,),
+            )
+            review = int(cur.fetchone()["n"])
+        results = [
+            {"check": "payment_webhooks", "status": "warning",
+             "message": f"{failed} online payment notification(s) could not be applied.",
+             "action": "Open Payments > Failed notifications; each entry explains the fix. Stripe retries automatically for temporary problems.",
+             "count": failed}
+            if failed else
+            {"check": "payment_webhooks", "status": "ok", "message": "All online payment notifications were applied.",
+             "action": ""}
+        ]
+        if review:
+            results.append({"check": "refund_membership_review", "status": "warning",
+                            "message": f"{review} refunded dues payment(s) need a membership decision.",
+                            "action": "Review each refunded member and decide whether to keep, shorten or cancel the membership.",
+                            "count": review})
+        return results
+
+
+_register_diagnostics()

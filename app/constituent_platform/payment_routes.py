@@ -12,9 +12,9 @@ header (HMAC with ``OC_STRIPE_WEBHOOK_SECRET``), not by a user session:
 The raw body is read unmodified because the signature covers the exact bytes.
 Nothing from the payload or the secret is logged.
 
-This router is intentionally not registered in ``app/main.py`` here; the lead wires
-it (``app.include_router(payment_routes.router)``). Authenticated admin endpoints
-(list/refund/void/reconcile) wait for the society HTTP principal resolver.
+Like the rest of the society CRM API it answers 503 until
+``OC_SOCIETY_CRM_API_ENABLED`` is set. Authenticated administrator payment endpoints
+live in ``society_data_routes``.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import time
 from collections.abc import Callable
 from functools import lru_cache
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 
@@ -35,6 +35,7 @@ from .payments import (
     WebhookSignatureError,
 )
 from .postgres_repository import PostgresSocietyCRMRepository
+from .society_routes import require_enabled
 from .society_service import SocietyCRMService
 
 
@@ -50,7 +51,9 @@ def build_payment_webhook_router(
     adapter_factory: Callable[[], PaymentProvider] = StripeWebhookAdapter.from_env,
     clock: Callable[[], float] = time.time,
 ) -> APIRouter:
-    webhook_router = APIRouter(prefix="/api/society/webhooks", tags=["society-crm-payments"])
+    webhook_router = APIRouter(
+        prefix="/api/society/webhooks", tags=["society-crm-payments"], dependencies=[Depends(require_enabled)]
+    )
 
     @webhook_router.post("/stripe")
     async def stripe_webhook(request: Request) -> JSONResponse:

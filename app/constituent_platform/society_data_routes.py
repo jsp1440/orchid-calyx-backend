@@ -7,6 +7,7 @@ in the JSON body; dry run is the default. Exports are audited by the services.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
@@ -17,6 +18,7 @@ from .crm_export import export_organization, export_roster_csv
 from .crm_import import ColumnMapping, import_members
 from .crm_reconcile import reconcile
 from .domain import MembershipStatus, MessagePurpose, PreferenceState
+from .payments import PaymentLedgerService
 from .society_communications import SocietyCommunicationsService
 from .society_routes import OrgId, Principal, Service, _call, require_enabled
 
@@ -166,3 +168,120 @@ def my_preferences(org: OrgId, service: Service, principal: Principal) -> dict[s
 def set_my_preference(payload: MyPreferenceIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
     return _call(_comms(service).set_my_preference, principal, org, purpose=payload.purpose,
                  subscribed=payload.subscribed)
+
+
+# -- payments and donations -------------------------------------------------------------
+
+
+class OfflinePaymentIn(_Strict):
+    constituent_id: int = Field(..., ge=1)
+    membership_id: int | None = Field(None, ge=1)
+    amount_cents: int = Field(..., gt=0)
+    currency: str = Field("USD", min_length=3, max_length=3)
+    method: Literal["check", "cash", "other_offline"]
+    check_number: str | None = Field(None, max_length=12)
+    received_at: datetime
+    idempotency_key: str = Field(..., min_length=1, max_length=200)
+    purpose: Literal["membership_dues", "event", "other"] = "membership_dues"
+    renew: bool = True
+    notes: str | None = Field(None, max_length=500)
+
+
+class DonationIn(_Strict):
+    constituent_id: int = Field(..., ge=1)
+    amount_cents: int = Field(..., gt=0)
+    currency: str = Field("USD", min_length=3, max_length=3)
+    method: Literal["check", "cash", "other_offline"]
+    designation: str = Field(..., min_length=1, max_length=60)
+    idempotency_key: str = Field(..., min_length=1, max_length=200)
+    received_at: datetime
+    tax_deductible_cents: int | None = Field(None, ge=0)
+    check_number: str | None = Field(None, max_length=12)
+    is_anonymous_to_public: bool = False
+    notes: str | None = Field(None, max_length=500)
+
+
+class RefundIn(_Strict):
+    amount_cents: int = Field(..., gt=0)
+    reason: str = Field(..., min_length=1, max_length=500)
+    idempotency_key: str = Field(..., min_length=1, max_length=200)
+
+
+class VoidIn(_Strict):
+    reason: str = Field(..., min_length=1, max_length=500)
+
+
+class ProviderRowIn(_Strict):
+    provider_payment_ref: str = Field(..., max_length=200)
+    amount_cents: int
+    currency: str = Field(..., min_length=3, max_length=3)
+    status: str = Field(..., max_length=40)
+
+
+class PaymentReconcileIn(_Strict):
+    rows: list[ProviderRowIn] = Field(..., max_length=20000)
+    provider: Literal["stripe"] = "stripe"
+
+
+def _ledger(service) -> PaymentLedgerService:
+    return PaymentLedgerService(service._repo, service)
+
+
+@router.post("/payments/offline", status_code=201)
+def record_offline_payment(payload: OfflinePaymentIn, org: OrgId, service: Service,
+                           principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).record_offline_payment, principal, org, **payload.model_dump())
+
+
+@router.post("/donations", status_code=201)
+def record_donation(payload: DonationIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).record_donation, principal, org, **payload.model_dump())
+
+
+@router.get("/payments")
+def list_payments(org: OrgId, service: Service, principal: Principal,
+                  status: Annotated[str | None, Query(max_length=40)] = None,
+                  purpose: Annotated[str | None, Query(max_length=40)] = None,
+                  review: Annotated[bool | None, Query()] = None,
+                  limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                  offset: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
+    rows, total = _call(_ledger(service).list_payments, principal, org, status=status, purpose=purpose,
+                        membership_review_required=review, limit=limit, offset=offset)
+    return {"items": rows, "total": total, "limit": limit, "offset": offset}
+
+
+@router.get("/payments/{payment_id}/receipt")
+def payment_receipt(payment_id: int, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).get_receipt, principal, org, payment_id)
+
+
+@router.post("/payments/{payment_id}/refund")
+def refund_payment(payment_id: int, payload: RefundIn, org: OrgId, service: Service,
+                   principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).refund, principal, org, payment_id, **payload.model_dump())
+
+
+@router.post("/payments/{payment_id}/void")
+def void_payment(payment_id: int, payload: VoidIn, org: OrgId, service: Service,
+                 principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).void, principal, org, payment_id, payload.reason)
+
+
+@router.get("/donations")
+def list_donations(org: OrgId, service: Service, principal: Principal,
+                   limit: Annotated[int, Query(ge=1, le=500)] = 100,
+                   offset: Annotated[int, Query(ge=0)] = 0) -> dict[str, Any]:
+    rows, total = _call(_ledger(service).list_donations, principal, org, limit=limit, offset=offset)
+    return {"items": rows, "total": total, "limit": limit, "offset": offset}
+
+
+@router.post("/payments/reconciliation")
+def reconcile_provider_payments(payload: PaymentReconcileIn, org: OrgId, service: Service,
+                                principal: Principal) -> dict[str, Any]:
+    return _call(_ledger(service).reconcile_payments, principal, org,
+                 [row.model_dump() for row in payload.rows], provider=payload.provider)
+
+
+@router.get("/payments/failed-notifications")
+def failed_payment_notifications(org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return {"items": _call(_ledger(service).failed_webhooks, principal, org)}
