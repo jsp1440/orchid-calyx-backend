@@ -96,6 +96,8 @@ CONFIG_BUILDERS: dict[str, Callable[[int], str]] = {
     "cli-user-open-quotes": lambda n: _fill('-u a:"' * 680, n),
     "cli-user-single-segments": lambda n: _fill("-u a:" + "'b'c" * 1000, n),
     "cli-user-alternating-quotes": lambda n: _fill("-u a:" + "\"b'c" * 1000, n),
+    "cli-user-newline-quotes": lambda n: _fill("-u a:'\n" * 580, n),
+    "cli-user-newline-double-escapes": lambda n: _fill('-u a:"\\\n' * 500, n),
     "digest-schemes": lambda n: _fill("Digest a=" * 450, n),
     "digest-params": lambda n: _fill("Digest a=" + 'response="' * 400, n),
     "flat-header-list": lambda n: json.dumps(["X-Api-Key", "v"] * (n // 20)),
@@ -172,6 +174,10 @@ PATTERN_INPUTS: dict[str, tuple[object, str]] = {
     "cli-user-alternating-quotes": (safety._CLI_USER, "-u a\"b'c\"d'"),
     "cli-user-segment-word": (safety._CLI_USER, "-u a:" + "x'y'" * 200 + " "),
     "cli-user-escapes": (safety._CLI_USER, '-u a:"\\'),
+    "cli-user-newline-single": (safety._CLI_USER, "-u a:'\n"),
+    "cli-user-newline-double": (safety._CLI_USER, '-u a:"\\\n'),
+    "cli-user-newline-segments": (safety._CLI_USER, "-u a:'b\n'c\n"),
+    "cli-user-unterminated-lines": (safety._CLI_USER, "-u a:\"x\n-u b:'y\n"),
     "digest-scheme": (safety._DIGEST_SCHEME, "digest " + "a" * 40 + " "),
     "digest-params": (safety._DIGEST_SECRET_PARAM, 'response="'),
     "digest-escapes": (safety._DIGEST_SECRET_PARAM, 'cnonce="\\'),
@@ -198,4 +204,8 @@ def test_digest_mask_and_list_redaction_are_linear_on_64k_input():
     words = (words * (PATTERN_SIZE // len(words) + 1))[:PATTERN_SIZE]
     assert _best_of(lambda: safety._mask_digest_params(digest)) < PATTERN_BOUND_SECONDS
     assert _best_of(lambda: safety._mask_cli_users(words)) < PATTERN_BOUND_SECONDS
+    lines = ("-u a:'\n" * (PATTERN_SIZE // 7 + 1))[:PATTERN_SIZE]
+    quotes = ('-u a:"x\n' * (PATTERN_SIZE // 8 + 1))[:PATTERN_SIZE]
+    assert _best_of(lambda: safety._mask_cli_users(lines)) < PATTERN_BOUND_SECONDS
+    assert _best_of(lambda: safety._mask_cli_users(quotes)) < PATTERN_BOUND_SECONDS
     assert _best_of(lambda: safety._redact_list(headers, 0)) < BOUND_SECONDS

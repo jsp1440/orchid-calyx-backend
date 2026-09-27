@@ -540,6 +540,25 @@ def test_spaced_separators_are_kept_and_the_value_is_masked(value, expected):
     assert _redact({"note": value}) == {"note": expected}
 
 
-def test_cli_user_words_past_the_segment_bound_are_masked_whole():
-    word = "admin:" + "x'y'" * 100 + "tailsecret"
-    assert _redact({"note": f"curl -u {word} -s"}) == {"note": "curl -u *** -s"}
+@pytest.mark.parametrize(
+    "tail",
+    ["tailsecret -s", '"Zq9 sEcr" -s', '"Zq9\tsEcr" -s', "'Zq9\nsEcr' -s\nnext"],
+)
+def test_cli_user_words_past_the_segment_bound_mask_the_rest_of_the_text(tail):
+    # a quoted space, tab or line break past the bound must not end the masking
+    value = "curl -u admin:" + "a''" * 32 + tail
+    assert _redact({"note": value}) == {"note": "curl -u ***"}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("curl -u admin:'Zq9\nsEcr' -s\nnext", "curl -u admin:*** -s\nnext"),
+        ('curl -u admin:"Zq9\r\nsEcr" -s', "curl -u admin:*** -s"),
+        ('curl -u "admin:Zq9\nsEcr" -s', 'curl -u "admin:***" -s'),
+        # an unterminated quote runs to the end of the text
+        ("curl -u admin:'Zq9\nsEcr -s\nmore", "curl -u admin:***"),
+    ],
+)
+def test_cli_user_quoted_passwords_spanning_lines_are_masked(value, expected):
+    assert _redact({"note": value}) == {"note": expected}

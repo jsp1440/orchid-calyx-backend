@@ -228,12 +228,14 @@ _CLI_HEADERS = (
 # word: up to ``_MAX_CLI_WORD_SEGMENTS`` unquoted runs and quoted segments. Each
 # segment kind starts on its own character (unquoted, ``"`` or ``'``) and every
 # segment always matches, so the word is split exactly one way and never backtracks.
+# As in a shell, a quoted segment runs to its closing quote across line breaks; an
+# unterminated one runs to the end of the text (the string is at most MAX_SCAN_CHARS).
 _MAX_CLI_WORD_SEGMENTS = 64
-_NON_SPACE_RUN = re.compile(r"\S*")
+_CLI_QUOTED_SEGMENT = r"\"(?:[^\"\\]|\\[\s\S])*\"?|'[^']*'?"
 _CLI_USER = re.compile(
     r"(?<![A-Za-z0-9_\-])(?P<flag>--(?:proxy-)?user(?:\s{1,8}|=)"
     r"|-[A-Za-z]{0,6}[uU]\s{1,8}|-[uU]=?)"
-    rf"(?P<value>(?:[^\s\"']+|{_QUOTED_TO_CLOSE}){{1,{_MAX_CLI_WORD_SEGMENTS}}})"
+    rf"(?P<value>(?:[^\s\"']+|{_CLI_QUOTED_SEGMENT}){{1,{_MAX_CLI_WORD_SEGMENTS}}})"
 )
 # HTTP Digest (RFC 7616): ``response`` and ``cnonce`` are masked whatever their length
 # once a ``Digest <param>=`` credential appears; only the text from there on is scanned.
@@ -390,21 +392,22 @@ def _mask_cli_user(match: re.Match) -> str:
 def _mask_cli_users(text: str) -> str:
     """Apply ``_mask_cli_user`` to every ``-u`` value; fail closed past the bound.
 
-    A shell word longer than ``_MAX_CLI_WORD_SEGMENTS`` segments is masked whole, to
-    the next whitespace, so a tail beyond the bound can never leak.
+    A shell word longer than ``_MAX_CLI_WORD_SEGMENTS`` segments cannot be split
+    reliably (a quote past the bound may hide spaces or line breaks), so everything
+    from its flag to the end of the text is masked: no tail can leak.
     """
     parts: list[str] = []
     position = 0
     for match in _CLI_USER.finditer(text):
         if match.start() < position:
             continue
-        word_end = _NON_SPACE_RUN.match(text, match.end()).end()
         parts.append(text[position : match.start()])
-        if word_end > match.end():
-            parts.append(f"{match.group('flag')}{REDACTED}")
-        else:
-            parts.append(_mask_cli_user(match))
-        position = word_end
+        end = match.end()
+        if end < len(text) and not text[end].isspace():
+            parts.append(f"{match.group('flag')}{REDACTED}")  # past the bound
+            return "".join(parts)
+        parts.append(_mask_cli_user(match))
+        position = end
     parts.append(text[position:])
     return "".join(parts)
 
