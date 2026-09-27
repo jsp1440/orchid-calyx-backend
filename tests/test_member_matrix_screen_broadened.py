@@ -62,11 +62,19 @@ POSITIVE = {
     "hemisphere_suffix": [
         "12.345 N",
         "12.34S 45.67W",
+        "12.34s 45.67w",
         "18.9S",
         "18 55 S",
         "18:55:30 S",
     ],
-    "hemisphere_prefix": ["N 12.345", "N 12.34", "S18.91", "N 18 E 47", "S18.9, E47.5"],
+    "hemisphere_prefix": [
+        "N 12.345",
+        "N 12.34",
+        "S18.91",
+        "N 18 E 47",
+        "S18.9, E47.5",
+        "n12.34, w45.67",
+    ],
     "signed_pair": ["-18.91 47.52", "−18.91 −47.52"],
     "utm": [
         "17N 630084 4833438",
@@ -76,7 +84,13 @@ POSITIVE = {
         "UTM zone 17",
     ],
     "mgrs": ["33TWN1234567890", "33T WN 12345 67890", "4QFJ12345678", "MGRS grid"],
-    "plus_code": ["8FVC9G8F+6X", "8fvc9g8f+6x", "8FVC0000+", "9G8F+6X Zurich"],
+    "plus_code": [
+        "8FVC9G8F+6X",
+        "8fvc9g8f+6x",
+        "8FVC0000+",
+        "9G8F+6X Zurich",
+        "9g8f+6x zurich",
+    ],
     "geohash_labelled": ["geohash u4pruydqqvj", "Geohash: 6gkzwgjz"],
     "locality_es_pt_fr": [
         "Localidad: Río Blanco",
