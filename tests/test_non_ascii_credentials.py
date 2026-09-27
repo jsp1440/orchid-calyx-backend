@@ -261,6 +261,16 @@ AUTH_MODULES = [
     "app/calyx_orchestrator/sandbox_supervisor_service.py",
 ]
 
+# Worker lease tokens are bearer secrets too (#1671/#1673 follow-up). Each module maps
+# to the ORM models whose column comparisons it may use in a SQL filter: for example
+# ``CalyxJob.lease_token == lease_token`` inside ``.filter()`` is evaluated by the
+# database, not by a Python short-circuit, so only those column expressions are exempt.
+LEASE_MODULES = {
+    "app/calyx_engineering/completion_scheduler.py": frozenset({"CalyxJob"}),
+    "app/calyx_orchestrator/dry_run_service.py": frozenset(),
+    "app/calyx_orchestrator/execution_bridge.py": frozenset(),
+}
+
 # Identifiers that name a presented or expected secret. A ``==``/``!=`` between
 # two such runtime values short-circuits on the first differing byte (a timing
 # oracle) and must go through app.security.credentials_match instead.
@@ -277,7 +287,15 @@ def _operand_names(node: ast.AST) -> set[str]:
     return set()
 
 
-def _raw_secret_equality(tree: ast.AST) -> list[int]:
+def _is_sql_column(node: ast.AST, sql_models: frozenset[str]) -> bool:
+    return (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.value, ast.Name)
+        and node.value.id in sql_models
+    )
+
+
+def _raw_secret_equality(tree: ast.AST, sql_models: frozenset[str] = frozenset()) -> list[int]:
     found = []
     for node in ast.walk(tree):
         if not isinstance(node, ast.Compare):
@@ -288,13 +306,15 @@ def _raw_secret_equality(tree: ast.AST) -> list[int]:
                 continue
             if isinstance(left, ast.Constant) or isinstance(right, ast.Constant):
                 continue  # e.g. ``scheme == "bearer"`` or ``token is None``-style checks
+            if _is_sql_column(left, sql_models) or _is_sql_column(right, sql_models):
+                continue  # a SQLAlchemy column expression, compared by the database
             names = _operand_names(left) | _operand_names(right)
             if any(SECRET_NAME.search(name) for name in names):
                 found.append(node.lineno)
     return found
 
 
-@pytest.mark.parametrize("module", AUTH_MODULES)
+@pytest.mark.parametrize("module", AUTH_MODULES + list(LEASE_MODULES))
 def test_request_credentials_are_never_compared_as_raw_strings(module):
     """Every compare_digest in the auth modules compares bytes: via credentials_match or .encode()."""
     tree = ast.parse((REPO / module).read_text(encoding="utf-8"))
@@ -314,11 +334,11 @@ def test_request_credentials_are_never_compared_as_raw_strings(module):
             ), f"{module}:{node.lineno} compares a str; use app.security.credentials_match"
 
 
-@pytest.mark.parametrize("module", AUTH_MODULES)
+@pytest.mark.parametrize("module", AUTH_MODULES + list(LEASE_MODULES))
 def test_request_credentials_are_never_compared_with_equality_operators(module):
     """No ``==``/``!=`` between secret-named values in the auth modules: use credentials_match."""
     tree = ast.parse((REPO / module).read_text(encoding="utf-8"))
-    lines = _raw_secret_equality(tree)
+    lines = _raw_secret_equality(tree, LEASE_MODULES.get(module, frozenset()))
     assert not lines, f"{module}: raw secret equality at line(s) {lines}; use app.security.credentials_match"
 
 
@@ -329,6 +349,8 @@ def test_request_credentials_are_never_compared_with_equality_operators(module):
         "if not expected or api_key != expected: pass",
         "if record.claim_worker != worker_id or record.claim_token != claim_token: pass",
         "ok = signature == hmac_signature(x)",
+        "if job.lease_owner != worker_id or job.lease_token != lease_token: pass",
+        "if job.status != 'running' or job.lease_token != lease_token: pass",
     ],
 )
 def test_equality_guard_detects_raw_secret_compares(source):
@@ -346,3 +368,15 @@ def test_equality_guard_detects_raw_secret_compares(source):
 )
 def test_equality_guard_ignores_non_secret_compares(source):
     assert not _raw_secret_equality(ast.parse(source))
+
+
+def test_equality_guard_exempts_only_the_named_sql_models():
+    """The SQL-column exemption covers ``Model.column`` of the listed models only."""
+    sql_filter = ast.parse("q.filter(CalyxJob.lease_token == lease_token)")
+    python_side = ast.parse("if job.lease_token != lease_token: pass")
+    assert not _raw_secret_equality(sql_filter, frozenset({"CalyxJob"}))
+    assert _raw_secret_equality(sql_filter)  # not exempt unless the model is listed
+    assert _raw_secret_equality(python_side, frozenset({"CalyxJob"}))
+    assert _raw_secret_equality(
+        ast.parse("q.filter(OtherModel.lease_token == lease_token)"), frozenset({"CalyxJob"})
+    )
