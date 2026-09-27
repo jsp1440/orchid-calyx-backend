@@ -36,6 +36,8 @@ PREFIXES = (
     "/api/literature-extraction",
     # Owner review queue for submitted feedback: owner session only, never members.
     "/api/evidence-feedback/review",
+    # Research projects (workspace, scientific memory, reasoning ledgers): owner-only.
+    "/api/research/projects",
 )
 # Exact (method, path) set opened to members. Anything not listed stays owner-only.
 EXPECTED_MEMBER_READS = {
@@ -78,6 +80,17 @@ EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/literature-extraction/coverage-audit"),
     ("GET", "/api/evidence-feedback/review/cases"),
     ("GET", "/api/evidence-feedback/review/cases/{case_id}"),
+    ("GET", "/api/research/projects"),
+    ("GET", "/api/research/projects/{project_id}"),
+    ("GET", "/api/research/projects/{project_id}/saved-searches"),
+    ("GET", "/api/research/projects/{project_id}/notes"),
+    ("GET", "/api/research/projects/{project_id}/taxa"),
+    ("GET", "/api/research/projects/{project_id}/documents"),
+    ("GET", "/api/research/projects/{project_id}/evidence"),
+    ("GET", "/api/research/projects/{project_id}/activity"),
+    ("GET", "/api/research/projects/{project_id}/scientific-memory"),
+    ("GET", "/api/research/projects/{project_id}/epistemic-memory"),
+    ("GET", "/api/research/projects/{project_id}/reasoning-ledgers"),
 }
 
 
@@ -117,6 +130,43 @@ def _env(monkeypatch, tmp_path):
     member_auth.clear_member_token_cache()
     yield
     member_auth.clear_member_token_cache()
+
+
+@pytest.fixture(autouse=True)
+def _research_projects_db():
+    """Owner calls to /api/research/projects read an isolated, empty in-memory database."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.database import Base, get_db
+    from app.research_workspace.models import (
+        AuditEvent,
+        Note,
+        Project,
+        ProjectDocument,
+        ProjectEvidence,
+        ProjectTaxon,
+        SavedSearch,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        execution_options={"schema_translate_map": {"research_station": None}},
+    )
+    tables = [Project, SavedSearch, Note, ProjectTaxon, ProjectDocument, ProjectEvidence, AuditEvent]
+    Base.metadata.create_all(engine, tables=[model.__table__ for model in tables])
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    def override_get_db():
+        with session_local() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
@@ -440,6 +490,11 @@ def test_owner_only_403_is_identical_whether_or_not_the_resource_exists(client, 
         ("PUT", "/api/literature-extraction/papers/x/source-binding"),
         ("GET", "/api/evidence-feedback/review/cases/efc-does-not-exist"),
         ("POST", "/api/evidence-feedback/review/cases/efc-does-not-exist/decision"),
+        ("GET", "/api/research/projects"),
+        ("POST", "/api/research/projects"),
+        ("GET", "/api/research/projects/00000000-0000-0000-0000-000000000000"),
+        ("PATCH", "/api/research/projects/not-a-uuid"),
+        ("GET", "/api/research/projects/00000000-0000-0000-0000-000000000000/reasoning-ledgers"),
     ]
     bodies = set()
     for method, url in urls:
