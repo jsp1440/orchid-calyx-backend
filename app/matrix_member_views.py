@@ -134,12 +134,16 @@ _COORDINATE_SHAPES = re.compile(
     r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'\s{0,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:\"|'')"
     # 12d34m / 12d 34m 56s
     r"|\b\d{1,3}\s?d\s?\d{1,2}(?:[.,]\d{1,4})?\s?m(?![a-z])"
-    # full Open Location Code (8 significant or zero-padded characters before '+')
-    rf"|\b[2-9C][2-9CFGHJMPQRV][{_OLC}0]{{6}}\+",
+    # Paired hemisphere coordinates are unambiguous even in lower case.
+    r"|\b\d{1,3}(?:[.,]\d{2,6})?\s?[NS][\s,;/]{1,3}\d{1,3}(?:[.,]\d{2,6})?\s?[EW]\b"
+    r"|\b[NS]\s?\d{1,3}(?:[.,]\d{2,6})?[\s,;/]{1,3}[EW]\s?\d{1,3}(?:[.,]\d{2,6})?\b"
+    # Open Location Codes are case-insensitive, including shortened codes.
+    rf"|\b[2-9C][2-9CFGHJMPQRV][{_OLC}0]{{6}}\+"
+    rf"|\b[{_OLC}]{{4,6}}\+[{_OLC}]{{2,3}}\b",
     re.IGNORECASE,
 )
-# Case-sensitive shapes: hemisphere letters, UTM/MGRS grid references and short plus
-# codes are upper case; matching them case-insensitively would catch "2n", "5 s", etc.
+# Case-sensitive shapes: single hemisphere letters and UTM/MGRS grid references
+# are upper case; matching them case-insensitively would catch "2n", "5 s", etc.
 _COORDINATE_CASED = re.compile(
     # 12.34S / 12,345 N / 18 55 S / 18:55:30 S
     r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,2}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s?[NSEW]\b"
@@ -153,8 +157,6 @@ _COORDINATE_CASED = re.compile(
     r"|\b\d{6}(?:\.\d{1,3})?\s?(?:mE)?[\s,;]{1,3}\d{7}(?:\.\d{1,3})?\s?(?:mN\b)?(?!\d)"
     # MGRS: 33TWN1234567890 / 33T WN 12345 67890
     r"|\b\d{1,2}[C-HJ-NP-X]\s?[A-HJ-NP-Z][A-HJ-NP-V]\s?\d{2,5}\s?\d{2,5}\b"
-    # short Open Location Code: 9G8F+6X
-    rf"|\b[{_OLC}]{{4,6}}\+[{_OLC}]{{2,3}}\b"
 )
 _IDENTIFIER = re.compile(r"[\w.:/+()'&× -]{1,200}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
