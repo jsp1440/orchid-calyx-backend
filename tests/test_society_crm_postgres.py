@@ -617,3 +617,27 @@ def test_crm_audit_events_are_immutable(crm: SocietyCRMService, dsn: str) -> Non
         conn.rollback()
 
     assert crm.get_member(admin, org, member["membership_id"]) is not None
+
+
+def test_nested_blocks_cannot_switch_tenant_or_drop_to_platform_scope(crm: SocietyCRMService, dsn: str) -> None:
+    """Checker finding: SET LOCAL survives savepoint release, so nesting must not switch tenant."""
+    org_a, _ = _society(crm)
+    org_b, _ = _society(crm)
+    conn = psycopg.connect(dsn, row_factory=dict_row)
+    try:
+        def unused() -> psycopg.Connection:
+            raise AssertionError("must reuse the connection")
+
+        with conn.transaction():
+            with tenant_transaction(org_a, connect=unused, connection=conn):
+                pass
+            with tenant_transaction(org_a, connect=unused, connection=conn):  # same tenant is fine
+                pass
+            with pytest.raises(RuntimeError, match="CRM_NESTED_TENANT_MISMATCH"):
+                with tenant_transaction(org_b, connect=unused, connection=conn):
+                    pass
+            with pytest.raises(RuntimeError, match="CRM_PLATFORM_INSIDE_TENANT_TRANSACTION"):
+                with platform_transaction(connect=unused, connection=conn):
+                    pass
+    finally:
+        conn.close()

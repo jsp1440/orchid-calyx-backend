@@ -23,7 +23,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from .authorization import SocietyCapability
+from .authorization import SocietyAccessDenied, SocietyCapability
 from .postgres_repository import PostgresSocietyCRMRepository
 from .society_service import CRMPrincipal, NotFound, SocietyCRMService
 
@@ -64,7 +64,9 @@ class MemberPortalService:
         staff = [row for row in self._repo.list_staff(organization_id=organization_id)
                  if row["constituent_id"] == constituent_id and row["status"] == "active"]
         required = SocietyCapability.ROLE_ADMIN if staff else SocietyCapability.MEMBER_WRITE
-        self._crm._require(organization_id, principal, required)
+        caps = self._crm.capabilities(organization_id, principal)
+        if required not in caps:
+            raise SocietyAccessDenied(required)
         if not 1 <= ttl_days <= 90:
             raise ValueError("INVALID_INVITE_TTL")
         code = secrets.token_urlsafe(24)
@@ -72,6 +74,7 @@ class MemberPortalService:
         invite = self._repo.create_portal_invite(
             organization_id=organization_id, constituent_id=constituent_id, code_sha256=_code_hash(code),
             expires_at=now + timedelta(days=ttl_days), actor_subject=principal.subject,
+            issued_with_role_admin=SocietyCapability.ROLE_ADMIN in caps,
         )
         return {"code": code, "expires_at": invite["expires_at"], "membership_id": membership_id}
 

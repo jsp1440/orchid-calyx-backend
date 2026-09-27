@@ -203,3 +203,29 @@ def test_lifecycle_job_is_idempotent_and_recorded(crm: SocietyCRMService, repo: 
     assert runs[0]["status"] == "succeeded" and runs[0]["summary"]["societies"] >= 1
     checks = {c["check"]: c for c in organization_diagnostics(crm, admin, org, as_of=later)}
     assert checks["lifecycle_job"]["status"] == "ok"
+
+
+def test_invite_issued_before_a_staff_grant_cannot_confer_that_role(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, portal: MemberPortalService
+) -> None:
+    """Checker finding: editor-issued code + later role grant must not hand the role to the code holder."""
+    org, admin = _society(crm)
+    editor_person = repo.create_person(organization_id=org, display_name="Eddie Editor", actor_subject=admin.subject)
+    editor_subject = f"supabase:{uuid.uuid4()}"
+    crm.bind_identity(admin, org, constituent_id=editor_person["id"], auth_subject=editor_subject)
+    crm.grant_role(admin, org, constituent_id=editor_person["id"], role=SocietyRole.MEMBERSHIP_EDITOR)
+    editor = CRMPrincipal(editor_subject)
+
+    target = _member(crm, org, admin, "Future Treasurer", "future@example.org")
+    code = portal.issue_invite(editor, org, target["membership_id"])["code"]
+    crm.grant_role(admin, org, constituent_id=target["constituent_id"], role=SocietyRole.TREASURER)
+
+    alt_login = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    with pytest.raises(ValueError, match="INVITE_INVALID_OR_EXPIRED"):
+        portal.redeem_invite(alt_login, org, code)
+    assert crm.roles(org, alt_login) == frozenset()
+
+    # Even an unrevoked editor-issued code is refused once the person is staff.
+    repo_code = portal.issue_invite(admin, org, target["membership_id"])["code"]
+    assert portal.redeem_invite(CRMPrincipal(f"supabase:{uuid.uuid4()}"), org, repo_code)["membership_id"] == \
+        target["membership_id"]

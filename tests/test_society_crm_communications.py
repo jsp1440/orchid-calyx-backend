@@ -287,3 +287,32 @@ def test_member_manages_own_preferences_through_the_portal(
     assert comms.freeze_audience(manager, org, intent["id"])["allowed"] == 0
     history = [e for e in crm.audit_events(admin, org) if e["action"] == "preference.changed"]
     assert len(history) == 2 and {e["actor_subject"] for e in history} == {me.subject}
+
+
+def test_opt_out_after_freeze_or_before_retry_is_honoured_at_send_time(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, comms: SocietyCommunicationsService
+) -> None:
+    """Checker finding: an unsubscribe recorded after approval must still stop the send."""
+    org, admin, manager = _society(crm, repo)
+    portal_member = _member(crm, org, admin, f"portal-{uuid.uuid4().hex[:6]}@example.org")
+    list_member = _member(crm, org, admin, f"list-{uuid.uuid4().hex[:6]}@example.org")
+    keeper = _member(crm, org, admin, f"keep-{uuid.uuid4().hex[:6]}@example.org")
+    for member in (portal_member, list_member, keeper):
+        comms.set_preference(manager, org, constituent_id=member["constituent_id"], purpose=MessagePurpose.COMMUNITY,
+                             state=PreferenceState.SUBSCRIBED, source_kind="paper_form")
+    intent = comms.create_intent(manager, org, purpose=MessagePurpose.COMMUNITY, subject="Auction")
+    frozen = comms.freeze_audience(manager, org, intent["id"])
+    assert frozen["allowed"] == 3
+    comms.approve(admin, org, intent["id"], audience_sha256=frozen["audience_sha256"])
+
+    portal = MemberPortalService(repo, crm)
+    me = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    portal.redeem_invite(me, org, portal.issue_invite(admin, org, portal_member["membership_id"])["code"])
+    comms.set_my_preference(me, org, purpose=MessagePurpose.COMMUNITY, subscribed=False)
+    comms.record_delivery_event(org, provider="recording", provider_event_id=f"ev-{uuid.uuid4()}",
+                                event_type="unsubscribe", email=list_member["primary_email"])
+
+    provider = RecordingProvider()
+    result = comms.dispatch(admin, org, intent["id"], provider)
+    assert [m.to_email for m in provider.sent] == [keeper["primary_email"]]
+    assert result["status_counts"] == {"sent": 1, "suppressed": 2}

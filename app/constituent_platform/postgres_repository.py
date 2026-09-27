@@ -327,6 +327,17 @@ class PostgresSocietyCRMRepository:
                 (organization_id, constituent_id, role.value, actor),
             )
             role_row = dict(cur.fetchone())
+            if cur.execute(
+                "SELECT to_regclass('oc_constituent.member_portal_invites') IS NOT NULL AS present"
+            ).fetchone()["present"]:
+                cur.execute(
+                    """
+                    UPDATE oc_constituent.member_portal_invites SET revoked_at = NOW()
+                    WHERE organization_id = %s AND constituent_id = %s
+                      AND redeemed_at IS NULL AND revoked_at IS NULL
+                    """,
+                    (organization_id, constituent_id),
+                )
             self._audit(cur, organization_id=organization_id, actor_subject=actor,
                         action="staff_role.granted", entity_type="staff_role",
                         entity_id=str(role_row["id"]),
@@ -1373,7 +1384,7 @@ class PostgresSocietyCRMRepository:
 
     def create_portal_invite(
         self, *, organization_id: int, constituent_id: int, code_sha256: str, expires_at: datetime,
-        actor_subject: str,
+        actor_subject: str, issued_with_role_admin: bool = False,
     ) -> dict[str, Any]:
         actor = _actor(actor_subject)
         with self._tenant(organization_id) as cur:
@@ -1390,11 +1401,13 @@ class PostgresSocietyCRMRepository:
             cur.execute(
                 """
                 INSERT INTO oc_constituent.member_portal_invites
-                    (organization_id, constituent_id, code_sha256, created_by_subject, expires_at)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING id, organization_id, constituent_id, created_by_subject, created_at, expires_at
+                    (organization_id, constituent_id, code_sha256, created_by_subject, expires_at,
+                     issued_with_role_admin)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                RETURNING id, organization_id, constituent_id, created_by_subject, created_at, expires_at,
+                          issued_with_role_admin
                 """,
-                (organization_id, constituent_id, code_sha256, actor, expires_at),
+                (organization_id, constituent_id, code_sha256, actor, expires_at, issued_with_role_admin),
             )
             invite = dict(cur.fetchone())
             self._audit(cur, organization_id=organization_id, actor_subject=actor,
@@ -1424,6 +1437,16 @@ class PostgresSocietyCRMRepository:
                     or invite["expires_at"] <= now
                 ):
                     raise ValueError("INVITE_INVALID_OR_EXPIRED")
+                if not invite["issued_with_role_admin"]:
+                    # A code issued without role.admin must never link a login to someone
+                    # who has since become staff (that would hand out staff authority).
+                    cur.execute(
+                        "SELECT 1 FROM oc_constituent.organization_staff_roles "
+                        "WHERE organization_id = %s AND constituent_id = %s AND status = 'active'",
+                        (organization_id, invite["constituent_id"]),
+                    )
+                    if cur.fetchone() is not None:
+                        raise ValueError("INVITE_INVALID_OR_EXPIRED")
                 cur.execute(
                     """
                     UPDATE oc_constituent.member_portal_invites
@@ -1486,12 +1509,29 @@ class PostgresSocietyCRMRepository:
 
     # -- audit ---------------------------------------------------------------------------
 
+    FINANCE_AUDIT_ENTITY_TYPES = ("payment", "provider_webhook_event")
+    FINANCE_AUDIT_ACTIONS = ("membership.review_required", "payment.reconciliation_run")
+
     def list_audit_events(
         self, *, organization_id: int, entity_type: str | None = None, entity_id: str | None = None,
-        limit: int = 200, offset: int = 0,
+        limit: int = 200, offset: int = 0, include_payments: bool = False, include_donations: bool = False,
     ) -> list[dict[str, Any]]:
+        """Tenant audit trail. Money rows are returned only when the caller may see money.
+
+        ``include_payments`` admits payment/webhook/reconciliation/refund-review events;
+        ``include_donations`` admits donation events and donation-purpose payment events.
+        """
         clauses = ["organization_id = %s"]
         params: list[Any] = [organization_id]
+        if not include_payments:
+            clauses.append("entity_type <> ALL(%s) AND action <> ALL(%s)")
+            params.extend([list(self.FINANCE_AUDIT_ENTITY_TYPES), list(self.FINANCE_AUDIT_ACTIONS)])
+        if not include_donations:
+            clauses.append(
+                "entity_type <> 'donation' AND NOT (entity_type = 'payment' AND ("
+                "coalesce(after_state->>'purpose', '') = 'donation' OR coalesce(before_state->>'purpose', '') = 'donation'"
+                " OR coalesce(metadata->>'purpose', '') = 'donation'))"
+            )
         if entity_type:
             clauses.append("entity_type = %s")
             params.append(entity_type)

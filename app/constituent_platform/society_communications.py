@@ -383,19 +383,31 @@ class SocietyCommunicationsService:
                 (organization_id, intent_id, MAX_DELIVERY_ATTEMPTS, now),
             )
             pending = [dict(row) for row in cur.fetchall()]
-            for attempt in pending:
-                # Suppressions recorded after the freeze still win at send time.
+            # Consent can change between freeze and send (or before a retry): re-run the
+            # full decision per recipient with current preferences and suppressions.
+            purpose = MessagePurpose(intent["purpose"])
+            owners: dict[int, int] = {}
+            if pending:
                 cur.execute(
-                    """
-                    SELECT 1 FROM oc_constituent.suppressions
-                    WHERE organization_id = %s AND lifted_at IS NULL AND normalized_email = %s
-                      AND kind = ANY(%s)
-                    """,
-                    (organization_id, attempt["normalized_email"],
-                     [k.value for k in (SuppressionKind.HARD_BOUNCE, SuppressionKind.COMPLAINT,
-                                        SuppressionKind.INVALID, SuppressionKind.ADMIN_BLOCK)]),
+                    "SELECT id, constituent_id FROM oc_communications.audience_members "
+                    "WHERE organization_id = %s AND id = ANY(%s)",
+                    (organization_id, [a["audience_member_id"] for a in pending]),
                 )
-                if cur.fetchone() is not None:
+                owners = {int(r["id"]): int(r["constituent_id"]) for r in cur.fetchall()}
+            recipients = [(owners[a["audience_member_id"]], a["normalized_email"]) for a in pending]
+            current_preferences = self._latest_preferences(
+                cur, organization_id, [cid for cid, _ in recipients], purpose=purpose
+            ) if recipients else {}
+            current_suppressions = self._active_suppressions(cur, organization_id, recipients) if recipients else {}
+            for attempt in pending:
+                recipient = (owners[attempt["audience_member_id"]], attempt["normalized_email"])
+                preference_state = current_preferences.get((recipient[0], purpose.value))
+                still_allowed, _reason = recipient_delivery_decision(
+                    purpose=purpose,
+                    preference=PreferenceState(preference_state) if preference_state else None,
+                    suppressions=current_suppressions.get(recipient, frozenset()),
+                )
+                if not still_allowed:
                     self._update_attempt(cur, organization_id, attempt["id"], "suppressed", attempt["attempts"],
                                          None, "SUPPRESSED_AFTER_FREEZE", None)
                     continue

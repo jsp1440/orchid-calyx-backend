@@ -73,6 +73,22 @@ def _transaction(
             conn.close()
 
 
+def _outer_tenant(connection: psycopg.Connection | None) -> str | None:
+    """Tenant already set by an enclosing transaction on this connection, if any.
+
+    ``SET LOCAL`` inside a savepoint survives RELEASE until the outer transaction
+    ends, so a nested block must never switch tenant (or drop to platform scope)
+    on a connection whose outer transaction is bound to a tenant.
+    """
+    if connection is None or connection.info.transaction_status == psycopg.pq.TransactionStatus.IDLE:
+        return None
+    with connection.cursor() as probe:
+        probe.execute("SELECT current_setting(%s, true)", (TENANT_SETTING,))
+        row = probe.fetchone()
+    value = row[0] if not isinstance(row, dict) else next(iter(row.values()))
+    return value or None
+
+
 @contextmanager
 def tenant_transaction(
     organization_id: int,
@@ -82,6 +98,9 @@ def tenant_transaction(
 ) -> Iterator[psycopg.Cursor]:
     """One transaction bound to exactly one tenant, under the RLS runtime role."""
     tenant = _validated_tenant(organization_id)
+    outer = _outer_tenant(connection)
+    if outer is not None and outer != str(tenant):
+        raise RuntimeError("CRM_NESTED_TENANT_MISMATCH")
     with _transaction(connect, connection) as (_conn, cur):
         cur.execute(f"SET LOCAL ROLE {RUNTIME_ROLE}")
         cur.execute("SELECT set_config(%s, %s, true)", (TENANT_SETTING, str(tenant)))
@@ -95,5 +114,7 @@ def platform_transaction(
     connection: psycopg.Connection | None = None,
 ) -> Iterator[psycopg.Cursor]:
     """One transaction for platform-level (non-tenant) operations."""
+    if _outer_tenant(connection) is not None:
+        raise RuntimeError("CRM_PLATFORM_INSIDE_TENANT_TRANSACTION")
     with _transaction(connect, connection) as (_conn, cur):
         yield cur

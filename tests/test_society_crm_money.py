@@ -871,3 +871,65 @@ def test_webhook_route_status_codes(
     app2 = FastAPI()
     app2.include_router(build_payment_webhook_router(service_factory=lambda: ledger, adapter_factory=unconfigured))
     assert TestClient(app2).post(url, content=payload, headers={"Stripe-Signature": _sign(payload)}).status_code == 503
+
+
+def test_concurrent_checkout_and_payment_intent_events_converge_without_false_failure(
+    crm: SocietyCRMService, ledger: PaymentLedgerService, stripe: StripeWebhookAdapter, dsn: str
+) -> None:
+    """Checker finding: Stripe's simultaneous event pair must not leave a permanent 'failed' row."""
+    import threading
+
+    org, admin = _society(crm)
+    for _ in range(8):
+        member = _pending_member(crm, org, admin, name=f"Racer {uuid.uuid4().hex[:6]}")
+        pi = _pi()
+        meta = _meta(org, member["membership_id"])
+        payloads = [_checkout_completed(pi, 3000, meta), _pi_succeeded(pi, 3000, meta)]
+        barrier = threading.Barrier(2)
+        results: list[dict] = []
+
+        def deliver(body: bytes) -> None:
+            barrier.wait()
+            results.append(_deliver(ledger, stripe, body))
+
+        threads = [threading.Thread(target=deliver, args=(body,)) for body in payloads]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert sorted(r["status"] for r in results) == ["processed", "processed"], results
+        assert len(_owner_rows(dsn, "SELECT id FROM oc_constituent.membership_renewals WHERE organization_id = %s "
+                                    "AND membership_id = %s", (org, member["membership_id"]))) == 1
+    assert _owner_rows(dsn, "SELECT count(*) AS n FROM oc_constituent.provider_webhook_events "
+                            "WHERE organization_id = %s AND processing_status = 'failed'", (org,))[0]["n"] == 0
+
+
+def test_audit_trail_never_shows_money_to_roles_without_money_access(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, ledger: PaymentLedgerService
+) -> None:
+    """Checker finding: audit.read must not bypass payment.read / donation.read."""
+    org, admin = _society(crm)
+    member = _pending_member(crm, org, admin)
+    treasurer = _staff(crm, repo, org, admin, SocietyRole.TREASURER)
+    editor = _staff(crm, repo, org, admin, SocietyRole.MEMBERSHIP_EDITOR)
+    ledger.record_offline_payment(treasurer, org, constituent_id=member["constituent_id"],
+                                  membership_id=member["membership_id"], amount_cents=3000, currency="USD",
+                                  method="check", check_number="77", received_at=T0,
+                                  idempotency_key=f"dues-{uuid.uuid4()}")
+    ledger.record_donation(treasurer, org, constituent_id=member["constituent_id"], amount_cents=2_500_000,
+                           currency="USD", method="check", designation="building",
+                           idempotency_key=f"gift-{uuid.uuid4()}", received_at=T0,
+                           is_anonymous_to_public=True)
+
+    def finance(events: list[dict]) -> list[str]:
+        return [e["action"] for e in events
+                if e["entity_type"] in ("payment", "donation", "provider_webhook_event")
+                or "amount_cents" in (e["after_state"] or {}) or "amount_cents" in (e["before_state"] or {})]
+
+    editor_view = crm.audit_events(editor, org)
+    assert editor_view and finance(editor_view) == []
+    history = crm.member_history(editor, org, member["membership_id"])
+    assert finance(history["audit"]) == []
+    treasurer_view = finance(crm.audit_events(treasurer, org))
+    assert "payment.recorded" in treasurer_view and "donation.recorded" in treasurer_view
+    assert "donation.recorded" in finance(crm.audit_events(admin, org))

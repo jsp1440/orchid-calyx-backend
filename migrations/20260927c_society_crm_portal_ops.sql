@@ -42,11 +42,16 @@ CREATE TABLE IF NOT EXISTS oc_constituent.member_portal_invites (
     redeemed_at TIMESTAMPTZ,
     redeemed_by_subject TEXT,
     revoked_at TIMESTAMPTZ,
+    issued_with_role_admin BOOLEAN NOT NULL DEFAULT FALSE,
     CHECK ((redeemed_at IS NULL) = (redeemed_by_subject IS NULL)),
     CONSTRAINT fk_portal_invites_tenant_constituent
         FOREIGN KEY (organization_id, constituent_id)
         REFERENCES oc_constituent.constituents (owner_organization_id, id) ON DELETE RESTRICT
 );
+
+-- Databases created before this column existed.
+ALTER TABLE oc_constituent.member_portal_invites
+    ADD COLUMN IF NOT EXISTS issued_with_role_admin BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE INDEX IF NOT EXISTS ix_oc_portal_invites_open
     ON oc_constituent.member_portal_invites (organization_id, constituent_id)

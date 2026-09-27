@@ -391,26 +391,36 @@ class SocietyCRMService:
         self._require(organization_id, principal, SocietyCapability.ROSTER_READ)
         return self._repo.duplicate_candidates(organization_id=organization_id)
 
+    def _audit_scope(self, organization_id: int, principal: CRMPrincipal) -> dict[str, bool]:
+        """Audit rows about money are visible only to callers who may see that money."""
+        caps = self.capabilities(organization_id, principal)
+        if SocietyCapability.AUDIT_READ not in caps:
+            raise SocietyAccessDenied(SocietyCapability.AUDIT_READ)
+        return {
+            "include_payments": SocietyCapability.PAYMENT_READ in caps,
+            "include_donations": SocietyCapability.DONATION_READ in caps,
+        }
+
     def member_history(self, principal: CRMPrincipal, organization_id: int, membership_id: int) -> dict[str, Any]:
-        self._require(organization_id, principal, SocietyCapability.AUDIT_READ)
+        scope = self._audit_scope(organization_id, principal)
         member = self._member(organization_id, membership_id)
         return {
             "renewals": self._repo.list_renewals(organization_id=organization_id, membership_id=membership_id),
             "audit": sorted(
                 self._repo.list_audit_events(
-                    organization_id=organization_id, entity_type="membership", entity_id=str(membership_id)
+                    organization_id=organization_id, entity_type="membership", entity_id=str(membership_id), **scope
                 )
                 + self._repo.list_audit_events(
                     organization_id=organization_id, entity_type="constituent",
-                    entity_id=str(member["constituent_id"]),
+                    entity_id=str(member["constituent_id"]), **scope,
                 ),
                 key=lambda event: event["id"],
             ),
         }
 
     def audit_events(self, principal: CRMPrincipal, organization_id: int, *, limit: int = 200, offset: int = 0):
-        self._require(organization_id, principal, SocietyCapability.AUDIT_READ)
-        return self._repo.list_audit_events(organization_id=organization_id, limit=limit, offset=offset)
+        scope = self._audit_scope(organization_id, principal)
+        return self._repo.list_audit_events(organization_id=organization_id, limit=limit, offset=offset, **scope)
 
     # -- internals ------------------------------------------------------------------------
 

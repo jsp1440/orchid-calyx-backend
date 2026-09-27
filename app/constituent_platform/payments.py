@@ -1228,7 +1228,13 @@ class PaymentLedgerService:
                 idempotency_key=f"{event.provider}:{event.provider_payment_ref}",
             )
             if payment is None:
-                raise PaymentError("WEBHOOK_PAYMENT_REF_CONFLICT")
+                # A concurrent event for the same provider payment (e.g. Stripe's
+                # checkout.session.completed + payment_intent.succeeded pair) inserted it
+                # first; ON CONFLICT waited for that commit, so re-read and continue on the
+                # existing-payment path. A ref owned by another tenant stays a conflict.
+                if self._provider_payment(cur, org_id, event) is None:
+                    raise PaymentError("WEBHOOK_PAYMENT_REF_CONFLICT")
+                return self._apply_provider_event(conn, cur, org_id, event, actor, now_dt)
             self._event(cur, organization_id=org_id, payment_id=payment["id"], from_status=None, to_status=target,
                         reason=f"provider:{event.provider_event_type}"
                         + (f":{event.failure_code}" if event.failure_code else ""),
