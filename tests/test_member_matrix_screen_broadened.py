@@ -20,12 +20,17 @@ from pathlib import Path
 import pytest
 
 from app.matrix_member_views import (
+    _ALT_TOKEN,
     _COORDINATE_CASED,
     _COORDINATE_SHAPES,
+    _ELEVATION_TOKENS,
     _SENSITIVE_WORDS,
+    _TOKEN_SPLIT,
     WITHHELD,
+    _screen_form,
     member_candidate,
     member_explanation,
+    member_registry_detail,
     screened_text,
 )
 from runtime.matrix_identification import Candidate
@@ -206,6 +211,27 @@ BENIGN = [
     "Collection of reviewed characters",
     "Terrestrial or lithophytic",
     "5' tall",
+    # checker repair (#1679): authors, regions and measurements stay readable
+    "Lindl.",
+    "N.E.Br.",
+    "S.Moore",
+    "Hook.f.",
+    "Schltr.",
+    "Garay & Dunst.",
+    "Angraecum sesquipedale Thouars",
+    "Widespread in S. America",
+    "SE Asia",
+    "Leaves alt.",
+    "12.50–18.30 mm",
+    "Sepals 12,5 × 4,2 mm",
+    "Lip 2,5–3,5 cm long",
+    "col. white",
+    "Altensteinia",
+    "salt_tolerance",
+    "alternate_leaves",
+    "leaf_arrangement",
+    "flower_color",
+    "Ｌｉｐ ３-lobed",
 ]
 
 
@@ -262,6 +288,8 @@ def _registry_fixture_strings() -> dict[str, set[str]]:
 
 def test_registry_fixture_corpus_is_not_newly_withheld():
     corpus = _registry_fixture_strings()
+    for text in BENIGN:
+        corpus.setdefault(text, set()).add("BENIGN")
     # The corpus is real: the member Matrix fixtures contribute their morphology.
     for expected in (
         "Flower color",
@@ -467,4 +495,245 @@ def test_screened_text_is_linear_on_64k_hostile_input(index):
     text = HOSTILE[index]
     started = time.perf_counter()
     screened_text(text, max_len=SIZE)
+    assert time.perf_counter() - started < 1.0
+
+
+# --- checker repair for #1679 ------------------------------------------------------------
+
+REPAIR_POSITIVE = {
+    "signed_pair_comma_decimal": [
+        "-18,91; 47,52",
+        "-18,91 47,52",
+        "-18,9123 47,5234",
+    ],
+    "signed_pair_en_dash": ["–18.91 47.52", "–18.91, –47.52", "–18,91; –47,52"],
+    "signed_pair_wide_separator": ["-18.91    47.52", "-18.91" + " " * 16 + "47.52"],
+    "zero_width_and_bidi": [
+        "-18.91\u200b 47.52",
+        "-18.91\u200b47.52",
+        "12.34\u200bS",
+        "loc\u200bality",
+        "G\u200dPS",
+        "col\u00ad. J. Smith",
+        "-18.91\u202e 47.52",
+    ],
+    "full_width": [
+        "\uff11\uff12.\uff13\uff14\uff33",
+        "-\uff11\uff18\uff0e\uff19\uff11 \uff14\uff17\uff0e\uff15\uff12",
+        "\uff27\uff30\uff33",
+        "\uff4c\uff4f\uff43\uff41\uff4c\uff49\uff54\uff59",
+    ],
+    "elevation_ids": [
+        "elev_m",
+        "alt_m",
+        "elev",
+        "Elev",
+        "min_elev",
+        "hab_alt",
+        "height_asl",
+        "m_asl",
+        "asl_m",
+        "masl_max",
+        "elev-range",
+        "elev.m",
+        "minElev",
+        "habAlt",
+        "elevM",
+        "elev2",
+        "alt",
+        "range_msnm",
+    ],
+    "elevation_labels": ["Elev (m)", "1500 m elev", "Elevs 1200", "Alt (m)"],
+    "collector_abbreviations": [
+        "col. J. Smith 1234",
+        "Col. Smith",
+        "col. 1234",
+        "recolectado por J. Pérez",
+        "Recolectado",
+    ],
+}
+REPAIR_CASES = [
+    (group, text) for group, items in REPAIR_POSITIVE.items() for text in items
+]
+
+
+@pytest.mark.parametrize(("group", "text"), REPAIR_CASES)
+def test_screen_withholds_checker_repair_cases(group, text):
+    assert screened_text(text) == WITHHELD, group
+
+
+def test_screen_form_is_used_for_screening_only():
+    text = "Ｌｉｐ ３-lobed"
+    assert _screen_form(text) == "Lip 3-lobed"
+    assert _screen_form("a\u200bb\u202ec\u00add") == "abcd"
+    # The returned text is the caller's text, not the normalised screen form.
+    assert screened_text(text) == text
+    # NFKC rewrites the ordinal mark to "o"; it is still seen in the raw text.
+    assert _screen_form("18º55 S") != "18º55 S"
+    assert screened_text("18º55") == WITHHELD
+
+
+def test_alt_token_is_withheld_only_in_identifier_like_strings():
+    # Documented choice: "alt" is withheld as an id token, readable in prose.
+    assert screened_text("hab_alt") == WITHHELD
+    assert screened_text("alt") == WITHHELD
+    assert screened_text("Leaves alt.") == "Leaves alt."
+    assert screened_text("leaves alt., distichous") == "leaves alt., distichous"
+    assert screened_text("alt. 1500 m") == WITHHELD
+
+
+NEW_ELEVATION_IDS = ("elev_m", "alt_m", "min_elev", "hab_alt", "height_asl", "elevM")
+
+
+@pytest.mark.parametrize("character", NEW_ELEVATION_IDS)
+def test_explanation_withholds_state_for_elevation_ids(character):
+    row = member_explanation(
+        {"character": character, "candidate_state": {"min": 1520, "max": 1530}}
+    )
+    assert row == {"character": WITHHELD, "candidate_state": WITHHELD}
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        {"candidate_state": {"min": 1520, "max": 1530}, "status": "matched"},
+        {"character": None, "candidate_state": {"min": 1520, "max": 1530}},
+    ],
+)
+def test_explanation_without_character_fails_closed(row):
+    shaped = member_explanation(row)
+    assert shaped["candidate_state"] == WITHHELD
+
+
+def test_registry_detail_withholds_elevation_ids_and_never_returns_states():
+    record = {
+        "registry_id": "r",
+        "version": "1",
+        "characters": [
+            {"character": character, "label": "x", "value_type": "numeric_range"}
+            for character in NEW_ELEVATION_IDS
+        ]
+        + [{"character": "spur_length_mm", "label": "Spur length"}],
+        "candidates": [
+            {"taxon_id": "t:a", "states": {"elev_m": {"min": 1520, "max": 1530}}}
+        ],
+    }
+    detail = member_registry_detail(record)
+    assert [c["character"] for c in detail["characters"]] == [WITHHELD] * len(
+        NEW_ELEVATION_IDS
+    ) + ["spur_length_mm"]
+    assert "candidates" not in detail
+    assert "1520" not in repr(detail)
+
+
+def test_member_evaluation_withholds_abbreviated_elevation_ids(client, supabase):
+    states = {character: {"min": 1520, "max": 1530} for character in NEW_ELEVATION_IDS}
+    create_registry_version(
+        registry_id="elevation-abbrev",
+        version="1",
+        title="Abbreviated elevation character fixture",
+        scope={"genus": "Angraecum"},
+        characters=[
+            RegistryCharacter(
+                "spur_length_mm", "Spur length", value_type="numeric_range"
+            )
+        ]
+        + [
+            RegistryCharacter(character, "Range (m)", value_type="numeric_range")
+            for character in NEW_ELEVATION_IDS
+        ],
+        candidates=[
+            Candidate(
+                "t:a",
+                "Angraecum alpha",
+                {"spur_length_mm": {"min": 20, "max": 30}, **states},
+            )
+        ],
+        provenance={"source": "synthetic elevation fixture"},
+        actor="registry-author@owner.example",
+    )
+    member = _member()
+    detail = client.get(f"{PREFIX}/registry/elevation-abbrev/1", headers=member)
+    assert [c["character"] for c in detail.json()["characters"]] == [
+        "spur_length_mm"
+    ] + [WITHHELD] * len(NEW_ELEVATION_IDS)
+    sid = client.post(
+        f"{PREFIX}/sessions",
+        headers=member,
+        json={"registry_id": "elevation-abbrev", "version": "1"},
+    ).json()["session_id"]
+    for character, value in (
+        ("spur_length_mm", 25),
+        ("elev_m", 1525),
+        ("hab_alt", 1525),
+    ):
+        response = client.post(
+            f"{PREFIX}/sessions/{sid}/observations",
+            headers=member,
+            json={
+                "character": character,
+                "value": value,
+                "source": {"interface": "guided"},
+            },
+        )
+        assert response.status_code == 200, response.text
+    evaluated = client.post(
+        f"{PREFIX}/sessions/{sid}/evaluate", headers=member, json={}
+    )
+    assert evaluated.status_code == 200, evaluated.text
+    assert "1520" not in evaluated.text and "1530" not in evaluated.text
+    for character in NEW_ELEVATION_IDS:
+        assert character not in evaluated.text
+    [candidate] = evaluated.json()["report"]["candidates"]
+    rows = [(e["character"], e["candidate_state"]) for e in candidate["explanations"]]
+    assert ("spur_length_mm", {"min": 20, "max": 30}) in rows
+    assert all(state == WITHHELD for character, state in rows if character == WITHHELD)
+
+
+REPAIR_HOSTILE = [
+    _fill("-1,11 "),
+    _fill("-1.11" + " " * 15),
+    _fill("–1.11 "),
+    _fill("-1,1"),
+    _fill("a_"),
+    _fill("aA"),
+    _fill("a1"),
+    _fill("_"),
+    _fill("elevx_"),
+    _fill("altx"),
+    _fill("col. "),
+    _fill("col. J"),
+    _fill("Col."),
+    _fill("recolec"),
+    _fill("\u200b"),
+    _fill("1\u200b"),
+    _fill("\uff11"),
+    _fill("\uff11 \uff2e"),
+    _fill("º"),
+    _fill("Alt ("),
+]
+REPAIR_PATTERNS = {
+    **PATTERNS,
+    "token_split": _TOKEN_SPLIT,
+    "elevation_tokens": _ELEVATION_TOKENS,
+    "alt_token": _ALT_TOKEN,
+}
+
+
+@pytest.mark.parametrize("name", sorted(REPAIR_PATTERNS))
+@pytest.mark.parametrize("index", range(len(REPAIR_HOSTILE)))
+def test_each_repaired_pattern_is_linear_on_64k_hostile_input(name, index):
+    text = REPAIR_HOSTILE[index]
+    assert len(text) == SIZE
+    started = time.perf_counter()
+    REPAIR_PATTERNS[name].search(text)
+    assert time.perf_counter() - started < 1.0
+
+
+@pytest.mark.parametrize("index", range(len(REPAIR_HOSTILE)))
+def test_repaired_screen_is_linear_on_64k_hostile_input(index):
+    text = REPAIR_HOSTILE[index]
+    started = time.perf_counter()
+    screened_text(text, max_len=SIZE)
+    _TOKEN_SPLIT.sub(" ", text)
     assert time.perf_counter() - started < 1.0

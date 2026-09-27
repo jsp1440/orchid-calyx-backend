@@ -36,6 +36,7 @@ from __future__ import annotations
 
 import math
 import re
+import unicodedata
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -104,7 +105,8 @@ _SENSITIVE_WORDS = re.compile(
     r"|\bwgs|\bdatum\b|\bnad\s?-?(?:27|83)\b|\bsirgas|\butm\b|\bmgrs\b|geohash"
     r"|plus\s?codes?\b|open\s{1,3}location\s{1,3}code|grid\s{0,2}ref"
     # elevation / altitude, including abbreviations and "metres above sea level"
-    r"|elevation|elevaci|elevaç|elevacao|altitud|\belev\."
+    r"|elevation|elevaci|elevaç|elevacao|altitud|\belev\.|\belevs?\b"
+    r"|\balt\.?\s{0,2}\(\s{0,2}(?:m|ft|metres?|meters?)\s{0,2}\)"
     r"|\balt\.?\s{0,2}[:=]?\s{0,2}(?:ca?\.\s{0,2})?\d"
     r"|\bm\.?\s?s\.?\s?n\.?\s?m\b|\bs\.\s?n\.\s?m\b"
     r"|\bm\.?\s?a\.?\s?s\.?\s?l\b|\ba\.\s?s\.\s?l\b|\basl\b"
@@ -112,7 +114,7 @@ _SENSITIVE_WORDS = re.compile(
     # specimen / collector / collecting-event vocabulary
     r"|specimen|voucher|collector|herbari|\bleg\.|\bcoll\.|\bcollected\b"
     r"|\bcollecting\b|\bcollection\s{1,3}(?:site|number|no\.|data|place|point)"
-    r"|\bcolect|\bcoletad|\bcoletor"
+    r"|colect|coletad|coletor|recolet"
     # site / station only in labelled or collecting-event shapes
     r"|\b(?:collection|collecting|type|study|sampling|field|survey|plot)\s{1,3}site\b"
     r"|\bsite\s{0,2}(?:[:=#]|no\.|number\b|\d)"
@@ -125,7 +127,8 @@ _OLC = "23456789CFGHJMPQRVWX"  # Open Location Code alphabet
 _COORDINATE_SHAPES = re.compile(
     r"\d\.\d{3,}"  # coordinate-precision decimals
     r"|-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+"  # decimal pairs
-    r"|(?<![\d.])[-−]\d{1,3}\.\d{2,6}[\s,;/]{1,3}[-−]?\d{1,3}\.\d{2,6}"  # signed pairs
+    # signed pairs: -18.91 47.52 / -18,91; 47,52 / –18.91, –47.52 (en dash, minus)
+    r"|(?<![\d.,])[-−–]\d{1,3}[.,]\d{2,6}[\s,;/]{1,16}[-−–]?\d{1,3}[.,]\d{2,6}"
     r"|[°º˚′″]"  # degree / minute / second marks
     r"|\b\d{1,3}\s*deg(?:rees?)?\b"
     # degrees-minutes with an ASCII minute mark: 12 34' / 12 34.5'
@@ -157,7 +160,20 @@ _COORDINATE_CASED = re.compile(
     r"|\b\d{6}(?:\.\d{1,3})?\s?(?:mE)?[\s,;]{1,3}\d{7}(?:\.\d{1,3})?\s?(?:mN\b)?(?!\d)"
     # MGRS: 33TWN1234567890 / 33T WN 12345 67890
     r"|\b\d{1,2}[C-HJ-NP-X]\s?[A-HJ-NP-Z][A-HJ-NP-V]\s?\d{2,5}\s?\d{2,5}\b"
+    # collector abbreviation "col." followed by an initial, a name or a number
+    r"|\b[Cc]ol\.\s{0,2}(?:[A-Z]\.|[A-Z][a-z]{1,30}\b|\d)"
 )
+# Identifier-like strings (character ids such as ``min_elev``, ``hab_alt``, ``elevM``):
+# ``\b`` does not split at ``_``, so text is re-tokenised at ``_``, ``-``, ``.``, ``/``,
+# ``:``, camelCase and letter/digit boundaries before elevation tokens are looked up.
+# The token ``alt`` counts only in a string with no whitespace (an id): in prose it is
+# the botanical abbreviation for "alternate" ("leaves alt."), which stays readable.
+_TOKEN_SPLIT = re.compile(
+    r"[_\-./:]|(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])"
+)
+_ELEVATION_TOKENS = re.compile(r"\b(?:elevs?|m?asl|msnm|snm)\b", re.IGNORECASE)
+_ALT_TOKEN = re.compile(r"\balts?\b", re.IGNORECASE)
+_WHITESPACE = re.compile(r"\s")
 _IDENTIFIER = re.compile(r"[\w.:/+()'&× -]{1,200}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _TIMESTAMP = re.compile(
@@ -166,18 +182,40 @@ _TIMESTAMP = re.compile(
 _DOI = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]{1,200}")
 
 
+def _screen_form(value: str) -> str:
+    """NFKC with Unicode format (Cf) characters removed: zero-width, bidi, soft hyphen.
+
+    Used for screening only; the returned text is never altered. Full-width digits
+    and letters fold to ASCII and a zero-width space can no longer split a pattern.
+    """
+    folded = unicodedata.normalize("NFKC", value)
+    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+
+
+def _screen_hit(text: str) -> bool:
+    if (
+        _SENSITIVE_WORDS.search(text)
+        or _COORDINATE_SHAPES.search(text)
+        or _COORDINATE_CASED.search(text)
+    ):
+        return True
+    tokens = _TOKEN_SPLIT.sub(" ", text)
+    if _ELEVATION_TOKENS.search(tokens):
+        return True
+    return _WHITESPACE.search(text) is None and _ALT_TOKEN.search(tokens) is not None
+
+
 def screened_text(value: Any, max_len: int = MAX_LABEL) -> str | None:
-    """A bounded string with no locality/specimen/submitter material, else WITHHELD."""
+    """A bounded string with no locality/specimen/submitter material, else WITHHELD.
+
+    Both the text as given and its normalised screen form are screened, so NFKC can
+    only add hits: a mark NFKC rewrites (``º`` becomes ``o``) is still seen raw.
+    """
     if value is None:
         return None
     if not isinstance(value, str):
         return WITHHELD
-    if (
-        len(value) > max_len
-        or _SENSITIVE_WORDS.search(value)
-        or _COORDINATE_SHAPES.search(value)
-        or _COORDINATE_CASED.search(value)
-    ):
+    if len(value) > max_len or _screen_hit(value) or _screen_hit(_screen_form(value)):
         return WITHHELD
     return value
 
@@ -447,12 +485,13 @@ _CANDIDATE: dict[str, Callable[[Any], Any]] = {
 def member_explanation(explanation: dict[str, Any]) -> dict[str, Any]:
     """One per-character explanation row.
 
-    A character whose id is withheld (for example ``elevation_m``) also has its
+    A character whose id is withheld or absent (for example ``elevation_m``) has its
     registry-authored ``candidate_state`` withheld: a numeric range such as
     ``{"min": 1520, "max": 1530}`` is not safe merely because its label is hidden.
     """
     shaped = _shape(explanation, _EXPLANATION)
-    if shaped.get("character") == WITHHELD and "candidate_state" in shaped:
+    # Fail closed: a row with no character (missing key, None) is treated as withheld.
+    if shaped.get("character") in (None, WITHHELD) and "candidate_state" in shaped:
         shaped["candidate_state"] = WITHHELD
     return shaped
 
