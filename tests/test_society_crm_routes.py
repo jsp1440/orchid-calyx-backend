@@ -24,6 +24,7 @@ MIGRATIONS = (
     "migrations/20260823_oc_constituent_communications_foundation.sql",
     "migrations/20260926_society_crm_p0_core.sql",
     "migrations/20260927_society_crm_p1_tenant_isolation.sql",
+    "migrations/20260927c_society_crm_portal_ops.sql",
 )
 
 
@@ -189,3 +190,32 @@ def test_database_unavailable_is_explained_without_secrets(app: FastAPI, people,
     assert response.status_code == 503
     assert response.json()["detail"]["code"] == "CRM_DATABASE_UNAVAILABLE"
     assert "s3cret" not in response.text
+
+
+def test_member_portal_over_http(operator: TestClient, people) -> None:
+    slug, admin, _ = _new_society(operator, people)
+    base = f"/api/society/{slug}"
+    mid = admin.post(f"{base}/members", json={
+        "display_name": "Portal Person", "email": "portal@example.org", "level_code": "individual"}).json()[
+        "membership_id"]
+    admin.post(f"{base}/members/{mid}/renewals", json={"renewal_key": "portal-join"})
+    code = admin.post(f"{base}/members/{mid}/portal-invite", json={}).json()["code"]
+
+    member = people(f"supabase:{uuid.uuid4()}")
+    not_linked = member.get(f"{base}/portal/me")
+    assert not_linked.status_code == 404 and not_linked.json()["detail"]["code"] == "PORTAL_NOT_LINKED"
+    linked = member.post(f"{base}/portal/link", json={"code": code})
+    assert linked.status_code == 200 and linked.json()["membership_id"] == mid
+    reused = people(f"supabase:{uuid.uuid4()}").post(f"{base}/portal/link", json={"code": code})
+    assert reused.status_code == 422 and reused.json()["detail"]["code"] == "INVITE_INVALID_OR_EXPIRED"
+    assert member.put(f"{base}/portal/me/phone", json={"phone": "+1 805 555 0111"}).json()[
+        "primary_phone"] == "+18055550111"
+    assert member.patch(f"{base}/portal/me/profile", json={"display_name": "P. Person"}).status_code == 200
+    assert member.get(f"{base}/members").status_code == 403  # portal access is not roster access
+    assert operator.post(f"{base}/portal/link", json={"code": "whatever-code"}).status_code == 422
+
+    diagnostics = admin.get(f"{base}/diagnostics")
+    assert diagnostics.status_code == 200 and diagnostics.json()["checks"]
+    assert member.get(f"{base}/diagnostics").status_code == 403
+    assert operator.get("/api/society-platform/diagnostics").status_code == 200
+    assert admin.get("/api/society-platform/diagnostics").status_code == 403

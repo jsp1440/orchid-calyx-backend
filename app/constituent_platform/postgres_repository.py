@@ -53,7 +53,7 @@ __all__ = ["PostgresSocietyCRMRepository", "database_url"]
 _LEVEL_CODE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 _ORG_SLUG = re.compile(r"^[a-z0-9][a-z0-9-]{1,62}$")
 _RENEWAL_SOURCES = frozenset({"admin", "offline_payment", "online_payment", "import"})
-_IDENTITY_METHODS = frozenset({"platform_operator", "admin_attested", "verified_email_match"})
+_IDENTITY_METHODS = frozenset({"platform_operator", "admin_attested", "verified_email_match", "member_invite"})
 _LEVEL_MUTABLE = frozenset(
     {"display_name", "description", "dues_amount_cents", "currency", "term_months", "grace_days",
      "household_max_members", "benefits", "is_active"}
@@ -1367,6 +1367,121 @@ class PostgresSocietyCRMRepository:
             ):
                 raise ValueError("EXTERNAL_LINK_CONFLICT")
             return existing
+
+    # -- member portal invites -----------------------------------------------------------
+
+    def create_portal_invite(
+        self, *, organization_id: int, constituent_id: int, code_sha256: str, expires_at: datetime,
+        actor_subject: str,
+    ) -> dict[str, Any]:
+        actor = _actor(actor_subject)
+        with self._tenant(organization_id) as cur:
+            self._require_constituent(cur, organization_id, constituent_id)
+            # One open invite per person: issuing a new one revokes the previous code.
+            cur.execute(
+                """
+                UPDATE oc_constituent.member_portal_invites SET revoked_at = NOW()
+                WHERE organization_id = %s AND constituent_id = %s
+                  AND redeemed_at IS NULL AND revoked_at IS NULL
+                """,
+                (organization_id, constituent_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO oc_constituent.member_portal_invites
+                    (organization_id, constituent_id, code_sha256, created_by_subject, expires_at)
+                VALUES (%s, %s, %s, %s, %s)
+                RETURNING id, organization_id, constituent_id, created_by_subject, created_at, expires_at
+                """,
+                (organization_id, constituent_id, code_sha256, actor, expires_at),
+            )
+            invite = dict(cur.fetchone())
+            self._audit(cur, organization_id=organization_id, actor_subject=actor,
+                        action="portal_invite.created", entity_type="constituent",
+                        entity_id=str(constituent_id), before_state=None, after_state=invite)
+            return invite
+
+    def redeem_portal_invite(
+        self, *, organization_id: int, code_sha256: str, auth_subject: str, as_of: datetime | None = None
+    ) -> dict[str, Any]:
+        """Single-use redemption; any failure is the same INVITE_INVALID_OR_EXPIRED."""
+        subject = normalize_auth_subject(auth_subject)
+        now = as_of or _now()
+        with self.atomic(organization_id):
+            with self._tenant(organization_id) as cur:
+                cur.execute(
+                    """
+                    SELECT * FROM oc_constituent.member_portal_invites
+                    WHERE organization_id = %s AND code_sha256 = %s
+                    FOR UPDATE
+                    """,
+                    (organization_id, code_sha256),
+                )
+                invite = cur.fetchone()
+                if (
+                    invite is None or invite["redeemed_at"] is not None or invite["revoked_at"] is not None
+                    or invite["expires_at"] <= now
+                ):
+                    raise ValueError("INVITE_INVALID_OR_EXPIRED")
+                cur.execute(
+                    """
+                    UPDATE oc_constituent.member_portal_invites
+                    SET redeemed_at = %s, redeemed_by_subject = %s
+                    WHERE organization_id = %s AND id = %s
+                    """,
+                    (now, subject, organization_id, invite["id"]),
+                )
+            binding = self.bind_identity(
+                organization_id=organization_id, constituent_id=int(invite["constituent_id"]),
+                auth_subject=subject, verification_method="member_invite", actor_subject=subject,
+            )
+            return binding
+
+    # -- job runs (platform-level) -------------------------------------------------------
+
+    def start_job_run(self, *, job_name: str, organization_id: int | None = None) -> int:
+        with self._platform() as cur:
+            cur.execute(
+                """
+                INSERT INTO oc_constituent.crm_job_runs (job_name, organization_id, status)
+                VALUES (%s, %s, 'running') RETURNING id
+                """,
+                (job_name, organization_id),
+            )
+            return int(cur.fetchone()["id"])
+
+    def finish_job_run(
+        self, run_id: int, *, succeeded: bool, summary: dict[str, Any] | None = None, error_code: str | None = None
+    ) -> None:
+        with self._platform() as cur:
+            cur.execute(
+                """
+                UPDATE oc_constituent.crm_job_runs
+                SET status = %s, finished_at = NOW(), summary = %s, error_code = %s
+                WHERE id = %s
+                """,
+                ("succeeded" if succeeded else "failed", Jsonb(_jsonable(summary or {})), error_code, run_id),
+            )
+
+    def latest_job_runs(self, *, job_name: str, organization_id: int | None = None, limit: int = 5):
+        with self._platform() as cur:
+            cur.execute(
+                """
+                SELECT id, job_name, organization_id, status, started_at, finished_at, summary, error_code
+                FROM oc_constituent.crm_job_runs
+                WHERE job_name = %s AND (%s::bigint IS NULL OR organization_id = %s OR organization_id IS NULL)
+                ORDER BY started_at DESC, id DESC LIMIT %s
+                """,
+                (job_name, organization_id, organization_id, limit),
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+    def list_organizations(self) -> list[dict[str, Any]]:
+        with self._platform() as cur:
+            cur.execute(
+                "SELECT id, slug, display_name, kind, status FROM oc_constituent.organizations ORDER BY id"
+            )
+            return [dict(row) for row in cur.fetchall()]
 
     # -- audit ---------------------------------------------------------------------------
 

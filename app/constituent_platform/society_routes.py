@@ -30,7 +30,9 @@ from app.security import OWNER_SESSION_COOKIE, api_key_header, verify_owner_or_a
 
 from .authorization import SocietyAccessDenied, SocietyRole
 from .domain import MembershipStatus
+from .crm_diagnostics import organization_diagnostics, platform_diagnostics
 from .errors import CONFLICT_CODES, error_body
+from .member_portal import MemberPortalService
 from .postgres_repository import PostgresSocietyCRMRepository
 from .society_service import CRMPrincipal, NotFound, PlatformOperatorRequired, SocietyCRMService
 
@@ -85,6 +87,8 @@ def _call(fn, *args: Any, **kwargs: Any) -> Any:
         return fn(*args, **kwargs)
     except (SocietyAccessDenied, PlatformOperatorRequired) as exc:
         raise HTTPException(status_code=403, detail=error_body(exc.code)) from None
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=error_body(str(exc))) from None
     except NotFound as exc:
         raise HTTPException(status_code=404, detail=error_body(str(exc))) from None
     except LookupError as exc:
@@ -399,6 +403,65 @@ def bind_identity(payload: IdentityIn, org: OrgId, service: Service, principal: 
 @router.post("/identities/revoke")
 def revoke_identity(payload: IdentityRevokeIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
     return _call(service.revoke_identity, principal, org, auth_subject=payload.auth_subject)
+
+
+class InviteRedeemIn(_Strict):
+    code: str = Field(..., min_length=8, max_length=200)
+
+
+class InviteIssueIn(_Strict):
+    ttl_days: int = Field(30, ge=1, le=90)
+
+
+def _portal(service: SocietyCRMService) -> MemberPortalService:
+    return MemberPortalService(service._repo, service)
+
+
+@router.post("/members/{membership_id}/portal-invite", status_code=201)
+def issue_portal_invite(membership_id: int, payload: InviteIssueIn, org: OrgId, service: Service,
+                        principal: Principal) -> dict[str, Any]:
+    """One-time code for the member to link their login. Shown once; only its hash is stored."""
+    return _call(_portal(service).issue_invite, principal, org, membership_id, ttl_days=payload.ttl_days)
+
+
+@router.get("/diagnostics")
+def society_diagnostics(org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return {"checks": _call(organization_diagnostics, service, principal, org)}
+
+
+@platform_router.get("/diagnostics")
+def platform_status(service: Service, principal: Principal) -> dict[str, Any]:
+    return {"checks": _call(platform_diagnostics, service._repo, principal)}
+
+
+# ---------------------------------------------------------------------------
+# Member portal (the signed-in member's own record only)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/portal/link")
+def portal_link(payload: InviteRedeemIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_portal(service).redeem_invite, principal, org, payload.code)
+
+
+@router.get("/portal/me")
+def portal_me(org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_portal(service).my_membership, principal, org)
+
+
+@router.patch("/portal/me/profile")
+def portal_profile(payload: ProfilePatch, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_portal(service).update_my_profile, principal, org, payload.model_dump(exclude_none=True))
+
+
+@router.put("/portal/me/phone")
+def portal_phone(payload: PhoneIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_portal(service).update_my_phone, principal, org, payload.phone)
+
+
+@router.put("/portal/me/address")
+def portal_address(payload: AddressIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(_portal(service).update_my_address, principal, org, **payload.model_dump())
 
 
 def iter_routers() -> Iterator[APIRouter]:
