@@ -804,6 +804,19 @@ def test_one_deeply_nested_stored_row_never_breaks_the_list(
         assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"
 
 
+@pytest.mark.parametrize("depth", [MAX_REDACT_DEPTH + 10, 900, 5_000, 100_000])
+def test_deep_redaction_is_depth_bounded_and_leaks_nothing(depth):
+    """Version-independent: whether this Python's json parser accepts ``depth`` levels
+    (3.12+ parses 5 000) or raises RecursionError (3.11), the output is never deeper
+    than the bound and never contains the leaf value."""
+    leaf = "synthetic-deep-leaf-value"
+    stored = "[" * depth + json.dumps(leaf) + "]" * depth
+    out = redact_config_json(stored)
+    assert out is not None and "***" in out
+    assert leaf not in out
+    assert json_nesting_depth(out) <= MAX_REDACT_DEPTH + 1  # containers at 0..bound
+
+
 def test_deep_redaction_masks_below_the_depth_bound():
     # json.loads may either raise RecursionError or successfully parse 5,000
     # containers depending on the runner's recursion limit. Both paths must fail
@@ -958,3 +971,19 @@ def test_authenticated_uploader_fails_closed_without_an_owner_principal(principa
     with pytest.raises(calyx_core.HTTPException) as excinfo:
         calyx_core._authenticated_uploader(request)
     assert excinfo.value.status_code == 401
+
+
+def test_a_huge_uppercase_key_is_fast_end_to_end(client, session_local):
+    """Regression: a ~65K all-uppercase key made the camelCase split quadratic (about
+    35 s per create and per listed row). Keys over MAX_KEY_CHARS are secret-shaped."""
+    config = json.dumps({"A" * 65_000: SECRET_PASSWORD})
+    assert len(config) <= MAX_CONFIG_JSON_CHARS
+    start = time.perf_counter()
+    created = _post_integration(client, config)
+    listed = client.get(
+        f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+    )
+    elapsed = time.perf_counter() - start
+    assert created.status_code == 200 and listed.status_code == 200
+    assert SECRET_PASSWORD not in created.text + listed.text
+    assert elapsed < 5.0, f"create + list took {elapsed:.2f}s"

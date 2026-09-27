@@ -16,7 +16,12 @@ import json
 
 import pytest
 
-from app.show_output_safety import REDACTED, redact_config_json
+from app.show_output_safety import (
+    MAX_KEY_CHARS,
+    MAX_SCAN_CHARS,
+    REDACTED,
+    redact_config_json,
+)
 
 
 def _redact(value: object) -> object:
@@ -139,7 +144,7 @@ def test_non_json_text_starting_with_a_bracket_is_left_as_text():
     ("value", "expected"),
     [
         ("use Bearer abc.def-ghi for calls", "use Bearer *** for calls"),
-        ("Authorization: Basic dXNlcjpwYXNz", "Authorization: *** ***"),
+        ("Authorization: Basic dXNlcjpwYXNz", "Authorization: ***"),
         ("token Zm9vYmFyOmJhejEyMw==", "token ***"),
         (
             "Server=db.example.invalid;User ID=bob;Password=p@ss/w0rd;Database=show",
@@ -195,10 +200,70 @@ def test_non_json_text_starting_with_a_bracket_is_left_as_text():
         ("/hooks/in?channel=a&token=zzz", "/hooks/in?channel=a&token=***"),
         ("synthetic_Q7xL2mZ9aB4cD8eF1gH5", REDACTED),
         ("3f2a9c4e-1b7d-4e8a-9f3c-2d5e6a7b8c9d", REDACTED),
+        # the whole credential after an auth scheme, not only the scheme word
+        ("Authorization: token abcdefghijklmnop", "Authorization: ***"),
+        ("Authorization: Basic x", "Authorization: ***"),
+        ("authorization=Bearer abc", "authorization=***"),
+        # space-separated secrets: netrc and command lines
+        (
+            "machine h.example.invalid login u password hunter2",
+            "machine h.example.invalid login u password ***",
+        ),
+        ("cmd --password hunter2 --verbose", "cmd --password *** --verbose"),
+        ("cmd -token 'a b' next", "cmd -token *** next"),
+        # a token username in any scheme
+        ("ftp://tok123@host.example.invalid/f", "ftp://***@host.example.invalid/f"),
     ],
 )
 def test_secret_shaped_values_are_masked_under_any_key(value, expected):
     assert _redact({"note": value}) == {"note": expected}
+
+
+def test_short_header_tuples_keep_only_the_secret_name():
+    redacted = _redact(
+        {
+            "h3": ["Authorization", "Bearer", "synthetic-x"],
+            "h4": ["Cookie", "a", "b", "c"],
+            "fields": ["region", "zone"],
+            "long": ["token", "a", "b", "c", "d"],
+            "nested": ["password", {"x": 1}],
+        }
+    )
+    assert redacted == {
+        "h3": ["Authorization", REDACTED, REDACTED],
+        "h4": ["Cookie", REDACTED, REDACTED, REDACTED],
+        "fields": ["region", "zone"],
+        "long": ["token", "a", "b", "c", "d"],  # not a header tuple
+        "nested": ["password", {"x": 1}],
+    }
+
+
+def test_overlong_keys_are_secret_shaped_and_never_normalized():
+    long_key = "A" * (MAX_KEY_CHARS + 1)
+    redacted = _redact(
+        {
+            long_key: "synthetic-value",
+            "pair": [long_key, "synthetic-value"],
+            "field": {"name": long_key, "value": "synthetic-value"},
+            "A" * MAX_KEY_CHARS: "readable",
+        }
+    )
+    assert redacted[long_key] == REDACTED
+    # not a header tuple (the name is too long): each element is redacted on its own
+    assert redacted["pair"] == [long_key, "synthetic-value"]
+    assert redacted["field"]["value"] == REDACTED
+    assert redacted["A" * MAX_KEY_CHARS] == "readable"
+
+
+def test_long_free_text_is_masked_whole_but_embedded_json_is_still_redacted():
+    long_text = "note " * (MAX_SCAN_CHARS // 5 + 1)
+    embedded = json.dumps(
+        {"password": "synthetic-pw", "text": "x" * (MAX_SCAN_CHARS + 1)}
+    )
+    redacted = _redact({"long": long_text, "short": "note", "doc": embedded})
+    assert redacted["long"] == REDACTED
+    assert redacted["short"] == "note"
+    assert json.loads(redacted["doc"]) == {"password": REDACTED, "text": REDACTED}
 
 
 def test_header_pair_lists_and_name_value_objects_are_masked():
