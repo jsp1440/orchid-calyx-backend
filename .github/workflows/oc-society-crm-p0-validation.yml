@@ -11,7 +11,6 @@ on:
       - "tests/test_society_crm_routes.py"
       - "app/main.py"
       - "tests/test_society_crm_postgres.py"
-      - "migrations/20260927_society_crm_p1_tenant_isolation.sql"
       - "scripts/oc_crm_backup_restore_drill.py"
       - "tests/test_crm_backup_restore.py"
       - "docs/operations/OC-CRM-BACKUP-RESTORE-001.md"
