@@ -16,6 +16,7 @@ decision (it requires the CRM migrations to be applied to the production databas
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Iterator
 from typing import Annotated, Any, Literal
@@ -37,6 +38,7 @@ from .postgres_repository import PostgresSocietyCRMRepository
 from .society_service import CRMPrincipal, NotFound, PlatformOperatorRequired, SocietyCRMService
 
 API_ENABLED_ENV = "OC_SOCIETY_CRM_API_ENABLED"
+_log = logging.getLogger(__name__)
 
 
 def society_api_enabled() -> bool:
@@ -97,7 +99,10 @@ def _call(fn, *args: Any, **kwargs: Any) -> Any:
         code = str(exc).split("\n", 1)[0]
         base = code.split(":", 1)[0]
         raise HTTPException(status_code=409 if base in CONFLICT_CODES else 422, detail=error_body(code)) from None
-    except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure, psycopg.errors.UniqueViolation):
+    except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure, psycopg.errors.UniqueViolation) as exc:
+        # Constraint name only (no values), so a deterministic uniqueness bug stays visible in logs.
+        _log.warning("society CRM concurrent-change conflict: %s constraint=%s", type(exc).__name__,
+                     getattr(exc.diag, "constraint_name", None))
         raise HTTPException(status_code=409, detail=error_body("CRM_CONCURRENT_CHANGE_RETRY")) from None
     except psycopg.errors.UndefinedTable:
         raise HTTPException(status_code=503, detail=error_body("CRM_SCHEMA_NOT_READY")) from None
