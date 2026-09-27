@@ -394,3 +394,16 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     )
     assert next_plan["actions"][0]["action"] == "create_issue"
     assert "oc-queued" in next_plan["actions"][0]["labels"]
+    next_materialized = apply_plan(next_plan, REPOSITORY, dry_run=False, call=github)
+    assert not next_materialized["errors"]
+    assert len(github.issues) == 2
+    next_admission = build_swarm_plan(
+        {"issues": list(deepcopy(github.issues).values())},
+        worker_slots=1,
+    )
+    assert next_admission["acquisition_launch_count"] == 1
+    next_worker = next_admission["acquisition_matrix"]["include"][0]
+    assert next_worker["issue_number"] != issue_number
+    assert (
+        "OC-ACQUISITION-TARGETS:" in github.issues[next_worker["issue_number"]]["body"]
+    )
