@@ -11,6 +11,10 @@ on:
       - "tests/test_society_crm_routes.py"
       - "app/main.py"
       - "tests/test_society_crm_postgres.py"
+      - "migrations/20260927_society_crm_p1_tenant_isolation.sql"
+      - "scripts/oc_crm_backup_restore_drill.py"
+      - "tests/test_crm_backup_restore.py"
+      - "docs/operations/OC-CRM-BACKUP-RESTORE-001.md"
       - ".github/workflows/oc-society-crm-p0-validation.yml"
   workflow_dispatch:
 
@@ -71,5 +75,19 @@ jobs:
         run: pytest -q tests/test_society_crm_postgres.py tests/test_society_crm_domain.py tests/test_society_crm_routes.py
       - name: Re-run society CRM PostgreSQL tests against the same database
         run: pytest -q tests/test_society_crm_postgres.py
+      - name: Install PostgreSQL 16 client (pg_dump/pg_restore) from PGDG
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail -sSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+      - name: Run CRM backup/restore drill tests (OC-CRM-BACKUP-RESTORE-001)
+        env:
+          PG_DUMP_BIN: /usr/lib/postgresql/16/bin/pg_dump
+          PG_RESTORE_BIN: /usr/lib/postgresql/16/bin/pg_restore
+        run: pytest -q tests/test_crm_backup_restore.py
       - name: Compile constituent platform package
         run: python -m compileall -q app/constituent_platform
