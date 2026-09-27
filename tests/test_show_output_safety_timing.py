@@ -85,6 +85,17 @@ CONFIG_BUILDERS: dict[str, Callable[[int], str]] = {
         {"a": json.dumps({"b": json.dumps({"c": "x" * (n // 2)})})}
     ),
     "deep-nesting": lambda n: "[" * (n // 2 - 1) + "]" * (n // 2 - 1),
+    # header lines, curl -H / -u and HTTP Digest parameters
+    "header-line-names": lambda n: _fill(("A" * 63 + " " * 8 + "x\n") * 56, n),
+    "header-line-values": lambda n: _fill("token:" + " a" * 2040, n),
+    "cli-header-single": lambda n: _fill("-H 'a:" * 680, n),
+    "cli-header-double-escapes": lambda n: _fill('-H "a:\\' * 580, n),
+    "cli-user-flags": lambda n: _fill("-u " * 1360, n),
+    "cli-user-quotes": lambda n: _fill('-u "' * 1020, n),
+    "cli-user-clusters": lambda n: _fill("-abcdefu" * 510, n),
+    "digest-schemes": lambda n: _fill("Digest a=" * 450, n),
+    "digest-params": lambda n: _fill("Digest a=" + 'response="' * 400, n),
+    "flat-header-list": lambda n: json.dumps(["X-Api-Key", "v"] * (n // 20)),
 }
 
 
@@ -135,3 +146,44 @@ def test_template_render_is_bounded_and_linear():
     t_large = _best_of(lambda: safety.render_template_text(large, context, field="b"))
     assert t_large < BOUND_SECONDS
     assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+
+
+# The patterns added for Digest parameters, curl ``-u``/``-H`` and header lines, run
+# directly on 64 KiB (past MAX_SCAN_CHARS, which only protects them in production)
+# pathological strings: each must stay linear on its own.
+PATTERN_SIZE = 64 * 1024
+PATTERN_BOUND_SECONDS = 0.25
+PATTERN_INPUTS: dict[str, tuple[object, str]] = {
+    "header-line-names": (safety._HEADER_LINE, "A" * 63 + " " * 8 + "x\n"),
+    "header-line-values": (safety._HEADER_LINE, "token:" + " a" * 2000 + "\n"),
+    "cli-header-single": (safety._CLI_HEADERS[1], "-H 'a:"),
+    "cli-header-double": (safety._CLI_HEADERS[0], '-H "a:\\'),
+    "cli-header-names": (safety._CLI_HEADERS[0], '-H "' + "a" * 63 + " "),
+    "cli-user-flags": (safety._CLI_USER, "-u "),
+    "cli-user-quotes": (safety._CLI_USER, '-u "'),
+    "cli-user-clusters": (safety._CLI_USER, "-abcdefu"),
+    "cli-user-long": (safety._CLI_USER, "--user"),
+    "digest-scheme": (safety._DIGEST_SCHEME, "digest " + "a" * 40 + " "),
+    "digest-params": (safety._DIGEST_SECRET_PARAM, 'response="'),
+    "digest-escapes": (safety._DIGEST_SECRET_PARAM, 'cnonce="\\'),
+}
+
+
+@pytest.mark.parametrize("case", PATTERN_INPUTS)
+def test_new_patterns_are_linear_on_64k_pathological_input(case):
+    pattern, unit = PATTERN_INPUTS[case]
+    small = (unit * (SMALL // len(unit) + 1))[:SMALL]
+    large = (unit * (PATTERN_SIZE // len(unit) + 1))[:PATTERN_SIZE]
+    assert len(large) == PATTERN_SIZE  # 65,536 characters
+    t_small = _best_of(lambda: pattern.sub("", small))
+    t_large = _best_of(lambda: pattern.sub("", large))
+    assert t_large < PATTERN_BOUND_SECONDS, f"{case}: {t_large:.3f}s"
+    assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+
+
+def test_digest_mask_and_list_redaction_are_linear_on_64k_input():
+    digest = "Digest a=" + 'response="x", cnonce=y, ' * (PATTERN_SIZE // 24)
+    headers = ["Accept", "a", "X-Api-Key", "k"] * (PATTERN_SIZE // 32)
+    assert len(digest) > 65_000 and len(json.dumps(headers)) > 65_000
+    assert _best_of(lambda: safety._mask_digest_params(digest)) < PATTERN_BOUND_SECONDS
+    assert _best_of(lambda: safety._redact_list(headers, 0)) < BOUND_SECONDS
