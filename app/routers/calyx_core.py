@@ -2,7 +2,7 @@
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
@@ -268,12 +268,38 @@ def list_show_files(show_id: str, db: Session = Depends(get_db)):
     return db.execute(select(File).where(File.show_id == show_id)).scalars().all()
 
 
+def _authenticated_uploader(request: Request) -> str:
+    """The authenticated principal that ``owner_or_member_read`` recorded for this request.
+
+    ``"backend_api_key"`` for the API key, the owner session's subject for the owner.
+    Anything else (no principal, a member principal) fails closed with 401; the route
+    dependency already refuses those callers, so this is defence in depth.
+    """
+    principal = getattr(request.state, "oc_principal", None)
+    if isinstance(principal, dict) and principal.get("auth_type") in {"api_key", "owner_session"}:
+        actor = principal.get("actor")
+        if isinstance(actor, str) and actor:
+            return actor
+    raise HTTPException(status_code=401, detail="Owner session or API key is required")
+
+
 @router.post("/shows/{show_id}/files", response_model=FileOut, dependencies=OWNER_ONLY)
-def create_show_file(show_id: str, payload: FileCreate, db: Session = Depends(get_db)):
+def create_show_file(show_id: str, payload: FileCreate, request: Request, db: Session = Depends(get_db)):
+    """Record a show file.
+
+    ``uploaded_by`` is set server-side from the authenticated principal (the owner
+    session subject, or ``backend_api_key`` for the API key). ``FileCreate`` keeps its
+    ``uploaded_by`` field so existing clients still validate, but a client-sent value
+    is ignored.
+    """
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
-    file = File(show_id=show_id, **payload.model_dump())
+    file = File(
+        show_id=show_id,
+        **payload.model_dump(exclude={"uploaded_by"}),
+        uploaded_by=_authenticated_uploader(request),
+    )
     db.add(file)
     db.commit()
     db.refresh(file)

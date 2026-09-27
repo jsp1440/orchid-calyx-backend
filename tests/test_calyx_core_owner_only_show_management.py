@@ -890,3 +890,63 @@ def test_ics_escaping_drops_c1_controls_and_strips_uid_line_breaks():
         ics_utc_timestamp(datetime(2027, 3, 13, 9, 0, 0, tzinfo=timezone.utc))
         == "20270313T090000Z"
     )
+
+
+# --- files: uploader is the authenticated principal ------------------------------------------
+
+SPOOFED_UPLOADER = "spoofed.uploader@example.invalid"
+
+
+@pytest.mark.parametrize(
+    ("credential", "expected"),
+    [
+        ("api_key", "backend_api_key"),
+        ("owner_bearer", "owner"),
+        ("owner_cookie", "owner"),
+    ],
+)
+@pytest.mark.parametrize(
+    "sent", [SPOOFED_UPLOADER, None, ""], ids=["spoofed", "null", "empty"]
+)
+def test_file_uploader_is_set_from_the_authenticated_principal(
+    client, session_local, owner_token, credential, expected, sent
+):
+    body = {"filename": "schedule.pdf", "storage_key": "synthetic/key.pdf"}
+    if sent is not None:
+        body["uploaded_by"] = sent
+    response = client.post(
+        f"/api/shows/{SHOW_ID}/files",
+        json=body,
+        headers=_owner_headers(client, credential, owner_token),
+    )
+    assert response.status_code == 200
+    assert response.json()["uploaded_by"] == expected
+    assert SPOOFED_UPLOADER not in response.text
+    with session_local() as db:
+        assert db.get(File, response.json()["id"]).uploaded_by == expected
+
+
+def test_file_create_keeps_uploaded_by_in_the_schema_and_documents_it_as_ignored():
+    field = calyx_core.FileCreate.model_fields["uploaded_by"]
+    assert field.default is None  # still accepted, so existing clients validate
+    operation = app.openapi()["paths"]["/api/shows/{show_id}/files"]["post"]
+    assert "ignored" in operation["description"]
+    assert "authenticated principal" in operation["description"]
+
+
+@pytest.mark.parametrize(
+    "principal",
+    [
+        None,
+        {},
+        {"role": "member", "actor": MEMBER_UUID},
+        {"auth_type": "api_key", "actor": ""},
+        {"auth_type": "owner_session"},
+    ],
+)
+def test_authenticated_uploader_fails_closed_without_an_owner_principal(principal):
+    request = Mock()
+    request.state = Mock(spec=[]) if principal is None else Mock(oc_principal=principal)
+    with pytest.raises(calyx_core.HTTPException) as excinfo:
+        calyx_core._authenticated_uploader(request)
+    assert excinfo.value.status_code == 401
