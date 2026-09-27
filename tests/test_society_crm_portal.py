@@ -266,3 +266,67 @@ def test_login_prelinked_by_non_admin_invite_cannot_inherit_a_later_role(
     portal.redeem_invite(login, org, portal.issue_invite(admin, org, other["membership_id"])["code"])
     crm.grant_role(admin, org, constituent_id=other["constituent_id"], role=SocietyRole.VIEWER)
     assert crm.roles(org, login) == frozenset({SocietyRole.VIEWER})
+
+
+def test_concurrent_grant_and_invite_redemption_never_leak_the_role(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, portal: MemberPortalService
+) -> None:
+    """Checker finding A: a grant racing a non-admin invite redemption must not hand out the role."""
+    import threading
+
+    org, admin = _society(crm)
+    editor_person = repo.create_person(organization_id=org, display_name="Eddie Editor", actor_subject=admin.subject)
+    editor_subject = f"supabase:{uuid.uuid4()}"
+    crm.bind_identity(admin, org, constituent_id=editor_person["id"], auth_subject=editor_subject)
+    crm.grant_role(admin, org, constituent_id=editor_person["id"], role=SocietyRole.MEMBERSHIP_EDITOR)
+    editor = CRMPrincipal(editor_subject)
+
+    leaks = 0
+    for i in range(20):
+        target = _member(crm, org, admin, f"Racer {i}", f"racer-{uuid.uuid4().hex[:8]}@example.org")
+        code = portal.issue_invite(editor, org, target["membership_id"])["code"]
+        alt = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+        barrier = threading.Barrier(2)
+
+        def grant() -> None:
+            barrier.wait()
+            try:
+                crm.grant_role(admin, org, constituent_id=target["constituent_id"], role=SocietyRole.TREASURER)
+            except ValueError:
+                pass
+
+        def redeem() -> None:
+            barrier.wait()
+            try:
+                portal.redeem_invite(alt, org, code)
+            except ValueError:
+                pass
+
+        threads = [threading.Thread(target=grant), threading.Thread(target=redeem)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        if crm.roles(org, alt):
+            leaks += 1
+    assert leaks == 0
+
+
+def test_platform_operator_recovery_reattests_an_invite_linked_login(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, portal: MemberPortalService
+) -> None:
+    """Checker finding C: bootstrap/recovery must not get stuck on a member-invite link."""
+    org, admin = _society(crm)
+    editor_person = repo.create_person(organization_id=org, display_name="Eddie Editor", actor_subject=admin.subject)
+    editor_subject = f"supabase:{uuid.uuid4()}"
+    crm.bind_identity(admin, org, constituent_id=editor_person["id"], auth_subject=editor_subject)
+    crm.grant_role(admin, org, constituent_id=editor_person["id"], role=SocietyRole.MEMBERSHIP_EDITOR)
+    member = _member(crm, org, admin, "New Admin", "newadmin@example.org")
+    login = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+    portal.redeem_invite(login, org, portal.issue_invite(CRMPrincipal(editor_subject), org,
+                                                         member["membership_id"])["code"])
+
+    crm.bootstrap_admin(OPERATOR, org, display_name="New Admin", auth_subject=login.subject)
+    assert crm.roles(org, login) == frozenset({SocietyRole.ADMIN})
+    actions = [e["action"] for e in crm.audit_events(admin, org)]
+    assert "identity_binding.revoked" in actions

@@ -272,6 +272,23 @@ class PostgresSocietyCRMRepository:
                         entity_id=str(after["id"]), before_state=dict(before), after_state=after)
             return after
 
+    def binding_is_admin_attested(self, *, organization_id: int, auth_subject: str) -> bool:
+        subject = normalize_auth_subject(auth_subject)
+        with self._tenant(organization_id) as cur:
+            cur.execute(
+                "SELECT constituent_id FROM oc_constituent.organization_identity_bindings "
+                "WHERE organization_id = %s AND auth_subject = %s AND status = 'active'",
+                (organization_id, subject),
+            )
+            row = cur.fetchone()
+            if row is None:
+                return False
+            try:
+                self._require_attested_login(cur, organization_id, int(row["constituent_id"]))
+            except ValueError:
+                return False
+            return True
+
     def bound_constituent_id(self, *, organization_id: int, auth_subject: str) -> int | None:
         subject = normalize_auth_subject(auth_subject)
         with self._tenant(organization_id) as cur:
@@ -299,6 +316,7 @@ class PostgresSocietyCRMRepository:
         actor = _actor(granted_by_subject)
         with self._tenant(organization_id) as cur:
             self._require_constituent(cur, organization_id, constituent_id)
+            self._lock_person_authority(cur, organization_id, constituent_id)
             self._require_attested_login(cur, organization_id, constituent_id)
             cur.execute(
                 """
@@ -394,6 +412,14 @@ class PostgresSocietyCRMRepository:
                         action="staff_role.revoked", entity_type="staff_role",
                         entity_id=str(after["id"]), before_state=dict(before), after_state=after)
             return after
+
+    @staticmethod
+    def _lock_person_authority(cur, organization_id: int, constituent_id: int) -> None:
+        """Serialize role grants and login linking for one person (transaction-scoped)."""
+        cur.execute(
+            "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+            (f"oc-crm-person-authority:{organization_id}:{constituent_id}",),
+        )
 
     @staticmethod
     def _require_attested_login(cur, organization_id: int, constituent_id: int) -> None:
@@ -1455,6 +1481,18 @@ class PostgresSocietyCRMRepository:
         now = as_of or _now()
         with self.atomic(organization_id):
             with self._tenant(organization_id) as cur:
+                cur.execute(
+                    "SELECT constituent_id FROM oc_constituent.member_portal_invites "
+                    "WHERE organization_id = %s AND code_sha256 = %s",
+                    (organization_id, code_sha256),
+                )
+                target = cur.fetchone()
+                if target is None:
+                    raise ValueError("INVITE_INVALID_OR_EXPIRED")
+                # Same lock as grant_staff_role, taken before the row lock (no deadlock),
+                # so a concurrent grant either sees this binding or this redemption sees
+                # the grant's role and revoked invite.
+                self._lock_person_authority(cur, organization_id, int(target["constituent_id"]))
                 cur.execute(
                     """
                     SELECT * FROM oc_constituent.member_portal_invites

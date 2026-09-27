@@ -24,6 +24,7 @@ PUBLIC_SETTING_KEYS = (
     "public_contact_email", "location_label", "join_enabled", "meeting_schedule",
 )
 _COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
+_URL_FORBIDDEN = re.compile(r"[\s\"'<>\\`]")
 _CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -43,7 +44,7 @@ def _https_url(value: Any, key: str) -> str | None:
     if text is None:
         return None
     parsed = urlparse(text)
-    if parsed.scheme != "https" or not parsed.netloc:
+    if parsed.scheme != "https" or not parsed.netloc or _URL_FORBIDDEN.search(text):
         raise ValueError(f"INVALID_SETTING:{key}")
     return text
 

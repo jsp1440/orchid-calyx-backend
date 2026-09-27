@@ -100,6 +100,17 @@ class SocietyCRMService:
         subject = normalize_auth_subject(auth_subject)
         with self._repo.atomic(organization_id):
             constituent_id = self._repo.bound_constituent_id(organization_id=organization_id, auth_subject=subject)
+            if constituent_id is not None and not self._repo.binding_is_admin_attested(
+                organization_id=organization_id, auth_subject=subject
+            ):
+                # Recovery: the operator re-attests a login first linked through a member invite.
+                self._repo.revoke_identity_binding(
+                    organization_id=organization_id, auth_subject=subject, actor_subject=principal.subject
+                )
+                self._repo.bind_identity(
+                    organization_id=organization_id, constituent_id=constituent_id, auth_subject=subject,
+                    verification_method="platform_operator", actor_subject=principal.subject,
+                )
             if constituent_id is None:
                 person = self._repo.create_person(
                     organization_id=organization_id, display_name=display_name, actor_subject=principal.subject

@@ -93,3 +93,15 @@ def test_ci_workflow_applies_exactly_the_canonical_migration_chain() -> None:
     assert listed == CRM_MIGRATIONS
     for path in CRM_MIGRATIONS:
         assert Path(REPO_ROOT / path).is_file(), path
+
+
+@pytest.mark.parametrize("url", [
+    'https://ok.example/"><script>', "https://ok.example/ a", "https://ok.example/'x", "https://ok.example/<b>",
+    "https://ok.example\\evil", "http://ok.example", "javascript:alert(1)",
+])
+def test_public_profile_links_reject_markup_characters(url: str) -> None:
+    from app.constituent_platform.society_profile import validate_settings
+
+    with pytest.raises(ValueError, match="INVALID_SETTING:website_url"):
+        validate_settings({"website_url": url})
+    assert validate_settings({"website_url": "https://ok.example/path?q=1#top"})["website_url"]
