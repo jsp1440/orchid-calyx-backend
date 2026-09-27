@@ -8,7 +8,13 @@ file store and the PostgreSQL store (``tests/evidence_feedback_stores.py``).
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import os
+import re
+import subprocess
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
@@ -24,7 +30,11 @@ from app.evidence_feedback.postgres_repository import (
     SCHEMA,
     PostgresEvidenceFeedbackRepository,
 )
-from app.evidence_feedback.review import actor_ref
+from app.evidence_feedback.review import (
+    ACTOR_REF_SECRET_ENV,
+    ACTOR_REF_UNAVAILABLE,
+    actor_ref,
+)
 from app.main import app
 from app.security import OWNER_SESSION_COOKIE, create_owner_session_token
 from tests.evidence_feedback_stores import STORES, make_store, test_database_url
@@ -57,6 +67,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("OC_SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "anon-key")
     monkeypatch.delenv("OC_MEMBER_READS_ENABLED", raising=False)
+    monkeypatch.delenv(ACTOR_REF_SECRET_ENV, raising=False)
     member_auth.clear_member_token_cache()
     yield
     member_auth.clear_member_token_cache()
@@ -525,6 +536,104 @@ def test_member_403_is_identical_for_existing_and_missing_cases(file_store, cloc
 def test_member_rejected_when_member_reads_disabled(file_store, client, supabase, monkeypatch):
     monkeypatch.setenv("OC_MEMBER_READS_ENABLED", "false")
     assert client.get(REVIEW, headers=bearer(member_jwt(marker="off"))).status_code == 401
+
+
+# --- actor references ---------------------------------------------------------
+
+ACTOR_REF_FORMAT = re.compile(r"^actor-[0-9a-f]{24}$")
+
+
+def _expected_ref(secret: str, identity: str) -> str:
+    key = hmac.new(secret.encode(), b"oc-evidence-feedback-actor-ref-key:v2", hashlib.sha256).digest()
+    return "actor-" + hmac.new(key, identity.encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def _unkeyed_refs(identity: str) -> set[str]:
+    """What a dictionary attack could compute without any server secret."""
+
+    return {
+        "actor-" + hashlib.sha256(prefix + identity.encode()).hexdigest()[:24]
+        for prefix in (b"", b"oc-evidence-feedback-actor-ref:v1:")
+    }
+
+
+def test_actor_ref_is_a_keyed_hmac_of_the_session_secret():
+    ref = actor_ref(SUBMITTER_EMAIL)
+    assert ACTOR_REF_FORMAT.match(ref)
+    assert ref == _expected_ref(TEST_SESSION_SECRET, SUBMITTER_EMAIL)
+    assert ref not in _unkeyed_refs(SUBMITTER_EMAIL)
+    # The key is domain-separated: not an HMAC under the raw session secret.
+    raw = hmac.new(TEST_SESSION_SECRET.encode(), SUBMITTER_EMAIL.encode(), hashlib.sha256)
+    assert ref != "actor-" + raw.hexdigest()[:24]
+    assert actor_ref(f"  {SUBMITTER_EMAIL} ") == ref
+    assert actor_ref("owner") != ref
+    assert actor_ref(None) is None
+    assert actor_ref("   ") is None
+
+
+def test_actor_ref_prefers_the_dedicated_secret_and_changes_when_it_rotates(monkeypatch):
+    session_ref = actor_ref("owner")
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "dedicated-test-secret-one")
+    first = actor_ref("owner")
+    assert first == _expected_ref("dedicated-test-secret-one", "owner") != session_ref
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "dedicated-test-secret-two")
+    assert actor_ref("owner") == _expected_ref("dedicated-test-secret-two", "owner") != first
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "   ")  # blank: falls back to the session secret
+    assert actor_ref("owner") == session_ref
+
+
+def test_actor_ref_fails_closed_without_any_secret(monkeypatch):
+    monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET")
+    assert actor_ref(SUBMITTER_EMAIL) == ACTOR_REF_UNAVAILABLE == "actor-unavailable"
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "  ")
+    assert actor_ref(SUBMITTER_EMAIL) == ACTOR_REF_UNAVAILABLE
+    assert actor_ref(None) is None
+
+
+def test_actor_ref_is_stable_across_processes():
+    env = {**os.environ, "CALYX_OWNER_SESSION_SECRET": TEST_SESSION_SECRET}
+    env.pop(ACTOR_REF_SECRET_ENV, None)
+    script = (
+        "import sys; from app.evidence_feedback.review import actor_ref; "
+        "print(actor_ref(sys.argv[1]))"
+    )
+    refs = {
+        subprocess.run(
+            [sys.executable, "-c", script, SUBMITTER_EMAIL],
+            env=env, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        for _ in range(2)
+    }
+    assert refs == {actor_ref(SUBMITTER_EMAIL)}
+
+
+def test_review_responses_carry_only_keyed_refs(store, clock, client, monkeypatch):
+    case_id = submit(client)["case"]["case_id"]
+    decided = decide(client, case_id, {"decision": "reject", "reason": "Correct as shown."})
+    assert decided.status_code == 200
+    responses = [
+        client.get(REVIEW, headers=reviewer_headers()),
+        client.get(f"{REVIEW}/{case_id}", headers=reviewer_headers()),
+        decided,
+    ]
+    for response in responses:
+        assert SUBMITTER_EMAIL not in response.text
+        assert '"owner"' not in response.text  # the reviewer's raw identity
+        for identity in (SUBMITTER_EMAIL, "owner"):
+            for unkeyed in _unkeyed_refs(identity):
+                assert unkeyed not in response.text
+    detail = responses[1].json()
+    assert detail["case"]["submitter_ref"] == _expected_ref(TEST_SESSION_SECRET, SUBMITTER_EMAIL)
+    assert detail["case"]["reviewer_ref"] == _expected_ref(TEST_SESSION_SECRET, "owner")
+    # Rotating the actor-reference secret changes every reference; sessions keep working.
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "rotated-test-secret")
+    rotated = client.get(f"{REVIEW}/{case_id}", headers=reviewer_headers()).json()
+    assert rotated["case"]["submitter_ref"] == _expected_ref("rotated-test-secret", SUBMITTER_EMAIL)
+    assert rotated["case"]["submitter_ref"] != detail["case"]["submitter_ref"]
+    assert {e["actor_ref"] for e in rotated["events"]} <= {
+        _expected_ref("rotated-test-secret", SUBMITTER_EMAIL),
+        _expected_ref("rotated-test-secret", "owner"),
+    }
 
 
 # --- store parity and indexing ------------------------------------------------------

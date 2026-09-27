@@ -17,6 +17,16 @@ owner-gated and outside code.
 Decisions are append-only events. Repeating the same decision is idempotent
 (no new event); any other decision on a decided case is an invalid transition.
 Submitter and reviewer identities are exposed only as stable opaque references.
+
+Actor references are keyed: ``actor-`` plus the first 24 hex digits of an
+HMAC-SHA256 of the identity under a server secret, so a reference cannot be
+reversed by hashing guessed login names or emails. The key is derived (with
+domain separation) from ``CALYX_EVIDENCE_FEEDBACK_ACTOR_REF_SECRET`` when set,
+otherwise from ``CALYX_OWNER_SESSION_SECRET``, which the owner-session-only
+review routes already require. References are stable across requests and
+processes for the same secret; rotating that secret changes every reference.
+With no secret configured the reference is the non-identifying placeholder
+``actor-unavailable``, never an unkeyed hash.
 """
 
 from __future__ import annotations
@@ -24,10 +34,14 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import hmac
 import json
+import os
 from dataclasses import replace
 from enum import Enum
 from typing import Any
+
+from app.security import get_owner_session_secret
 
 from .models import CaseStatus, Disposition, EvidenceFeedbackCase, content_hash
 from .repository import EvidenceFeedbackRepositoryError, review_order_key
@@ -46,7 +60,10 @@ PUBLICATION_BOUNDARY = (
 )
 
 OPEN_STATUSES = frozenset({CaseStatus.SUBMITTED, CaseStatus.PENDING_REVIEW})
-_SUBMITTER_REF_DOMAIN = b"oc-evidence-feedback-actor-ref:v1:"
+ACTOR_REF_SECRET_ENV = "CALYX_EVIDENCE_FEEDBACK_ACTOR_REF_SECRET"
+ACTOR_REF_UNAVAILABLE = "actor-unavailable"
+# Domain separation: the actor-reference key is never the raw session secret.
+_ACTOR_REF_KEY_DOMAIN = b"oc-evidence-feedback-actor-ref-key:v2"
 
 
 class ReviewDecision(str, Enum):
@@ -82,17 +99,33 @@ class InvalidCaseTransition(ValueError):
         }
 
 
+def _actor_ref_key() -> bytes | None:
+    """The HMAC key for actor references, or ``None`` when no secret is set."""
+
+    for secret in (os.getenv(ACTOR_REF_SECRET_ENV), get_owner_session_secret()):
+        if secret and secret.strip():
+            return hmac.new(
+                secret.encode("utf-8"), _ACTOR_REF_KEY_DOMAIN, hashlib.sha256
+            ).digest()
+    return None
+
+
 def actor_ref(actor_id: str | None) -> str | None:
     """A stable opaque reference for a submitter/reviewer identity.
 
     The raw identity (an owner name, possibly an email) never leaves the
-    service; the same identity always maps to the same reference.
+    service; the same identity maps to the same reference for as long as the
+    server secret is unchanged. Fails closed to ``actor-unavailable`` when no
+    secret is configured.
     """
 
     if actor_id is None or not str(actor_id).strip():
         return None
-    digest = hashlib.sha256(
-        _SUBMITTER_REF_DOMAIN + str(actor_id).strip().encode("utf-8")
+    key = _actor_ref_key()
+    if key is None:
+        return ACTOR_REF_UNAVAILABLE
+    digest = hmac.new(
+        key, str(actor_id).strip().encode("utf-8"), hashlib.sha256
     ).hexdigest()
     return f"actor-{digest[:24]}"
 
