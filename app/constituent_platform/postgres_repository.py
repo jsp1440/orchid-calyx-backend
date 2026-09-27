@@ -1703,6 +1703,11 @@ class PostgresSocietyCRMRepository:
         ("external_record_links", "oc_constituent.external_record_links", "organization_id"),
         ("crm_audit_events", "oc_constituent.crm_audit_events", "organization_id"),
         ("communication_intents", "oc_communications.intents", "organization_id"),
+        ("audience_snapshots", "oc_communications.audience_snapshots", "organization_id"),
+        ("audience_members", "oc_communications.audience_members", "organization_id"),
+        ("approval_events", "oc_communications.approval_events", "organization_id"),
+        ("delivery_attempts", "oc_communications.delivery_attempts", "organization_id"),
+        ("delivery_events", "oc_communications.delivery_events", "organization_id"),
     )
 
     def snapshot_tenant_tables(self, *, organization_id: int) -> dict[str, list[dict[str, Any]]]:

@@ -18,6 +18,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform.authorization import SocietyAccessDenied, SocietyRole
 from app.constituent_platform.crm_export import (
     ROSTER_COLUMNS,
@@ -34,11 +35,7 @@ from app.constituent_platform.society_service import CRMPrincipal, SocietyCRMSer
 
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 OPERATOR = CRMPrincipal("owner:platform-operator", platform_operator=True)
 
 HEADERS = list(NEON_DEFAULT_MAPPING.columns) + ["Neon Internal Notes"]

@@ -77,3 +77,19 @@ def test_society_entitlements_cannot_reach_private_platform_data(code: str) -> N
     with pytest.raises(ValueError, match="FORBIDDEN_SOCIETY_ENTITLEMENT"):
         validate_society_entitlement_code(code)
     assert validate_society_entitlement_code(" Society.Member_Portal ") == "society.member_portal"
+
+
+def test_ci_workflow_applies_exactly_the_canonical_migration_chain() -> None:
+    from pathlib import Path
+
+    import yaml
+
+    from app.constituent_platform.crm_migrations import CRM_MIGRATIONS, REPO_ROOT
+
+    workflow = yaml.safe_load(
+        (REPO_ROOT / ".github/workflows/oc-society-crm-p0-validation.yml").read_text(encoding="utf-8")
+    )
+    listed = tuple(workflow["jobs"]["validate"]["env"]["CRM_MIGRATIONS"].split())
+    assert listed == CRM_MIGRATIONS
+    for path in CRM_MIGRATIONS:
+        assert Path(REPO_ROOT / path).is_file(), path

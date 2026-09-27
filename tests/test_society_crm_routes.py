@@ -11,6 +11,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform import society_routes
 from app.constituent_platform.society_service import CRMPrincipal
 
@@ -20,12 +21,7 @@ pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 API_KEY = "test-backend-api-key"
 
 
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-    "migrations/20260927c_society_crm_portal_ops.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -219,3 +215,49 @@ def test_member_portal_over_http(operator: TestClient, people) -> None:
     assert member.get(f"{base}/diagnostics").status_code == 403
     assert operator.get("/api/society-platform/diagnostics").status_code == 200
     assert admin.get("/api/society-platform/diagnostics").status_code == 403
+
+
+def test_import_export_and_communications_over_http(operator: TestClient, people) -> None:
+    slug, admin, _ = _new_society(operator, people)
+    base = f"/api/society/{slug}"
+    csv_text = (
+        "Account ID,First Name,Last Name,Email 1,Membership Level\n"
+        "N-1,Ada,Grower,ada@example.org,individual\n"
+        "N-2,Bo,Potter,not-an-email,individual\n"
+    )
+    mapping = {"columns": {"Account ID": "source_record_id", "First Name": "first_name", "Last Name": "last_name",
+                           "Email 1": "email", "Membership Level": "level_code"}}
+    dry = admin.post(f"{base}/imports", json={"csv_text": csv_text, "mapping": mapping})
+    assert dry.status_code == 200, dry.text
+    assert admin.get(f"{base}/members").json()["total"] == 0  # dry run wrote nothing
+    applied = admin.post(f"{base}/imports", json={"csv_text": csv_text, "mapping": mapping, "dry_run": False}).json()
+    again = admin.post(f"{base}/imports", json={"csv_text": csv_text, "mapping": mapping, "dry_run": False}).json()
+    assert admin.get(f"{base}/members").json()["total"] == 1
+    assert applied["counts"]["create"] == 1 and applied["counts"]["invalid"] == 1
+    assert again["counts"]["unchanged"] == 1 and again["counts"]["create"] == 0 and again["counts"]["invalid"] == 1
+    assert dry.json()["dry_run"] is True and dry.json()["counts"]["create"] == 1
+
+    roster = admin.get(f"{base}/exports/roster.csv")
+    assert roster.status_code == 200 and "ada@example.org" in roster.text
+    assert roster.headers["content-type"].startswith("text/csv")
+    export = admin.get(f"{base}/exports/organization")
+    assert export.status_code == 200 and "ada@example.org" in export.text
+
+    stranger = people(f"supabase:{uuid.uuid4()}")
+    assert stranger.get(f"{base}/exports/roster.csv").status_code == 403
+    assert stranger.get(f"{base}/exports/organization").status_code == 403
+    assert stranger.post(f"{base}/imports", json={"csv_text": csv_text, "mapping": mapping}).status_code == 403
+
+    member = admin.get(f"{base}/members").json()["items"][0]
+    assert admin.post(f"{base}/preferences", json={
+        "constituent_id": member["constituent_id"], "purpose": "community", "state": "subscribed",
+        "source_kind": "paper_form"}).status_code == 201
+    intent = admin.post(f"{base}/communications", json={
+        "purpose": "community", "subject": "Meeting", "statuses": ["pending", "active"]}).json()
+    frozen = admin.post(f"{base}/communications/{intent['id']}/freeze").json()
+    assert frozen["allowed"] == 1
+    self_approve = admin.post(f"{base}/communications/{intent['id']}/approve",
+                              json={"audience_sha256": frozen["audience_sha256"]})
+    assert self_approve.status_code == 422
+    assert self_approve.json()["detail"]["code"] == "APPROVER_MUST_DIFFER_FROM_CREATOR"
+    assert admin.get(f"{base}/communications/{intent['id']}/delivery").json()["state"] == "awaiting_approval"

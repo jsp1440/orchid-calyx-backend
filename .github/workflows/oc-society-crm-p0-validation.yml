@@ -52,6 +52,7 @@ jobs:
         migrations/20260927_society_crm_p1_tenant_isolation.sql
         migrations/20260927b_constituent_newsletter_canonical.sql
         migrations/20260927c_society_crm_portal_ops.sql
+        migrations/20260927d_society_crm_communications.sql
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -79,8 +80,15 @@ jobs:
           tests/test_society_crm_postgres.py
           tests/test_society_crm_routes.py
           tests/test_society_crm_portal.py
+          tests/test_society_crm_communications.py
+          tests/test_society_crm_import_export.py
       - name: Re-run society CRM PostgreSQL tests against the same database
-        run: pytest -q tests/test_society_crm_postgres.py tests/test_society_crm_portal.py
+        run: >-
+          pytest -q
+          tests/test_society_crm_postgres.py
+          tests/test_society_crm_portal.py
+          tests/test_society_crm_communications.py
+          tests/test_society_crm_import_export.py
       - name: Run canonical newsletter/contact tests
         run: >-
           pytest -q

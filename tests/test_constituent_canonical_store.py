@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 from psycopg.rows import dict_row
 
 from app import rate_limit
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform import canonical_store as cs
 from app.constituent_platform import routes as constituent_routes
 from app.constituent_platform import service as legacy
@@ -37,13 +38,7 @@ from runtime.research_station_store import MemoryProjectRecordStore, PostgresPro
 
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
-MIGRATIONS = [
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-    "migrations/20260927b_constituent_newsletter_canonical.sql",
-    "migrations/20260927b_constituent_newsletter_canonical.sql",  # idempotency
-]
+MIGRATIONS = CRM_MIGRATIONS
 OWNER_AUTH = {"actor": "owner", "auth_type": "owner_session"}
 
 

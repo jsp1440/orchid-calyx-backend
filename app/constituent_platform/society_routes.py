@@ -465,5 +465,8 @@ def portal_address(payload: AddressIn, org: OrgId, service: Service, principal: 
 
 
 def iter_routers() -> Iterator[APIRouter]:
+    from .society_data_routes import router as data_router  # imports this module; keep lazy
+
     yield platform_router
     yield router
+    yield data_router

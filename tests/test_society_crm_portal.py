@@ -10,6 +10,7 @@ from pathlib import Path
 import psycopg
 import pytest
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform.authorization import SocietyAccessDenied, SocietyRole
 from app.constituent_platform.crm_diagnostics import (
     organization_diagnostics,
@@ -22,12 +23,7 @@ from app.constituent_platform.society_service import CRMPrincipal, NotFound, Soc
 
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-    "migrations/20260927c_society_crm_portal_ops.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 OPERATOR = CRMPrincipal("owner:platform-operator", platform_operator=True)
 T0 = datetime(2026, 3, 1, tzinfo=timezone.utc)
 

@@ -17,6 +17,7 @@ from typing import Any
 import psycopg
 import pytest
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform.backup_verification import (
     DEFAULT_SCHEMAS,
     SCRATCH_PREFIX,
@@ -32,11 +33,7 @@ from app.constituent_platform.tenant_db import dsn_connection_factory, tenant_tr
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
 ROOT = Path(__file__).resolve().parents[1]
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 SEEDED_TABLES = (
     "oc_constituent.organizations",
     "oc_constituent.membership_levels",

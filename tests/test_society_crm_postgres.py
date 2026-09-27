@@ -15,6 +15,7 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 
+from app.constituent_platform.crm_migrations import CRM_MIGRATIONS
 from app.constituent_platform.authorization import (
     SocietyAccessDenied,
     SocietyCapability,
@@ -34,11 +35,7 @@ from app.constituent_platform.tenant_db import platform_transaction, tenant_tran
 
 pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=False)
 
-MIGRATIONS = (
-    "migrations/20260823_oc_constituent_communications_foundation.sql",
-    "migrations/20260926_society_crm_p0_core.sql",
-    "migrations/20260927_society_crm_p1_tenant_isolation.sql",
-)
+MIGRATIONS = CRM_MIGRATIONS
 T0 = datetime(2026, 1, 15, 12, 0, tzinfo=timezone.utc)
 OPERATOR = CRMPrincipal("owner:platform-operator", platform_operator=True)
 
