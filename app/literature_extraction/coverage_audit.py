@@ -228,3 +228,22 @@ def audit_literature_extraction_coverage(
         "interpretation": "Discovered corpus and extracted evidence are different populations and are reported separately.",
         "publication_note": "Publication eligibility is not a publication action; this audit performs no graph mutation.",
     }
+
+
+def matrix_acquisition_gaps(taxonomy, covered_taxon_ids: set[int]) -> list[dict[str, Any]]:
+    """Genus-first source acquisition from known canonical taxa and stored claims.
+
+    Covered means an acquired candidate exists, not that its claim is true or
+    scientifically reviewed. An unavailable population is an error, not 30,000
+    presumed gaps. One task covers a genus, irrespective of its species count.
+    """
+    if taxonomy.canonical_release is None:
+        raise ValueError("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    grouped: dict[str, list[int]] = {}
+    for taxon in taxonomy.accepted():
+        if taxon.rank == "species" and taxon.canonical_id not in covered_taxon_ids:
+            genus = taxon.canonical_name.split()[0]
+            grouped.setdefault(genus, []).append(taxon.canonical_id)
+    return [{"genus": genus, "missing_taxon_ids": sorted(ids),
+             "taxonomy_snapshot": taxonomy.canonical_release.snapshot_id,
+             "strategy": "genus-source-first"} for genus, ids in sorted(grouped.items())]

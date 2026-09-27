@@ -110,7 +110,7 @@ PRODUCT_LANES: tuple[ProductLane, ...] = (
             "runtime/literature_harvester.py",
             "runtime/literature_staging.py",
         ),
-        test_name_markers=("literature", "journal_club", "source_binding", "bibliograph"),
+        test_name_markers=("literature", "journal_club", "source_binding", "bibliograph", "firecrawl"),
     ),
     ProductLane(
         key="research-station",

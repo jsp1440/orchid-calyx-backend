@@ -87,6 +87,12 @@ def _pytest(*targets: str) -> tuple[str, ...]:
 
 _COMMANDS = (
     ValidationCommand(
+        command_id="firecrawl-matrix-fixture",
+        argv=_pytest("tests/test_firecrawl_matrix_acquisition.py"),
+        summary="Run the offline Firecrawl canonical integration fixture.",
+        proves="Mocked Firecrawl acquisition and canonical evidence contracts pass; no live external acquisition proven.",
+    ),
+    ValidationCommand(
         command_id="control-plane-tests",
         argv=_pytest(
             "tests/test_oc_blocked_reconcile.py",

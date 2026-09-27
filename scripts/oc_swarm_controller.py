@@ -240,6 +240,13 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
             continue
         if is_lane_executable(issue):
             continue
+        routing = route_task(issue)
+        if "firecrawl-acquisition" in routing.blocking_provider_capabilities:
+            # Acquisition is not coding. Until a Render acquisition transport is
+            # bound, never send these source tasks to a code-authoring provider.
+            if issue.get("number") is not None:
+                numbers.append(int(issue["number"]))
+            continue
         if not is_provider_free(issue):
             # Genuinely needs a provider: the governed completion lane owns it.
             continue

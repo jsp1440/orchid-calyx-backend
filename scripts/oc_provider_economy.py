@@ -148,6 +148,16 @@ class SelectionResult:
 
 
 PROVIDER_REGISTRY: dict[str, ProviderProfile] = {
+    "firecrawl": ProviderProfile(
+        provider_id="firecrawl", display_name="Firecrawl v2",
+        task_classes=frozenset({TaskClass.RESEARCH_WEB_RETRIEVAL}),
+        api_availability=ApiAvailability.SEPARATE_BILLING,
+        subscription_vs_api_billing="Explicit environment key and separately authorized provider budget required.",
+        cost_per_unit=_UNKNOWN, authority_ceiling="read_only",
+        health=ProviderHealth.UNKNOWN,
+        notes="Bounded source acquisition only; canonical leases, provenance and scientific review remain mandatory.",
+        gateway_required=False, evidence_status="source_discovery_context_only", is_available=True,
+    ),
     "kimi": ProviderProfile(
         provider_id="kimi",
         display_name="Kimi (Moonshot AI)",
