@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -44,6 +43,7 @@ from app.security import (
     OWNER_SESSION_COOKIE,
     _decode_owner_token,
     api_key_header,
+    credentials_match,
     get_api_key,
     verify_owner_or_api_key,
     verify_owner_session,
@@ -239,7 +239,7 @@ async def verify_member_or_owner_read(
         expected_key = get_api_key()
         if not expected_key:
             raise HTTPException(status_code=401, detail="API key authentication is not configured")
-        if hmac.compare_digest(api_key, expected_key):
+        if credentials_match(api_key, expected_key):
             return {"actor": "backend_api_key", "auth_type": "api_key", "role": "api_key"}
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
@@ -341,7 +341,7 @@ async def owner_session_only(
             raise
     if api_key:
         expected_key = get_api_key()
-        if expected_key and hmac.compare_digest(api_key, expected_key):
+        if expected_key and credentials_match(api_key, expected_key):
             raise HTTPException(status_code=403, detail=dict(OWNER_SESSION_REQUIRED))
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     raise HTTPException(status_code=401, detail="Owner session is required")
