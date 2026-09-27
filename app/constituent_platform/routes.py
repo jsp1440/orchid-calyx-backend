@@ -17,6 +17,11 @@ token issued at subscription (the token a future confirmation email carries).
 
 Human-approval gate: the welcome communication is recorded in
 ``CommunicationState.AWAITING_APPROVAL`` and this module never transitions it.
+
+Persistence: ``OC_CONSTITUENT_PERSISTENCE`` selects exactly one authoritative
+store -- ``research_station`` (default) or ``canonical``
+(:mod:`app.constituent_platform.canonical_store`). A canonical selection that
+cannot serve answers 503 naming the migration to apply; it never falls back.
 """
 
 from __future__ import annotations
@@ -38,6 +43,13 @@ from .domain import (
     MessagePurpose,
     PreferenceState,
     normalize_email,
+)
+from .canonical_store import (
+    PERSISTENCE_CANONICAL,
+    CanonicalConstituentService,
+    CanonicalStoreUnavailable,
+    get_canonical_service,
+    persistence_selection,
 )
 from .service import (
     CONTACT_AGENT_EXPOSURE,
@@ -85,11 +97,17 @@ def _topics(values: list[str]) -> list[str]:
     return cleaned
 
 
-def get_service() -> ConstituentService:
+def get_service() -> ConstituentService | CanonicalConstituentService:
+    """The one authoritative store for this process; fail closed (503), never fall back."""
+    try:
+        if persistence_selection() == PERSISTENCE_CANONICAL:
+            return get_canonical_service()
+    except CanonicalStoreUnavailable as exc:
+        raise HTTPException(status_code=503, detail=f"Constituent store unavailable: {exc}") from exc
     return ConstituentService(get_store())
 
 
-Service = Annotated[ConstituentService, Depends(get_service)]
+Service = Annotated[ConstituentService | CanonicalConstituentService, Depends(get_service)]
 
 
 # ---------------------------------------------------------------------------
