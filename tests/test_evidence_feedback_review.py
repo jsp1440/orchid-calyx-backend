@@ -15,8 +15,11 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 import psycopg
@@ -25,14 +28,21 @@ from fastapi.testclient import TestClient
 
 from app import member_auth
 from app.evidence_feedback import EvidenceFeedbackService, routes
-from app.evidence_feedback.models import content_hash
+from app.evidence_feedback.models import FeedbackClass, ObjectType, content_hash
 from app.evidence_feedback.postgres_repository import (
     SCHEMA,
     PostgresEvidenceFeedbackRepository,
 )
+from app.evidence_feedback.repository import FileEvidenceFeedbackRepository
 from app.evidence_feedback.review import (
     ACTOR_REF_SECRET_ENV,
     ACTOR_REF_UNAVAILABLE,
+    DUPLICATE_EVENT,
+    GOVERNED_REVIEW_EVENT,
+    REJECTED_EVENT,
+    EvidenceFeedbackReviewService,
+    InvalidCaseTransition,
+    ReviewDecision,
     actor_ref,
 )
 from app.main import app
@@ -770,3 +780,152 @@ def test_existing_postgres_tables_gain_the_review_index_additively(tmp_path, mon
     store.restart()
     listed = client.get(REVIEW, headers=reviewer_headers()).json()["items"]
     assert [item["case_id"] for item in listed] == [case_id]  # data kept
+
+
+# --- concurrency ------------------------------------------------------------------
+#
+# Every request builds a fresh repository (``routes._repository``), so these
+# races use one repository instance per thread, as concurrent requests would.
+
+DECISION_EVENTS = {"correction_accepted", REJECTED_EVENT, GOVERNED_REVIEW_EVENT}
+CORRECTED = {"term": "labellum", "definition": "a modified petal"}
+
+
+def _race(store, case_id: str, attempts) -> list:
+    barrier = threading.Barrier(len(attempts))
+
+    def run(attempt):
+        service = EvidenceFeedbackService(store.repository())
+        review = EvidenceFeedbackReviewService(service)
+        barrier.wait()
+        try:
+            return ("ok", attempt(service, review))
+        except (InvalidCaseTransition, ValueError) as exc:
+            return ("refused", str(exc))
+
+    with ThreadPoolExecutor(max_workers=len(attempts)) as pool:
+        return list(pool.map(run, attempts))
+
+
+def _attempts(case_id: str) -> list:
+    def reject(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.REJECT, reason="Correct as shown.")
+
+    def governed(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.NEEDS_GOVERNED_REVIEW, note="Specialist.")
+
+    def accept(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.ACCEPT_TRIVIAL, corrected_payload=CORRECTED)
+
+    def legacy_accept(service, _review):
+        return service.accept_trivial_correction(case_id=case_id, reviewer_id="owner", corrected_payload=CORRECTED)
+
+    return [reject, governed, accept, legacy_accept] * 4  # 16 threads
+
+
+def _applied(outcomes) -> int:
+    """Successful calls that changed the case (not idempotent repeats)."""
+
+    applied = 0
+    for status, value in outcomes:
+        if status != "ok":
+            continue
+        if isinstance(value, dict):
+            applied += 0 if value["idempotent"] else 1
+        else:  # the legacy route returns the resolved case
+            applied += 1
+    return applied
+
+
+@pytest.mark.parametrize("rounds", [8])
+def test_concurrent_decisions_have_exactly_one_winner(store, client, rounds):
+    for index in range(rounds):
+        case_id = submit(client, object_id=f"lexicon:race-{index}")["case"]["case_id"]
+        outcomes = _race(store, case_id, _attempts(case_id))
+
+        repository = store.repository()
+        case = repository.get_case(case_id)  # the case JSON is intact
+        decisions = [e["event"] for e in repository.list_events(case_id) if e["event"] in DECISION_EVENTS]
+        legal = [[event] for event in DECISION_EVENTS] + [[GOVERNED_REVIEW_EVENT, REJECTED_EVENT]]
+        assert decisions in legal, (index, decisions, outcomes)
+        assert _applied(outcomes) == len(decisions), (index, decisions, outcomes)
+        versions = repository.list_object_versions(f"lexicon:race-{index}")
+        if decisions == ["correction_accepted"]:
+            assert case.status.value == "resolved"
+            assert case.disposition.value == "correction_accepted"
+            assert len(versions) == 2
+            assert case.resulting_version_hash == content_hash(CORRECTED)
+        else:
+            assert len(versions) == 1  # no correction was applied
+            assert case.resulting_version_hash is None
+            if decisions[-1] == REJECTED_EVENT:
+                assert (case.status.value, case.disposition.value) == ("resolved", "correction_rejected")
+            else:
+                assert case.status.value == "governed_review_required"
+    listed = client.get(REVIEW, params={"limit": 100}, headers=reviewer_headers())
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == rounds
+    if store.kind == "file":
+        assert not [path for path in store.files_written() if ".tmp" in path.name]
+
+
+def test_concurrent_identical_submissions_across_repositories_make_one_case(store, client):
+    version = client.post(
+        f"{BASE}/objects",
+        json={"object_id": "lexicon:labellum", "object_type": "lexicon", "payload": {"term": "labellum"}},
+        headers=submitter_headers(),
+    ).json()
+    barrier = threading.Barrier(16)
+
+    def run(_):
+        service = EvidenceFeedbackService(store.repository())
+        barrier.wait()
+        return service.submit(
+            object_id="lexicon:labellum",
+            object_version_hash=version["version_hash"],
+            object_type=ObjectType.LEXICON,
+            page_context="/lexicon/labellum",
+            feedback_class=FeedbackClass.REPORT_PROBLEM,
+            statement="Needs a citation.",
+            submitter_id=SUBMITTER_EMAIL,
+        )
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(run, range(16)))
+    assert sum(result.created for result in results) == 1
+    assert len({result.case.case_id for result in results}) == 1
+    repository = store.repository()
+    events = [e["event"] for e in repository.list_events(results[0].case.case_id)]
+    assert events.count("case_submitted") == 1
+    assert events.count(DUPLICATE_EVENT) == 15
+
+
+def test_file_repositories_for_one_root_share_one_lock(tmp_path):
+    first = FileEvidenceFeedbackRepository(tmp_path / "feedback")
+    same_root = FileEvidenceFeedbackRepository(str(tmp_path / "feedback" / ".." / "feedback"))
+    other_root = FileEvidenceFeedbackRepository(tmp_path / "other")
+    assert first._lock is same_root._lock
+    assert first._lock is not other_root._lock
+
+
+def test_file_writes_are_atomic_replacements_with_unique_temporary_files(tmp_path, monkeypatch):
+    target = tmp_path / "cases" / "case.json"
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 1})
+    temporaries: list[str] = []
+    previous = {"v": 1}
+    real_replace = os.replace
+
+    def spy(source, destination):
+        temporaries.append(str(source))
+        # Until the swap the target still holds the complete previous record.
+        assert json.loads(Path(destination).read_text()) == previous
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", spy)
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 2})
+    previous = {"v": 2}
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 3})
+    assert json.loads(target.read_text()) == {"v": 3}
+    assert len(set(temporaries)) == 2  # never a shared fixed temporary name
+    assert all(Path(name).parent == target.parent for name in temporaries)
+    assert sorted(path.name for path in target.parent.iterdir()) == ["case.json"]
