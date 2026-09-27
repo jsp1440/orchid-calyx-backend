@@ -77,6 +77,8 @@ jobs:
       # provider-dependent claims reach the governed completion lane.
       provider_free_matrix: ${{ steps.claim.outputs.provider_free_matrix }}
       provider_free_launch_count: ${{ steps.claim.outputs.provider_free_launch_count }}
+      acquisition_matrix: ${{ steps.claim.outputs.acquisition_matrix }}
+      acquisition_launch_count: ${{ steps.claim.outputs.acquisition_launch_count }}
       provider_matrix: ${{ steps.claim.outputs.provider_matrix }}
       provider_launch_count: ${{ steps.claim.outputs.provider_launch_count }}
       recovered_count: ${{ steps.leases.outputs.recovered_count }}
@@ -144,6 +146,15 @@ jobs:
         if: steps.discovery_env.outcome == 'success'
         continue-on-error: true
         run: python3 -m pip install --quiet -r requirements.txt
+
+      - name: Refresh canonical Matrix evidence coverage
+        continue-on-error: true
+        env:
+          CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+          CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+        run: |
+          python3 -m scripts.oc_swarm_acquisition_worker \
+            --refresh-coverage runtime/matrix_coverage/latest.json
 
       - name: Discover product work from repository evidence
         id: discovery
@@ -416,6 +427,33 @@ jobs:
       lease_comment_id: ${{ format('{0}', matrix.lease_comment_id) }}
     secrets: inherit
 
+  acquisition_workers:
+    needs: plan
+    if: needs.plan.outputs.acquisition_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix: ${{ fromJSON(needs.plan.outputs.acquisition_matrix) }}
+    env:
+      GH_TOKEN: ${{ github.token }}
+      CALYX_BACKEND_URL: ${{ vars.CALYX_BACKEND_URL }}
+      CALYX_API_KEY: ${{ secrets.CALYX_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Execute claimed acquisition in canonical backend runtime
+        run: |
+          python3 -m scripts.oc_swarm_acquisition_worker \
+            --repository "$GITHUB_REPOSITORY" --issue-number "${{ matrix.issue_number }}" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --comment-id "${{ matrix.lease_comment_id }}"
+
   provider_free_workers:
     needs: plan
     # Deterministic lane. Runs for every confirmed provider-free claim whether or
@@ -618,38 +656,11 @@ jobs:
           DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
         run: |
           set -euo pipefail
-          result=$(jq -c . "$RUNNER_TEMP/provider-free-result.json")
-          case "$DISPOSITION" in
-            done)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --remove-label oc-owner-gate \
-                --add-label oc-done >/dev/null
-              ;;
-            owner-gate)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --add-label oc-owner-gate >/dev/null
-              ;;
-            blocked)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
-              # An edit lane that opened a pull request parks the issue on it;
-              # the blocked-work reconciler releases `pr#N` when it merges.
-              blocked_on=$(jq -r '.blocked_on // empty' "$RUNNER_TEMP/provider-free-result.json")
-              if [[ -n "$blocked_on" ]]; then
-                gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                  --body "[OC-SWARM-V4] Provider-free edit lane opened a pull request for this condition; the issue waits on it. OC-BLOCKED-ON: ${blocked_on}" >/dev/null
-              fi
-              ;;
-            *)
-              echo "Unknown provider-free disposition: $DISPOSITION" >&2
-              exit 2
-              ;;
-          esac
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          python3 -m scripts.oc_swarm_settlement \
+            --result "$RUNNER_TEMP/provider-free-result.json" \
+            --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --comment-id "$LEASE_COMMENT_ID"
 
       # A pull request opened with GITHUB_TOKEN starts no pull_request workflow,
       # so the edit lane's PR would carry no validation checks at all. Dispatch
@@ -732,14 +743,14 @@ jobs:
             --body "[OC-SWARM-V4] Provider-free reconciliation failed closed; execution lease released and issue blocked. Worker evidence: \`$evidence\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
 
   refill:
-    needs: [plan, workers, provider_free_workers]
+    needs: [plan, workers, provider_free_workers, acquisition_workers]
     # Completion triggers refill. A wave that launched provider-free lanes refills
     # immediately (zero paid spend, bounded by max_waves); a wave that only ran
     # under NO-API mode keeps the governor's explicit auto-refill authorization.
     # One failed provider-free lane has already released its lease and parked
     # its issue with evidence, so it must not stop unrelated work from being
     # refilled; only a cancelled wave (no settlement ran) suppresses refill.
-    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'cancelled' && needs.plan.outputs.launch_count != '0' && (needs.plan.outputs.provider_free_launch_count != '0' || (needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'))
+    if: always() && needs.plan.result == 'success' && needs.workers.result != 'failure' && needs.provider_free_workers.result != 'cancelled' && needs.acquisition_workers.result != 'cancelled' && needs.plan.outputs.launch_count != '0' && (needs.plan.outputs.provider_free_launch_count != '0' || needs.plan.outputs.acquisition_launch_count != '0' || (needs.plan.outputs.provider_blocked == 'true' && vars.OC_GOVERNOR_AUTO_REFILL == 'true'))
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}

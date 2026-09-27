@@ -73,7 +73,8 @@ class CanonicalMorphologyExtractor(Extractor):
                     mentions=[span],
                     external_ids=[
                         Identifier(
-                            scheme="local", value=f"world_plants:{taxon.canonical_id}"
+                            scheme="local",
+                            value=f"{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}",
                         )
                     ],
                     provenance=provenance,

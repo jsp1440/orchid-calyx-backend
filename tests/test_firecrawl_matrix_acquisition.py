@@ -268,7 +268,15 @@ def test_acquisition_is_not_misrouted_to_a_coding_provider():
         "labels": ["oc-queued"],
         "body": "OC-SWARM-CAPABILITY: firecrawl-acquisition",
     }
-    assert unstaffed_numbers({"issues": [issue]}) == [123]
+    assert unstaffed_numbers({"issues": [issue]}) == []
+    # Dedicated acquisition execution is covered by test_oc_swarm_acquisition_worker.
+    from scripts.oc_swarm_controller import build_swarm_plan
+
+    issue["title"] = "Acquire a morphology source"
+    issue["labels"].append("oc-p2")
+    plan = build_swarm_plan({"issues": [issue], "pull_requests": []}, worker_slots=1)
+    assert plan["provider_matrix"] == {"include": []}
+    assert plan["acquisition_matrix"]["include"][0]["issue_number"] == 123
 
 
 @pytest.mark.asyncio

@@ -21,6 +21,7 @@ from .canonical_binding_resolver import (
     PostgresLiteratureSourceBindingRepository,
 )
 from .coverage_audit import audit_literature_extraction_coverage
+from .firecrawl_runtime import AcquisitionRequest, execute_acquisition
 from .repository import LiteratureResultRepository
 from .source_binding import (
     CanonicalLiteratureSourceBinding,
@@ -101,7 +102,9 @@ def _scope(auth_context: dict[str, object], project_id: str) -> BindingScope:
     return BindingScope(owner_id=actor, project_id=project_id)
 
 
-def _candidate_binding(canonical: CanonicalLiteratureSourceBinding) -> LiteratureSourceBinding:
+def _candidate_binding(
+    canonical: CanonicalLiteratureSourceBinding,
+) -> LiteratureSourceBinding:
     return LiteratureSourceBinding(
         source_object_type=canonical.source_object_type,
         source_object_id=canonical.source_object_id,
@@ -145,7 +148,9 @@ def _source_binding_http_error(exc: LiteratureSourceBindingError) -> HTTPExcepti
     )
 
 
-def _candidate_handoff_http_error(exc: LiteratureCandidateHandoffError) -> HTTPException:
+def _candidate_handoff_http_error(
+    exc: LiteratureCandidateHandoffError,
+) -> HTTPException:
     return HTTPException(
         status_code=422,
         detail={
@@ -303,7 +308,9 @@ def get_source_binding(
     except LiteratureSourceBindingError as exc:
         raise _source_binding_http_error(exc) from exc
     if binding is None:
-        raise HTTPException(status_code=404, detail="Canonical source binding not found")
+        raise HTTPException(
+            status_code=404, detail="Canonical source binding not found"
+        )
     return binding.to_dict()
 
 
@@ -324,15 +331,20 @@ def resolve_canonical_source_binding(
         )
     try:
         raw_bytes = _raw_source_or_error(literature_repository, paper_id)
-        with psycopg.connect(
-            _database_url_or_error(), connect_timeout=5, autocommit=False
-        ) as conn, conn.cursor() as cur:
-            resolved, created = PostgresLiteratureSourceBindingRepository().resolve_and_create(
-                cur,
-                resolver=DocumentIntelligenceBindingResolver(),
-                scope=_scope(auth_context, payload.project_id),
-                paper=paper,
-                raw_bytes=raw_bytes,
+        with (
+            psycopg.connect(
+                _database_url_or_error(), connect_timeout=5, autocommit=False
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            resolved, created = (
+                PostgresLiteratureSourceBindingRepository().resolve_and_create(
+                    cur,
+                    resolver=DocumentIntelligenceBindingResolver(),
+                    scope=_scope(auth_context, payload.project_id),
+                    paper=paper,
+                    raw_bytes=raw_bytes,
+                )
             )
         return {
             **resolved.binding.to_dict(),
@@ -417,15 +429,20 @@ def handoff_candidates_from_canonical_document_intelligence(
         )
     try:
         raw_bytes = _raw_source_or_error(literature_repository, paper_id)
-        with psycopg.connect(
-            _database_url_or_error(), connect_timeout=5, autocommit=False
-        ) as conn, conn.cursor() as cur:
-            resolved, _ = PostgresLiteratureSourceBindingRepository().resolve_and_create(
-                cur,
-                resolver=DocumentIntelligenceBindingResolver(),
-                scope=_scope(auth_context, payload.project_id),
-                paper=paper,
-                raw_bytes=raw_bytes,
+        with (
+            psycopg.connect(
+                _database_url_or_error(), connect_timeout=5, autocommit=False
+            ) as conn,
+            conn.cursor() as cur,
+        ):
+            resolved, _ = (
+                PostgresLiteratureSourceBindingRepository().resolve_and_create(
+                    cur,
+                    resolver=DocumentIntelligenceBindingResolver(),
+                    scope=_scope(auth_context, payload.project_id),
+                    paper=paper,
+                    raw_bytes=raw_bytes,
+                )
             )
         resolved.binding.validate_integrity(paper, raw_bytes)
         result = _execute_candidate_handoff(paper, resolved.binding, service)
@@ -450,3 +467,49 @@ def handoff_candidates_from_canonical_document_intelligence(
         ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+@router.post("/acquisition/execute")
+async def execute_canonical_acquisition(
+    payload: AcquisitionRequest,
+    _auth: Annotated[dict, Depends(verify_owner_or_api_key)],
+):
+    """Dispatch one already leased canonical work item on the backend runtime."""
+    try:
+        return await execute_acquisition(payload)
+    except (ValueError, RuntimeError, psycopg.Error):
+        # Never return provider responses, source text, DB details or secrets.
+        raise HTTPException(
+            409, detail={"code": "CANONICAL_ACQUISITION_BLOCKED"}
+        ) from None
+
+
+@router.get("/acquisition/coverage")
+def canonical_acquisition_coverage(
+    _auth: Annotated[dict, Depends(verify_owner_or_api_key)],
+):
+    from app.evidence_aggregation.postgres_repository import PostgresAggregateRepository
+    from runtime.knowledge_graph.firecrawl_taxonomy import (
+        load_persistent_canonical_registry,
+    )
+
+    from .coverage_audit import export_matrix_acquisition_coverage
+    from .firecrawl_provider import FirecrawlConfig
+    from .firecrawl_runtime import connection
+
+    try:
+        config = FirecrawlConfig.from_env()
+        if not config.enabled:
+            raise ValueError("FIRECRAWL_DISABLED")
+        return export_matrix_acquisition_coverage(
+            load_persistent_canonical_registry(connection),
+            PostgresAggregateRepository(
+                os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
+            ),
+            pilot_mode=config.pilot_mode,
+            pilot_genus=os.getenv("FIRECRAWL_PILOT_GENUS", "Paphiopedilum"),
+        )
+    except (ValueError, RuntimeError, psycopg.Error):
+        raise HTTPException(
+            503, detail={"code": "CANONICAL_COVERAGE_UNAVAILABLE"}
+        ) from None

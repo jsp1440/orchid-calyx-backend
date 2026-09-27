@@ -712,7 +712,7 @@ def discover_matrix_coverage(coverage: dict[str, Any]) -> list[Candidate]:
         key = json.dumps(gap, sort_keys=True, separators=(",", ":"))
         result.append(Candidate(
             source="matrix-coverage", title=f"Acquire missing {genus} morphology sources",
-            summary=f"Acquire monographs, revisions, floras or keys for {genus}; multi-taxon extraction remains review-only.",
+            summary=f"Acquire monographs, revisions, floras or keys for {genus}; multi-taxon extraction remains review-only.\nOC-ACQUISITION-GENUS: {genus}",
             lane=lane_for_path("app/literature_extraction/firecrawl_acquisition.py"),
             evidence=(Evidence("canonical-coverage", "runtime/matrix_coverage/latest.json", key),),
             semantic_key="matrix-coverage:" + key,

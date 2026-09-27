@@ -131,7 +131,7 @@ class TaskRouting:
         recording it as blocked removes it from the portfolio permanently.
         """
         if "firecrawl-acquisition" in self.blocking_provider_capabilities:
-            return "Firecrawl requires the canonical Render acquisition transport and persistent source binding; code-authoring fallback is forbidden"
+            return "Firecrawl executes in the canonical backend acquisition lane; code-authoring fallback is forbidden"
         if self.lane_executable:
             return None
         if self.provider_free_task:

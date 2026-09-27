@@ -7,6 +7,7 @@ Missing source identities block; this module never manufactures database IDs.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -90,17 +91,29 @@ async def acquire_matrix_sources(
         binding.validate_integrity(paper, source.markdown.encode())
         payload = asdict(binding)
         payload.pop("paper_id")
-        handoff = handoff_service.handoff(paper, LiteratureSourceBinding(**payload))
+
+        def handoff_operation(paper=paper, payload=payload):
+            handoff = handoff_service.handoff(paper, LiteratureSourceBinding(**payload))
+            repository = handoff_service.candidate_repository
+            return (
+                handoff,
+                deepcopy(repository.candidates_for_run(handoff["candidate_run_id"])),
+                deepcopy(repository.evidence_links),
+            )
+
+        repository = handoff_service.candidate_repository
+        handoff, candidates, evidence_links = (
+            repository.atomic(handoff_operation)
+            if hasattr(repository, "atomic")
+            else handoff_operation()
+        )
         if handoff["state"] != "COMPLETED" or not handoff["candidate_ids"]:
             raise AcquisitionBlocked("CANDIDATE_HANDOFF_INCOMPLETE")
-        candidates = handoff_service.candidate_repository.candidates_for_run(
-            handoff["candidate_run_id"]
-        )
         inputs = []
         for candidate in candidates:
             links = [
                 link
-                for link in handoff_service.candidate_repository.evidence_links
+                for link in evidence_links
                 if link["candidate_id"] == candidate["candidate_id"]
             ]
             names = [
@@ -146,8 +159,35 @@ async def acquire_matrix_sources(
                 )
             )
         verify_lease()
-        plan = aggregation_service.preview(inputs)
-        result = aggregation_service.execute(plan["aggregate_run_id"])
+
+        def aggregate_operation(inputs=inputs):
+            # Keep prior source assertions in the same subject/predicate cluster.
+            # A later document cannot silently replace an earlier measurement.
+            subjects = {(item.normalized_subject, item.predicate) for item in inputs}
+            retained = {}
+            for items in aggregation_service.repo.items.values():
+                for item in items:
+                    for candidate in item.get("candidates", []):
+                        if (
+                            candidate.normalized_subject,
+                            candidate.predicate,
+                        ) in subjects:
+                            retained[
+                                (candidate.candidate_id, candidate.candidate_version)
+                            ] = candidate
+            for candidate in inputs:
+                retained[(candidate.candidate_id, candidate.candidate_version)] = (
+                    candidate
+                )
+            plan = aggregation_service.preview(list(retained.values()))
+            return plan, aggregation_service.execute(plan["aggregate_run_id"])
+
+        aggregate_repository = aggregation_service.repo
+        plan, result = (
+            aggregate_repository.atomic(aggregate_operation)
+            if hasattr(aggregate_repository, "atomic")
+            else aggregate_operation()
+        )
         if result["state"] != "COMPLETED":
             raise AcquisitionBlocked("AGGREGATION_INCOMPLETE")
         receipts.append(
@@ -155,6 +195,10 @@ async def acquire_matrix_sources(
                 "paper_id": paper.paper_id,
                 "source_hash": source.content_hash,
                 "binding_fingerprint": binding.fingerprint,
+                "analysis_id": paper.analysis_manifest.analysis_id,
+                "revision_id": binding.revision_id,
+                "extraction_run_id": binding.extraction_run_id,
+                "anchor_ids": sorted(set(binding.anchor_ids.values())),
                 "candidate_ids": handoff["candidate_ids"],
                 "aggregate_run_id": plan["aggregate_run_id"],
                 "mocked": source.mocked,
@@ -191,38 +235,58 @@ async def acquire_for_swarm_issue(
     Read callbacks are supplied by the authenticated canonical worker, never by
     source text. This does not claim a lease, settle an issue, or start a loop.
     """
-    from app.provider_reservoir.routing import route_task
-    from scripts.oc_swarm_claim import verify_worker_claim
-
-    if repository != "jsp1440/orchid-calyx-backend":
-        raise AcquisitionBlocked("CANONICAL_REPOSITORY_REQUIRED")
 
     def verify():
-        issue = read_issue(issue_number)
-        receipt = read_lease(comment_id)
-        if issue.get("number") != issue_number:
-            raise AcquisitionBlocked("ISSUE_IDENTITY_MISMATCH")
-        if (
-            "firecrawl-acquisition"
-            not in route_task(issue).blocking_provider_capabilities
-        ):
-            raise AcquisitionBlocked("ACQUISITION_CAPABILITY_REQUIRED")
-        if (receipt.get("user") or {}).get("login") != "github-actions[bot]":
-            raise AcquisitionBlocked("CANONICAL_LEASE_AUTHOR_REQUIRED")
-        if (
-            receipt.get("issue_url")
-            != f"https://api.github.com/repos/{repository}/issues/{issue_number}"
-        ):
-            raise AcquisitionBlocked("LEASE_ISSUE_MISMATCH")
-        verify_worker_claim(
-            issue,
-            receipt,
+        return verify_swarm_acquisition_lease(
+            issue_number=issue_number,
             repository=repository,
             run_id=run_id,
             run_attempt=run_attempt,
             comment_id=comment_id,
+            read_issue=read_issue,
+            read_lease=read_lease,
         )
 
     return await acquire_matrix_sources(
         task_id=f"{repository}#{issue_number}", verify_lease=verify, **services
     )
+
+
+def verify_swarm_acquisition_lease(
+    *,
+    issue_number,
+    repository,
+    run_id,
+    run_attempt,
+    comment_id,
+    read_issue,
+    read_lease,
+):
+    """Shared backend preflight and per-boundary canonical claim verification."""
+    from app.provider_reservoir.routing import route_task
+    from scripts.oc_swarm_claim import verify_worker_claim
+
+    if repository != "jsp1440/orchid-calyx-backend":
+        raise AcquisitionBlocked("CANONICAL_REPOSITORY_REQUIRED")
+    issue = read_issue(issue_number)
+    receipt = read_lease(comment_id)
+    if issue.get("number") != issue_number:
+        raise AcquisitionBlocked("ISSUE_IDENTITY_MISMATCH")
+    if "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities:
+        raise AcquisitionBlocked("ACQUISITION_CAPABILITY_REQUIRED")
+    if (receipt.get("user") or {}).get("login") != "github-actions[bot]":
+        raise AcquisitionBlocked("CANONICAL_LEASE_AUTHOR_REQUIRED")
+    if (
+        receipt.get("issue_url")
+        != f"https://api.github.com/repos/{repository}/issues/{issue_number}"
+    ):
+        raise AcquisitionBlocked("LEASE_ISSUE_MISMATCH")
+    verify_worker_claim(
+        issue,
+        receipt,
+        repository=repository,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        comment_id=comment_id,
+    )
+    return issue

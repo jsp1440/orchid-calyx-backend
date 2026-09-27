@@ -247,3 +247,57 @@ def matrix_acquisition_gaps(taxonomy, covered_taxon_ids: set[int]) -> list[dict[
     return [{"genus": genus, "missing_taxon_ids": sorted(ids),
              "taxonomy_snapshot": taxonomy.canonical_release.snapshot_id,
              "strategy": "genus-source-first"} for genus, ids in sorted(grouped.items())]
+
+
+def export_matrix_acquisition_coverage(
+    taxonomy, aggregation_repository, *, pilot_mode: bool = True,
+    pilot_genus: str = "Paphiopedilum", max_genera: int = 3,
+) -> dict[str, Any]:
+    """Export acquisition coverage from persisted, completed aggregation inputs.
+
+    This measures source acquisition, not scientific consensus or publication.
+    Only anchored morphology on the current snapshot suppresses further work.
+    Review-pending and conflicting measurements remain in the evidence store.
+    """
+    import re
+    from datetime import datetime, timezone
+
+    if not 1 <= max_genera <= 25 or not re.fullmatch(r"[A-Z][a-z]{2,40}", pilot_genus):
+        raise ValueError("INVALID_ACQUISITION_COVERAGE_BOUND")
+    release = taxonomy.canonical_release
+    if release is None:
+        raise ValueError("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    aggregation_repository.refresh()
+    identities = {
+        f"local:{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}": taxon.canonical_id
+        for taxon in taxonomy.accepted()
+    }
+    covered = set()
+    for run_id, items in aggregation_repository.items.items():
+        if aggregation_repository.runs[run_id]["state"] != "COMPLETED":
+            continue
+        for item in items:
+            for candidate in item.get("candidates", []):
+                if candidate.metadata.get("taxonomy_snapshot") != release.snapshot_id:
+                    continue
+                if not re.fullmatch(r"(?:leaf|flower|petal|sepal|lip)_(?:length|width)", candidate.predicate):
+                    continue
+                if not candidate.source_anchor_ids or not candidate.document_hash:
+                    continue
+                ident = identities.get(candidate.normalized_subject)
+                if ident is not None:
+                    covered.add(ident)
+    gaps = matrix_acquisition_gaps(taxonomy, covered)
+    if pilot_mode:
+        gaps = [gap for gap in gaps if gap["genus"] == pilot_genus]
+    # Largest missing genus first, not an alphabetical per-species crawler.
+    gaps.sort(key=lambda gap: (-len(gap["missing_taxon_ids"]), gap["genus"]))
+    return {
+        "schema": "oc.matrix-acquisition-coverage.v1", "available": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "taxonomy_snapshot": release.snapshot_id,
+        "coverage_kind": "anchored_morphology_acquired_review_pending",
+        "covered_taxa": len(covered), "gaps": gaps[:max_genera],
+        "remaining_genus_gaps": max(0, len(gaps) - max_genera),
+        "scientific_publication": False,
+    }
