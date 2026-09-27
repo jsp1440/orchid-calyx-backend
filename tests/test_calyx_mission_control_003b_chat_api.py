@@ -28,7 +28,9 @@ def test_operator_message_and_transcript_round_trip():
         headers=OWNER,
     )
     assert response.status_code == 200
-    transcript = active.get("/brain/mission-control/chat/transcript", headers=OWNER).json()
+    transcript = active.get(
+        "/brain/mission-control/chat/transcript", headers=OWNER
+    ).json()
     assert transcript["messages"][0]["role"] == "operator"
 
 

@@ -15,7 +15,6 @@ from app.conversation_memory.service import (
     ConversationMemoryService,
 )
 from app.database import get_db
-from app.member_auth import owner_or_member_read
 from app.security import verify_owner_or_api_key
 from runtime.operator_chat import GovernedOperatorChat
 
@@ -118,11 +117,12 @@ def chat_status() -> dict[str, Any]:
 
 # The in-memory operator transcript is owner-only: it holds whatever the operator
 # typed to Calyx. Reading it and appending to it (operator messages or Calyx replies)
-# require the owner session or the API key. ``owner_or_member_read`` is default-deny
-# and these routes are not ``@member_readable``, so a verified member gets 403
-# OWNER_ACCESS_REQUIRED and anonymous/invalid credentials stay 401, before any body
-# validation. ``/status`` stays public: it reports only a message count and flags.
-OwnerOnly = [Depends(owner_or_member_read)]
+# require the owner session or the API key via ``verify_owner_or_api_key``, exactly
+# like the other chat routes (``/ask``, ``/conversations``). There is no member
+# contract for chat, so a member bearer is rejected with 401 like any non-owner
+# credential, before any body validation. ``/status`` stays public: it reports only a
+# message count and flags.
+OwnerOnly = [Depends(verify_owner_or_api_key)]
 
 
 @router.get("/transcript", dependencies=OwnerOnly)

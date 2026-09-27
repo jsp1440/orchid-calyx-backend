@@ -3,9 +3,11 @@
 ``/api/shows/{show_id}/contacts`` holds personal data (name, email, phone, city) and
 the Mission Control operator transcript holds whatever the operator typed to Calyx.
 Both reads and every write that feeds them require the owner session or the API key.
-A verified member gets 403 OWNER_ACCESS_REQUIRED; anonymous and invalid credentials
-get 401 before any lookup or body validation, and no anonymous response carries a
-contact field or transcript text. ``/brain/mission-control/chat/status`` stays public
+On the contacts routes a verified member gets 403 OWNER_ACCESS_REQUIRED
+(``owner_or_member_read``). The chat routes use ``verify_owner_or_api_key`` like the
+rest of the chat router (no member contract for chat), so a member bearer gets 401
+there. Anonymous and invalid credentials get 401 before any lookup or body
+validation, and no non-owner response carries a contact field or transcript text. ``/brain/mission-control/chat/status`` stays public
 (it reports only a message count and flags). Supabase is always mocked.
 """
 
@@ -346,25 +348,25 @@ def test_anonymous_and_member_transcript_writes_are_rejected(
         ).status_code
         == 401
     )
+    # No member contract for chat: a verified member bearer is a non-owner credential.
     member = client.post(
         f"{CHAT}{path}", json=payload, headers={"Authorization": f"Bearer {_jwt()}"}
     )
-    assert member.status_code == 403 and member.json() == OWNER_ACCESS_REQUIRED_BODY
+    assert member.status_code == 401
     transcript = client.get(f"{CHAT}/transcript", headers={"X-API-Key": API_KEY}).json()
     assert transcript == {"messages": []}
     assert client.get(f"{CHAT}/status").json()["message_count"] == 0
 
 
-def test_verified_member_transcript_read_gets_owner_access_required(
-    client, session_local, supabase
-):
+def test_verified_member_transcript_read_is_401(client, session_local, supabase):
     _seed_transcript(client)
     response = client.get(
         f"{CHAT}/transcript", headers={"Authorization": f"Bearer {_jwt()}"}
     )
-    assert response.status_code == 403
-    assert response.json() == OWNER_ACCESS_REQUIRED_BODY
+    assert response.status_code == 401
     assert OPERATOR_TEXT not in response.text
+    # The chat gate never consults Supabase: members have no chat contract.
+    assert not supabase.called
 
 
 @pytest.mark.parametrize("credential", ["api_key", "owner_bearer", "owner_cookie"])
