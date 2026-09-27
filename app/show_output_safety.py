@@ -21,10 +21,20 @@
     style authorization values, ``name=value``/``name: value`` pairs such as
     connection strings (``User ID=u;Password=p;``) and any run of 20 or more
     base64/hex characters that looks random.
+  - Also masked: the whole credential after an auth scheme (``Authorization: token
+    x``), space-separated secrets (netrc ``password x``, ``--password x``), a token
+    username in any URL scheme, and short header tuples such as
+    ``["Authorization", "Bearer", "x"]``.
   - Bounds: nesting deeper than ``MAX_REDACT_DEPTH`` (containers plus embedded JSON
     layers) is masked as a whole, so a deeply nested stored value can never raise
     ``RecursionError``. A stored value that is not valid JSON, is larger than
     ``MAX_CONFIG_JSON_CHARS`` or cannot be redacted is masked entirely (fail closed).
+  - Time: linear in the input. A key longer than ``MAX_KEY_CHARS`` is treated as
+    secret-shaped without being normalized, a free-text string longer than
+    ``MAX_SCAN_CHARS`` is masked whole instead of scanned, and every pattern has
+    bounded repetition. A worst-case 64 KiB config redacts in under 0.1 s on the
+    reference sandbox; ``tests/test_show_output_safety_timing.py`` asserts a 1 s
+    bound and near-linear scaling for each rule's adversarial input.
   - ``validate_config_json`` refuses (422) an oversized or too deeply nested value on
     create, before anything is committed.
 * ``ics_text_line`` -- builds one iCalendar content line with RFC 5545 TEXT escaping
@@ -40,6 +50,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import math
 import re
@@ -119,18 +130,32 @@ _DIGIT_LOOKALIKES = str.maketrans(
     {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t"}
 )
 
+# Linear-time bounds. A key longer than MAX_KEY_CHARS is never normalized: it is
+# treated as secret-shaped and its value is masked. A string longer than
+# MAX_SCAN_CHARS that is not an embedded JSON document is masked whole instead of
+# being scanned. Every pattern below has bounded repetition around its anchors, starts
+# only at a word/scheme boundary, and cannot fail after an unbounded scan, so the
+# work per string is linear in its length (tests/test_show_output_safety_redaction.py
+# asserts the bound and the scaling).
+MAX_KEY_CHARS = 256
+MAX_SCAN_CHARS = 4096
+
+_AUTH_SCHEMES = (
+    r"bearer|basic|digest|token|bot|ssws|sso-key|api-?key|negotiate|ntlm|hoba"
+    r"|mutual|vapid|aws4-hmac-sha256|scram-sha-(?:1|256)"
+)
+_URL_SCHEME = r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://"
 _URL_USERINFO_PASSWORD = re.compile(
-    # Greedy password: it runs to the LAST ``@`` that is followed by a host, so a raw
-    # ``@`` or ``/`` inside the password is still masked (over-redaction is preferred).
-    r"(?P<prefix>(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://[^\s/?#@:]{0,256}:)"
-    r"\S{0,256}@"
-    r"(?=[A-Za-z0-9.\-\[\]]+(?:[:/?#\"'<>\s]|$))"
+    # Greedy password: it runs to the LAST ``@`` (within 256 characters) that is
+    # followed by a host character, so a raw ``@`` or ``/`` inside the password is
+    # still masked (over-redaction is preferred).
+    rf"(?P<prefix>{_URL_SCHEME}[^\s/?#@:]{{0,256}}:)\S{{0,256}}@(?=[A-Za-z0-9.\-\[\]])"
 )
-_URL_USERINFO_USERNAME = re.compile(
-    r"(?P<prefix>(?:https?|wss?)://)[^\s/?#@:]{1,256}@", re.IGNORECASE
-)
+# A username alone (``https://ghp_x@host``, ``ftp://token@host``) in any scheme.
+_URL_USERINFO_USERNAME = re.compile(rf"(?P<prefix>{_URL_SCHEME})[^\s/?#@:]{{1,256}}@")
 _URL_QUERY_PARAM = re.compile(
-    r"(?P<prefix>[?&;#](?P<name>[^=&;#?\s]{1,128})=)(?P<value>\{[^}]{0,1024}\}|[^&;#\s]*)"
+    r"(?P<prefix>[?&;#](?P<name>[^=&;#?\s]{1,128})=)"
+    r"(?P<value>\{[^}]{0,256}\}?|[^&;#\s]*)"
 )
 _WEBHOOK_PATHS = re.compile(
     r"(?P<prefix>(?:hooks\.slack\.com/(?:services|workflows|triggers)/"
@@ -144,30 +169,53 @@ _TELEGRAM_BOT_TOKEN = re.compile(
     r"(?P<prefix>api\.telegram\.org/(?:file/)?bot)[^/\s?#\"'<>]+", re.IGNORECASE
 )
 _AUTH_SCHEME_VALUE = re.compile(
-    r"(?P<prefix>\b(?P<scheme>bearer|basic|digest|token|bot|ssws|sso-key|api-?key)\s+)"
-    r"(?P<cred>[A-Za-z0-9\-._~+/=:]+)",
+    rf"(?P<prefix>\b(?P<scheme>{_AUTH_SCHEMES})\s{{1,8}})(?P<cred>[^\s\"'<>,;]+)",
     re.IGNORECASE,
 )
+# A quoted value never has to find its closing quote (it is optional), so a match
+# attempt cannot fail after a long scan.
+_QUOTED_VALUE = r"\"(?:[^\"\\]|\\.){0,256}\"?|'[^']{0,256}'?|\{[^}]{0,256}\}?"
 _NAME_VALUE_PAIR = re.compile(
-    r"(?P<prefix>(?P<q>[\"']?)(?P<name>[A-Za-z_][A-Za-z0-9_.\- ]{0,40}?)(?P=q)\s*[:=]\s*)"
-    r"(?P<value>\"(?:[^\"\\]|\\.){0,1024}(?:\"|$)|'[^']{0,1024}(?:'|$)|\{[^}]{0,1024}\}|[^;&,\s\"'#]+)"
+    r"(?P<prefix>(?P<q>[\"']?)(?<![A-Za-z0-9_.\-])"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_.\- ]{0,40}?)(?P=q)\s{0,8}[:=]\s{0,8})"
+    rf"(?P<value>(?i:(?:{_AUTH_SCHEMES})\s{{1,8}}[^\s;&,\"'#]+)|{_QUOTED_VALUE}"
+    r"|[^;&,\s\"'#]+)"
 )
+# ``password hunter2`` (netrc), ``--password hunter2`` / ``-token x`` (command lines).
+# Only the name and its whitespace are consumed per match, so every word is a
+# candidate name; the value is matched separately (see ``_mask_spaced_values``).
+_SPACED_NAME = re.compile(
+    r"(?<![A-Za-z0-9_\-])-{0,2}(?P<name>[A-Za-z][A-Za-z0-9_\-]{0,40})\s{1,8}(?=\S)"
+)
+_SPACED_VALUE = re.compile(rf"{_QUOTED_VALUE}|[^\s\"']+")
 _TOKEN_RUN = re.compile(r"[A-Za-z0-9_\-+=~]{20,}")
+_CAMEL_LOWER_UPPER = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_CAMEL_UPPER_WORD = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 _PAIR_NAME_FIELDS = {"name", "key", "header", "field", "param", "parameter"}
 _PAIR_VALUE_FIELDS = {"value", "val", "content", "data"}
 _HEADER_NAME = re.compile(r"[A-Za-z][A-Za-z_.\- ]{0,63}")
+_MAX_HEADER_TUPLE = 4
+_MAX_HEADER_NAME_CHARS = 64
 
 
-def _key_words(key: object) -> list[str]:
-    text = unicodedata.normalize("NFKC", str(key))
+def _key_words(key: str) -> list[str]:
+    text = unicodedata.normalize("NFKC", key)
     text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
     text = text.translate(_CONFUSABLES)
-    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
-    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", text)
+    text = _CAMEL_LOWER_UPPER.sub(" ", text)
+    text = _CAMEL_UPPER_WORD.sub(" ", text)
     return [word for word in re.split(r"[^a-z0-9]+", text.casefold()) if word]
 
 
 def _is_secret_key(key: object) -> bool:
+    key = str(key)
+    if len(key) > MAX_KEY_CHARS:
+        return True  # secret-shaped; never normalized (bounded work per key)
+    return _is_secret_key_name(key)
+
+
+@functools.lru_cache(maxsize=4096)
+def _is_secret_key_name(key: str) -> bool:
     words = _key_words(key)
     compact = "".join(words)
     if not compact:
@@ -210,6 +258,29 @@ def _looks_like_credential(scheme: str, cred: str) -> bool:
     )
 
 
+def _mask_if_secret_name(match: re.Match) -> str:
+    if _is_secret_key(match.group("name")):
+        return f"{match.group('prefix')}{REDACTED}"
+    return match.group(0)
+
+
+def _mask_spaced_values(text: str) -> str:
+    """Mask the word after a secret-named word: ``password x``, ``--token x``."""
+    parts: list[str] = []
+    position = 0
+    for match in _SPACED_NAME.finditer(text):
+        if match.start() < position or not _is_secret_key(match.group("name")):
+            continue
+        value = _SPACED_VALUE.match(text, match.end())
+        if value is None:
+            continue
+        parts.append(text[position : match.end()])
+        parts.append(REDACTED)
+        position = value.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
 def _redact_string(value: str, depth: int) -> Any:
     stripped = value.strip()
     if stripped[:1] in {"{", "[", '"'}:
@@ -225,20 +296,15 @@ def _redact_string(value: str, depth: int) -> Any:
                 return json.dumps(
                     _redact_value(embedded, depth + 1), ensure_ascii=False
                 )
+    if len(value) > MAX_SCAN_CHARS:
+        return REDACTED  # long free text is masked whole rather than scanned
     text = _URL_USERINFO_PASSWORD.sub(
         lambda m: f"{m.group('prefix')}{REDACTED}@", value
     )
     text = _URL_USERINFO_USERNAME.sub(lambda m: f"{m.group('prefix')}{REDACTED}@", text)
     text = _WEBHOOK_PATHS.sub(lambda m: f"{m.group('prefix')}{REDACTED}", text)
     text = _TELEGRAM_BOT_TOKEN.sub(lambda m: f"{m.group('prefix')}{REDACTED}", text)
-    text = _URL_QUERY_PARAM.sub(
-        lambda m: (
-            f"{m.group('prefix')}{REDACTED}"
-            if _is_secret_key(m.group("name"))
-            else m.group(0)
-        ),
-        text,
-    )
+    text = _URL_QUERY_PARAM.sub(_mask_if_secret_name, text)
     text = _AUTH_SCHEME_VALUE.sub(
         lambda m: (
             f"{m.group('prefix')}{REDACTED}"
@@ -247,14 +313,8 @@ def _redact_string(value: str, depth: int) -> Any:
         ),
         text,
     )
-    text = _NAME_VALUE_PAIR.sub(
-        lambda m: (
-            f"{m.group('prefix')}{REDACTED}"
-            if _is_secret_key(m.group("name"))
-            else m.group(0)
-        ),
-        text,
-    )
+    text = _NAME_VALUE_PAIR.sub(_mask_if_secret_name, text)
+    text = _mask_spaced_values(text)
     return _TOKEN_RUN.sub(
         lambda m: REDACTED if _looks_random(m.group(0)) else m.group(0), text
     )
@@ -288,8 +348,16 @@ def _redact_dict(value: dict, depth: int) -> dict:
 
 
 def _redact_list(value: list, depth: int) -> list:
-    if len(value) == 2 and isinstance(value[0], str) and _is_secret_key(value[0]):
-        return [value[0], REDACTED]  # ["Authorization", "Bearer ..."]
+    # ["Authorization", "Bearer x"] and ["Authorization", "Bearer", "x"]: a short
+    # header tuple whose first element names a secret keeps only that name.
+    if (
+        2 <= len(value) <= _MAX_HEADER_TUPLE
+        and isinstance(value[0], str)
+        and len(value[0]) <= _MAX_HEADER_NAME_CHARS
+        and all(isinstance(item, (str, int, float)) for item in value[1:])
+        and _is_secret_key(value[0])
+    ):
+        return [value[0], *([REDACTED] * (len(value) - 1))]
     return [_redact_value(item, depth + 1) for item in value]
 
 
