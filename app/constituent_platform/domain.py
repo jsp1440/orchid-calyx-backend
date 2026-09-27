@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import calendar
 import hashlib
 import json
+import re
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from enum import Enum
 from uuid import UUID
 
@@ -228,3 +231,106 @@ def audience_snapshot_sha256(members: list[AudienceMember]) -> str:
     canonical.sort(key=lambda item: (item["constituent_id"], item["normalized_email"]))
     payload = json.dumps(canonical, separators=(",", ":"), sort_keys=True).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Society membership lifecycle
+# ---------------------------------------------------------------------------
+
+_MEMBERSHIP_TRANSITIONS: dict[MembershipStatus, frozenset[MembershipStatus]] = {
+    MembershipStatus.PENDING: frozenset({MembershipStatus.ACTIVE, MembershipStatus.CANCELLED}),
+    MembershipStatus.ACTIVE: frozenset(
+        {MembershipStatus.GRACE, MembershipStatus.LAPSED, MembershipStatus.CANCELLED}
+    ),
+    MembershipStatus.GRACE: frozenset(
+        {MembershipStatus.ACTIVE, MembershipStatus.LAPSED, MembershipStatus.CANCELLED}
+    ),
+    MembershipStatus.LAPSED: frozenset({MembershipStatus.ACTIVE, MembershipStatus.CANCELLED}),
+    # Reinstating a cancelled membership is allowed, but only with a recorded reason.
+    MembershipStatus.CANCELLED: frozenset({MembershipStatus.ACTIVE}),
+}
+
+
+def validate_membership_transition(
+    current: MembershipStatus,
+    target: MembershipStatus,
+    *,
+    reason: str | None = None,
+) -> None:
+    """Fail closed on membership status changes outside the documented lifecycle."""
+
+    if target not in _MEMBERSHIP_TRANSITIONS[current]:
+        raise ValueError(f"INVALID_MEMBERSHIP_TRANSITION:{current.value}->{target.value}")
+    needs_reason = target is MembershipStatus.CANCELLED or current is MembershipStatus.CANCELLED
+    if needs_reason and not (reason and reason.strip()):
+        raise ValueError("MEMBERSHIP_TRANSITION_REASON_REQUIRED")
+
+
+def add_months(value: datetime, months: int) -> datetime:
+    """Calendar month arithmetic, clamping to the last day of a shorter month."""
+
+    if months < 1:
+        raise ValueError("INVALID_MEMBERSHIP_TERM")
+    index = value.month - 1 + months
+    year = value.year + index // 12
+    month = index % 12 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return value.replace(year=year, month=month, day=day)
+
+
+def lifecycle_status_at(
+    status: MembershipStatus,
+    expires_at: datetime | None,
+    grace_days: int,
+    as_of: datetime,
+) -> MembershipStatus:
+    """The status time alone implies: active -> grace at expiry, grace -> lapsed after grace.
+
+    Pending, lapsed and cancelled memberships never change by the passage of time.
+    """
+
+    if expires_at is None or status not in (MembershipStatus.ACTIVE, MembershipStatus.GRACE):
+        return status
+    if as_of < expires_at:
+        return status
+    if as_of < expires_at + timedelta(days=grace_days):
+        return MembershipStatus.GRACE
+    return MembershipStatus.LAPSED
+
+
+def renewal_term(
+    status: MembershipStatus,
+    expires_at: datetime | None,
+    term_months: int,
+    as_of: datetime,
+) -> tuple[datetime, datetime]:
+    """(new_starts_at, new_expires_at) for one renewal.
+
+    Active and grace memberships renew from their existing expiry, so paying early
+    never loses time and paying during grace keeps the anniversary. Pending, lapsed
+    and cancelled memberships start a new term at ``as_of``.
+    """
+
+    if status in (MembershipStatus.ACTIVE, MembershipStatus.GRACE) and expires_at is not None:
+        base = expires_at
+    else:
+        base = as_of
+    return base, add_months(base, term_months)
+
+
+SOCIETY_ENTITLEMENT_PREFIX = "society."
+
+
+def validate_society_entitlement_code(code: str) -> str:
+    """Society membership may only grant society-scoped entitlements.
+
+    Private Conservatory, OASIS, Calyx, research, donor, restricted-locality and
+    collection access can never be conferred by a society membership level.
+    """
+
+    normalized = code.strip().lower()
+    if not normalized.startswith(SOCIETY_ENTITLEMENT_PREFIX) or not re.fullmatch(
+        r"society\.[a-z0-9_]{1,60}", normalized
+    ):
+        raise ValueError(f"FORBIDDEN_SOCIETY_ENTITLEMENT:{code}")
+    return normalized

@@ -6,6 +6,8 @@ on:
       - "app/constituent_platform/**"
       - "migrations/20260823_oc_constituent_communications_foundation.sql"
       - "migrations/20260926_society_crm_p0_core.sql"
+      - "migrations/20260927_society_crm_p1_tenant_isolation.sql"
+      - "tests/test_society_crm_domain.py"
       - "tests/test_society_crm_postgres.py"
       - ".github/workflows/oc-society-crm-p0-validation.yml"
   workflow_dispatch:
@@ -55,7 +57,17 @@ jobs:
         run: >-
           psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
           -f migrations/20260926_society_crm_p0_core.sql
+      - name: Apply society CRM P1 tenant isolation schema
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260927_society_crm_p1_tenant_isolation.sql
+      - name: Verify P1 schema idempotency
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260927_society_crm_p1_tenant_isolation.sql
       - name: Run society CRM PostgreSQL tests
+        run: pytest -q tests/test_society_crm_postgres.py tests/test_society_crm_domain.py
+      - name: Re-run society CRM PostgreSQL tests against the same database
         run: pytest -q tests/test_society_crm_postgres.py
       - name: Compile constituent platform package
         run: python -m compileall -q app/constituent_platform
