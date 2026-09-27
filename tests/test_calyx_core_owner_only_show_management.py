@@ -39,9 +39,13 @@ from app.models import (
 from app.routers import calyx_core
 from app.security import OWNER_SESSION_COOKIE, create_owner_session_token
 from app.show_output_safety import (
+    MAX_CONFIG_DEPTH,
+    MAX_CONFIG_JSON_CHARS,
+    MAX_REDACT_DEPTH,
     MAX_RENDERED_CHARS,
     MAX_TEMPLATE_CHARS,
     ics_fold,
+    json_nesting_depth,
     redact_config_json,
 )
 
@@ -695,3 +699,132 @@ def test_template_create_rejects_oversized_templates(client, session_local):
     )
     assert response.status_code == 422
     assert _counts(session_local) == before
+
+
+# --- config_json nesting and size bounds -----------------------------------------------------
+
+
+def _nested_list(depth: int) -> str:
+    return "[" * depth + "]" * depth
+
+
+def _post_integration(client: TestClient, config_json: str):
+    return client.post(
+        f"/api/shows/{SHOW_ID}/integrations",
+        json={"provider": "svc", "config_json": config_json},
+        headers={"X-API-Key": API_KEY},
+    )
+
+
+def _store_integration(session_local, integration_id: str, config_json: str) -> None:
+    with session_local() as db:
+        db.add(
+            IntegrationConnection(
+                id=integration_id,
+                show_id=SHOW_ID,
+                provider="legacy",
+                config_json=config_json,
+            )
+        )
+        db.commit()
+
+
+@pytest.mark.parametrize("depth", [MAX_CONFIG_DEPTH + 1, 600, 100_000])
+def test_integration_create_rejects_deep_nesting_before_commit(
+    client, session_local, depth
+):
+    before = _counts(session_local)
+    response = _post_integration(client, _nested_list(depth))
+    assert response.status_code == 422
+    assert response.json()["detail"]["field"] == "config_json"
+    assert _counts(session_local) == before
+    listing = client.get(
+        f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+    )
+    assert listing.status_code == 200
+
+
+def test_integration_create_accepts_the_depth_limit(client, session_local):
+    response = _post_integration(client, _nested_list(MAX_CONFIG_DEPTH))
+    assert response.status_code == 200
+    assert json.loads(response.json()["config_json"]) == json.loads(
+        _nested_list(MAX_CONFIG_DEPTH)
+    )
+
+
+def test_integration_create_rejects_oversized_config(client, session_local):
+    before = _counts(session_local)
+    oversized = json.dumps({"note": "x" * MAX_CONFIG_JSON_CHARS})
+    response = _post_integration(client, oversized)
+    assert response.status_code == 422
+    assert str(MAX_CONFIG_JSON_CHARS) in response.json()["detail"]["message"]
+    assert _counts(session_local) == before
+
+
+def test_json_nesting_depth_ignores_brackets_inside_strings():
+    assert json_nesting_depth(json.dumps({"a": "[[[[{{{{", "b": [{"c": []}]})) == 4
+    assert json_nesting_depth('"\\"[[["') == 0
+    assert json_nesting_depth("not json [[") == 2
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        _nested_list(600),
+        _nested_list(100_000),
+        # nesting hidden inside JSON strings, one layer per level
+        _nested_list(0) + json.dumps({"a": 1}),
+    ],
+)
+def test_one_deeply_nested_stored_row_never_breaks_the_list(
+    client, session_local, stored
+):
+    if stored.startswith("{"):
+        # Each layer is a JSON string holding 8 more list levels: past MAX_REDACT_DEPTH
+        # only through embedded strings (escaping doubles per layer, so few layers).
+        for _ in range(6):
+            wrapped: object = stored
+            for _ in range(8):
+                wrapped = [wrapped]
+            stored = json.dumps({"inner": wrapped, "password": SECRET_PASSWORD})
+    _store_integration(session_local, "integ-deep", stored)
+    for _ in range(2):  # the row does not poison later requests either
+        response = client.get(
+            f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+        )
+        assert response.status_code == 200
+        rows = {row["id"]: row for row in response.json()}
+        assert set(rows) == {"integ-1", "integ-org", "integ-deep"}
+        assert "***" in rows["integ-deep"]["config_json"]
+        assert SECRET_PASSWORD not in response.text
+        assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"
+
+
+def test_deep_redaction_masks_below_the_depth_bound():
+    assert redact_config_json(_nested_list(5_000)) in {"***", json.dumps("***")}
+    assert redact_config_json(_nested_list(100_000)) == "***"
+    deep = json.loads(redact_config_json(_nested_list(MAX_REDACT_DEPTH + 10)))
+    for _ in range(MAX_REDACT_DEPTH + 1):  # containers at depth 0..MAX_REDACT_DEPTH
+        assert isinstance(deep, list)
+        deep = deep[0]
+    assert deep == "***"
+
+
+def test_a_row_that_cannot_be_redacted_is_masked_not_a_500(
+    client, session_local, monkeypatch
+):
+    real = calyx_core.redact_config_json
+
+    def flaky(config_json):
+        if config_json and "opaque-legacy" in config_json:
+            raise RecursionError("synthetic")
+        return real(config_json)
+
+    monkeypatch.setattr(calyx_core, "redact_config_json", flaky)
+    response = client.get(
+        f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+    )
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows["integ-org"]["config_json"] == "***"
+    assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"

@@ -1,4 +1,6 @@
 # ruff: noqa: B008
+import logging
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import or_, select
@@ -40,17 +42,20 @@ from app.schemas import (
     TemplateRenderResponse,
 )
 from app.show_output_safety import (
+    REDACTED,
     check_template_size,
     ics_strip_line_breaks,
     ics_text_line,
     normalize_render_context,
     redact_config_json,
     render_template_text,
+    validate_config_json,
 )
 from app.university.routes import router as university_router
 from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
+logger = logging.getLogger(__name__)
 
 # Show management (organizations, org shows, templates, events + ICS, files,
 # integrations) is owner-only. ``owner_or_member_read`` is default-deny and none of
@@ -264,10 +269,17 @@ def _integration_out(integration: IntegrationConnection) -> IntegrationOut:
     """Owner response for an integration: ``config_json`` secrets masked as ``***``.
 
     The stored configuration is unchanged (providers still need it); responses never
-    echo passwords, tokens, API keys or authorization values, even to the owner.
+    echo passwords, tokens, API keys or authorization values, even to the owner. A row
+    whose configuration cannot be redacted is masked entirely instead of failing the
+    response, so one bad stored row can never make the whole list a 500.
     """
     out = IntegrationOut.model_validate(integration)
-    return out.model_copy(update={"config_json": redact_config_json(out.config_json)})
+    try:
+        config_json = redact_config_json(out.config_json)
+    except Exception:  # noqa: BLE001 -- fail closed per row; never echo the stored value
+        logger.warning("integration %s config_json could not be redacted", out.id)
+        config_json = REDACTED
+    return out.model_copy(update={"config_json": config_json})
 
 
 @router.get("/shows/{show_id}/integrations", response_model=list[IntegrationOut], dependencies=OWNER_ONLY)
@@ -289,6 +301,8 @@ def create_show_integration(show_id: str, payload: IntegrationCreate, db: Sessio
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    # Size and nesting are bounded before anything is committed (422).
+    validate_config_json(payload.config_json)
     integration = IntegrationConnection(show_id=show_id, **payload.model_dump())
     db.add(integration)
     db.commit()

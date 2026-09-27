@@ -25,6 +25,8 @@
     layers) is masked as a whole, so a deeply nested stored value can never raise
     ``RecursionError``. A stored value that is not valid JSON, is larger than
     ``MAX_CONFIG_JSON_CHARS`` or cannot be redacted is masked entirely (fail closed).
+  - ``validate_config_json`` refuses (422) an oversized or too deeply nested value on
+    create, before anything is committed.
 * ``ics_text_line`` -- builds one iCalendar content line with RFC 5545 TEXT escaping
   (backslash, ``;``, ``,``, every line-break form as ``\\n``) and 75-octet line
   folding, so a title, location or note can never start a new calendar line
@@ -52,6 +54,7 @@ REDACTED = "***"
 # --- integration config redaction -------------------------------------------------------
 
 MAX_CONFIG_JSON_CHARS = 64 * 1024
+MAX_CONFIG_DEPTH = 32
 MAX_REDACT_DEPTH = 32
 
 # Substrings of the compact normalized key (letters and digits only).
@@ -316,6 +319,47 @@ def redact_config_json(config_json: str | None) -> str | None:
         return json.dumps(_redact_value(parsed), ensure_ascii=False)
     except (TypeError, ValueError, RecursionError):
         return REDACTED
+
+
+def json_nesting_depth(text: str) -> int:
+    """Deepest ``[``/``{`` nesting of ``text``, scanned iteratively (never recurses).
+
+    Brackets inside JSON strings are ignored; the text need not be valid JSON.
+    """
+    depth = deepest = 0
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "[{":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif ch in "]}":
+            depth = max(depth - 1, 0)
+    return deepest
+
+
+def validate_config_json(config_json: str | None) -> None:
+    """Refuse (422) an oversized or too deeply nested ``config_json`` before commit."""
+    if config_json is None:
+        return
+    if len(config_json) > MAX_CONFIG_JSON_CHARS:
+        raise _unprocessable(
+            f"config_json exceeds {MAX_CONFIG_JSON_CHARS} characters",
+            field="config_json",
+        )
+    if json_nesting_depth(config_json) > MAX_CONFIG_DEPTH:
+        raise _unprocessable(
+            f"config_json nests deeper than {MAX_CONFIG_DEPTH} levels",
+            field="config_json",
+        )
 
 
 # --- iCalendar -------------------------------------------------------------------------
