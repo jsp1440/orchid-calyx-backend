@@ -13,6 +13,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import hmac
+import re
 from pathlib import Path
 
 import pytest
@@ -255,7 +256,42 @@ AUTH_MODULES = [
     "app/member_auth.py",
     "app/constituent_platform/service.py",
     "app/routers/github_research_bridge.py",
+    "app/routers/reference_docs.py",
+    "app/review_api/dependencies.py",
+    "app/calyx_orchestrator/sandbox_supervisor_service.py",
 ]
+
+# Identifiers that name a presented or expected secret. A ``==``/``!=`` between
+# two such runtime values short-circuits on the first differing byte (a timing
+# oracle) and must go through app.security.credentials_match instead.
+SECRET_NAME = re.compile(r"(api_key|admin_key|effective_key|secret|token|signature|password|access_code|^expected$)", re.IGNORECASE)
+
+
+def _operand_names(node: ast.AST) -> set[str]:
+    if isinstance(node, ast.Name):
+        return {node.id}
+    if isinstance(node, ast.Attribute):
+        return {node.attr}
+    if isinstance(node, ast.Call):
+        return _operand_names(node.func)
+    return set()
+
+
+def _raw_secret_equality(tree: ast.AST) -> list[int]:
+    found = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Compare):
+            continue
+        operands = [node.left, *node.comparators]
+        for op, left, right in zip(node.ops, operands, operands[1:]):
+            if not isinstance(op, (ast.Eq, ast.NotEq)):
+                continue
+            if isinstance(left, ast.Constant) or isinstance(right, ast.Constant):
+                continue  # e.g. ``scheme == "bearer"`` or ``token is None``-style checks
+            names = _operand_names(left) | _operand_names(right)
+            if any(SECRET_NAME.search(name) for name in names):
+                found.append(node.lineno)
+    return found
 
 
 @pytest.mark.parametrize("module", AUTH_MODULES)
@@ -276,3 +312,37 @@ def test_request_credentials_are_never_compared_as_raw_strings(module):
             assert (
                 isinstance(arg, ast.Call) and getattr(arg.func, "attr", None) == "encode"
             ), f"{module}:{node.lineno} compares a str; use app.security.credentials_match"
+
+
+@pytest.mark.parametrize("module", AUTH_MODULES)
+def test_request_credentials_are_never_compared_with_equality_operators(module):
+    """No ``==``/``!=`` between secret-named values in the auth modules: use credentials_match."""
+    tree = ast.parse((REPO / module).read_text(encoding="utf-8"))
+    lines = _raw_secret_equality(tree)
+    assert not lines, f"{module}: raw secret equality at line(s) {lines}; use app.security.credentials_match"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "if api_key != effective_key: pass",
+        "if not expected or api_key != expected: pass",
+        "if record.claim_worker != worker_id or record.claim_token != claim_token: pass",
+        "ok = signature == hmac_signature(x)",
+    ],
+)
+def test_equality_guard_detects_raw_secret_compares(source):
+    """Negative control: the guard flags each pattern this hardening removed."""
+    assert _raw_secret_equality(ast.parse(source))
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        'if scheme.lower() == "bearer": pass',
+        "if record.claim_worker != worker_id: pass",
+        "if not credentials_match(api_key, expected): pass",
+    ],
+)
+def test_equality_guard_ignores_non_secret_compares(source):
+    assert not _raw_secret_equality(ast.parse(source))
