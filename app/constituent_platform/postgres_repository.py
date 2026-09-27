@@ -1543,3 +1543,70 @@ class PostgresSocietyCRMRepository:
                 Jsonb(_jsonable(metadata or {})),
             ),
         )
+
+    # -- read helpers for import reconciliation and organization export --------------
+    #
+    # Added for issue #1655 (Neon import / reconciliation / export). Both are
+    # read-only and tenant-scoped: they run under ``self._tenant`` (RLS runtime role
+    # + transaction-local tenant) and also filter explicitly by the tenant column.
+
+    def list_external_links(
+        self, *, organization_id: int, source_system: str | None = None, source_record_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        clauses = ["organization_id = %s"]
+        params: list[Any] = [organization_id]
+        if source_system is not None:
+            clauses.append("source_system = %s")
+            params.append(source_system)
+        if source_record_type is not None:
+            clauses.append("source_record_type = %s")
+            params.append(source_record_type)
+        with self._tenant(organization_id) as cur:
+            cur.execute(
+                "SELECT * FROM oc_constituent.external_record_links WHERE " + " AND ".join(clauses) + " ORDER BY id",
+                params,
+            )
+            return [dict(row) for row in cur.fetchall()]
+
+    # Fixed allowlist: (export key, qualified table, tenant column). Identifiers are
+    # never taken from callers.
+    TENANT_EXPORT_TABLES: tuple[tuple[str, str, str], ...] = (
+        ("organizations", "oc_constituent.organizations", "id"),
+        ("membership_levels", "oc_constituent.membership_levels", "organization_id"),
+        ("constituents", "oc_constituent.constituents", "owner_organization_id"),
+        ("email_addresses", "oc_constituent.email_addresses", "organization_id"),
+        ("phone_numbers", "oc_constituent.phone_numbers", "organization_id"),
+        ("postal_addresses", "oc_constituent.postal_addresses", "organization_id"),
+        ("memberships", "oc_constituent.memberships", "organization_id"),
+        ("membership_renewals", "oc_constituent.membership_renewals", "organization_id"),
+        ("membership_household_members", "oc_constituent.membership_household_members", "organization_id"),
+        ("organization_staff_roles", "oc_constituent.organization_staff_roles", "organization_id"),
+        ("organization_identity_bindings", "oc_constituent.organization_identity_bindings", "organization_id"),
+        ("entitlements", "oc_constituent.entitlements", "organization_id"),
+        ("communication_preferences", "oc_constituent.communication_preferences", "organization_id"),
+        ("suppressions", "oc_constituent.suppressions", "organization_id"),
+        ("external_record_links", "oc_constituent.external_record_links", "organization_id"),
+        ("crm_audit_events", "oc_constituent.crm_audit_events", "organization_id"),
+        ("communication_intents", "oc_communications.intents", "organization_id"),
+    )
+
+    def snapshot_tenant_tables(self, *, organization_id: int) -> dict[str, list[dict[str, Any]]]:
+        """Every row of every tenant-owned CRM table for one organization.
+
+        One REPEATABLE READ transaction under the tenant context, so the tables are a
+        mutually consistent snapshot and RLS guarantees no other tenant's rows.
+        """
+        bound = self._unit.get()
+        if bound is not None:
+            raise RuntimeError("CRM_SNAPSHOT_NOT_ALLOWED_IN_UNIT")
+        conn = self._connect()
+        try:
+            conn.isolation_level = psycopg.IsolationLevel.REPEATABLE_READ
+            out: dict[str, list[dict[str, Any]]] = {}
+            with tenant_transaction(organization_id, connect=self._connect, connection=conn) as cur:
+                for key, table, column in self.TENANT_EXPORT_TABLES:
+                    cur.execute(f"SELECT * FROM {table} WHERE {column} = %s ORDER BY id", (organization_id,))
+                    out[key] = [dict(row) for row in cur.fetchall()]
+            return out
+        finally:
+            conn.close()
