@@ -18,7 +18,12 @@ from .models import (
     content_hash,
     feedback_fingerprint,
 )
-from .repository import EvidenceFeedbackRepository
+from .repository import (
+    EvidenceFeedbackRepository,
+    normalized_key,
+    validate_free_text,
+    validate_label,
+)
 
 Clock = Callable[[], str]
 
@@ -83,6 +88,21 @@ class EvidenceFeedbackService:
     ) -> SubmissionResult:
         if not statement.strip():
             raise ValueError("FEEDBACK_STATEMENT_REQUIRED")
+        # Refused identically by both stores (422), before any store access.
+        for name, text in (
+            ("STATEMENT", statement),
+            ("PAGE_CONTEXT", page_context),
+            ("PROPOSED_REPLACEMENT", proposed_replacement),
+            ("CITATION", citation),
+        ):
+            validate_free_text(text, code=f"{name}_INVALID_CHARACTERS")
+        for name, label in (
+            ("SOURCE_PARTNER_ID", source_partner_id),
+            ("DEFECT_KIND", defect_kind),
+            ("SEVERITY", severity),
+        ):
+            validate_label(label, code=f"{name}_INVALID_CHARACTERS")
+        normalized_key(object_id, code="OBJECT_ID_REQUIRED")
         persisted = self.repository.get_object_version(
             object_id,
             object_version_hash,
@@ -204,14 +224,16 @@ class EvidenceFeedbackService:
         reviewer_id: str,
         corrected_payload: dict[str, Any],
     ) -> EvidenceFeedbackCase:
-        # Serialized per case so two reviewers cannot both resolve it.
+        # Serialized per case so two reviewers cannot both resolve it. The id
+        # is validated before it becomes a lock key.
+        case_key = normalized_key(case_id, code="CASE_ID_REQUIRED")
         return self.repository.atomic(
             lambda: self._accept_trivial_correction(
-                case_id=case_id,
+                case_id=case_key,
                 reviewer_id=reviewer_id,
                 corrected_payload=corrected_payload,
             ),
-            lock_key=f"case:{case_id.strip()}",
+            lock_key=f"case:{case_key}",
         )
 
     def _accept_trivial_correction(

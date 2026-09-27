@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from threading import RLock
@@ -97,12 +98,54 @@ def review_order_key(case: EvidenceFeedbackCase) -> tuple[str, str]:
 
 
 def normalized_key(value: str, *, code: str) -> str:
-    """Identity used by every store: surrounding whitespace is not identity."""
+    """Identity used by every store: surrounding whitespace is not identity.
+
+    An identifier with NUL, another control character or any non-printable
+    character is refused with ``<FIELD>_INVALID_CHARACTERS`` (``code`` with its
+    ``_REQUIRED`` suffix replaced), a client error in both stores: PostgreSQL
+    cannot store NUL in text, and it must never surface as a 503 outage.
+    """
 
     normalized = value.strip()
     if not normalized:
         raise EvidenceFeedbackRepositoryError(code)
+    if not normalized.isprintable():
+        raise EvidenceFeedbackRepositoryError(
+            code.removesuffix("_REQUIRED") + "_INVALID_CHARACTERS"
+        )
     return normalized
+
+
+# Line structure is legitimate in free text; every other control character is not.
+_FREE_TEXT_WHITESPACE = frozenset("\t\n\r")
+
+
+def has_disallowed_text_characters(value: str) -> bool:
+    """True when free text holds NUL, another control character or a lone surrogate.
+
+    Tab, newline and carriage return are allowed. NUL cannot be stored in a
+    PostgreSQL ``text`` or ``jsonb`` value, so accepting it would make one
+    store answer 503 where the other stores the text.
+    """
+
+    return any(
+        unicodedata.category(char) in {"Cc", "Cs"} and char not in _FREE_TEXT_WHITESPACE
+        for char in value
+    )
+
+
+def validate_free_text(value: str | None, *, code: str) -> None:
+    """Refuse free text with disallowed characters (``code`` is the 422 code)."""
+
+    if value is not None and has_disallowed_text_characters(value):
+        raise EvidenceFeedbackRepositoryError(code)
+
+
+def validate_label(value: str | None, *, code: str) -> None:
+    """Refuse a short label (severity, defect kind, partner id) that is not printable."""
+
+    if value is not None and not value.isprintable():
+        raise EvidenceFeedbackRepositoryError(code)
 
 
 def normalized_version_hash(version_hash: str) -> str:

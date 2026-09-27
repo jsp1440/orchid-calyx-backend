@@ -274,6 +274,31 @@ def test_limit_and_cursor_are_bounded_and_validated(store, client):
     assert client.get(REVIEW, params={"limit": 100}, headers=reviewer_headers()).status_code == 200
 
 
+def _cursor(created_at, case_id) -> str:
+    raw = json.dumps({"c": created_at, "i": case_id}).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+@pytest.mark.parametrize(
+    ("created_at", "case_id"),
+    [
+        ("2026-09-26T12:00:00+00:00\x00", "efc-1"),
+        ("2026-09-26T12:00:00+00:00", "efc-\x001"),
+        ("2026-09-26\x1b", "efc-1"),
+        ("2026-09-26", "efc-\n1"),
+        ("2026-09-26", "efc-\u200b1"),  # zero-width space: not printable
+        ("2026-09-26", "efc-\ud8001"),  # lone surrogate
+    ],
+)
+def test_cursor_with_control_or_non_printable_characters_is_422_not_503(store, client, created_at, case_id):
+    submit(client)
+    response = client.get(REVIEW, params={"cursor": _cursor(created_at, case_id)}, headers=reviewer_headers())
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": "INVALID_REVIEW_CURSOR"}
+    # A well-formed cursor from a real page still works.
+    assert client.get(REVIEW, params={"cursor": _cursor("2026-09-26", "efc-1")}, headers=reviewer_headers()).status_code == 200
+
+
 def test_status_and_object_type_filters(store, clock, client):
     lexicon = submit(client)["case"]
     matrix = scientific_case(client)
@@ -479,6 +504,34 @@ def test_decision_body_must_match_the_decision(file_store, clock, client, body):
     response = decide(client, case["case_id"], body)
     assert response.status_code == 422
     assert file_store.repository().get_case(case["case_id"]).status.value == "pending_review"
+
+
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ({"decision": "reject", "reason": "Correct\x00 as shown."}, "REVIEW_REASON_INVALID_CHARACTERS"),
+        ({"decision": "needs_governed_review", "note": "Specialist\x1b"}, "REVIEW_NOTE_INVALID_CHARACTERS"),
+    ],
+)
+def test_decision_text_with_control_characters_is_422_in_both_stores(store, clock, client, body, code):
+    case = scientific_case(client)
+    response = decide(client, case["case_id"], body)
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": code}
+    repository = store.repository()
+    assert repository.get_case(case["case_id"]).status.value == "pending_review"
+    assert [e["event"] for e in repository.list_events(case["case_id"])] == ["case_submitted"]
+    # Multi-line text is ordinary input.
+    ok = decide(client, case["case_id"], {"decision": "reject", "reason": "Correct as shown.\nSee Dressler."})
+    assert ok.status_code == 200, ok.text
+
+
+@pytest.mark.parametrize("path", ["efc-%00abc", "efc-%1Fabc"])
+def test_review_case_id_with_control_characters_is_422_not_503(store, client, path):
+    for method, url, body in _review_calls(path)[1:]:
+        response = client.request(method, url, json=body, headers=reviewer_headers())
+        assert response.status_code == 422, (method, url, response.text)
+        assert response.json()["detail"] == {"code": "CASE_ID_INVALID_CHARACTERS"}
 
 
 def test_decision_on_unknown_case_is_404(store, client):

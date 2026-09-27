@@ -330,3 +330,85 @@ def test_startup_warning_is_logged_at_import_without_crashing(tmp_path):
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.strip() == "/api/evidence-feedback"
     assert "Evidence feedback is NOT durable" in completed.stderr
+
+
+# --- control characters are bad input in both stores, never a 503 --------------
+
+CONTROL_CHARACTERS = ["\x00", "\x01", "\x1b", "\x7f", "\x85"]
+
+
+def _lexicon_submission(version, **overrides):
+    return {
+        "object_id": version["object_id"],
+        "object_version_hash": version["version_hash"],
+        "object_type": "lexicon",
+        "page_context": "/lexicon/labellum",
+        "feedback_class": "suggest_correction",
+        "statement": "Petal is misspelled.",
+        "proposed_replacement": "a modified petal",
+        "defect_kind": "typo",
+        **overrides,
+    }
+
+
+@pytest.mark.parametrize("char", CONTROL_CHARACTERS, ids=lambda c: f"U+{ord(c):04X}")
+def test_register_rejects_control_characters_in_object_id(store, char):
+    client = client_for(store)
+    response = client.post(
+        "/api/evidence-feedback/objects",
+        json={"object_id": f"lexicon:lab{char}ellum", "object_type": "lexicon", "payload": {"d": 1}},
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": "OBJECT_ID_INVALID_CHARACTERS"}
+    assert store.repository().list_object_versions("lexicon:labellum") == []
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "code"),
+    [
+        ("object_id", "lexicon:labellum\x00", "OBJECT_ID_INVALID_CHARACTERS"),
+        ("object_id", "lexicon:\x1blabellum", "OBJECT_ID_INVALID_CHARACTERS"),
+        ("statement", "Petal is\x00 misspelled.", "STATEMENT_INVALID_CHARACTERS"),
+        ("statement", "Petal is\x07 misspelled.", "STATEMENT_INVALID_CHARACTERS"),
+        ("page_context", "/lexicon/\x00labellum", "PAGE_CONTEXT_INVALID_CHARACTERS"),
+        ("proposed_replacement", "a modified\x00 petal", "PROPOSED_REPLACEMENT_INVALID_CHARACTERS"),
+        ("citation", "Dressler\x00 1993", "CITATION_INVALID_CHARACTERS"),
+        ("defect_kind", "typo\x00", "DEFECT_KIND_INVALID_CHARACTERS"),
+        ("severity", "high\x00", "SEVERITY_INVALID_CHARACTERS"),
+        ("source_partner_id", "partner\x00", "SOURCE_PARTNER_ID_INVALID_CHARACTERS"),
+    ],
+)
+def test_submit_rejects_control_characters_identically_in_both_stores(store, field, value, code):
+    client = client_for(store)
+    version = register_object(
+        client, object_id="lexicon:labellum", object_type="lexicon", payload={"definition": "a modified petel"}
+    )
+    response = client.post("/api/evidence-feedback/cases", json=_lexicon_submission(version, **{field: value}))
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": code}
+    # Nothing was stored: the listing is empty in either store.
+    assert store.repository().list_cases(status=None, object_type=None, limit=10, before=None) == []
+
+
+def test_submit_keeps_ordinary_line_structure_and_unicode(store):
+    client = client_for(store)
+    version = register_object(
+        client, object_id="lexicon:labellum", object_type="lexicon", payload={"definition": "a modified petel"}
+    )
+    statement = "Line one.\n\tIndented line two.\r\nDracula × hybrid, 'petal' — see Dressler."
+    response = client.post("/api/evidence-feedback/cases", json=_lexicon_submission(version, statement=statement))
+    assert response.status_code == 201, response.text
+    assert response.json()["case"]["statement"] == statement.strip()
+
+
+@pytest.mark.parametrize("path", ["efc-%00abc", "efc-%1Babc", "efc-%7Fabc"])
+def test_case_id_with_control_characters_is_422_not_503(store, path):
+    client = client_for(store)
+    status = client.get(f"/api/evidence-feedback/cases/{path}")
+    assert status.status_code == 422, status.text
+    assert status.json()["detail"] == {"code": "CASE_ID_INVALID_CHARACTERS"}
+    trivial = client.post(
+        f"/api/evidence-feedback/cases/{path}/accept-trivial", json={"corrected_payload": {"d": 2}}
+    )
+    assert trivial.status_code == 422, trivial.text
+    assert trivial.json()["detail"] == {"code": "CASE_ID_INVALID_CHARACTERS"}
