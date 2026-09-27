@@ -805,7 +805,15 @@ def test_one_deeply_nested_stored_row_never_breaks_the_list(
 
 
 def test_deep_redaction_masks_below_the_depth_bound():
-    assert redact_config_json(_nested_list(5_000)) in {"***", json.dumps("***")}
+    # json.loads may either raise RecursionError or successfully parse 5,000
+    # containers depending on the runner's recursion limit. Both paths must fail
+    # closed: either mask the whole value or retain only the bounded container
+    # prefix with the remainder replaced by the redaction marker.
+    redacted = redact_config_json(_nested_list(5_000))
+    assert redacted is not None
+    assert "***" in redacted
+    assert json_nesting_depth(redacted) <= MAX_REDACT_DEPTH + 1
+    assert len(redacted) <= 2 * (MAX_REDACT_DEPTH + 1) + len(json.dumps("***"))
     assert redact_config_json(_nested_list(100_000)) == "***"
     deep = json.loads(redact_config_json(_nested_list(MAX_REDACT_DEPTH + 10)))
     for _ in range(MAX_REDACT_DEPTH + 1):  # containers at depth 0..MAX_REDACT_DEPTH
