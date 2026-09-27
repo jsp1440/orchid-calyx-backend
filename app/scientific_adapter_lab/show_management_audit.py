@@ -459,8 +459,8 @@ CAPABILITY_INVENTORY: list[dict] = [
         "status": "KEEP",
         "accessible": True,
         "notes": (
-            "POST/GET .../templates and POST .../templates/{id}/render (str.format) "
-            "implemented; renders to text but does not dispatch"
+            "POST/GET .../templates and POST .../templates/{id}/render (owner-only, bounded "
+            "{name} substitution, no str.format) implemented; renders to text but does not dispatch"
         ),
     },
     {
