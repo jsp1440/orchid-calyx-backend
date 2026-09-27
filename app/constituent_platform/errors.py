@@ -77,6 +77,7 @@ _MESSAGES: dict[str, str] = {
     "PAYMENT_RENEWAL_APPLIED_USE_REFUND": "This payment already renewed a membership. Record a refund instead of voiding it.",
     "PAYMENT_DONATION_RECEIPT_ISSUED_USE_REFUND": "A donation receipt was issued for this payment. Record a refund instead of voiding it.",
     "PAYMENT_CONFLICT": "This payment conflicts with an existing record. Check the payment list before retrying.",
+    "ORGANIZATION_NAME_REQUIRED": "The society name cannot be empty.",
     "PLATFORM_OPERATOR_REQUIRED": "Only the Orchid Continuum platform operator can do this.",
     "SOCIETY_CRM_DISABLED": "The society CRM is not enabled on this server yet.",
     "CRM_DATABASE_UNAVAILABLE": "The CRM database could not be reached, so nothing was changed. Try again in a few minutes; if it continues, check the system status page.",
@@ -109,6 +110,8 @@ def message_for(code: str) -> str:
     if code.startswith("INVALID_MEMBERSHIP_TRANSITION:"):
         change = code.split(":", 1)[1].replace("->", " to ")
         return f"A membership cannot move directly from {change}."
+    if code.startswith("INVALID_SETTING:"):
+        return f"The setting '{code.split(':', 1)[1]}' is not valid (links must start with https://, colours look like #1a2b3c)."
     if code.startswith(("PAYMENT_VOID_NOT_ALLOWED_FROM_STATUS:", "REFUND_NOT_ALLOWED_FROM_STATUS:")):
         return f"This action is not possible while the payment is {code.split(':', 1)[1]}."
     if code.startswith("FORBIDDEN_SOCIETY_ENTITLEMENT:"):

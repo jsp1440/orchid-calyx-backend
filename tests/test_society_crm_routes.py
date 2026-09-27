@@ -288,3 +288,37 @@ def test_offline_payment_over_http_renews_once_and_is_role_limited(operator: Tes
     assert stranger.get(f"{base}/payments").status_code == 403
     # Webhooks are closed without a configured secret (and never accept unsigned bodies).
     assert TestClient(operator.app).post("/api/society/webhooks/stripe", content=b"{}").status_code in (400, 503)
+
+
+def test_second_society_configures_itself_without_code_changes(operator: TestClient, people) -> None:
+    """Outside-society pilot shape: name, branding, levels, dues, terms, roles are all data."""
+    slug, admin, _ = _new_society(operator, people)
+    base = f"/api/society/{slug}"
+    updated = admin.patch(f"{base}/settings", json={
+        "display_name": "Central Coast Bromeliad Club",
+        "settings": {"tagline": "Bromeliads for everyone", "primary_color": "#1A6B3C", "join_enabled": True,
+                     "website_url": "https://bromeliads.example.org", "public_contact_email": "Hello@Example.org"}})
+    assert updated.status_code == 200, updated.text
+    assert admin.post(f"{base}/levels", json={"code": "family", "display_name": "Family", "dues_amount_cents": 4000,
+                                              "term_months": 24, "household_max_members": 4}).status_code == 201
+    bad = admin.patch(f"{base}/settings", json={"settings": {"logo_url": "javascript:alert(1)"}})
+    assert bad.status_code == 422 and bad.json()["detail"]["code"] == "INVALID_SETTING:logo_url"
+    assert admin.patch(f"{base}/settings", json={"settings": {"secret_admin_notes": "x"}}).status_code == 422
+
+    admin.post(f"{base}/members", json={"display_name": "Private Person", "email": "private@example.org",
+                                                 "level_code": "family"}).json()
+    public = TestClient(operator.app).get(f"/api/society-public/{slug}")
+    assert public.status_code == 200
+    profile = public.json()
+    assert profile["display_name"] == "Central Coast Bromeliad Club"
+    assert profile["primary_color"] == "#1a6b3c" and profile["public_contact_email"] == "hello@example.org"
+    assert [(lvl["code"], lvl["term_months"]) for lvl in profile["membership_levels"]] == [
+        ("individual", 12), ("family", 24)]
+    assert "private@example.org" not in public.text and "Private Person" not in public.text
+    assert set(profile) >= {"membership_levels"} and "constituent_id" not in public.text
+    assert TestClient(operator.app).get("/api/society-public/no-such-society").status_code == 404
+
+    stranger = people(f"supabase:{uuid.uuid4()}")
+    assert stranger.patch(f"{base}/settings", json={"display_name": "Hijack"}).status_code == 403
+    audit = [e["action"] for e in admin.get(f"{base}/audit").json()["items"]]
+    assert "organization.settings_changed" in audit

@@ -20,9 +20,12 @@ from .crm_reconcile import reconcile
 from .domain import MembershipStatus, MessagePurpose, PreferenceState
 from .payments import PaymentLedgerService
 from .society_communications import SocietyCommunicationsService
+from .society_profile import SocietyProfileService
 from .society_routes import OrgId, Principal, Service, _call, require_enabled
 
 router = APIRouter(prefix="/api/society/{org_slug}", tags=["society-crm-data"], dependencies=[Depends(require_enabled)])
+public_router = APIRouter(prefix="/api/society-public", tags=["society-crm-public"],
+                          dependencies=[Depends(require_enabled)])
 
 MAX_CSV_BYTES = 5_000_000
 
@@ -285,3 +288,28 @@ def reconcile_provider_payments(payload: PaymentReconcileIn, org: OrgId, service
 @router.get("/payments/failed-notifications")
 def failed_payment_notifications(org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
     return {"items": _call(_ledger(service).failed_webhooks, principal, org)}
+
+
+# -- society settings and public profile ---------------------------------------------------
+
+
+class SettingsIn(_Strict):
+    display_name: str | None = Field(None, min_length=1, max_length=200)
+    settings: dict[str, Any] = Field(default_factory=dict, max_length=20)
+
+
+@router.get("/settings")
+def get_settings(org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(SocietyProfileService(service._repo, service).get_settings, principal, org)
+
+
+@router.patch("/settings")
+def update_settings(payload: SettingsIn, org: OrgId, service: Service, principal: Principal) -> dict[str, Any]:
+    return _call(SocietyProfileService(service._repo, service).update_settings, principal, org,
+                 display_name=payload.display_name, settings=payload.settings)
+
+
+@public_router.get("/{org_slug}")
+def public_society_profile(org_slug: str, service: Service) -> dict[str, Any]:
+    """Anonymous: allow-listed public fields and active membership levels only."""
+    return _call(SocietyProfileService(service._repo, service).public_profile, org_slug)

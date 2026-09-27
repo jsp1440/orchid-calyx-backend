@@ -22,6 +22,7 @@ CRM_MIGRATIONS: tuple[str, ...] = (
     "migrations/20260927c_society_crm_portal_ops.sql",
     "migrations/20260927d_society_crm_communications.sql",
     "migrations/20260928_society_crm_money.sql",
+    "migrations/20260928b_society_crm_org_profile.sql",
 )
 
 
