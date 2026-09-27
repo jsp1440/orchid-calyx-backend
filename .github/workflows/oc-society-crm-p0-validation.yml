@@ -6,7 +6,14 @@ on:
       - "app/constituent_platform/**"
       - "migrations/20260823_oc_constituent_communications_foundation.sql"
       - "migrations/20260926_society_crm_p0_core.sql"
+      - "migrations/20260927_society_crm_p1_tenant_isolation.sql"
+      - "migrations/20260927b_constituent_newsletter_canonical.sql"
+      - "migrations/CALYX-RECOVERY-001-research-station-records.sql"
+      - "runtime/research_station_store.py"
+      - "scripts/oc_constituent_migrate_research_station.py"
       - "tests/test_society_crm_postgres.py"
+      - "tests/test_constituent_canonical_store.py"
+      - "tests/test_constituent_persistence_selection.py"
       - ".github/workflows/oc-society-crm-p0-validation.yml"
   workflow_dispatch:
 
@@ -57,5 +64,25 @@ jobs:
           -f migrations/20260926_society_crm_p0_core.sql
       - name: Run society CRM PostgreSQL tests
         run: pytest -q tests/test_society_crm_postgres.py
+      - name: Apply society CRM P1 tenant isolation
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260927_society_crm_p1_tenant_isolation.sql
+      - name: Apply canonical newsletter/contact schema
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260927b_constituent_newsletter_canonical.sql
+      - name: Verify canonical newsletter schema idempotency
+        run: >-
+          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
+          -f migrations/20260927b_constituent_newsletter_canonical.sql
+      - name: Run canonical newsletter/contact tests
+        run: >-
+          pytest -q tests/test_constituent_canonical_store.py
+          tests/test_constituent_persistence_selection.py
+          tests/test_constituent_platform_routes.py
+          tests/test_constituent_platform_domain.py
       - name: Compile constituent platform package
-        run: python -m compileall -q app/constituent_platform
+        run: >-
+          python -m compileall -q app/constituent_platform
+          scripts/oc_constituent_migrate_research_station.py
