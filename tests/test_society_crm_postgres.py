@@ -641,3 +641,35 @@ def test_nested_blocks_cannot_switch_tenant_or_drop_to_platform_scope(crm: Socie
                     pass
     finally:
         conn.close()
+
+
+def test_concurrent_binding_of_one_login_to_two_people_is_a_clean_conflict(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository
+) -> None:
+    """Checker low finding: the loser of a same-login race gets a domain error, not a raw DB error."""
+    import threading
+
+    org, admin = _society(crm)
+    unexpected: list[BaseException] = []
+    for _ in range(15):
+        people = [repo.create_person(organization_id=org, display_name=f"P{i}", actor_subject=admin.subject)
+                  for i in range(2)]
+        subject = _subject()
+        barrier = threading.Barrier(2)
+
+        def bind(person_id: int) -> None:
+            barrier.wait()
+            try:
+                crm.bind_identity(admin, org, constituent_id=person_id, auth_subject=subject)
+            except ValueError as exc:
+                assert str(exc) == "AUTH_SUBJECT_ALREADY_BOUND"
+            except BaseException as exc:  # noqa: BLE001
+                unexpected.append(exc)
+
+        threads = [threading.Thread(target=bind, args=(p["id"],)) for p in people]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        assert repo.bound_constituent_id(organization_id=org, auth_subject=subject) in {p["id"] for p in people}
+    assert unexpected == []

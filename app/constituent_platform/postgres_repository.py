@@ -226,15 +226,23 @@ class PostgresSocietyCRMRepository:
                 if existing["auth_subject"] == subject:
                     raise ValueError("AUTH_SUBJECT_ALREADY_BOUND")
                 raise ValueError("CONSTITUENT_ALREADY_BOUND")
-            cur.execute(
-                """
-                INSERT INTO oc_constituent.organization_identity_bindings
-                    (organization_id, constituent_id, auth_subject, verification_method, bound_by_subject)
-                VALUES (%s, %s, %s, %s, %s)
-                RETURNING *
-                """,
-                (organization_id, constituent_id, subject, verification_method, actor),
-            )
+            try:
+                cur.execute(
+                    """
+                    INSERT INTO oc_constituent.organization_identity_bindings
+                        (organization_id, constituent_id, auth_subject, verification_method, bound_by_subject)
+                    VALUES (%s, %s, %s, %s, %s)
+                    RETURNING *
+                    """,
+                    (organization_id, constituent_id, subject, verification_method, actor),
+                )
+            except psycopg.errors.UniqueViolation as exc:
+                # The person lock does not serialize the same login being bound to two
+                # different people concurrently; the unique index does. Report it cleanly.
+                constraint = getattr(exc.diag, "constraint_name", "") or ""
+                raise ValueError(
+                    "AUTH_SUBJECT_ALREADY_BOUND" if "subject" in constraint else "CONSTITUENT_ALREADY_BOUND"
+                ) from None
             row = dict(cur.fetchone())
             self._audit(cur, organization_id=organization_id, actor_subject=actor,
                         action="identity_binding.created", entity_type="identity_binding",
