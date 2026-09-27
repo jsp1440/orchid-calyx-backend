@@ -10,6 +10,7 @@ from app.calyx_conversation.routes import router as calyx_conversation_router
 from app.calyx_conversation.speak_routes import router as calyx_speak_router
 from app.deps import get_db
 from app.lexicon.routes import router as lexicon_router
+from app.member_auth import owner_or_member_read
 from app.models import (
     Contact,
     Event,
@@ -75,7 +76,18 @@ def create_org_show(org_id: str, payload: ShowCreate, db: Session = Depends(get_
     return show
 
 
-@router.get("/shows/{show_id}/contacts", response_model=list[ContactOut])
+# Owner-only. Contacts are personal data (name, email, phone, city). The route-level
+# ``owner_or_member_read`` is default-deny and neither route is marked
+# ``@member_readable``: owner session or API key are admitted exactly as by
+# ``verify_owner_or_api_key``, a verified member gets 403 OWNER_ACCESS_REQUIRED and
+# anonymous/invalid credentials stay 401. The dependency runs before the show lookup
+# and body validation, so an unauthenticated caller learns nothing about which shows
+# exist and cannot inject contacts. No public show-entry form creates contacts.
+@router.get(
+    "/shows/{show_id}/contacts",
+    response_model=list[ContactOut],
+    dependencies=[Depends(owner_or_member_read)],
+)
 def list_show_contacts(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
@@ -89,7 +101,11 @@ def list_show_contacts(show_id: str, db: Session = Depends(get_db)):
     return db.execute(query).scalars().all()
 
 
-@router.post("/shows/{show_id}/contacts", response_model=ContactOut)
+@router.post(
+    "/shows/{show_id}/contacts",
+    response_model=ContactOut,
+    dependencies=[Depends(owner_or_member_read)],
+)
 def create_show_contact(show_id: str, payload: ContactCreate, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:

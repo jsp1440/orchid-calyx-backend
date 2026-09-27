@@ -1,7 +1,16 @@
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routers.calyx_operator_chat import reset_chat_for_tests, router
+
+API_KEY = "test-api-key"
+OWNER = {"X-API-Key": API_KEY}
+
+
+@pytest.fixture(autouse=True)
+def _api_key(monkeypatch):
+    monkeypatch.setenv("CALYX_API_KEY", API_KEY)
 
 
 def client() -> TestClient:
@@ -16,9 +25,10 @@ def test_operator_message_and_transcript_round_trip():
     response = active.post(
         "/brain/mission-control/chat/messages",
         json={"content": "What are you working on?"},
+        headers=OWNER,
     )
     assert response.status_code == 200
-    transcript = active.get("/brain/mission-control/chat/transcript").json()
+    transcript = active.get("/brain/mission-control/chat/transcript", headers=OWNER).json()
     assert transcript["messages"][0]["role"] == "operator"
 
 
@@ -30,6 +40,7 @@ def test_action_reply_is_marked_for_approval():
             "content": "I prepared a draft pull request.",
             "proposed_action": "create-draft-pr",
         },
+        headers=OWNER,
     )
     assert response.status_code == 200
     assert response.json()["requires_approval"] is True
@@ -47,5 +58,6 @@ def test_empty_operator_message_is_rejected():
     response = client().post(
         "/brain/mission-control/chat/messages",
         json={"content": ""},
+        headers=OWNER,
     )
     assert response.status_code == 422
