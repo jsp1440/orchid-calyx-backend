@@ -97,6 +97,8 @@ def _call(fn, *args: Any, **kwargs: Any) -> Any:
         code = str(exc).split("\n", 1)[0]
         base = code.split(":", 1)[0]
         raise HTTPException(status_code=409 if base in CONFLICT_CODES else 422, detail=error_body(code)) from None
+    except (psycopg.errors.DeadlockDetected, psycopg.errors.SerializationFailure):
+        raise HTTPException(status_code=409, detail=error_body("CRM_CONCURRENT_CHANGE_RETRY")) from None
     except psycopg.errors.UndefinedTable:
         raise HTTPException(status_code=503, detail=error_body("CRM_SCHEMA_NOT_READY")) from None
     except psycopg.errors.UndefinedObject:

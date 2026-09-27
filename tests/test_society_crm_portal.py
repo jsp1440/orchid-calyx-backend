@@ -330,3 +330,50 @@ def test_platform_operator_recovery_reattests_an_invite_linked_login(
     assert crm.roles(org, login) == frozenset({SocietyRole.ADMIN})
     actions = [e["action"] for e in crm.audit_events(admin, org)]
     assert "identity_binding.revoked" in actions
+
+
+def test_operator_recovery_racing_a_redemption_does_not_deadlock(
+    crm: SocietyCRMService, repo: PostgresSocietyCRMRepository, portal: MemberPortalService
+) -> None:
+    """Checker low finding: every path takes the person lock before link-row locks."""
+    import threading
+
+    import psycopg
+
+    org, admin = _society(crm)
+    editor_person = repo.create_person(organization_id=org, display_name="Eddie Editor", actor_subject=admin.subject)
+    editor_subject = f"supabase:{uuid.uuid4()}"
+    crm.bind_identity(admin, org, constituent_id=editor_person["id"], auth_subject=editor_subject)
+    crm.grant_role(admin, org, constituent_id=editor_person["id"], role=SocietyRole.MEMBERSHIP_EDITOR)
+    editor = CRMPrincipal(editor_subject)
+    deadlocks = 0
+    for i in range(20):
+        member = _member(crm, org, admin, f"Recover {i}", f"rec-{uuid.uuid4().hex[:8]}@example.org")
+        linked = CRMPrincipal(f"supabase:{uuid.uuid4()}")
+        portal.redeem_invite(linked, org, portal.issue_invite(editor, org, member["membership_id"])["code"])
+        code = portal.issue_invite(editor, org, member["membership_id"])["code"]
+        barrier = threading.Barrier(2)
+        errors: list[BaseException] = []
+
+        def run(fn) -> None:
+            barrier.wait()
+            try:
+                fn()
+            except ValueError:
+                pass
+            except BaseException as exc:  # noqa: BLE001
+                errors.append(exc)
+
+        threads = [
+            threading.Thread(target=run, args=(lambda: crm.bootstrap_admin(
+                OPERATOR, org, display_name=f"Recover {i}", auth_subject=linked.subject),)),
+            threading.Thread(target=run, args=(lambda: portal.redeem_invite(
+                CRMPrincipal(f"supabase:{uuid.uuid4()}"), org, code),)),
+        ]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+        deadlocks += sum(isinstance(e, psycopg.errors.DeadlockDetected) for e in errors)
+        assert not [e for e in errors if not isinstance(e, psycopg.errors.DeadlockDetected)], errors
+    assert deadlocks == 0

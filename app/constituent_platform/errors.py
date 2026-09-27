@@ -79,6 +79,7 @@ _MESSAGES: dict[str, str] = {
     "PAYMENT_CONFLICT": "This payment conflicts with an existing record. Check the payment list before retrying.",
     "ORGANIZATION_NAME_REQUIRED": "The society name cannot be empty.",
     "IDENTITY_REATTESTATION_REQUIRED": "This person's login was linked through a member invite, not by an administrator. Confirm it is really them, then unlink and re-link their login under Staff before granting a role.",
+    "CRM_CONCURRENT_CHANGE_RETRY": "Someone else changed this record at the same moment, so nothing was saved. Reload and try again.",
     "PLATFORM_OPERATOR_REQUIRED": "Only the Orchid Continuum platform operator can do this.",
     "SOCIETY_CRM_DISABLED": "The society CRM is not enabled on this server yet.",
     "CRM_DATABASE_UNAVAILABLE": "The CRM database could not be reached, so nothing was changed. Try again in a few minutes; if it continues, check the system status page.",

@@ -210,6 +210,7 @@ class PostgresSocietyCRMRepository:
             raise ValueError("INVALID_IDENTITY_VERIFICATION_METHOD")
         with self._tenant(organization_id) as cur:
             self._require_constituent(cur, organization_id, constituent_id)
+            self._lock_person_authority(cur, organization_id, constituent_id)
             cur.execute(
                 """
                 SELECT * FROM oc_constituent.organization_identity_bindings
@@ -246,6 +247,16 @@ class PostgresSocietyCRMRepository:
         subject = normalize_auth_subject(auth_subject)
         actor = _actor(actor_subject)
         with self._tenant(organization_id) as cur:
+            cur.execute(
+                "SELECT constituent_id FROM oc_constituent.organization_identity_bindings "
+                "WHERE organization_id = %s AND auth_subject = %s AND status = 'active'",
+                (organization_id, subject),
+            )
+            owner = cur.fetchone()
+            if owner is None:
+                return None
+            # Same lock order as grant/redeem: person authority lock, then link rows.
+            self._lock_person_authority(cur, organization_id, int(owner["constituent_id"]))
             cur.execute(
                 """
                 SELECT * FROM oc_constituent.organization_identity_bindings
