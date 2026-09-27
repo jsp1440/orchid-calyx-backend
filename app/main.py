@@ -17,6 +17,10 @@ from app.constituent_platform.routes import (
     owner_router as constituent_platform_owner_router,
 )
 from app.constituent_platform.routes import router as constituent_platform_router
+from app.constituent_platform.society_routes import (
+    platform_router as society_crm_platform_router,
+)
+from app.constituent_platform.society_routes import router as society_crm_router
 from app.design_intelligence.routes import router as design_intelligence_router
 from app.design_planning.routes import router as design_planning_router
 from app.document_import.routes import router as document_import_router
@@ -628,6 +632,8 @@ app.include_router(species_dossier_router)
 app.include_router(community_observation_router)
 app.include_router(constituent_platform_router)
 app.include_router(constituent_platform_owner_router)
+app.include_router(society_crm_platform_router)
+app.include_router(society_crm_router)
 app.include_router(reasoning_ledger_router)
 app.include_router(reasoning_ledger_project_router)
 app.include_router(reasoning_publication_router)

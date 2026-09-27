@@ -8,6 +8,8 @@ on:
       - "migrations/20260926_society_crm_p0_core.sql"
       - "migrations/20260927_society_crm_p1_tenant_isolation.sql"
       - "tests/test_society_crm_domain.py"
+      - "tests/test_society_crm_routes.py"
+      - "app/main.py"
       - "tests/test_society_crm_postgres.py"
       - ".github/workflows/oc-society-crm-p0-validation.yml"
   workflow_dispatch:
@@ -66,7 +68,7 @@ jobs:
           psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
           -f migrations/20260927_society_crm_p1_tenant_isolation.sql
       - name: Run society CRM PostgreSQL tests
-        run: pytest -q tests/test_society_crm_postgres.py tests/test_society_crm_domain.py
+        run: pytest -q tests/test_society_crm_postgres.py tests/test_society_crm_domain.py tests/test_society_crm_routes.py
       - name: Re-run society CRM PostgreSQL tests against the same database
         run: pytest -q tests/test_society_crm_postgres.py
       - name: Compile constituent platform package
