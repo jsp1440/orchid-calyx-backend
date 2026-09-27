@@ -326,3 +326,239 @@ def test_no_synthetic_secret_survives_a_mixed_config():
     out = redact_config_json(json.dumps(config))
     for secret in secrets:
         assert secret not in out
+
+
+# --- HTTP Digest credentials in free text -------------------------------------------------
+
+DIGEST_RESPONSE = "6629fae49393a05397450978507c4ef1"
+
+
+@pytest.mark.parametrize(
+    ("value", "secrets", "readable"),
+    [
+        (
+            (
+                'Authorization: Digest username="a", realm="r", nonce="n", uri="/", '
+                f'qop=auth, nc=00000001, cnonce="0a4f113b", response="{DIGEST_RESPONSE}"'
+            ),
+            ["0a4f113b", DIGEST_RESPONSE],
+            ["Authorization:"],
+        ),
+        (
+            (
+                'sent Digest username="a", realm="r", nonce="n", uri="/", '
+                'response="d4c1e0f2", cnonce=0a4f113b, opaque="5ccc"'
+            ),
+            ["d4c1e0f2", "0a4f113b"],
+            ['realm="r"', 'uri="/"', 'opaque="5ccc"', 'response="***"', "cnonce=***"],
+        ),
+        (
+            f"retry with digest username=a, cnonce='c0ffee', response={DIGEST_RESPONSE}",
+            ["c0ffee", DIGEST_RESPONSE],
+            ["retry with", "cnonce='***'"],
+        ),
+    ],
+)
+def test_digest_response_and_cnonce_are_masked(value, secrets, readable):
+    out = _redact({"note": value})["note"]
+    for secret in secrets:
+        assert secret not in out
+    for text in readable:
+        assert text in out
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "Digest summary sent to members",
+        "https://api.example.invalid/v1?response=json&format=digest",
+        "response: accepted",
+    ],
+)
+def test_digest_words_without_a_digest_credential_stay_readable(value):
+    assert _redact({"note": value, "response_format": "json"}) == {
+        "note": value,
+        "response_format": "json",
+    }
+
+
+# --- curl -u user:password ------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (
+            "curl -u alice:Tr0ub4dor https://api.example.invalid/v1",
+            "curl -u alice:*** https://api.example.invalid/v1",
+        ),
+        ("curl --user alice:Tr0ub4dor -X GET", "curl --user alice:*** -X GET"),
+        ("curl --user=alice:Tr0ub4dor", "curl --user=alice:***"),
+        ('curl -u "alice:Tr0ub 4dor" -s', 'curl -u "alice:***" -s'),
+        ("curl -u 'alice:Tr0ub4dor' -s", "curl -u 'alice:***' -s"),
+        ("curl -ualice:Tr0ub4dor -s", "curl -ualice:*** -s"),
+        ("curl -su alice:Tr0ub4dor -s", "curl -su alice:*** -s"),
+        ("curl --proxy-user bob:Tr0ub4dor", "curl --proxy-user bob:***"),
+        ("curl -U bob:Tr0ub4dor", "curl -U bob:***"),
+        # only the password part quoted, or quoted mid-word
+        ('curl -u admin:"hunter2!" -s', "curl -u admin:*** -s"),
+        ('curl --user=admin:"hunter2"', "curl --user=admin:***"),
+        ("curl -u admin:'p@ss w0rd' -s", "curl -u admin:*** -s"),
+        ('curl -u admin:hun"ter2" -s', "curl -u admin:*** -s"),
+        ('curl -u "admin":"p w" -s', 'curl -u "admin":*** -s'),
+        # an API key passed as the username with an empty password
+        (
+            "curl -u sk_synthetic: https://x.example.invalid",
+            "curl -u ***: https://x.example.invalid",
+        ),
+    ],
+)
+def test_cli_user_passwords_are_masked(value, expected):
+    assert _redact({"note": value}) == {"note": expected}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "curl -u alice https://api.example.invalid/v1",
+        "mysql --user=root --host=db.example.invalid",
+        "psql -U postgres -h db.example.invalid",
+        "curl -X POST https://api.example.invalid/v1/items",
+        "re-use the user:agent value",
+    ],
+)
+def test_cli_commands_without_a_password_stay_readable(value):
+    assert _redact({"note": value}) == {"note": value}
+
+
+# --- header lists of any length ---------------------------------------------------------------
+
+HEADER_LINES = [
+    "Accept: application/json",
+    "Content-Type: application/json",
+    "User-Agent: orchid-show",
+    "X-Request-Id: 12",
+]
+
+
+def test_flat_name_value_header_lists_mask_every_secret_value():
+    raw = [
+        "Accept", "application/json",
+        "User-Agent", "orchid-show",
+        "X-Api-Key", "synthetic-api-key",
+        "Via", "proxy",
+        "Authorization", "Bearer synthetic-bearer",
+    ]  # fmt: skip
+    short = ["Accept", "a", "X-Api-Key", "synthetic-short-key"]
+    assert _redact({"raw": raw, "short": short}) == {
+        "raw": [
+            "Accept", "application/json",
+            "User-Agent", "orchid-show",
+            "X-Api-Key", REDACTED,
+            "Via", "proxy",
+            "Authorization", REDACTED,
+        ],
+        "short": ["Accept", "a", "X-Api-Key", REDACTED],
+    }  # fmt: skip
+
+
+def test_header_line_lists_mask_the_secret_line_value_at_any_length():
+    for lines in (
+        ["Authorization: Bearer synthetic-bearer", "Accept: a"],
+        ["X-Api-Key: synthetic key part2", *HEADER_LINES],
+        [*HEADER_LINES, "Authorization: Bearer synthetic bearer part2"],
+    ):
+        out = _redact({"headers": lines})["headers"]
+        assert "synthetic" not in json.dumps(out)
+        assert [line for line in out if REDACTED not in line] == [
+            line
+            for line in lines
+            if line.split(":")[0] not in {"Authorization", "X-Api-Key"}
+        ]
+
+
+def test_multi_line_header_blocks_mask_whole_secret_values():
+    block = "\r\n".join(
+        [*HEADER_LINES, "X-Api-Key: synthetic key part2", "Authorization: Bearer a b"]
+    )
+    out = _redact({"raw": block})["raw"]
+    assert out.split("\r\n") == [*HEADER_LINES, "X-Api-Key: ***", "Authorization: ***"]
+
+
+def test_cli_header_arguments_mask_the_whole_quoted_value():
+    command = (
+        "curl -H 'Accept: a' -H 'B: b' -H 'C: c' -H 'D: d' "
+        "-H 'X-Api-Key: synthetic key part2' --header \"Authorization: Bearer x y\""
+    )
+    assert _redact({"cmd": command}) == {
+        "cmd": "curl -H 'Accept: a' -H 'B: b' -H 'C: c' -H 'D: d' "
+        "-H 'X-Api-Key: ***' --header \"Authorization: ***\""
+    }
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ["Accept", "application/json", "User-Agent", "orchid", "Via", "proxy"],
+        HEADER_LINES + ["Cache-Control: no-cache"],
+        ["region", "zone", "alpha", "beta", "gamma", "delta"],
+        "\n".join(HEADER_LINES),
+        "curl -H 'Accept: application/json' https://api.example.invalid/v1",
+    ],
+)
+def test_header_lists_without_secrets_stay_readable(value):
+    assert _redact({"headers": value}) == {"headers": value}
+
+
+def test_partly_quoted_cli_passwords_never_leak():
+    for value in (
+        'curl -u admin:"hunter2!" https://x.example.invalid',
+        "curl --user=admin:'p@ss w0rd'",
+        "curl -u admin:hun\"ter2\"x'yz' -s",
+    ):
+        out = _redact({"note": value})["note"]
+        assert "hunter2" not in out and "p@ss" not in out and "ter2" not in out
+        assert "admin:***" in out
+
+
+def test_flat_header_lists_treat_null_as_a_value():
+    raw = ["Accept", "a", "X-Api-Key", "synthetic-key", "Via", None]
+    assert _redact({"raw": raw}) == {
+        "raw": ["Accept", "a", "X-Api-Key", REDACTED, "Via", None]
+    }
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("  X-Auth-Token : a b", "  X-Auth-Token : ***"),
+        ("password = hunter2", "password = ***"),
+        ("--password : hunter2", "--password : ***"),
+    ],
+)
+def test_spaced_separators_are_kept_and_the_value_is_masked(value, expected):
+    assert _redact({"note": value}) == {"note": expected}
+
+
+@pytest.mark.parametrize(
+    "tail",
+    ["tailsecret -s", '"Zq9 sEcr" -s', '"Zq9\tsEcr" -s', "'Zq9\nsEcr' -s\nnext"],
+)
+def test_cli_user_words_past_the_segment_bound_mask_the_rest_of_the_text(tail):
+    # a quoted space, tab or line break past the bound must not end the masking
+    value = "curl -u admin:" + "a''" * 32 + tail
+    assert _redact({"note": value}) == {"note": "curl -u ***"}
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("curl -u admin:'Zq9\nsEcr' -s\nnext", "curl -u admin:*** -s\nnext"),
+        ('curl -u admin:"Zq9\r\nsEcr" -s', "curl -u admin:*** -s"),
+        ('curl -u "admin:Zq9\nsEcr" -s', 'curl -u "admin:***" -s'),
+        # an unterminated quote runs to the end of the text
+        ("curl -u admin:'Zq9\nsEcr -s\nmore", "curl -u admin:***"),
+    ],
+)
+def test_cli_user_quoted_passwords_spanning_lines_are_masked(value, expected):
+    assert _redact({"note": value}) == {"note": expected}
