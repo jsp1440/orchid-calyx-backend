@@ -8,12 +8,16 @@ raised and every JSON endpoint answered 500 instead of 422:
 * a lone UTF-16 surrogate in a JSON string (``"\\ud800"``) -- pydantic reports
   ``string_unicode`` and the echoed input cannot be UTF-8 encoded;
 * a non-finite number (``NaN``, ``Infinity``), which Python's JSON parser
-  accepts but the response renderer refuses.
+  accepts but the response renderer refuses;
+* a raw body that is not valid UTF-8 (e.g. ``Content-Type: text/plain`` with
+  ``\xff\xfe``) -- FastAPI echoes the ``bytes`` and ``jsonable_encoder`` calls a
+  strict ``bytes.decode()``.
 
 This handler returns the same ``{"detail": [...]}`` body FastAPI returns, with
 the same ``type``, ``loc``, ``msg`` and ``ctx`` keys. Only values that could not
 be rendered are changed: lone surrogates become U+FFFD, non-finite floats
-become the strings ``"NaN"``, ``"Infinity"`` or ``"-Infinity"``, the input of a
+become the strings ``"NaN"``, ``"Infinity"`` or ``"-Infinity"``, undecodable
+bytes are decoded with U+FFFD replacement characters, the input of a
 ``string_unicode`` error is not echoed, and an echoed input larger than
 ``MAX_ECHOED_INPUT_CHARS`` is not echoed. An ordinary 422 renders byte-for-byte
 as before.
@@ -49,6 +53,24 @@ def _renderable(value: Any) -> Any:
     return value
 
 
+def _decoded_bytes(value: Any) -> Any:
+    """Return ``value`` with every ``bytes`` decoded as UTF-8, invalid bytes as U+FFFD.
+
+    ``jsonable_encoder`` decodes ``bytes`` strictly, which raises for a body that
+    is not UTF-8. Valid UTF-8 decodes to exactly what ``jsonable_encoder`` would
+    produce, so ordinary 422s are unchanged.
+    """
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, dict):
+        return {_decoded_bytes(key): _decoded_bytes(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_decoded_bytes(item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_decoded_bytes(item) for item in value)
+    return value
+
+
 def require_strict_json(value: Any) -> Any:
     """Raise ``ValueError`` unless ``value`` can be stored and returned as strict JSON.
 
@@ -72,7 +94,7 @@ def _too_large(value: Any) -> bool:
 def renderable_validation_errors(errors: Any) -> list[Any]:
     """Encode ``RequestValidationError.errors()`` so ``JSONResponse`` can always render it."""
     rendered: list[Any] = []
-    for error in _renderable(jsonable_encoder(errors)):
+    for error in _renderable(jsonable_encoder(_decoded_bytes(errors))):
         if (
             isinstance(error, dict)
             and "input" in error
