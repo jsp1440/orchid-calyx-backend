@@ -8,9 +8,18 @@ file store and the PostgreSQL store (``tests/evidence_feedback_stores.py``).
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import os
+import re
+import subprocess
+import sys
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from unittest.mock import Mock
 
 import psycopg
@@ -19,12 +28,23 @@ from fastapi.testclient import TestClient
 
 from app import member_auth
 from app.evidence_feedback import EvidenceFeedbackService, routes
-from app.evidence_feedback.models import content_hash
+from app.evidence_feedback.models import FeedbackClass, ObjectType, content_hash
 from app.evidence_feedback.postgres_repository import (
     SCHEMA,
     PostgresEvidenceFeedbackRepository,
 )
-from app.evidence_feedback.review import actor_ref
+from app.evidence_feedback.repository import FileEvidenceFeedbackRepository
+from app.evidence_feedback.review import (
+    ACTOR_REF_SECRET_ENV,
+    ACTOR_REF_UNAVAILABLE,
+    DUPLICATE_EVENT,
+    GOVERNED_REVIEW_EVENT,
+    REJECTED_EVENT,
+    EvidenceFeedbackReviewService,
+    InvalidCaseTransition,
+    ReviewDecision,
+    actor_ref,
+)
 from app.main import app
 from app.security import OWNER_SESSION_COOKIE, create_owner_session_token
 from tests.evidence_feedback_stores import STORES, make_store, test_database_url
@@ -57,6 +77,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("OC_SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "anon-key")
     monkeypatch.delenv("OC_MEMBER_READS_ENABLED", raising=False)
+    monkeypatch.delenv(ACTOR_REF_SECRET_ENV, raising=False)
     member_auth.clear_member_token_cache()
     yield
     member_auth.clear_member_token_cache()
@@ -261,6 +282,31 @@ def test_limit_and_cursor_are_bounded_and_validated(store, client):
     assert bad.status_code == 422
     assert bad.json()["detail"] == {"code": "INVALID_REVIEW_CURSOR"}
     assert client.get(REVIEW, params={"limit": 100}, headers=reviewer_headers()).status_code == 200
+
+
+def _cursor(created_at, case_id) -> str:
+    raw = json.dumps({"c": created_at, "i": case_id}).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+@pytest.mark.parametrize(
+    ("created_at", "case_id"),
+    [
+        ("2026-09-26T12:00:00+00:00\x00", "efc-1"),
+        ("2026-09-26T12:00:00+00:00", "efc-\x001"),
+        ("2026-09-26\x1b", "efc-1"),
+        ("2026-09-26", "efc-\n1"),
+        ("2026-09-26", "efc-\u200b1"),  # zero-width space: not printable
+        ("2026-09-26", "efc-\ud8001"),  # lone surrogate
+    ],
+)
+def test_cursor_with_control_or_non_printable_characters_is_422_not_503(store, client, created_at, case_id):
+    submit(client)
+    response = client.get(REVIEW, params={"cursor": _cursor(created_at, case_id)}, headers=reviewer_headers())
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": "INVALID_REVIEW_CURSOR"}
+    # A well-formed cursor from a real page still works.
+    assert client.get(REVIEW, params={"cursor": _cursor("2026-09-26", "efc-1")}, headers=reviewer_headers()).status_code == 200
 
 
 def test_status_and_object_type_filters(store, clock, client):
@@ -470,6 +516,34 @@ def test_decision_body_must_match_the_decision(file_store, clock, client, body):
     assert file_store.repository().get_case(case["case_id"]).status.value == "pending_review"
 
 
+@pytest.mark.parametrize(
+    ("body", "code"),
+    [
+        ({"decision": "reject", "reason": "Correct\x00 as shown."}, "REVIEW_REASON_INVALID_CHARACTERS"),
+        ({"decision": "needs_governed_review", "note": "Specialist\x1b"}, "REVIEW_NOTE_INVALID_CHARACTERS"),
+    ],
+)
+def test_decision_text_with_control_characters_is_422_in_both_stores(store, clock, client, body, code):
+    case = scientific_case(client)
+    response = decide(client, case["case_id"], body)
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {"code": code}
+    repository = store.repository()
+    assert repository.get_case(case["case_id"]).status.value == "pending_review"
+    assert [e["event"] for e in repository.list_events(case["case_id"])] == ["case_submitted"]
+    # Multi-line text is ordinary input.
+    ok = decide(client, case["case_id"], {"decision": "reject", "reason": "Correct as shown.\nSee Dressler."})
+    assert ok.status_code == 200, ok.text
+
+
+@pytest.mark.parametrize("path", ["efc-%00abc", "efc-%1Fabc"])
+def test_review_case_id_with_control_characters_is_422_not_503(store, client, path):
+    for method, url, body in _review_calls(path)[1:]:
+        response = client.request(method, url, json=body, headers=reviewer_headers())
+        assert response.status_code == 422, (method, url, response.text)
+        assert response.json()["detail"] == {"code": "CASE_ID_INVALID_CHARACTERS"}
+
+
 def test_decision_on_unknown_case_is_404(store, client):
     response = decide(client, "efc-does-not-exist", {"decision": "reject", "reason": "r"})
     assert response.status_code == 404
@@ -525,6 +599,104 @@ def test_member_403_is_identical_for_existing_and_missing_cases(file_store, cloc
 def test_member_rejected_when_member_reads_disabled(file_store, client, supabase, monkeypatch):
     monkeypatch.setenv("OC_MEMBER_READS_ENABLED", "false")
     assert client.get(REVIEW, headers=bearer(member_jwt(marker="off"))).status_code == 401
+
+
+# --- actor references ---------------------------------------------------------
+
+ACTOR_REF_FORMAT = re.compile(r"^actor-[0-9a-f]{24}$")
+
+
+def _expected_ref(secret: str, identity: str) -> str:
+    key = hmac.new(secret.encode(), b"oc-evidence-feedback-actor-ref-key:v2", hashlib.sha256).digest()
+    return "actor-" + hmac.new(key, identity.encode(), hashlib.sha256).hexdigest()[:24]
+
+
+def _unkeyed_refs(identity: str) -> set[str]:
+    """What a dictionary attack could compute without any server secret."""
+
+    return {
+        "actor-" + hashlib.sha256(prefix + identity.encode()).hexdigest()[:24]
+        for prefix in (b"", b"oc-evidence-feedback-actor-ref:v1:")
+    }
+
+
+def test_actor_ref_is_a_keyed_hmac_of_the_session_secret():
+    ref = actor_ref(SUBMITTER_EMAIL)
+    assert ACTOR_REF_FORMAT.match(ref)
+    assert ref == _expected_ref(TEST_SESSION_SECRET, SUBMITTER_EMAIL)
+    assert ref not in _unkeyed_refs(SUBMITTER_EMAIL)
+    # The key is domain-separated: not an HMAC under the raw session secret.
+    raw = hmac.new(TEST_SESSION_SECRET.encode(), SUBMITTER_EMAIL.encode(), hashlib.sha256)
+    assert ref != "actor-" + raw.hexdigest()[:24]
+    assert actor_ref(f"  {SUBMITTER_EMAIL} ") == ref
+    assert actor_ref("owner") != ref
+    assert actor_ref(None) is None
+    assert actor_ref("   ") is None
+
+
+def test_actor_ref_prefers_the_dedicated_secret_and_changes_when_it_rotates(monkeypatch):
+    session_ref = actor_ref("owner")
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "dedicated-test-secret-one")
+    first = actor_ref("owner")
+    assert first == _expected_ref("dedicated-test-secret-one", "owner") != session_ref
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "dedicated-test-secret-two")
+    assert actor_ref("owner") == _expected_ref("dedicated-test-secret-two", "owner") != first
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "   ")  # blank: falls back to the session secret
+    assert actor_ref("owner") == session_ref
+
+
+def test_actor_ref_fails_closed_without_any_secret(monkeypatch):
+    monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET")
+    assert actor_ref(SUBMITTER_EMAIL) == ACTOR_REF_UNAVAILABLE == "actor-unavailable"
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "  ")
+    assert actor_ref(SUBMITTER_EMAIL) == ACTOR_REF_UNAVAILABLE
+    assert actor_ref(None) is None
+
+
+def test_actor_ref_is_stable_across_processes():
+    env = {**os.environ, "CALYX_OWNER_SESSION_SECRET": TEST_SESSION_SECRET}
+    env.pop(ACTOR_REF_SECRET_ENV, None)
+    script = (
+        "import sys; from app.evidence_feedback.review import actor_ref; "
+        "print(actor_ref(sys.argv[1]))"
+    )
+    refs = {
+        subprocess.run(
+            [sys.executable, "-c", script, SUBMITTER_EMAIL],
+            env=env, capture_output=True, text=True, check=True,
+        ).stdout.strip()
+        for _ in range(2)
+    }
+    assert refs == {actor_ref(SUBMITTER_EMAIL)}
+
+
+def test_review_responses_carry_only_keyed_refs(store, clock, client, monkeypatch):
+    case_id = submit(client)["case"]["case_id"]
+    decided = decide(client, case_id, {"decision": "reject", "reason": "Correct as shown."})
+    assert decided.status_code == 200
+    responses = [
+        client.get(REVIEW, headers=reviewer_headers()),
+        client.get(f"{REVIEW}/{case_id}", headers=reviewer_headers()),
+        decided,
+    ]
+    for response in responses:
+        assert SUBMITTER_EMAIL not in response.text
+        assert '"owner"' not in response.text  # the reviewer's raw identity
+        for identity in (SUBMITTER_EMAIL, "owner"):
+            for unkeyed in _unkeyed_refs(identity):
+                assert unkeyed not in response.text
+    detail = responses[1].json()
+    assert detail["case"]["submitter_ref"] == _expected_ref(TEST_SESSION_SECRET, SUBMITTER_EMAIL)
+    assert detail["case"]["reviewer_ref"] == _expected_ref(TEST_SESSION_SECRET, "owner")
+    # Rotating the actor-reference secret changes every reference; sessions keep working.
+    monkeypatch.setenv(ACTOR_REF_SECRET_ENV, "rotated-test-secret")
+    rotated = client.get(f"{REVIEW}/{case_id}", headers=reviewer_headers()).json()
+    assert rotated["case"]["submitter_ref"] == _expected_ref("rotated-test-secret", SUBMITTER_EMAIL)
+    assert rotated["case"]["submitter_ref"] != detail["case"]["submitter_ref"]
+    assert {e["actor_ref"] for e in rotated["events"]} <= {
+        _expected_ref("rotated-test-secret", SUBMITTER_EMAIL),
+        _expected_ref("rotated-test-secret", "owner"),
+    }
 
 
 # --- store parity and indexing ------------------------------------------------------
@@ -608,3 +780,152 @@ def test_existing_postgres_tables_gain_the_review_index_additively(tmp_path, mon
     store.restart()
     listed = client.get(REVIEW, headers=reviewer_headers()).json()["items"]
     assert [item["case_id"] for item in listed] == [case_id]  # data kept
+
+
+# --- concurrency ------------------------------------------------------------------
+#
+# Every request builds a fresh repository (``routes._repository``), so these
+# races use one repository instance per thread, as concurrent requests would.
+
+DECISION_EVENTS = {"correction_accepted", REJECTED_EVENT, GOVERNED_REVIEW_EVENT}
+CORRECTED = {"term": "labellum", "definition": "a modified petal"}
+
+
+def _race(store, case_id: str, attempts) -> list:
+    barrier = threading.Barrier(len(attempts))
+
+    def run(attempt):
+        service = EvidenceFeedbackService(store.repository())
+        review = EvidenceFeedbackReviewService(service)
+        barrier.wait()
+        try:
+            return ("ok", attempt(service, review))
+        except (InvalidCaseTransition, ValueError) as exc:
+            return ("refused", str(exc))
+
+    with ThreadPoolExecutor(max_workers=len(attempts)) as pool:
+        return list(pool.map(run, attempts))
+
+
+def _attempts(case_id: str) -> list:
+    def reject(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.REJECT, reason="Correct as shown.")
+
+    def governed(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.NEEDS_GOVERNED_REVIEW, note="Specialist.")
+
+    def accept(_service, review):
+        return review.decide(case_id=case_id, reviewer_id="owner", decision=ReviewDecision.ACCEPT_TRIVIAL, corrected_payload=CORRECTED)
+
+    def legacy_accept(service, _review):
+        return service.accept_trivial_correction(case_id=case_id, reviewer_id="owner", corrected_payload=CORRECTED)
+
+    return [reject, governed, accept, legacy_accept] * 4  # 16 threads
+
+
+def _applied(outcomes) -> int:
+    """Successful calls that changed the case (not idempotent repeats)."""
+
+    applied = 0
+    for status, value in outcomes:
+        if status != "ok":
+            continue
+        if isinstance(value, dict):
+            applied += 0 if value["idempotent"] else 1
+        else:  # the legacy route returns the resolved case
+            applied += 1
+    return applied
+
+
+@pytest.mark.parametrize("rounds", [8])
+def test_concurrent_decisions_have_exactly_one_winner(store, client, rounds):
+    for index in range(rounds):
+        case_id = submit(client, object_id=f"lexicon:race-{index}")["case"]["case_id"]
+        outcomes = _race(store, case_id, _attempts(case_id))
+
+        repository = store.repository()
+        case = repository.get_case(case_id)  # the case JSON is intact
+        decisions = [e["event"] for e in repository.list_events(case_id) if e["event"] in DECISION_EVENTS]
+        legal = [[event] for event in DECISION_EVENTS] + [[GOVERNED_REVIEW_EVENT, REJECTED_EVENT]]
+        assert decisions in legal, (index, decisions, outcomes)
+        assert _applied(outcomes) == len(decisions), (index, decisions, outcomes)
+        versions = repository.list_object_versions(f"lexicon:race-{index}")
+        if decisions == ["correction_accepted"]:
+            assert case.status.value == "resolved"
+            assert case.disposition.value == "correction_accepted"
+            assert len(versions) == 2
+            assert case.resulting_version_hash == content_hash(CORRECTED)
+        else:
+            assert len(versions) == 1  # no correction was applied
+            assert case.resulting_version_hash is None
+            if decisions[-1] == REJECTED_EVENT:
+                assert (case.status.value, case.disposition.value) == ("resolved", "correction_rejected")
+            else:
+                assert case.status.value == "governed_review_required"
+    listed = client.get(REVIEW, params={"limit": 100}, headers=reviewer_headers())
+    assert listed.status_code == 200
+    assert len(listed.json()["items"]) == rounds
+    if store.kind == "file":
+        assert not [path for path in store.files_written() if ".tmp" in path.name]
+
+
+def test_concurrent_identical_submissions_across_repositories_make_one_case(store, client):
+    version = client.post(
+        f"{BASE}/objects",
+        json={"object_id": "lexicon:labellum", "object_type": "lexicon", "payload": {"term": "labellum"}},
+        headers=submitter_headers(),
+    ).json()
+    barrier = threading.Barrier(16)
+
+    def run(_):
+        service = EvidenceFeedbackService(store.repository())
+        barrier.wait()
+        return service.submit(
+            object_id="lexicon:labellum",
+            object_version_hash=version["version_hash"],
+            object_type=ObjectType.LEXICON,
+            page_context="/lexicon/labellum",
+            feedback_class=FeedbackClass.REPORT_PROBLEM,
+            statement="Needs a citation.",
+            submitter_id=SUBMITTER_EMAIL,
+        )
+
+    with ThreadPoolExecutor(max_workers=16) as pool:
+        results = list(pool.map(run, range(16)))
+    assert sum(result.created for result in results) == 1
+    assert len({result.case.case_id for result in results}) == 1
+    repository = store.repository()
+    events = [e["event"] for e in repository.list_events(results[0].case.case_id)]
+    assert events.count("case_submitted") == 1
+    assert events.count(DUPLICATE_EVENT) == 15
+
+
+def test_file_repositories_for_one_root_share_one_lock(tmp_path):
+    first = FileEvidenceFeedbackRepository(tmp_path / "feedback")
+    same_root = FileEvidenceFeedbackRepository(str(tmp_path / "feedback" / ".." / "feedback"))
+    other_root = FileEvidenceFeedbackRepository(tmp_path / "other")
+    assert first._lock is same_root._lock
+    assert first._lock is not other_root._lock
+
+
+def test_file_writes_are_atomic_replacements_with_unique_temporary_files(tmp_path, monkeypatch):
+    target = tmp_path / "cases" / "case.json"
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 1})
+    temporaries: list[str] = []
+    previous = {"v": 1}
+    real_replace = os.replace
+
+    def spy(source, destination):
+        temporaries.append(str(source))
+        # Until the swap the target still holds the complete previous record.
+        assert json.loads(Path(destination).read_text()) == previous
+        return real_replace(source, destination)
+
+    monkeypatch.setattr(os, "replace", spy)
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 2})
+    previous = {"v": 2}
+    FileEvidenceFeedbackRepository._write_json(target, {"v": 3})
+    assert json.loads(target.read_text()) == {"v": 3}
+    assert len(set(temporaries)) == 2  # never a shared fixed temporary name
+    assert all(Path(name).parent == target.parent for name in temporaries)
+    assert sorted(path.name for path in target.parent.iterdir()) == ["case.json"]

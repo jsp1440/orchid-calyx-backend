@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import tempfile
+import unicodedata
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from threading import RLock
+from threading import Lock, RLock
 from typing import Any, Protocol, TypeVar
 
 from .models import EvidenceFeedbackCase, EvidenceObjectVersion, canonical_json
@@ -97,12 +100,54 @@ def review_order_key(case: EvidenceFeedbackCase) -> tuple[str, str]:
 
 
 def normalized_key(value: str, *, code: str) -> str:
-    """Identity used by every store: surrounding whitespace is not identity."""
+    """Identity used by every store: surrounding whitespace is not identity.
+
+    An identifier with NUL, another control character or any non-printable
+    character is refused with ``<FIELD>_INVALID_CHARACTERS`` (``code`` with its
+    ``_REQUIRED`` suffix replaced), a client error in both stores: PostgreSQL
+    cannot store NUL in text, and it must never surface as a 503 outage.
+    """
 
     normalized = value.strip()
     if not normalized:
         raise EvidenceFeedbackRepositoryError(code)
+    if not normalized.isprintable():
+        raise EvidenceFeedbackRepositoryError(
+            code.removesuffix("_REQUIRED") + "_INVALID_CHARACTERS"
+        )
     return normalized
+
+
+# Line structure is legitimate in free text; every other control character is not.
+_FREE_TEXT_WHITESPACE = frozenset("\t\n\r")
+
+
+def has_disallowed_text_characters(value: str) -> bool:
+    """True when free text holds NUL, another control character or a lone surrogate.
+
+    Tab, newline and carriage return are allowed. NUL cannot be stored in a
+    PostgreSQL ``text`` or ``jsonb`` value, so accepting it would make one
+    store answer 503 where the other stores the text.
+    """
+
+    return any(
+        unicodedata.category(char) in {"Cc", "Cs"} and char not in _FREE_TEXT_WHITESPACE
+        for char in value
+    )
+
+
+def validate_free_text(value: str | None, *, code: str) -> None:
+    """Refuse free text with disallowed characters (``code`` is the 422 code)."""
+
+    if value is not None and has_disallowed_text_characters(value):
+        raise EvidenceFeedbackRepositoryError(code)
+
+
+def validate_label(value: str | None, *, code: str) -> None:
+    """Refuse a short label (severity, defect kind, partner id) that is not printable."""
+
+    if value is not None and not value.isprintable():
+        raise EvidenceFeedbackRepositoryError(code)
 
 
 def normalized_version_hash(version_hash: str) -> str:
@@ -146,16 +191,36 @@ def is_same_version(
     )
 
 
+# One writer lock per resolved root, shared by every repository instance in
+# the process. Each request builds its own repository, so a per-instance lock
+# would let concurrent requests interleave (double-applied decisions, torn
+# case files).
+_ROOT_LOCKS: dict[str, RLock] = {}
+_ROOT_LOCKS_GUARD = Lock()
+
+
+def _root_lock(root: Path) -> RLock:
+    key = os.path.realpath(root)
+    with _ROOT_LOCKS_GUARD:
+        lock = _ROOT_LOCKS.get(key)
+        if lock is None:
+            lock = _ROOT_LOCKS[key] = RLock()
+        return lock
+
+
 class FileEvidenceFeedbackRepository:
     """Content-addressed storage with atomic snapshots and append-only events.
 
     Durable only when ``root`` is on persistent storage. A deployment with a
     configured database uses ``PostgresEvidenceFeedbackRepository`` instead.
+    Writers are serialized per root across every instance in this process;
+    the file store is the local/dev store, so it does not coordinate separate
+    processes (the PostgreSQL store does, with advisory locks).
     """
 
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
-        self._lock = RLock()
+        self._lock = _root_lock(self.root)
 
     def atomic(
         self, operation: Callable[[], T], *, lock_key: str | None = None
@@ -357,10 +422,26 @@ class FileEvidenceFeedbackRepository:
 
     @staticmethod
     def _write_json(path: Path, value: dict[str, Any]) -> None:
+        """Atomically replace ``path``: readers see the old or new file, never part.
+
+        The temporary file has a unique name in the same directory (so the
+        final ``os.replace`` is a same-filesystem rename) and is flushed to
+        disk before the swap.
+        """
+
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(path.suffix + ".tmp")
-        temporary.write_text(
-            canonical_json(value) + "\n",
-            encoding="utf-8",
+        descriptor, temporary = tempfile.mkstemp(
+            dir=path.parent, prefix=f".{path.name}.", suffix=".tmp"
         )
-        temporary.replace(path)
+        try:
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                handle.write(canonical_json(value) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(temporary, path)
+        except BaseException:
+            try:
+                os.unlink(temporary)
+            except FileNotFoundError:
+                pass
+            raise
