@@ -1,6 +1,9 @@
 # ruff: noqa: B008
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+import logging
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -40,17 +43,22 @@ from app.schemas import (
     TemplateRenderResponse,
 )
 from app.show_output_safety import (
+    ICS_MEDIA_TYPE,
+    REDACTED,
     check_template_size,
     ics_strip_line_breaks,
     ics_text_line,
+    ics_utc_timestamp,
     normalize_render_context,
     redact_config_json,
     render_template_text,
+    validate_config_json,
 )
 from app.university.routes import router as university_router
 from runtime.calyx_core_certification import create_certification_router
 
 router = APIRouter(prefix="/api", tags=["calyx-core"])
+logger = logging.getLogger(__name__)
 
 # Show management (organizations, org shows, templates, events + ICS, files,
 # integrations) is owner-only. ``owner_or_member_read`` is default-deny and none of
@@ -220,15 +228,27 @@ def create_show_event(show_id: str, payload: EventCreate, db: Session = Depends(
     return event
 
 
-@router.get("/shows/{show_id}/events/ics", response_class=PlainTextResponse, dependencies=OWNER_ONLY)
+@router.get(
+    "/shows/{show_id}/events/ics",
+    response_class=Response,
+    responses={200: {"content": {"text/calendar": {}}}},
+    dependencies=OWNER_ONLY,
+)
 def export_events_ics(show_id: str, db: Session = Depends(get_db)):
-    """iCalendar export. TEXT values are RFC 5545 escaped (CR/LF become ``\\n``) and
-    every content line is folded at 75 octets, so event text cannot add calendar lines."""
+    """iCalendar export served as ``text/calendar; charset=utf-8``.
+
+    TEXT values are RFC 5545 escaped (every line-break form, including U+2028/U+2029
+    and NEL, becomes ``\\n``) and every content line is folded at 75 octets, so event
+    text cannot add calendar lines. Each VEVENT carries the required DTSTAMP (the
+    export time, UTC).
+    """
     events = db.execute(select(Event).where(Event.show_id == show_id)).scalars().all()
+    dtstamp = ics_utc_timestamp(datetime.now(timezone.utc))
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Calyx//Orchid Show//EN"]
     for ev in events:
         lines.append("BEGIN:VEVENT")
         lines.append(f"UID:{ics_strip_line_breaks(ev.id)}@calyx")
+        lines.append(f"DTSTAMP:{dtstamp}")
         lines.append(f"DTSTART:{ev.starts_at.strftime('%Y%m%dT%H%M%S')}")
         if ev.ends_at:
             lines.append(f"DTEND:{ev.ends_at.strftime('%Y%m%dT%H%M%S')}")
@@ -240,7 +260,7 @@ def export_events_ics(show_id: str, db: Session = Depends(get_db)):
         lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     # RFC 5545 terminates every content line, including the last, with CRLF.
-    return "\r\n".join(lines) + "\r\n"
+    return Response(content="\r\n".join(lines) + "\r\n", media_type=ICS_MEDIA_TYPE)
 
 
 @router.get("/shows/{show_id}/files", response_model=list[FileOut], dependencies=OWNER_ONLY)
@@ -248,12 +268,38 @@ def list_show_files(show_id: str, db: Session = Depends(get_db)):
     return db.execute(select(File).where(File.show_id == show_id)).scalars().all()
 
 
+def _authenticated_uploader(request: Request) -> str:
+    """The authenticated principal that ``owner_or_member_read`` recorded for this request.
+
+    ``"backend_api_key"`` for the API key, the owner session's subject for the owner.
+    Anything else (no principal, a member principal) fails closed with 401; the route
+    dependency already refuses those callers, so this is defence in depth.
+    """
+    principal = getattr(request.state, "oc_principal", None)
+    if isinstance(principal, dict) and principal.get("auth_type") in {"api_key", "owner_session"}:
+        actor = principal.get("actor")
+        if isinstance(actor, str) and actor:
+            return actor
+    raise HTTPException(status_code=401, detail="Owner session or API key is required")
+
+
 @router.post("/shows/{show_id}/files", response_model=FileOut, dependencies=OWNER_ONLY)
-def create_show_file(show_id: str, payload: FileCreate, db: Session = Depends(get_db)):
+def create_show_file(show_id: str, payload: FileCreate, request: Request, db: Session = Depends(get_db)):
+    """Record a show file.
+
+    ``uploaded_by`` is set server-side from the authenticated principal (the owner
+    session subject, or ``backend_api_key`` for the API key). ``FileCreate`` keeps its
+    ``uploaded_by`` field so existing clients still validate, but a client-sent value
+    is ignored.
+    """
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
-    file = File(show_id=show_id, **payload.model_dump())
+    file = File(
+        show_id=show_id,
+        **payload.model_dump(exclude={"uploaded_by"}),
+        uploaded_by=_authenticated_uploader(request),
+    )
     db.add(file)
     db.commit()
     db.refresh(file)
@@ -264,10 +310,17 @@ def _integration_out(integration: IntegrationConnection) -> IntegrationOut:
     """Owner response for an integration: ``config_json`` secrets masked as ``***``.
 
     The stored configuration is unchanged (providers still need it); responses never
-    echo passwords, tokens, API keys or authorization values, even to the owner.
+    echo passwords, tokens, API keys or authorization values, even to the owner. A row
+    whose configuration cannot be redacted is masked entirely instead of failing the
+    response, so one bad stored row can never make the whole list a 500.
     """
     out = IntegrationOut.model_validate(integration)
-    return out.model_copy(update={"config_json": redact_config_json(out.config_json)})
+    try:
+        config_json = redact_config_json(out.config_json)
+    except Exception:  # noqa: BLE001 -- fail closed per row; never echo the stored value
+        logger.warning("integration %s config_json could not be redacted", out.id)
+        config_json = REDACTED
+    return out.model_copy(update={"config_json": config_json})
 
 
 @router.get("/shows/{show_id}/integrations", response_model=list[IntegrationOut], dependencies=OWNER_ONLY)
@@ -289,6 +342,8 @@ def create_show_integration(show_id: str, payload: IntegrationCreate, db: Sessio
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    # Size and nesting are bounded before anything is committed (422).
+    validate_config_json(payload.config_json)
     integration = IntegrationConnection(show_id=show_id, **payload.model_dump())
     db.add(integration)
     db.commit()

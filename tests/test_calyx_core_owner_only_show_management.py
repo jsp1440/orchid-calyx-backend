@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -39,9 +40,16 @@ from app.models import (
 from app.routers import calyx_core
 from app.security import OWNER_SESSION_COOKIE, create_owner_session_token
 from app.show_output_safety import (
+    MAX_CONFIG_DEPTH,
+    MAX_CONFIG_JSON_CHARS,
+    MAX_REDACT_DEPTH,
     MAX_RENDERED_CHARS,
     MAX_TEMPLATE_CHARS,
+    ics_escape_text,
     ics_fold,
+    ics_strip_line_breaks,
+    ics_utc_timestamp,
+    json_nesting_depth,
     redact_config_json,
 )
 
@@ -695,3 +703,258 @@ def test_template_create_rejects_oversized_templates(client, session_local):
     )
     assert response.status_code == 422
     assert _counts(session_local) == before
+
+
+# --- config_json nesting and size bounds -----------------------------------------------------
+
+
+def _nested_list(depth: int) -> str:
+    return "[" * depth + "]" * depth
+
+
+def _post_integration(client: TestClient, config_json: str):
+    return client.post(
+        f"/api/shows/{SHOW_ID}/integrations",
+        json={"provider": "svc", "config_json": config_json},
+        headers={"X-API-Key": API_KEY},
+    )
+
+
+def _store_integration(session_local, integration_id: str, config_json: str) -> None:
+    with session_local() as db:
+        db.add(
+            IntegrationConnection(
+                id=integration_id,
+                show_id=SHOW_ID,
+                provider="legacy",
+                config_json=config_json,
+            )
+        )
+        db.commit()
+
+
+@pytest.mark.parametrize("depth", [MAX_CONFIG_DEPTH + 1, 600, 100_000])
+def test_integration_create_rejects_deep_nesting_before_commit(
+    client, session_local, depth
+):
+    before = _counts(session_local)
+    response = _post_integration(client, _nested_list(depth))
+    assert response.status_code == 422
+    assert response.json()["detail"]["field"] == "config_json"
+    assert _counts(session_local) == before
+    listing = client.get(
+        f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+    )
+    assert listing.status_code == 200
+
+
+def test_integration_create_accepts_the_depth_limit(client, session_local):
+    response = _post_integration(client, _nested_list(MAX_CONFIG_DEPTH))
+    assert response.status_code == 200
+    assert json.loads(response.json()["config_json"]) == json.loads(
+        _nested_list(MAX_CONFIG_DEPTH)
+    )
+
+
+def test_integration_create_rejects_oversized_config(client, session_local):
+    before = _counts(session_local)
+    oversized = json.dumps({"note": "x" * MAX_CONFIG_JSON_CHARS})
+    response = _post_integration(client, oversized)
+    assert response.status_code == 422
+    assert str(MAX_CONFIG_JSON_CHARS) in response.json()["detail"]["message"]
+    assert _counts(session_local) == before
+
+
+def test_json_nesting_depth_ignores_brackets_inside_strings():
+    assert json_nesting_depth(json.dumps({"a": "[[[[{{{{", "b": [{"c": []}]})) == 4
+    assert json_nesting_depth('"\\"[[["') == 0
+    assert json_nesting_depth("not json [[") == 2
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        _nested_list(600),
+        _nested_list(100_000),
+        # nesting hidden inside JSON strings, one layer per level
+        _nested_list(0) + json.dumps({"a": 1}),
+    ],
+)
+def test_one_deeply_nested_stored_row_never_breaks_the_list(
+    client, session_local, stored
+):
+    if stored.startswith("{"):
+        # Each layer is a JSON string holding 8 more list levels: past MAX_REDACT_DEPTH
+        # only through embedded strings (escaping doubles per layer, so few layers).
+        for _ in range(6):
+            wrapped: object = stored
+            for _ in range(8):
+                wrapped = [wrapped]
+            stored = json.dumps({"inner": wrapped, "password": SECRET_PASSWORD})
+    _store_integration(session_local, "integ-deep", stored)
+    for _ in range(2):  # the row does not poison later requests either
+        response = client.get(
+            f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+        )
+        assert response.status_code == 200
+        rows = {row["id"]: row for row in response.json()}
+        assert set(rows) == {"integ-1", "integ-org", "integ-deep"}
+        assert "***" in rows["integ-deep"]["config_json"]
+        assert SECRET_PASSWORD not in response.text
+        assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"
+
+
+def test_deep_redaction_masks_below_the_depth_bound():
+    # json.loads may either raise RecursionError or successfully parse 5,000
+    # containers depending on the runner's recursion limit. Both paths must fail
+    # closed: either mask the whole value or retain only the bounded container
+    # prefix with the remainder replaced by the redaction marker.
+    redacted = redact_config_json(_nested_list(5_000))
+    assert redacted is not None
+    assert "***" in redacted
+    assert json_nesting_depth(redacted) <= MAX_REDACT_DEPTH + 1
+    assert len(redacted) <= 2 * (MAX_REDACT_DEPTH + 1) + len(json.dumps("***"))
+    assert redact_config_json(_nested_list(100_000)) == "***"
+    deep = json.loads(redact_config_json(_nested_list(MAX_REDACT_DEPTH + 10)))
+    for _ in range(MAX_REDACT_DEPTH + 1):  # containers at depth 0..MAX_REDACT_DEPTH
+        assert isinstance(deep, list)
+        deep = deep[0]
+    assert deep == "***"
+
+
+def test_a_row_that_cannot_be_redacted_is_masked_not_a_500(
+    client, session_local, monkeypatch
+):
+    real = calyx_core.redact_config_json
+
+    def flaky(config_json):
+        if config_json and "opaque-legacy" in config_json:
+            raise RecursionError("synthetic")
+        return real(config_json)
+
+    monkeypatch.setattr(calyx_core, "redact_config_json", flaky)
+    response = client.get(
+        f"/api/shows/{SHOW_ID}/integrations", headers={"X-API-Key": API_KEY}
+    )
+    assert response.status_code == 200
+    rows = {row["id"]: row for row in response.json()}
+    assert rows["integ-org"]["config_json"] == "***"
+    assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"
+
+
+# --- ICS: DTSTAMP, media type, Unicode line breaks ------------------------------------------
+
+
+def test_ics_is_text_calendar_utf8_and_every_vevent_has_a_utc_dtstamp(
+    client, session_local
+):
+    _add_event(session_local, title="Judging")
+    _add_event(session_local, title="Awards", location="Hall Ω")
+    response = client.get(
+        f"/api/shows/{SHOW_ID}/events/ics", headers={"X-API-Key": API_KEY}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/calendar; charset=utf-8"
+    assert "LOCATION:Hall Ω" in response.content.decode("utf-8")
+    events = response.text.split("BEGIN:VEVENT")[1:]
+    assert len(events) == 2
+    for event in events:
+        stamps = [line for line in event.split("\r\n") if line.startswith("DTSTAMP:")]
+        assert len(stamps) == 1
+        assert re.fullmatch(r"DTSTAMP:\d{8}T\d{6}Z", stamps[0])
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"],
+    ids=["LS", "PS", "NEL", "VT", "FF", "FS", "GS", "RS"],
+)
+def test_ics_unicode_line_breaks_cannot_start_a_calendar_line(
+    client, session_local, separator
+):
+    _add_event(
+        session_local,
+        title=f"Judging{separator}END:VEVENT{separator}BEGIN:VEVENT",
+        notes=f"a{separator}ATTENDEE:mailto:x@example.invalid",
+    )
+    text = client.get(
+        f"/api/shows/{SHOW_ID}/events/ics", headers={"X-API-Key": API_KEY}
+    ).text
+    assert separator not in text
+    # A consumer that splits on every Unicode line boundary sees no injected line.
+    lines = _unfold(text)
+    assert lines == text.replace("\r\n ", "").splitlines() + [""]
+    assert lines.count("BEGIN:VEVENT") == 1 and lines.count("END:VEVENT") == 1
+    assert not any(line.startswith("ATTENDEE:") for line in lines)
+    assert "SUMMARY:Judging\\nEND:VEVENT\\nBEGIN:VEVENT" in lines
+    assert "DESCRIPTION:a\\nATTENDEE:mailto:x@example.invalid" in lines
+
+
+def test_ics_escaping_drops_c1_controls_and_strips_uid_line_breaks():
+    assert ics_escape_text("a\x80b\x9fc\x7fd\te") == "abcd\te"
+    assert ics_escape_text("x\r\ny\u2028z") == "x\\ny\\nz"
+    assert ics_strip_line_breaks("id\u2028\x85\r\n\x9f-1") == "id-1"
+    assert (
+        ics_utc_timestamp(datetime(2027, 3, 13, 9, 0, 0, tzinfo=timezone.utc))
+        == "20270313T090000Z"
+    )
+
+
+# --- files: uploader is the authenticated principal ------------------------------------------
+
+SPOOFED_UPLOADER = "spoofed.uploader@example.invalid"
+
+
+@pytest.mark.parametrize(
+    ("credential", "expected"),
+    [
+        ("api_key", "backend_api_key"),
+        ("owner_bearer", "owner"),
+        ("owner_cookie", "owner"),
+    ],
+)
+@pytest.mark.parametrize(
+    "sent", [SPOOFED_UPLOADER, None, ""], ids=["spoofed", "null", "empty"]
+)
+def test_file_uploader_is_set_from_the_authenticated_principal(
+    client, session_local, owner_token, credential, expected, sent
+):
+    body = {"filename": "schedule.pdf", "storage_key": "synthetic/key.pdf"}
+    if sent is not None:
+        body["uploaded_by"] = sent
+    response = client.post(
+        f"/api/shows/{SHOW_ID}/files",
+        json=body,
+        headers=_owner_headers(client, credential, owner_token),
+    )
+    assert response.status_code == 200
+    assert response.json()["uploaded_by"] == expected
+    assert SPOOFED_UPLOADER not in response.text
+    with session_local() as db:
+        assert db.get(File, response.json()["id"]).uploaded_by == expected
+
+
+def test_file_create_keeps_uploaded_by_in_the_schema_and_documents_it_as_ignored():
+    field = calyx_core.FileCreate.model_fields["uploaded_by"]
+    assert field.default is None  # still accepted, so existing clients validate
+    operation = app.openapi()["paths"]["/api/shows/{show_id}/files"]["post"]
+    assert "ignored" in operation["description"]
+    assert "authenticated principal" in operation["description"]
+
+
+@pytest.mark.parametrize(
+    "principal",
+    [
+        None,
+        {},
+        {"role": "member", "actor": MEMBER_UUID},
+        {"auth_type": "api_key", "actor": ""},
+        {"auth_type": "owner_session"},
+    ],
+)
+def test_authenticated_uploader_fails_closed_without_an_owner_principal(principal):
+    request = Mock()
+    request.state = Mock(spec=[]) if principal is None else Mock(oc_principal=principal)
+    with pytest.raises(calyx_core.HTTPException) as excinfo:
+        calyx_core._authenticated_uploader(request)
+    assert excinfo.value.status_code == 401
