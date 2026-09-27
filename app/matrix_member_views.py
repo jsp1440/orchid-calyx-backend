@@ -14,8 +14,15 @@ through wholesale, and no nested ``Any`` value is ever passed through:
   keys planted inside it (specimen, locality, coordinates) are dropped; any other
   shape becomes the explicit marker ``"withheld"``.
 * Every string is length-bounded and screened for locality/specimen/submitter
-  material (coordinate-shaped numbers, degree marks, locality/specimen/collector
-  vocabulary, e-mail marks). A string that fails the screen becomes ``"withheld"``.
+  material (coordinate-shaped numbers, degree marks, ASCII minute/second marks,
+  hemisphere-letter coordinates, UTM/MGRS grid references, Open Location Codes,
+  locality/elevation/specimen/collector vocabulary and abbreviations in English,
+  Spanish, Portuguese and French, e-mail marks). A string that fails the screen
+  becomes ``"withheld"``.
+* Elevation and altitude stay withheld in every form, including banded characters:
+  the member view carries no per-taxon sensitivity signal, so whether a coarse band
+  is safe is an owner/science decision. An explanation row whose character id is
+  withheld also has its ``candidate_state`` withheld.
 * No account identifier is returned (session ``actor``, observation ``recorded_by``,
   registry ``created_by``) -- sessions carry ``mine: true`` instead.
 * Registry ``scope`` keeps taxonomic-rank keys only; candidate provenance keeps a
@@ -82,17 +89,74 @@ VALUE_TYPES = frozenset({"categorical", "multi_state", "numeric", "numeric_range
 
 # --- screens ---------------------------------------------------------------------
 
+# Every pattern below is linear-time: each alternative uses bounded quantifiers only
+# (no nested or unbounded repetition), so a search costs O(len(text)) whatever the
+# input. tests/test_member_matrix_screen_broadened.py times each one on 64K inputs.
+#
+# "Unambiguous" words only: ``long.``, ``alt.``, ``site`` and ``station`` are ordinary
+# words in morphology prose ("Spur 12 cm long.", "leaves alt.", "attachment site"),
+# so they are withheld only in the shapes that carry a locality value.
 _SENSITIVE_WORDS = re.compile(
-    r"latitud|longitud|localit|coordinat|georef|\bgps\b|\blat\b|\blon\b|\blng\b"
-    r"|specimen|voucher|collector|herbari|elevation|altitude|@",
+    # locality / coordinate vocabulary (English, Spanish, Portuguese, French)
+    r"latitud|longitud|localit|localidad|localiza[cç]|localisation|coordinat"
+    r"|coordenad|coordonn|georef|\bgps|\blat\b|\blon\b|\blng\b|\bfundort"
+    r"|\blong\.?\s?[:=]\s?[-+−]?\d|\blong\.\s{0,2}[-+−]?\d{1,3}(?:[.,]\d|\s?[EW]\b)"
+    r"|\bwgs|\bdatum\b|\bnad\s?-?(?:27|83)\b|\bsirgas|\butm\b|\bmgrs\b|geohash"
+    r"|plus\s?codes?\b|open\s{1,3}location\s{1,3}code|grid\s{0,2}ref"
+    # elevation / altitude, including abbreviations and "metres above sea level"
+    r"|elevation|elevaci|elevaç|elevacao|altitud|\belev\."
+    r"|\balt\.?\s{0,2}[:=]?\s{0,2}(?:ca?\.\s{0,2})?\d"
+    r"|\bm\.?\s?s\.?\s?n\.?\s?m\b|\bs\.\s?n\.\s?m\b"
+    r"|\bm\.?\s?a\.?\s?s\.?\s?l\b|\ba\.\s?s\.\s?l\b|\basl\b"
+    r"|sea\s{1,3}level|nivel\s{1,3}del\s{1,3}mar|n[ií]vel\s{1,3}do\s{1,3}mar"
+    # specimen / collector / collecting-event vocabulary
+    r"|specimen|voucher|collector|herbari|\bleg\.|\bcoll\.|\bcollected\b"
+    r"|\bcollecting\b|\bcollection\s{1,3}(?:site|number|no\.|data|place|point)"
+    r"|\bcolect|\bcoletad|\bcoletor"
+    # site / station only in labelled or collecting-event shapes
+    r"|\b(?:collection|collecting|type|study|sampling|field|survey|plot)\s{1,3}site\b"
+    r"|\bsite\s{0,2}(?:[:=#]|no\.|number\b|\d)"
+    r"|\b(?:field|collection|collecting|sampling|research|survey|weather)\s{1,3}station\b"
+    r"|\bstation\s{0,2}(?:[:=#]|no\.|number\b|\d)"
+    r"|@",
     re.IGNORECASE,
 )
+_OLC = "23456789CFGHJMPQRVWX"  # Open Location Code alphabet
 _COORDINATE_SHAPES = re.compile(
     r"\d\.\d{3,}"  # coordinate-precision decimals
     r"|-?\d{1,3}\.\d+\s*[,;]\s*-?\d{1,3}\.\d+"  # decimal pairs
+    r"|(?<![\d.])[-−]\d{1,3}\.\d{2,6}[\s,;/]{1,3}[-−]?\d{1,3}\.\d{2,6}"  # signed pairs
     r"|[°º˚′″]"  # degree / minute / second marks
-    r"|\b\d{1,3}\s*deg(?:rees?)?\b",
+    r"|\b\d{1,3}\s*deg(?:rees?)?\b"
+    # degrees-minutes with an ASCII minute mark: 12 34' / 12 34.5'
+    r"|\b\d{1,3}\s{1,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'"
+    # minutes-seconds with ASCII marks: 34' 56" / 34'56'' / 34' 56.7"
+    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'\s{0,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:\"|'')"
+    # 12d34m / 12d 34m 56s
+    r"|\b\d{1,3}\s?d\s?\d{1,2}(?:[.,]\d{1,4})?\s?m(?![a-z])"
+    # Paired hemisphere coordinates are unambiguous even in lower case.
+    r"|\b\d{1,3}(?:[.,]\d{2,6})?\s?[NS][\s,;/]{1,3}\d{1,3}(?:[.,]\d{2,6})?\s?[EW]\b"
+    r"|\b[NS]\s?\d{1,3}(?:[.,]\d{2,6})?[\s,;/]{1,3}[EW]\s?\d{1,3}(?:[.,]\d{2,6})?\b"
+    # Open Location Codes are case-insensitive, including shortened codes.
+    rf"|\b[2-9C][2-9CFGHJMPQRV][{_OLC}0]{{6}}\+"
+    rf"|\b[{_OLC}]{{4,6}}\+[{_OLC}]{{2,3}}\b",
     re.IGNORECASE,
+)
+# Case-sensitive shapes: single hemisphere letters and UTM/MGRS grid references
+# are upper case; matching them case-insensitively would catch "2n", "5 s", etc.
+_COORDINATE_CASED = re.compile(
+    # 12.34S / 12,345 N / 18 55 S / 18:55:30 S
+    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,2}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s?[NSEW]\b"
+    # N 12.34 / S18.91 (two or more decimals: "S 12.5" may be a sepal measurement)
+    r"|\b[NS]\s?\d{1,3}[.,]\d{2,6}"
+    # N 18 E 47 / S18.9, E47.5 (latitude then longitude)
+    r"|\b[NS]\s?\d{1,3}(?:[.,]\d{1,6})?[\s,;/]{1,3}[EW]\s?\d{1,3}\b"
+    # UTM: 17N 630084 4833438 / 17 N 630084mE 4833438mN
+    r"|\b\d{1,2}\s?[C-HJ-NP-X]\s{1,3}\d{6}(?:\.\d{1,3})?\s?m?E?[\s,;]{1,3}\d{7}\b"
+    # UTM easting/northing pair without zone: 630084 4833438 / 630084mE 4833438mN
+    r"|\b\d{6}(?:\.\d{1,3})?\s?(?:mE)?[\s,;]{1,3}\d{7}(?:\.\d{1,3})?\s?(?:mN\b)?(?!\d)"
+    # MGRS: 33TWN1234567890 / 33T WN 12345 67890
+    r"|\b\d{1,2}[C-HJ-NP-X]\s?[A-HJ-NP-Z][A-HJ-NP-V]\s?\d{2,5}\s?\d{2,5}\b"
 )
 _IDENTIFIER = re.compile(r"[\w.:/+()'&× -]{1,200}")
 _HEX64 = re.compile(r"[0-9a-f]{64}")
@@ -112,6 +176,7 @@ def screened_text(value: Any, max_len: int = MAX_LABEL) -> str | None:
         len(value) > max_len
         or _SENSITIVE_WORDS.search(value)
         or _COORDINATE_SHAPES.search(value)
+        or _COORDINATE_CASED.search(value)
     ):
         return WITHHELD
     return value
@@ -379,10 +444,23 @@ _CANDIDATE: dict[str, Callable[[Any], Any]] = {
 }
 
 
+def member_explanation(explanation: dict[str, Any]) -> dict[str, Any]:
+    """One per-character explanation row.
+
+    A character whose id is withheld (for example ``elevation_m``) also has its
+    registry-authored ``candidate_state`` withheld: a numeric range such as
+    ``{"min": 1520, "max": 1530}`` is not safe merely because its label is hidden.
+    """
+    shaped = _shape(explanation, _EXPLANATION)
+    if shaped.get("character") == WITHHELD and "candidate_state" in shaped:
+        shaped["candidate_state"] = WITHHELD
+    return shaped
+
+
 def member_candidate(candidate: dict[str, Any]) -> dict[str, Any]:
     item = _shape(candidate, _CANDIDATE)
     item["explanations"] = [
-        _shape(explanation, _EXPLANATION)
+        member_explanation(explanation)
         for explanation in candidate.get("explanations", []) or []
         if isinstance(explanation, dict)
     ]
