@@ -150,8 +150,8 @@ uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 - `POST /api/judging/submit` - Submit and persist score
 
 ### Feedback (beta capture)
-- `POST /api/feedback` - Submit feedback (module, step, worked, confusion, suggestions)
-- `GET /api/feedback?module=` - List feedback (optional module filter)
+- `POST /api/feedback` - Submit feedback (module, step, worked, confusion, suggestions); public, module/step/organization_id at most 200 chars, confusion/suggestions at most 4000 chars (longer is 422)
+- `GET /api/feedback?module=&limit=&offset=` - List feedback, owner session or X-API-Key only (members 403, anonymous 401); newest first, limit default 200, max 1000
 
 ### Volunteer Operations (all require X-API-Key)
 All paths under `/api/shows/{show_id}/volunteer/...`
