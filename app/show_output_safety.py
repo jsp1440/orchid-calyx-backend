@@ -45,6 +45,7 @@ import math
 import re
 import unicodedata
 from collections import Counter
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -365,17 +366,35 @@ def validate_config_json(config_json: str | None) -> None:
 # --- iCalendar -------------------------------------------------------------------------
 
 ICS_LINE_OCTETS = 75
+ICS_MEDIA_TYPE = "text/calendar; charset=utf-8"
+
+# Every character ``str.splitlines`` treats as a line boundary (CR, LF, VT, FF, FS,
+# GS, RS, NEL, LINE SEPARATOR, PARAGRAPH SEPARATOR): a consumer that splits on any of
+# them must never see a new content line, so each one is escaped as ``\n``.
+_ICS_LINE_BREAKS = re.compile("\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
+def _ics_allowed(ch: str) -> bool:
+    """Not a C0 control (except TAB), DEL or a C1 control (RFC 5545 3.1, 3.3.11)."""
+    code = ord(ch)
+    if ch == "\t":
+        return True
+    return code >= 0x20 and not 0x7F <= code <= 0x9F
 
 
 def ics_escape_text(value: object) -> str:
-    """RFC 5545 section 3.3.11 TEXT escaping; every CR/LF form becomes a literal ``\\n``."""
+    """RFC 5545 section 3.3.11 TEXT escaping; every line-break form becomes ``\\n``."""
     text = str(value)
     text = text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
-    text = text.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\\n")
-    # Other control characters are not allowed in TEXT values (RFC 5545 3.1, 3.3.11).
-    return "".join(
-        ch for ch in text if ch == "\t" or ord(ch) >= 0x20 and ord(ch) != 0x7F
-    )
+    text = _ICS_LINE_BREAKS.sub("\\\\n", text)
+    return "".join(ch for ch in text if _ics_allowed(ch))
+
+
+def ics_utc_timestamp(moment: datetime) -> str:
+    """RFC 5545 DATE-TIME in UTC form (``19970714T173000Z``), as DTSTAMP requires."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def ics_fold(line: str) -> list[str]:
@@ -403,8 +422,9 @@ def ics_text_line(name: str, value: object) -> list[str]:
 
 
 def ics_strip_line_breaks(value: object) -> str:
-    """For non-TEXT values (UID): remove CR/LF and other control characters outright."""
-    return "".join(ch for ch in str(value) if ord(ch) >= 0x20 and ord(ch) != 0x7F)
+    """For non-TEXT values (UID): remove every line break and control character."""
+    text = _ICS_LINE_BREAKS.sub("", str(value))
+    return "".join(ch for ch in text if ch != "\t" and _ics_allowed(ch))
 
 
 # --- message templates -----------------------------------------------------------------

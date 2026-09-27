@@ -1,8 +1,9 @@
 # ruff: noqa: B008
 import logging
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -42,10 +43,12 @@ from app.schemas import (
     TemplateRenderResponse,
 )
 from app.show_output_safety import (
+    ICS_MEDIA_TYPE,
     REDACTED,
     check_template_size,
     ics_strip_line_breaks,
     ics_text_line,
+    ics_utc_timestamp,
     normalize_render_context,
     redact_config_json,
     render_template_text,
@@ -225,15 +228,27 @@ def create_show_event(show_id: str, payload: EventCreate, db: Session = Depends(
     return event
 
 
-@router.get("/shows/{show_id}/events/ics", response_class=PlainTextResponse, dependencies=OWNER_ONLY)
+@router.get(
+    "/shows/{show_id}/events/ics",
+    response_class=Response,
+    responses={200: {"content": {"text/calendar": {}}}},
+    dependencies=OWNER_ONLY,
+)
 def export_events_ics(show_id: str, db: Session = Depends(get_db)):
-    """iCalendar export. TEXT values are RFC 5545 escaped (CR/LF become ``\\n``) and
-    every content line is folded at 75 octets, so event text cannot add calendar lines."""
+    """iCalendar export served as ``text/calendar; charset=utf-8``.
+
+    TEXT values are RFC 5545 escaped (every line-break form, including U+2028/U+2029
+    and NEL, becomes ``\\n``) and every content line is folded at 75 octets, so event
+    text cannot add calendar lines. Each VEVENT carries the required DTSTAMP (the
+    export time, UTC).
+    """
     events = db.execute(select(Event).where(Event.show_id == show_id)).scalars().all()
+    dtstamp = ics_utc_timestamp(datetime.now(timezone.utc))
     lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Calyx//Orchid Show//EN"]
     for ev in events:
         lines.append("BEGIN:VEVENT")
         lines.append(f"UID:{ics_strip_line_breaks(ev.id)}@calyx")
+        lines.append(f"DTSTAMP:{dtstamp}")
         lines.append(f"DTSTART:{ev.starts_at.strftime('%Y%m%dT%H%M%S')}")
         if ev.ends_at:
             lines.append(f"DTEND:{ev.ends_at.strftime('%Y%m%dT%H%M%S')}")
@@ -245,7 +260,7 @@ def export_events_ics(show_id: str, db: Session = Depends(get_db)):
         lines.append("END:VEVENT")
     lines.append("END:VCALENDAR")
     # RFC 5545 terminates every content line, including the last, with CRLF.
-    return "\r\n".join(lines) + "\r\n"
+    return Response(content="\r\n".join(lines) + "\r\n", media_type=ICS_MEDIA_TYPE)
 
 
 @router.get("/shows/{show_id}/files", response_model=list[FileOut], dependencies=OWNER_ONLY)

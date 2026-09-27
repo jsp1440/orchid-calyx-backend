@@ -15,8 +15,9 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from unittest.mock import Mock
 
 import pytest
@@ -44,7 +45,10 @@ from app.show_output_safety import (
     MAX_REDACT_DEPTH,
     MAX_RENDERED_CHARS,
     MAX_TEMPLATE_CHARS,
+    ics_escape_text,
     ics_fold,
+    ics_strip_line_breaks,
+    ics_utc_timestamp,
     json_nesting_depth,
     redact_config_json,
 )
@@ -828,3 +832,61 @@ def test_a_row_that_cannot_be_redacted_is_masked_not_a_500(
     rows = {row["id"]: row for row in response.json()}
     assert rows["integ-org"]["config_json"] == "***"
     assert json.loads(rows["integ-1"]["config_json"])["password"] == "***"
+
+
+# --- ICS: DTSTAMP, media type, Unicode line breaks ------------------------------------------
+
+
+def test_ics_is_text_calendar_utf8_and_every_vevent_has_a_utc_dtstamp(
+    client, session_local
+):
+    _add_event(session_local, title="Judging")
+    _add_event(session_local, title="Awards", location="Hall Ω")
+    response = client.get(
+        f"/api/shows/{SHOW_ID}/events/ics", headers={"X-API-Key": API_KEY}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "text/calendar; charset=utf-8"
+    assert "LOCATION:Hall Ω" in response.content.decode("utf-8")
+    events = response.text.split("BEGIN:VEVENT")[1:]
+    assert len(events) == 2
+    for event in events:
+        stamps = [line for line in event.split("\r\n") if line.startswith("DTSTAMP:")]
+        assert len(stamps) == 1
+        assert re.fullmatch(r"DTSTAMP:\d{8}T\d{6}Z", stamps[0])
+
+
+@pytest.mark.parametrize(
+    "separator",
+    ["\u2028", "\u2029", "\x85", "\x0b", "\x0c", "\x1c", "\x1d", "\x1e"],
+    ids=["LS", "PS", "NEL", "VT", "FF", "FS", "GS", "RS"],
+)
+def test_ics_unicode_line_breaks_cannot_start_a_calendar_line(
+    client, session_local, separator
+):
+    _add_event(
+        session_local,
+        title=f"Judging{separator}END:VEVENT{separator}BEGIN:VEVENT",
+        notes=f"a{separator}ATTENDEE:mailto:x@example.invalid",
+    )
+    text = client.get(
+        f"/api/shows/{SHOW_ID}/events/ics", headers={"X-API-Key": API_KEY}
+    ).text
+    assert separator not in text
+    # A consumer that splits on every Unicode line boundary sees no injected line.
+    lines = _unfold(text)
+    assert lines == text.replace("\r\n ", "").splitlines() + [""]
+    assert lines.count("BEGIN:VEVENT") == 1 and lines.count("END:VEVENT") == 1
+    assert not any(line.startswith("ATTENDEE:") for line in lines)
+    assert "SUMMARY:Judging\\nEND:VEVENT\\nBEGIN:VEVENT" in lines
+    assert "DESCRIPTION:a\\nATTENDEE:mailto:x@example.invalid" in lines
+
+
+def test_ics_escaping_drops_c1_controls_and_strips_uid_line_breaks():
+    assert ics_escape_text("a\x80b\x9fc\x7fd\te") == "abcd\te"
+    assert ics_escape_text("x\r\ny\u2028z") == "x\\ny\\nz"
+    assert ics_strip_line_breaks("id\u2028\x85\r\n\x9f-1") == "id-1"
+    assert (
+        ics_utc_timestamp(datetime(2027, 3, 13, 9, 0, 0, tzinfo=timezone.utc))
+        == "20270313T090000Z"
+    )
