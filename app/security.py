@@ -42,11 +42,25 @@ def owner_cookie_samesite() -> str:
     return value if value in {"lax", "strict", "none"} else "lax"
 
 
+def credentials_match(presented: str, expected: str) -> bool:
+    """Constant-time equality for a presented credential and the expected secret.
+
+    ``hmac.compare_digest`` raises ``TypeError`` for a ``str`` containing any
+    non-ASCII character, and request headers, cookies and query values can carry
+    them (Starlette decodes headers as latin-1), so comparing strings directly
+    turned a pasted or hostile credential into a 500. Comparing the UTF-8 bytes
+    keeps the comparison constant-time and makes such a value simply not match.
+    """
+    return hmac.compare_digest(
+        presented.encode("utf-8", "surrogatepass"), expected.encode("utf-8", "surrogatepass")
+    )
+
+
 async def verify_api_key(api_key: str = Security(api_key_header)):
     expected_key = get_api_key()
     if not expected_key:
         raise HTTPException(status_code=401, detail="API key authentication is not configured")
-    if not api_key or not hmac.compare_digest(api_key, expected_key):
+    if not api_key or not credentials_match(api_key, expected_key):
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     return api_key
 
@@ -91,7 +105,7 @@ def _decode_owner_token(token: str) -> dict[str, object]:
         payload_b64, signature = token.split(".", 1)
         payload = _unb64(payload_b64).decode("utf-8")
         expected_signature = hmac.new(secret.encode("utf-8"), payload.encode("utf-8"), hashlib.sha256).hexdigest()
-        if not hmac.compare_digest(signature, expected_signature):
+        if not credentials_match(signature, expected_signature):
             raise ValueError("signature")
         owner, issued_at, expires_at, nonce = payload.split("|", 3)
         if int(expires_at) < int(time.time()):
@@ -127,7 +141,7 @@ async def verify_owner_or_api_key(request: Request, api_key: str = Security(api_
     if api_key:
         if not expected_key:
             raise HTTPException(status_code=401, detail="API key authentication is not configured")
-        if hmac.compare_digest(api_key, expected_key):
+        if credentials_match(api_key, expected_key):
             return {"actor": "backend_api_key", "auth_type": "api_key"}
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
     authorization = request.headers.get("authorization") or ""
