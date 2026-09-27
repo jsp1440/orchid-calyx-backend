@@ -5,6 +5,11 @@ contact messages live in ``oc_admin.research_station_records`` when a database
 is configured and in process memory otherwise, exactly as the field
 observation and hypothesis modules do. No new tables, no migration.
 
+This is the default (``OC_CONSTITUENT_PERSISTENCE=research_station``). The
+canonical ``oc_constituent`` / ``oc_communications`` implementation with the same
+interface is :mod:`app.constituent_platform.canonical_store`; exactly one of the
+two is authoritative at a time (see that module for the cutover procedure).
+
 Privacy posture: records are keyed by a hash of the normalised email, the
 table is owner-only, and nothing here ever tells an anonymous caller whether a
 given address is subscribed. Unsubscribe is idempotent and answers the same
@@ -65,6 +70,12 @@ def constituent_id_for(normalized_email: str) -> str:
 
 def subscription_record_id(normalized_email: str) -> str:
     return hashlib.sha256(normalized_email.encode("utf-8")).hexdigest()[:32]
+
+
+def contact_reference_id(message: dict[str, Any]) -> str:
+    """Deterministic contact reference: identical submissions are one message in either store."""
+    seed = f"{message['normalized_email']}\n{message['body']}\n{message.get('subject') or ''}"
+    return f"cm-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:24]}"
 
 
 def manage_secret() -> str | None:
@@ -284,10 +295,9 @@ class ConstituentService:
 
     def receive_contact(self, message: dict[str, Any]) -> dict[str, Any]:
         now = _now()
-        seed = f"{message['normalized_email']}\n{message['body']}\n{message.get('subject') or ''}"
         record = {
             **message,
-            "reference_id": f"cm-{hashlib.sha256(seed.encode('utf-8')).hexdigest()[:24]}",
+            "reference_id": contact_reference_id(message),
             "received_at": now,
             "state": "received",
             "review": CONTACT_REVIEW,

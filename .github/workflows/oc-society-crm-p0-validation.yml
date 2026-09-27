@@ -4,9 +4,19 @@ on:
   pull_request:
     paths:
       - "app/constituent_platform/**"
+      - "app/main.py"
       - "migrations/20260823_oc_constituent_communications_foundation.sql"
-      - "migrations/20260926_society_crm_p0_core.sql"
-      - "tests/test_society_crm_postgres.py"
+      - "migrations/20260926_society_crm_*.sql"
+      - "migrations/20260927*_*.sql"
+      - "migrations/20260928*_*.sql"
+      - "migrations/CALYX-RECOVERY-001-research-station-records.sql"
+      - "runtime/research_station_store.py"
+      - "scripts/oc_constituent_migrate_research_station.py"
+      - "scripts/oc_crm_*.py"
+      - "tests/test_society_crm_*.py"
+      - "tests/test_constituent_*.py"
+      - "tests/test_crm_backup_restore.py"
+      - "docs/operations/OC-CRM-*.md"
       - ".github/workflows/oc-society-crm-p0-validation.yml"
   workflow_dispatch:
 
@@ -35,6 +45,16 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_test
       PGPASSWORD: postgres
       OC_REQUIRE_POSTGRES: "1"
+      # Ordered CRM migration chain; every file must re-apply cleanly.
+      CRM_MIGRATIONS: >-
+        migrations/20260823_oc_constituent_communications_foundation.sql
+        migrations/20260926_society_crm_p0_core.sql
+        migrations/20260927_society_crm_p1_tenant_isolation.sql
+        migrations/20260927b_constituent_newsletter_canonical.sql
+        migrations/20260927c_society_crm_portal_ops.sql
+        migrations/20260927d_society_crm_communications.sql
+        migrations/20260928_society_crm_money.sql
+        migrations/20260928b_society_crm_org_profile.sql
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -42,20 +62,60 @@ jobs:
           python-version: "3.12"
           cache: pip
       - name: Install backend dependencies
-        run: pip install -r requirements.txt pytest
-      - name: Apply constituent foundation
+        run: pip install -r requirements.txt pytest httpx
+      - name: Apply CRM migration chain
+        run: |
+          for f in $CRM_MIGRATIONS; do
+            echo "::group::apply $f"
+            psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -q -f "$f"
+            echo "::endgroup::"
+          done
+      - name: Verify CRM migration idempotency (re-apply chain)
+        run: |
+          for f in $CRM_MIGRATIONS; do
+            psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1 -q -f "$f"
+          done
+      - name: Run society CRM tests
         run: >-
-          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
-          -f migrations/20260823_oc_constituent_communications_foundation.sql
-      - name: Apply society CRM P0 schema
+          pytest -q
+          tests/test_society_crm_domain.py
+          tests/test_society_crm_postgres.py
+          tests/test_society_crm_routes.py
+          tests/test_society_crm_portal.py
+          tests/test_society_crm_communications.py
+          tests/test_society_crm_import_export.py
+          tests/test_society_crm_money.py
+      - name: Re-run society CRM PostgreSQL tests against the same database
         run: >-
-          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
-          -f migrations/20260926_society_crm_p0_core.sql
-      - name: Verify P0 schema idempotency
+          pytest -q
+          tests/test_society_crm_postgres.py
+          tests/test_society_crm_portal.py
+          tests/test_society_crm_communications.py
+          tests/test_society_crm_import_export.py
+          tests/test_society_crm_money.py
+      - name: Run canonical newsletter/contact tests
         run: >-
-          psql -h localhost -U postgres -d orchid_test -v ON_ERROR_STOP=1
-          -f migrations/20260926_society_crm_p0_core.sql
-      - name: Run society CRM PostgreSQL tests
-        run: pytest -q tests/test_society_crm_postgres.py
-      - name: Compile constituent platform package
-        run: python -m compileall -q app/constituent_platform
+          pytest -q
+          tests/test_constituent_canonical_store.py
+          tests/test_constituent_persistence_selection.py
+          tests/test_constituent_platform_routes.py
+          tests/test_constituent_platform_domain.py
+      - name: Install PostgreSQL 16 client (pg_dump/pg_restore) from PGDG
+        run: |
+          sudo install -d /usr/share/postgresql-common/pgdg
+          sudo curl --fail -sSL -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc
+          echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client-16
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+      - name: Run CRM backup/restore drill tests (OC-CRM-BACKUP-RESTORE-001)
+        env:
+          PG_DUMP_BIN: /usr/lib/postgresql/16/bin/pg_dump
+          PG_RESTORE_BIN: /usr/lib/postgresql/16/bin/pg_restore
+        run: pytest -q tests/test_crm_backup_restore.py
+      - name: Compile constituent platform package and CRM scripts
+        run: >-
+          python -m compileall -q app/constituent_platform
+          scripts/oc_constituent_migrate_research_station.py
+          scripts/oc_crm_backup_restore_drill.py
