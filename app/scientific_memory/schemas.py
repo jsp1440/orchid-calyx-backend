@@ -5,6 +5,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.validation_errors import require_strict_json
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -23,7 +25,7 @@ class SourceReference(StrictModel):
     def bounded_locator(cls, value: dict[str, Any]):
         if len(json.dumps(value, separators=(",", ":"), default=str)) > 4_000:
             raise ValueError("source locator is too large")
-        return value
+        return require_strict_json(value)
 
 
 class MemoryItemCreate(StrictModel):
@@ -58,7 +60,7 @@ class MemoryItemCreate(StrictModel):
     def bounded_payload(cls, value: dict[str, Any]):
         if len(json.dumps(value, separators=(",", ":"), default=str)) > 20_000:
             raise ValueError("structured payload is too large")
-        return value
+        return require_strict_json(value)
 
     @model_validator(mode="after")
     def exact_source_for_evidence(self):
@@ -88,7 +90,7 @@ class CaptureCreate(StrictModel):
     def bounded_filters(cls, value: dict[str, Any]):
         if len(json.dumps(value, separators=(",", ":"), default=str)) > 8_000:
             raise ValueError("search filters are too large")
-        return value
+        return require_strict_json(value)
 
 
 class DecisionCreate(StrictModel):
