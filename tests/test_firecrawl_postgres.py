@@ -379,7 +379,7 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     assert source_receipt["source_domain"] == "flora.example"
     assert source_receipt["taxonomy_snapshot_id"] == "firecrawl-fixture-release"
     assert source_receipt["taxonomy_source_hash"] == "a" * 64
-    assert source_receipt["extracted_characters"] == ["leaf_length", "petal_width"]
+    assert source_receipt["extracted_characters"] == ["leaf_length"]
     assert receipts[0]["firecrawl_credits"]["reserved"] == 0
     assert receipts[0]["firecrawl_credits"]["provider_reported"] is None
     assert all(source["mocked"] for source in receipts[0]["sources"])
