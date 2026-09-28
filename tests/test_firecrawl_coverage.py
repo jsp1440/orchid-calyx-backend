@@ -103,3 +103,29 @@ def test_predicate_gap_is_explicit_and_not_any_morphology_coverage():
     assert report["covered_taxa"] == 0
     candidate, = discover_matrix_coverage(report)
     assert 'OC-ACQUISITION-PREDICATES: ["leaf_length", "petal_width"]' in candidate.summary
+
+
+def test_hosted_coverage_prioritizes_observed_reuse_with_paid_provider_disabled(monkeypatch):
+    from app.evidence_aggregation import postgres_repository
+    from app.literature_extraction import corpus_audit, routes
+    from runtime.knowledge_graph import firecrawl_taxonomy
+
+    monkeypatch.setenv("FIRECRAWL_ENABLED", "false")
+    monkeypatch.setenv("FIRECRAWL_PILOT_MODE", "false")
+    monkeypatch.setenv("FIRECRAWL_REQUIRED_PREDICATES", "leaf_length")
+    monkeypatch.setattr(firecrawl_taxonomy, "load_persistent_canonical_registry", lambda _: registry())
+    monkeypatch.setattr(postgres_repository, "PostgresAggregateRepository", lambda _: coverage_repository(anchors=()))
+    audited = []
+
+    def audit(_connect, *, genus, taxon_names):
+        audited.append(genus)
+        assert all(name.startswith(genus + " ") for name in taxon_names)
+        return {"available": True, "audit_complete": True, "complete": True,
+                "documents": [{"loadable": True}] if genus == "Cattleya" else []}
+
+    monkeypatch.setattr(corpus_audit, "audit_existing_corpus", audit)
+    report = routes.canonical_acquisition_coverage(_auth={})
+    assert set(audited) == {"Paphiopedilum", "Cattleya"}
+    assert report["gaps"][0]["genus"] == "Cattleya"
+    assert report["gaps"][0]["held_sources_ready_for_reuse"] == 1
+    assert report["gaps"][1]["held_sources_ready_for_reuse"] == 0

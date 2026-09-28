@@ -493,22 +493,35 @@ def canonical_acquisition_coverage(
         load_persistent_canonical_registry,
     )
 
+    from .corpus_audit import audit_existing_corpus
     from .coverage_audit import export_matrix_acquisition_coverage
     from .firecrawl_provider import FirecrawlConfig
     from .firecrawl_runtime import connection
 
     try:
         config = FirecrawlConfig.from_env()
-        if not config.enabled:
-            raise ValueError("FIRECRAWL_DISABLED")
+        taxonomy = load_persistent_canonical_registry(connection)
+        repository = PostgresAggregateRepository(
+            os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
+        )
+        options = {
+            "pilot_mode": config.pilot_mode,
+            "pilot_genus": os.getenv("FIRECRAWL_PILOT_GENUS", "Paphiopedilum"),
+            "required_predicates": tuple(value.strip() for value in os.getenv("FIRECRAWL_REQUIRED_PREDICATES", "").split(",") if value.strip()),
+        }
+        coverage = export_matrix_acquisition_coverage(taxonomy, repository, **options)
+        # Audit only the already bounded genus shortlist. Reuse priority must
+        # come from observed holdings, not an issue author's assertion.
+        audits = {
+            gap["genus"]: audit_existing_corpus(
+                connection, genus=gap["genus"],
+                taxon_names=tuple(taxon.canonical_name for taxon in taxonomy.accepted()
+                                  if taxon.canonical_name.split()[0] == gap["genus"]),
+            )
+            for gap in coverage.get("gaps", [])
+        }
         return export_matrix_acquisition_coverage(
-            load_persistent_canonical_registry(connection),
-            PostgresAggregateRepository(
-                os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
-            ),
-            pilot_mode=config.pilot_mode,
-            pilot_genus=os.getenv("FIRECRAWL_PILOT_GENUS", "Paphiopedilum"),
-            required_predicates=tuple(value.strip() for value in os.getenv("FIRECRAWL_REQUIRED_PREDICATES", "").split(",") if value.strip()),
+            taxonomy, repository, corpus_audits=audits, **options
         )
     except (ValueError, RuntimeError, psycopg.Error):
         raise HTTPException(
