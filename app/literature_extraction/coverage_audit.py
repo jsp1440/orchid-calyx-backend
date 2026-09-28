@@ -264,7 +264,7 @@ def matrix_acquisition_gaps(taxonomy, covered_taxon_ids: set[int]) -> list[dict[
 
 def export_matrix_acquisition_coverage(
     taxonomy, aggregation_repository, *, pilot_mode: bool = True,
-    pilot_genus: str = "Paphiopedilum", max_genera: int = 3,
+    pilot_genus: str = "Paphiopedilum", max_genera: int = 3, required_predicates=(), corpus_audits=None,
 ) -> dict[str, Any]:
     """Export acquisition coverage from persisted, completed aggregation inputs.
 
@@ -280,12 +280,21 @@ def export_matrix_acquisition_coverage(
     release = taxonomy.canonical_release
     if release is None:
         raise ValueError("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    predicates = tuple(sorted(set(required_predicates)))
+    if not predicates:
+        return {
+            "schema": "oc.matrix-acquisition-coverage.v1", "available": False,
+            "generated_at": datetime.now(timezone.utc).isoformat(), "gaps": [],
+            "reason": "MATRIX_PREDICATE_REQUIREMENTS_UNCONFIGURED",
+        }
+    if len(predicates) > 32 or any(not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", value) for value in predicates):
+        raise ValueError("INVALID_MATRIX_PREDICATE_REQUIREMENTS")
     aggregation_repository.refresh()
     identities = {
         f"local:{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}": taxon.canonical_id
         for taxon in taxonomy.accepted()
     }
-    covered = set()
+    observed: dict[int, set[str]] = {}
     for run_id, items in aggregation_repository.items.items():
         if aggregation_repository.runs[run_id]["state"] != "COMPLETED":
             continue
@@ -293,23 +302,36 @@ def export_matrix_acquisition_coverage(
             for candidate in item.get("candidates", []):
                 if candidate.metadata.get("taxonomy_snapshot") != release.snapshot_id:
                     continue
-                if not re.fullmatch(r"(?:leaf|flower|petal|sepal|lip)_(?:length|width)", candidate.predicate):
+                if candidate.predicate not in predicates:
                     continue
                 if not candidate.source_anchor_ids or not candidate.document_hash:
                     continue
                 ident = identities.get(candidate.normalized_subject)
                 if ident is not None:
-                    covered.add(ident)
+                    observed.setdefault(ident, set()).add(candidate.predicate)
+    covered = {ident for ident, values in observed.items() if set(predicates) <= values}
     gaps = matrix_acquisition_gaps(taxonomy, covered)
+    for gap in gaps:
+        missing = {
+            str(ident): sorted(set(predicates) - observed.get(ident, set()))
+            for ident in gap["missing_taxon_ids"]
+        }
+        gap["missing_predicates_by_taxon"] = missing
+        gap["required_predicates"] = sorted({value for values in missing.values() for value in values})
+        audit = (corpus_audits or {}).get(gap["genus"], {})
+        if audit.get("available") and audit.get("audit_complete"):
+            gap["held_sources_ready_for_reuse"] = sum(bool(row.get("loadable")) for row in audit.get("documents", []))
+            gap["existing_corpus_audit_complete"] = bool(audit.get("complete"))
     if pilot_mode:
         gaps = [gap for gap in gaps if gap["genus"] == pilot_genus]
     # Largest missing genus first, not an alphabetical per-species crawler.
-    gaps.sort(key=lambda gap: (-len(gap["missing_taxon_ids"]), gap["genus"]))
+    gaps.sort(key=lambda gap: (-bool(gap.get("held_sources_ready_for_reuse")), -len(gap["missing_taxon_ids"]), gap["genus"]))
     return {
         "schema": "oc.matrix-acquisition-coverage.v1", "available": True,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "taxonomy_snapshot": release.snapshot_id,
-        "coverage_kind": "anchored_morphology_acquired_review_pending",
+        "coverage_kind": "explicit_predicate_acquisition_review_pending",
+        "required_predicates": list(predicates),
         "covered_taxa": len(covered), "gaps": gaps[:max_genera],
         "remaining_genus_gaps": max(0, len(gaps) - max_genera),
         "scientific_publication": False,

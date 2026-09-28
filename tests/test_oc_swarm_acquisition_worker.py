@@ -69,3 +69,61 @@ def test_unvalidated_response_cannot_complete():
     with pytest.raises(ValueError, match="incomplete"):
         execute_claim(**identity, dispatch=lambda _: {}, call=transport)
     assert "oc-running" in transport.issue["labels"]
+
+
+@pytest.mark.parametrize("failure", ["dispatch", "backend_receipt", "receipt_write", "receipt_confirmation"])
+def test_main_failure_parks_and_records_canonical_release(monkeypatch, failure):
+    import json
+    import sys
+
+    from scripts.oc_swarm_acquisition_worker import main
+
+    transport, identity = claimed()
+    dispatched = []
+
+    def dispatch(request):
+        dispatched.append(request)
+        if failure == "dispatch":
+            raise OSError("transport unavailable")
+        if failure == "backend_receipt":
+            return {**request, "status": "review_pending"}
+        return {**request, "status": "review_pending", "published": False,
+                "sources": [{"paper_id": "hash"}], "validation": {"status": "passed"}}
+
+    failed_confirmation = False
+
+    def call(args, payload=None):
+        nonlocal failed_confirmation
+        result = transport(args, payload)
+        if (failure == "receipt_write" and not failed_confirmation
+                and args[:3] == ["api", "--method", "POST"]
+                and result["body"].startswith("[OC-SWARM-V4] Worker result validated;")):
+            failed_confirmation = True
+            raise OSError("comment write outcome unknown")
+        if (failure == "receipt_confirmation" and not failed_confirmation
+                and args[:3] == ["api", "--method", "GET"]
+                and result["body"].startswith("[OC-SWARM-V4] Worker result validated;")):
+            failed_confirmation = True
+            return {**result, "body": "unconfirmed write"}
+        return result
+
+    argv = ["oc_swarm_acquisition_worker"]
+    for name, value in identity.items():
+        argv.extend(["--" + name.replace("_", "-"), str(value)])
+    monkeypatch.setattr(sys, "argv", argv)
+    with pytest.raises(SystemExit, match="canonical claim parked"):
+        main(dispatch=dispatch, call=call)
+    assert len(dispatched) == 1
+    assert set(transport.issue["labels"]) == {"oc-p2", "oc-blocked"}
+    release = next(comment for comment in transport.comments.values()
+                   if "oc.swarm-denied-release.v1" in comment["body"])
+    body = release["body"]
+    receipt = json.loads(body.split("`", 2)[1])
+    assert receipt["state"] == "oc-blocked"
+    assert receipt["provider_called"] is None
+    assert receipt["lease_comment_id"] == identity["comment_id"]
+    assert receipt["reason"] == "ACQUISITION_RUNTIME_UNCONFIRMED"
+    assert "OC-BLOCKED-ON: governor:ACQUISITION_RUNTIME_UNCONFIRMED" in body
+    assert "oc-running" not in transport.issue["labels"]
+    if failure == "receipt_confirmation":
+        assert failed_confirmation

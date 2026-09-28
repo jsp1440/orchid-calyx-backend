@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.literature_extraction.coverage_audit import export_matrix_acquisition_coverage
+from app.literature_extraction.coverage_audit import (
+    export_matrix_acquisition_coverage as export_coverage,
+)
 from runtime.knowledge_graph.canonical_taxonomy import (
     CanonicalRegistry,
     CanonicalTaxon,
@@ -13,6 +15,10 @@ from runtime.knowledge_graph.firecrawl_taxonomy import (
     load_persistent_canonical_registry,
 )
 from scripts.oc_work_discovery import discover_matrix_coverage
+
+
+def export_matrix_acquisition_coverage(*args, **kwargs):
+    return export_coverage(*args, required_predicates=("leaf_length",), **kwargs)
 
 
 def registry():
@@ -82,3 +88,18 @@ def test_targeted_species_from_another_genus_are_rejected():
     report["gaps"][0]["target_taxon_names"] = ["Cattleya labiata"]
     with pytest.raises(ValueError, match="INVALID_MATRIX_GAP_TARGETS"):
         discover_matrix_coverage(report)
+
+
+def test_unconfigured_matrix_requirements_do_not_invent_gaps():
+    report = export_coverage(registry(), coverage_repository())
+    assert not report["available"] and report["gaps"] == []
+    assert report["reason"] == "MATRIX_PREDICATE_REQUIREMENTS_UNCONFIGURED"
+
+
+def test_predicate_gap_is_explicit_and_not_any_morphology_coverage():
+    report = export_coverage(registry(), coverage_repository(), required_predicates=("leaf_length", "petal_width"))
+    gap = report["gaps"][0]
+    assert gap["missing_predicates_by_taxon"]["701"] == ["petal_width"]
+    assert report["covered_taxa"] == 0
+    candidate, = discover_matrix_coverage(report)
+    assert 'OC-ACQUISITION-PREDICATES: ["leaf_length", "petal_width"]' in candidate.summary

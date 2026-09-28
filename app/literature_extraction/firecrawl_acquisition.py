@@ -38,6 +38,10 @@ async def acquire_matrix_sources(
     aggregation_service,
     verify_lease,
     target_names=(),
+    corpus_audit=None,
+    load_held_source=None,
+    before_acquire=None,
+    required_predicates=(),
 ):
     """Acquire once per source, extracting multiple taxa without species crawls.
 
@@ -48,46 +52,102 @@ async def acquire_matrix_sources(
     """
     verify_lease()
     provider.lease_check = verify_lease
-    urls = provider.search(genus, task_id=task_id, target_names=target_names)
-    if not urls:
-        raise AcquisitionBlocked("NO_APPROVED_SOURCES")
+    if corpus_audit is None and not provider.config.dry_run:
+        raise AcquisitionBlocked("EXISTING_CORPUS_AUDIT_REQUIRED")
     receipts = []
-    for url in urls:
+    processed_hashes = set()
+    metrics = {
+        "existing_documents_reused": 0,
+        "new_documents_acquired": 0,
+        "duplicate_documents_avoided": 0,
+        "corpus_audit_available": corpus_audit is not None,
+        "existing_candidates_reused": 0,
+        "new_candidates_created": 0,
+        "structured_claims_extracted": 0,
+        "structured_claims_reused": 0,
+        "existing_documents_reprocessed": 0,
+        "existing_sources_checked": 0,
+    }
+
+    async def process_source(source, *, reused=False):
+        if source.content_hash in processed_hashes:
+            metrics["duplicate_documents_avoided"] += 1
+            return
+        processed_hashes.add(source.content_hash)
         verify_lease()
-        source = provider.scrape(url, task_id=task_id)
         existing = literature_repository.get("paper-" + source.content_hash)
         if existing is not None and existing.source.origin_uri != source.url:
-            raise AcquisitionBlocked("SOURCE_IDENTITY_COLLISION_REQUIRES_REVIEW")
+            from .firecrawl_provider import AcquiredSource
+
+            source = AcquiredSource(
+                existing.source.origin_uri, source.markdown, source.mocked
+            )
+            metrics["duplicate_documents_avoided"] += 1
         registry = ExtractorRegistry(
             [MetadataExtractor(), CanonicalMorphologyExtractor(taxonomy)]
         )
         release = taxonomy.canonical_release
         if release is None:
             raise AcquisitionBlocked("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
-        with TemporaryDirectory() as directory:
-            path = Path(directory) / (source.content_hash + ".txt")
-            path.write_bytes(source.markdown.encode())
-            paper = await extract_and_persist(
-                path,
-                literature_repository,
-                registry=registry,
-                config=PipelineConfig(
-                    extractor_settings={
-                        "canonical_morphology": {
-                            "taxonomy_snapshot": release.snapshot_id,
-                            "taxonomy_hash": release.file_sha256,
+        reusable_analysis = bool(reused and existing is not None and existing.claims)
+        if reusable_analysis:
+            for entity in existing.entities:
+                if entity.entity_type != "taxon":
+                    continue
+                resolved = taxonomy.resolve(entity.name)
+                if resolved is None or resolved.status != "accepted":
+                    reusable_analysis = False
+                    break
+                expected = f"{resolved.provenance.get('identity_namespace', 'world_plants')}:{resolved.canonical_id}"
+                if not any(
+                    identifier.scheme == "local" and identifier.value == expected
+                    for identifier in entity.external_ids
+                ):
+                    reusable_analysis = False
+                    break
+        if reusable_analysis:
+            paper = existing
+        else:
+            if reused:
+                metrics["existing_documents_reprocessed"] += 1
+            with TemporaryDirectory() as directory:
+                path = Path(directory) / (source.content_hash + ".txt")
+                path.write_bytes(source.markdown.encode())
+                paper = await extract_and_persist(
+                    path,
+                    literature_repository,
+                    registry=registry,
+                    config=PipelineConfig(
+                        extractor_settings={
+                            "canonical_morphology": {
+                                "taxonomy_snapshot": release.snapshot_id,
+                                "taxonomy_hash": release.file_sha256,
+                            }
                         }
-                    }
-                ),
-                web_source=WebSourceMetadata(
-                    origin_uri=source.url,
-                    origin_content_hash=source.content_hash,
-                    origin_media_type="text/markdown",
-                    acquisition_method="firecrawl_v2_fixture"
-                    if source.mocked
-                    else "firecrawl_v2",
-                ),
-            )
+                    ),
+                    web_source=WebSourceMetadata(
+                        origin_uri=source.url,
+                        origin_content_hash=source.content_hash,
+                        origin_media_type="text/markdown",
+                        acquisition_method=(
+                            "existing_corpus"
+                            if reused
+                            else "firecrawl_v2_fixture"
+                            if source.mocked
+                            else "firecrawl_v2"
+                        ),
+                    ),
+                )
+        metrics[
+            "structured_claims_reused"
+            if reusable_analysis
+            else "structured_claims_extracted"
+        ] += len(paper.claims)
+        if not paper.claims:
+            metrics[
+                "existing_documents_reused" if reused else "new_documents_acquired"
+            ] += 1
+            return
         verify_lease()
         binding = register_and_bind(source, paper)
         binding.validate_integrity(paper, source.markdown.encode())
@@ -95,7 +155,17 @@ async def acquire_matrix_sources(
         payload.pop("paper_id")
 
         def handoff_operation(paper=paper, payload=payload):
+            before_ids = {
+                candidate["candidate_id"]
+                for candidate in handoff_service.candidate_repository.candidates
+            }
             handoff = handoff_service.handoff(paper, LiteratureSourceBinding(**payload))
+            metrics["existing_candidates_reused"] += len(
+                set(handoff["candidate_ids"]) & before_ids
+            )
+            metrics["new_candidates_created"] += len(
+                set(handoff["candidate_ids"]) - before_ids
+            )
             repository = handoff_service.candidate_repository
             return (
                 handoff,
@@ -154,7 +224,7 @@ async def acquire_matrix_sources(
                     metadata={
                         "source_name": names[0] if len(names) == 1 else None,
                         "source_names": names,
-                        "provider": "firecrawl",
+                        "provider": "existing_corpus" if reused else "firecrawl",
                         "taxonomy_snapshot": release.snapshot_id,
                     },
                     display_policy="METADATA_ONLY",
@@ -218,11 +288,176 @@ async def acquire_matrix_sources(
                 "candidate_ids": handoff["candidate_ids"],
                 "aggregate_run_id": plan["aggregate_run_id"],
                 "mocked": source.mocked,
+                "acquisition_origin": "existing_corpus" if reused else "firecrawl",
             }
         )
+        metrics[
+            "existing_documents_reused" if reused else "new_documents_acquired"
+        ] += 1
+
+    scoped_subjects = {
+        f"local:{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}"
+        for taxon in taxonomy.accepted()
+        if taxon.canonical_name.split()[0] == genus
+        and (not target_names or taxon.canonical_name in target_names)
+    }
+
+    def anchored_characters():
+        repository = aggregation_service.repo
+        if hasattr(repository, "refresh"):
+            repository.refresh()
+        return {
+            (candidate.normalized_subject, candidate.predicate)
+            for run_id, items in repository.items.items()
+            if repository.runs[run_id]["state"] == "COMPLETED"
+            for item in items
+            for candidate in item.get("candidates", [])
+            if candidate.metadata.get("taxonomy_snapshot")
+            == taxonomy.canonical_release.snapshot_id
+            and candidate.source_anchor_ids
+            and candidate.document_hash
+            and candidate.normalized_subject in scoped_subjects
+        }
+
+    initial_characters = anchored_characters()
+    initial_gaps = missing_morphology_requirements(
+        taxonomy, genus, target_names, required_predicates, aggregation_service.repo
+    )
+    audit = None
+    if corpus_audit is not None:
+        audit = corpus_audit()
+        if not audit.get("available") or not audit.get(
+            "audit_complete", audit.get("complete")
+        ):
+            raise AcquisitionBlocked("EXISTING_CORPUS_AUDIT_UNAVAILABLE")
+        metrics["existing_sources_checked"] = len(
+            {
+                identity.get("content_hash")
+                or identity.get("doi")
+                or identity.get("source_url")
+                or (
+                    identity.get("relation"),
+                    identity.get("registry_id"),
+                    identity.get("revision_id"),
+                    index,
+                )
+                for index, identity in enumerate(audit.get("identities", []))
+            }
+        )
+        if load_held_source is None:
+            raise AcquisitionBlocked("EXISTING_CORPUS_LOADER_REQUIRED")
+        for document in audit.get("documents", []):
+            if not document.get("loadable"):
+                continue
+            verify_lease()
+            await process_source(load_held_source(document), reused=True)
+        # Re-read persistent evidence after reusing available sources.
+        audit = corpus_audit()
+        if not audit.get("available") or not audit.get(
+            "audit_complete", audit.get("complete")
+        ):
+            raise AcquisitionBlocked("EXISTING_CORPUS_AUDIT_UNAVAILABLE")
+    missing = missing_morphology_requirements(
+        taxonomy, genus, target_names, required_predicates, aggregation_service.repo
+    )
+    metrics["remaining_gaps"] = missing
+    decision = (
+        "EXISTING_CORPUS_SUFFICIENT"
+        if audit is not None and required_predicates and not missing
+        else "EXISTING_CORPUS_INCOMPLETE"
+    )
+    needs_acquisition = audit is None or bool(missing)
+    if needs_acquisition:
+        if not provider.config.dry_run and not required_predicates:
+            raise AcquisitionBlocked("EXPLICIT_PREDICATE_SCOPE_REQUIRED")
+        if audit is not None and audit.get("blockers"):
+            raise AcquisitionBlocked("EXISTING_CORPUS_REUSE_BLOCKED")
+        verify_lease()
+        if before_acquire is not None:
+            before_acquire()
+        missing_predicates = (
+            sorted(
+                {
+                    predicate
+                    for gap in missing
+                    for predicate in gap["missing_predicates"]
+                }
+            )
+            if required_predicates
+            else []
+        )
+        urls = provider.search(
+            genus,
+            task_id=task_id,
+            target_names=target_names,
+            required_predicates=missing_predicates,
+        )
+        for url in urls:
+            verify_lease()
+            metadata = getattr(provider, "search_results", {}).get(
+                url, {"source_url": url}
+            )
+            if audit is not None and held_source_match(
+                {**metadata, "source_url": url}, audit.get("identities", [])
+            ):
+                metrics["duplicate_documents_avoided"] += 1
+                continue
+            source = provider.scrape(url, task_id=task_id)
+            if audit is not None and held_source_match(
+                {"content_hash": source.content_hash}, audit.get("identities", [])
+            ):
+                metrics["duplicate_documents_avoided"] += 1
+                continue
+            await process_source(source)
+    if not receipts:
+        raise AcquisitionBlocked("NO_TRACEABLE_MORPHOLOGY_EVIDENCE")
+    metrics["remaining_gaps"] = missing_morphology_requirements(
+        taxonomy, genus, target_names, required_predicates, aggregation_service.repo
+    )
+    credit_receipt = provider.credit_receipt()
+    reserved = credit_receipt["reserved"]
+    remaining_ids = {gap["taxon_id"] for gap in metrics["remaining_gaps"]}
+    newly_covered = (
+        len({gap["taxon_id"] for gap in initial_gaps} - remaining_ids)
+        if required_predicates
+        else 0
+    )
+    metrics.update(
+        existing_sources_used=len(
+            {
+                receipt["source_hash"]
+                for receipt in receipts
+                if receipt["acquisition_origin"] == "existing_corpus"
+            }
+        ),
+        firecrawl_searches=provider.searches,
+        firecrawl_pages=provider.documents,
+        credits_reserved=reserved,
+        credits_reported=credit_receipt["provider_reported"],
+        new_taxa_covered=newly_covered,
+        new_characters_extracted=len(anchored_characters() - initial_characters),
+        duplicate_sources_avoided=metrics["duplicate_documents_avoided"],
+        scientific_evidence_per_credit=metrics["new_candidates_created"] / reserved
+        if reserved
+        else None,
+        evidence_per_credit_basis="new_review_pending_anchored_candidates_per_reserved_credit",
+        zero_credit_reuse=provider.calls == 0 and metrics["existing_documents_reused"] > 0,
+        efficiency_ranking="zero_credit_reuse"
+        if provider.calls == 0 and metrics["existing_documents_reused"] > 0
+        else "bounded_external_acquisition",
+    )
     return {
         "status": "review_pending",
+        "corpus_decision": decision,
+        "coverage_scope": {
+            "genus": genus,
+            "target_names": list(target_names),
+            "required_predicates": list(required_predicates),
+            "explicit": bool(required_predicates),
+            "full_matrix_coverage": False,
+        },
         "sources": receipts,
+        "corpus_metrics": metrics,
         "published": False,
         "matrix_readiness": DimensionEvidence(
             dimension="morphology",
@@ -306,3 +541,130 @@ def verify_swarm_acquisition_lease(
         comment_id=comment_id,
     )
     return issue
+
+
+def missing_morphology_requirements(
+    taxonomy, genus, target_names, predicates, repository
+):
+    """Acquired anchored assertions meet coverage, never scientific approval."""
+    release = taxonomy.canonical_release
+    if release is None:
+        raise AcquisitionBlocked("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    if hasattr(repository, "refresh"):
+        repository.refresh()
+    names = set(target_names)
+    taxa = [
+        taxon
+        for taxon in taxonomy.accepted()
+        if taxon.rank == "species"
+        and taxon.canonical_name.split()[0] == genus
+        and (not names or taxon.canonical_name in names)
+    ]
+    covered = {}
+    for run_id, items in repository.items.items():
+        if repository.runs[run_id]["state"] != "COMPLETED":
+            continue
+        for item in items:
+            for candidate in item.get("candidates", []):
+                if (
+                    candidate.metadata.get("taxonomy_snapshot") == release.snapshot_id
+                    and candidate.source_anchor_ids
+                    and candidate.document_hash
+                ):
+                    covered.setdefault(candidate.normalized_subject, set()).add(
+                        candidate.predicate
+                    )
+    result = []
+    for taxon in taxa:
+        subject = f"local:{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}"
+        present = covered.get(subject, set())
+        missing = (
+            sorted(set(predicates) - present)
+            if predicates
+            else ([] if present else ["morphology_evidence"])
+        )
+        if missing:
+            result.append(
+                {
+                    "taxon_name": taxon.canonical_name,
+                    "taxon_id": taxon.canonical_id,
+                    "missing_predicates": missing,
+                }
+            )
+    return result
+
+
+def held_source_match(candidate, identities):
+    """Match stable supplied identities; metadata absence never invents a match."""
+    import re
+    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    def url(value):
+        if not value:
+            return None
+        parsed = urlsplit(str(value))
+        return urlunsplit(
+            (
+                parsed.scheme.lower(),
+                parsed.netloc.lower().rstrip("."),
+                parsed.path.rstrip("/") or "/",
+                urlencode(
+                    sorted(
+                        (key, val)
+                        for key, val in parse_qsl(parsed.query)
+                        if not key.lower().startswith("utm_")
+                        and key.lower() not in {"fbclid", "gclid"}
+                    )
+                ),
+                "",
+            )
+        )
+
+    def doi(item):
+        value = item.get("doi")
+        if not value:
+            match = re.search(
+                r"10\.\d{4,9}/[^?#\s]+",
+                str(item.get("source_url") or item.get("url") or ""),
+                re.IGNORECASE,
+            )
+            value = match.group(0) if match else None
+        return (
+            re.sub(
+                r"^(?:https?://(?:dx\.)?doi\.org/|doi:\s*)",
+                "",
+                str(value),
+                flags=re.IGNORECASE,
+            )
+            .lower()
+            .strip()
+            if value
+            else None
+        )
+
+    def bibliography(item):
+        title, authors, year = (
+            item.get("title"),
+            item.get("authors") or item.get("author"),
+            item.get("year"),
+        )
+        if not title or not authors or not year:
+            return None
+        if isinstance(authors, (tuple, list)):
+            authors = " ".join(str(author) for author in authors)
+        normalize = lambda value: " ".join(re.findall(r"\w+", str(value).casefold()))
+        return normalize(title), normalize(authors), str(year)
+
+    for held in identities:
+        for field in ("content_hash", "binding_fingerprint", "paper_id"):
+            if candidate.get(field) and candidate[field] == held.get(field):
+                return True
+        if doi(candidate) and doi(candidate) == doi(held):
+            return True
+        if url(candidate.get("source_url") or candidate.get("url")) and url(
+            candidate.get("source_url") or candidate.get("url")
+        ) == url(held.get("source_url") or held.get("url")):
+            return True
+        if bibliography(candidate) and bibliography(candidate) == bibliography(held):
+            return True
+    return False

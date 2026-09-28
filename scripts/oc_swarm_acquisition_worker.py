@@ -65,7 +65,7 @@ def execute_claim(*, repository, issue_number, run_id, run_attempt, comment_id,
     return settle_worker(**identity, result={**result, "disposition": "done"}, call=call)
 
 
-def main():
+def main(*, dispatch=backend_execute, call=github):
     parser = argparse.ArgumentParser()
     parser.add_argument("--refresh-coverage")
     parser.add_argument("--repository")
@@ -79,11 +79,12 @@ def main():
     if any(value is None for value in identity.values()):
         parser.error("execution requires repository and complete lease identity")
     try:
-        result = execute_claim(**identity)
+        result = execute_claim(**identity, dispatch=dispatch, call=call)
     except (OSError, ValueError, TypeError, KeyError, HTTPException, subprocess.SubprocessError):
         # Uncertain HTTP completion never earns oc-done. The existing denial
         # settlement parks the task; source persistence is replay-safe.
-        park_denied_worker(**identity, reason="acquisition_runtime_unconfirmed")
+        park_denied_worker(**identity, reason="ACQUISITION_RUNTIME_UNCONFIRMED",
+                           provider_called=None, call=call)
         raise SystemExit("Acquisition runtime unconfirmed; canonical claim parked") from None
     print(json.dumps(result, sort_keys=True))
 

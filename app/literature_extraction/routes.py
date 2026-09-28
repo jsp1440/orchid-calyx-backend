@@ -508,6 +508,7 @@ def canonical_acquisition_coverage(
             ),
             pilot_mode=config.pilot_mode,
             pilot_genus=os.getenv("FIRECRAWL_PILOT_GENUS", "Paphiopedilum"),
+            required_predicates=tuple(value.strip() for value in os.getenv("FIRECRAWL_REQUIRED_PREDICATES", "").split(",") if value.strip()),
         )
     except (ValueError, RuntimeError, psycopg.Error):
         raise HTTPException(

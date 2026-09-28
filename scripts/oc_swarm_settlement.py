@@ -37,20 +37,30 @@ def settle_worker(*, result, repository, issue_number, run_id, run_attempt, comm
     edit = ["issue", "edit", str(issue_number), "--repo", repository]
     for label in sorted(removed):
         edit += ["--remove-label", label]
+    receipt = {**result, "lease_comment_id": comment_id, "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
+               "replenishment_signal": "canonical-controller-refill"}
+    body = "[OC-SWARM-V4] Worker result validated; requested lease disposition: `" + json.dumps(receipt, sort_keys=True) + "`."
+    if disposition == "blocked" and result.get("blocked_on"):
+        body += "\nOC-BLOCKED-ON: " + str(result["blocked_on"])
+    saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments", "--input", "-"], {"body": body})
+    if not saved or not saved.get("id") or saved.get("body") != body:
+        raise ValueError("worker completion receipt unconfirmed")
+    confirmed = call(["api", "--method", "GET", f"repos/{repository}/issues/comments/{saved['id']}"])
+    if (not confirmed or confirmed.get("body") != body
+            or confirmed.get("user", {}).get("login") != "github-actions[bot]"
+            or confirmed.get("issue_url") != f"https://api.github.com/repos/{repository}/issues/{issue_number}"):
+        raise ValueError("worker completion receipt readback failed")
+    # Persist and confirm evidence before terminal labels. A receipt failure
+    # leaves the running lease available to canonical denial/recovery, rather
+    # than marking work done without a durable result. Recheck ownership after
+    # the separate comment writes so an intervening owner gate wins.
+    verified_issue(**identity, call=call)
     call(edit + ["--add-label", target])
     current = call(["issue", "view", str(issue_number), "--repo", repository,
                     "--json", "number,title,body,state,labels"])
     labels = {label if isinstance(label, str) else label["name"] for label in current["labels"]}
     if target not in labels or labels & removed:
         raise ValueError("worker settlement unconfirmed")
-    receipt = {**result, "lease_comment_id": comment_id, "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
-               "replenishment_signal": "canonical-controller-refill"}
-    body = "[OC-SWARM-V4] Worker completed and lease released: `" + json.dumps(receipt, sort_keys=True) + "`."
-    if disposition == "blocked" and result.get("blocked_on"):
-        body += "\nOC-BLOCKED-ON: " + str(result["blocked_on"])
-    saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments", "--input", "-"], {"body": body})
-    if not saved or not saved.get("id") or saved.get("body") != body:
-        raise ValueError("worker completion receipt unconfirmed")
     return receipt
 
 

@@ -7,21 +7,26 @@ from app.evidence_feedback import (
     Disposition,
     EvidenceFeedbackService,
     FeedbackClass,
-    FileEvidenceFeedbackRepository,
     ObjectType,
     ReviewLane,
 )
+from tests.evidence_feedback_stores import STORES, make_store
 
 
-def service_at(tmp_path):
+@pytest.fixture(params=STORES)
+def store(request, tmp_path, monkeypatch):
+    return make_store(request.param, tmp_path, monkeypatch)
+
+
+def service_at(store):
     return EvidenceFeedbackService(
-        FileEvidenceFeedbackRepository(tmp_path),
+        store.repository(),
         clock=lambda: "2026-09-20T20:00:00+00:00",
     )
 
 
-def test_lexicon_typo_creates_new_version_and_preserves_audit(tmp_path):
-    service = service_at(tmp_path)
+def test_lexicon_typo_creates_new_version_and_preserves_audit(store):
+    service = service_at(store)
     original = service.register_object(
         object_id="lexicon:labellum",
         object_type=ObjectType.LEXICON,
@@ -57,7 +62,7 @@ def test_lexicon_typo_creates_new_version_and_preserves_audit(tmp_path):
     assert resolved.object_version_hash == original.version_hash
     assert resolved.resulting_version_hash != original.version_hash
 
-    restarted = FileEvidenceFeedbackRepository(tmp_path)
+    restarted = store.repository()
     persisted = restarted.get_case(resolved.case_id)
     versions = restarted.list_object_versions(original.object_id)
     events = restarted.list_events(resolved.case_id)
@@ -70,8 +75,8 @@ def test_lexicon_typo_creates_new_version_and_preserves_audit(tmp_path):
     assert any(event["event"] == "correction_accepted" for event in events)
 
 
-def test_duplicate_feedback_is_suppressed_across_restart(tmp_path):
-    service = service_at(tmp_path)
+def test_duplicate_feedback_is_suppressed_across_restart(store):
+    service = service_at(store)
     version = service.register_object(
         object_id="lexicon:column",
         object_type=ObjectType.LEXICON,
@@ -89,7 +94,7 @@ def test_duplicate_feedback_is_suppressed_across_restart(tmp_path):
 
     first = service.submit(**request)
     restarted = EvidenceFeedbackService(
-        FileEvidenceFeedbackRepository(tmp_path),
+        store.repository(),
         clock=lambda: "2026-09-20T20:01:00+00:00",
     )
     second = restarted.submit(**request)
@@ -112,11 +117,11 @@ def test_duplicate_feedback_is_suppressed_across_restart(tmp_path):
     ],
 )
 def test_governed_objects_never_enter_deterministic_correction(
-    tmp_path,
+    store,
     object_type,
     expected_lane,
 ):
-    service = service_at(tmp_path)
+    service = service_at(store)
     version = service.register_object(
         object_id=f"object:{object_type.value}",
         object_type=object_type,
@@ -150,8 +155,8 @@ def test_governed_objects_never_enter_deterministic_correction(
     assert len(service.repository.list_object_versions(version.object_id)) == 1
 
 
-def test_partner_character_challenge_reconstructs_exact_source_version(tmp_path):
-    service = service_at(tmp_path)
+def test_partner_character_challenge_reconstructs_exact_source_version(store):
+    service = service_at(store)
     version = service.register_object(
         object_id="character:iospe:stanhopea-oculata:lip",
         object_type=ObjectType.STRUCTURED_CHARACTER,
@@ -187,8 +192,8 @@ def test_partner_character_challenge_reconstructs_exact_source_version(tmp_path)
     assert source.payload["source"] == "IOSPE"
 
 
-def test_pending_state_and_submitter_visibility_are_bounded(tmp_path):
-    service = service_at(tmp_path)
+def test_pending_state_and_submitter_visibility_are_bounded(store):
+    service = service_at(store)
     version = service.register_object(
         object_id="matrix:episode:42",
         object_type=ObjectType.MATRIX_IDENTIFICATION,
@@ -222,8 +227,8 @@ def test_pending_state_and_submitter_visibility_are_bounded(tmp_path):
         )
 
 
-def test_submission_requires_persisted_exact_object_version(tmp_path):
-    service = service_at(tmp_path)
+def test_submission_requires_persisted_exact_object_version(store):
+    service = service_at(store)
 
     with pytest.raises(ValueError, match="OBJECT_VERSION_NOT_FOUND"):
         service.submit(
@@ -234,3 +239,98 @@ def test_submission_requires_persisted_exact_object_version(tmp_path):
             feedback_class=FeedbackClass.REPORT_PROBLEM,
             statement="This object does not exist.",
         )
+
+
+def test_repository_contract_codes_are_identical_across_stores(store):
+    """Both stores refuse the same inputs with the same stable codes."""
+
+    from dataclasses import replace
+
+    from app.evidence_feedback.repository import EvidenceFeedbackRepositoryError
+
+    service = service_at(store)
+    base = service.register_object(
+        object_id="lexicon:lip",
+        object_type=ObjectType.LEXICON,
+        payload={"definition": "the labellum"},
+    )
+    submitted = service.submit(
+        object_id=base.object_id,
+        object_version_hash=base.version_hash,
+        object_type=ObjectType.LEXICON,
+        page_context="/lexicon/lip",
+        feedback_class=FeedbackClass.REPORT_PROBLEM,
+        statement="Needs a citation.",
+        submitter_id="member-1",
+    )
+    repository = store.repository()
+
+    def code_of(call) -> str:
+        with pytest.raises(EvidenceFeedbackRepositoryError) as caught:
+            call()
+        return str(caught.value)
+
+    # A fingerprint stays bound to its first case.
+    assert code_of(
+        lambda: repository.save_case(replace(submitted.case, case_id="efc-other"))
+    ) == "FINGERPRINT_ALREADY_BOUND"
+    # Lineage must name a stored version of the same object.
+    assert code_of(
+        lambda: service.register_object(
+            object_id=base.object_id,
+            object_type=ObjectType.LEXICON,
+            payload={"definition": "labellum"},
+            previous_version_hash="f" * 64,
+        )
+    ) == "OBJECT_VERSION_NOT_FOUND"
+    assert code_of(
+        lambda: repository.get_object_version(base.object_id, "not-a-hash")
+    ) == "INVALID_OBJECT_VERSION_HASH"
+    assert code_of(
+        lambda: repository.save_object_version(replace(base, version_hash="0" * 64))
+    ) == "OBJECT_VERSION_HASH_MISMATCH"
+    assert code_of(lambda: repository.get_case("efc-missing")) == "CASE_NOT_FOUND"
+    assert code_of(lambda: repository.get_case("   ")) == "CASE_ID_REQUIRED"
+    assert code_of(lambda: repository.list_object_versions(" ")) == "OBJECT_ID_REQUIRED"
+    assert code_of(lambda: repository.find_by_fingerprint("")) == "FINGERPRINT_REQUIRED"
+    assert code_of(
+        lambda: repository.append_event(
+            case_id="efc-missing", event="x", timestamp="t", actor_id=None
+        )
+    ) == "CASE_NOT_FOUND"
+    # Nothing a refused call attempted was persisted.
+    assert repository.list_object_versions(base.object_id) == [base]
+    assert repository.find_by_fingerprint(submitted.case.fingerprint) == submitted.case
+    # Surrounding whitespace is not identity in either store.
+    assert repository.get_case(f"  {submitted.case.case_id} ") == submitted.case
+    assert repository.get_object_version(
+        f" {base.object_id}", base.version_hash.upper()
+    ) == base
+
+
+def test_payload_round_trip_keeps_its_content_hash(store):
+    """A stored payload reads back with the exact hash it was registered under."""
+
+    from app.evidence_feedback.models import content_hash
+
+    service = service_at(store)
+    payload = {
+        "definition": "Säule — fused column",
+        "large": 1e16,
+        "small": 0.1,
+        "exponent": 1.5e-7,
+        "integer": 12345678901234567890,
+        "nested": {"b": [1, 2.0, None, True], "a": ""},
+    }
+    version = service.register_object(
+        object_id="lexicon:column",
+        object_type=ObjectType.LEXICON,
+        payload=payload,
+    )
+    persisted = store.repository().get_object_version(
+        version.object_id, version.version_hash
+    )
+    assert persisted == version
+    assert content_hash(persisted.payload) == version.version_hash
+    again = store.repository().save_object_version(persisted)
+    assert again == version

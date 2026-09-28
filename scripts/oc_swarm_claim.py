@@ -164,7 +164,7 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
 def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                       comment_id, reason, blocker_fingerprint=None,
                       denied_provider=None, providers=None, shared_budget=None,
-                      call=github):
+                      provider_called=False, call=github):
     """Settle a confirmed claim after denial, at the disposition the denial earns.
 
     Releasing the lease is not in question — a denied worker never keeps one.
@@ -219,7 +219,7 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                "blocker_fingerprint": (blocker_fingerprint
                                        if budget_denial and route.records_blocker else None),
                "blocker": durable_blocker if route.records_blocker else None,
-               "state": route.target_label, "provider_called": False,
+               "state": route.target_label, "provider_called": provider_called,
                "route": route.to_record()}
     if route.requeues:
         # No OC-BLOCKED-ON line: this task is not blocked on anything. Writing

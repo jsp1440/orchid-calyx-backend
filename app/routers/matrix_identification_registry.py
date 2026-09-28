@@ -1,4 +1,11 @@
-"""Owner-gated API for immutable Matrix Identification registry versions."""
+"""API for immutable Matrix Identification registry versions.
+
+Owner/API key for everything. A signed-in member (Release 1 journey 4) may list
+registry versions and read one version's character definitions, both through
+explicit member schemas (no ``created_by``, no candidate states or provenance, no
+character provenance, taxonomic scope keys only). Registry creation, derivation,
+concept-mapping status and stateless evaluation stay owner-only.
+"""
 
 from __future__ import annotations
 
@@ -9,6 +16,12 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.lexicon.routes import _load_entry_by_concept_id
+from app.matrix_member_access import (
+    is_member,
+    matrix_member_route,
+    owner_or_matrix_member,
+)
+from app.matrix_member_views import member_registry_detail, member_registry_listing
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification import Observation, rank_candidates
 from runtime.matrix_identification_registry import (
@@ -74,7 +87,11 @@ class RegistryEvaluateRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=200)
 
 
-router = APIRouter(prefix="/api/matrix-identification/registry", tags=["matrix-identification-registry"])
+router = APIRouter(
+    prefix="/api/matrix-identification/registry",
+    tags=["matrix-identification-registry"],
+    dependencies=[Depends(owner_or_matrix_member)],
+)
 
 
 def _actor(auth: Any) -> str:
@@ -94,21 +111,27 @@ def _persistence_unavailable(exc: RuntimeError) -> HTTPException:
 
 
 @router.get("")
-def list_versions(_: Any = Depends(verify_owner_or_api_key)) -> dict[str, Any]:  # noqa: B008
+@matrix_member_route("read")
+def list_versions(auth: Any = Depends(owner_or_matrix_member)) -> dict[str, Any]:  # noqa: B008
     try:
-        return {"versions": list_registry_versions(), "read_only_listing": True}
+        versions = list_registry_versions()
     except RuntimeError as exc:
         raise _persistence_unavailable(exc) from exc
+    if is_member(auth):
+        return member_registry_listing(versions)
+    return {"versions": versions, "read_only_listing": True}
 
 
 @router.get("/{registry_id}/{version}")
+@matrix_member_route("read")
 def get_version(
     registry_id: str,
     version: str,
-    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+    auth: Any = Depends(owner_or_matrix_member),  # noqa: B008
 ) -> dict[str, Any]:
     try:
-        return get_registry_version(registry_id, version)
+        record = get_registry_version(registry_id, version)
+        return member_registry_detail(record) if is_member(auth) else record
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:

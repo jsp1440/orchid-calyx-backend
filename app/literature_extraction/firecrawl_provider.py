@@ -21,6 +21,10 @@ import httpx
 
 from runtime.swarm.models import ExecutionRequest
 
+from .extractors.morphology import MORPHOLOGY_PREDICATES
+
+ACQUISITION_PREDICATES = MORPHOLOGY_PREDICATES
+
 
 class AcquisitionBlocked(ValueError):
     pass
@@ -164,6 +168,7 @@ class FirecrawlProvider:
         self.searches = self.documents = self.calls = 0
         self.lease_check = None
         self._seen: dict[str, AcquiredSource] = {}
+        self.search_results: dict[str, dict] = {}
 
     def _gate(self):
         if (
@@ -334,7 +339,9 @@ class FirecrawlProvider:
                     )
         raise AcquisitionBlocked("RETRIES_EXHAUSTED")
 
-    def search(self, genus: str, *, task_id: str, target_names=()) -> list[str]:
+    def search(
+        self, genus: str, *, task_id: str, target_names=(), required_predicates=()
+    ) -> list[str]:
         import re
 
         if not re.fullmatch(r"[A-Z][a-z]{2,40}", genus):
@@ -344,6 +351,10 @@ class FirecrawlProvider:
             for name in target_names
         ):
             raise AcquisitionBlocked("INVALID_TARGETED_GAP")
+        if len(required_predicates) > 32 or any(
+            value not in ACQUISITION_PREDICATES for value in required_predicates
+        ):
+            raise AcquisitionBlocked("INVALID_REQUIRED_PREDICATES")
         subject = genus
         if target_names:
             subject += (
@@ -353,10 +364,20 @@ class FirecrawlProvider:
             raise AcquisitionBlocked("SEARCH_LIMIT_OR_DOMAINS_MISSING")
         self.searches += 1
         sites = " OR ".join("site:" + d for d in self.config.domains)
+        characters = (
+            ""
+            if not required_predicates
+            else " ("
+            + " OR ".join(
+                '"' + value.replace("_", " ") + '"'
+                for value in sorted(set(required_predicates))
+            )
+            + ")"
+        )
         data = self._request(
             "search",
             {
-                "query": f"{subject} (monograph OR revision OR flora OR key) ({sites})",
+                "query": f"{subject}{characters} (monograph OR revision OR flora OR key) ({sites})",
                 "limit": min(self.config.max_documents, 2)
                 if self.config.pilot_mode
                 else self.config.max_documents,
@@ -370,6 +391,20 @@ class FirecrawlProvider:
             except (AcquisitionBlocked, KeyError, ValueError):
                 continue
             if url not in urls:
+                self.search_results[url] = {
+                    key: item[key]
+                    for key in (
+                        "doi",
+                        "title",
+                        "authors",
+                        "author",
+                        "year",
+                        "content_hash",
+                        "binding_fingerprint",
+                        "paper_id",
+                    )
+                    if key in item
+                }
                 urls.append(url)
         return urls[: self.config.max_documents]
 

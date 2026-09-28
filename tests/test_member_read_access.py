@@ -6,10 +6,13 @@ Supabase is always mocked; these tests never reach the network.
 from __future__ import annotations
 
 import base64
+import itertools
 import json
 import re
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -31,6 +34,10 @@ PREFIXES = (
     "/api/candidate-knowledge",
     "/api/evidence-aggregation",
     "/api/literature-extraction",
+    # Owner review queue for submitted feedback: owner session only, never members.
+    "/api/evidence-feedback/review",
+    # Research projects (workspace, scientific memory, reasoning ledgers): owner-only.
+    "/api/research/projects",
 )
 # Exact (method, path) set opened to members. Anything not listed stays owner-only.
 EXPECTED_MEMBER_READS = {
@@ -39,8 +46,9 @@ EXPECTED_MEMBER_READS = {
     ("GET", "/api/evidence-aggregation/health"),
     ("GET", "/api/evidence-aggregation/registry"),
 }
-# Every other GET on the four prefixes is owner-only (owner decision "Narrow the scope").
+# Every other GET on the scoped prefixes is owner-only (owner decision "Narrow the scope").
 EXPECTED_OWNER_ONLY_READS = {
+    ("GET", "/api/literature-extraction/acquisition/coverage"),
     ("GET", "/api/candidate-knowledge/runs/{run_id}"),
     ("GET", "/api/candidate-knowledge/runs"),
     ("GET", "/api/candidate-knowledge/runs/{run_id}/items"),
@@ -71,6 +79,19 @@ EXPECTED_OWNER_ONLY_READS = {
     ("GET", "/api/literature-extraction/papers/{paper_id}"),
     ("GET", "/api/literature-extraction/papers/{paper_id}/source-binding"),
     ("GET", "/api/literature-extraction/coverage-audit"),
+    ("GET", "/api/evidence-feedback/review/cases"),
+    ("GET", "/api/evidence-feedback/review/cases/{case_id}"),
+    ("GET", "/api/research/projects"),
+    ("GET", "/api/research/projects/{project_id}"),
+    ("GET", "/api/research/projects/{project_id}/saved-searches"),
+    ("GET", "/api/research/projects/{project_id}/notes"),
+    ("GET", "/api/research/projects/{project_id}/taxa"),
+    ("GET", "/api/research/projects/{project_id}/documents"),
+    ("GET", "/api/research/projects/{project_id}/evidence"),
+    ("GET", "/api/research/projects/{project_id}/activity"),
+    ("GET", "/api/research/projects/{project_id}/scientific-memory"),
+    ("GET", "/api/research/projects/{project_id}/epistemic-memory"),
+    ("GET", "/api/research/projects/{project_id}/reasoning-ledgers"),
 }
 
 
@@ -92,7 +113,7 @@ def _supabase_ok(user_id: str = MEMBER_UUID) -> Mock:
 
 
 @pytest.fixture(autouse=True)
-def _env(monkeypatch):
+def _env(monkeypatch, tmp_path):
     for name in (
         "OC_MEMBER_READS_ENABLED",
         "OC_SUPABASE_URL",
@@ -105,9 +126,48 @@ def _env(monkeypatch):
     monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", "test-owner-secret")
     monkeypatch.setenv("OC_SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "anon-key")
+    # Owner calls to the feedback review queue read an isolated file store.
+    monkeypatch.setenv("CALYX_EVIDENCE_FEEDBACK_ROOT", str(tmp_path / "evidence-feedback"))
     member_auth.clear_member_token_cache()
     yield
     member_auth.clear_member_token_cache()
+
+
+@pytest.fixture(autouse=True)
+def _research_projects_db():
+    """Owner calls to /api/research/projects read an isolated, empty in-memory database."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+
+    from app.database import Base, get_db
+    from app.research_workspace.models import (
+        AuditEvent,
+        Note,
+        Project,
+        ProjectDocument,
+        ProjectEvidence,
+        ProjectTaxon,
+        SavedSearch,
+    )
+
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+        execution_options={"schema_translate_map": {"research_station": None}},
+    )
+    tables = [Project, SavedSearch, Note, ProjectTaxon, ProjectDocument, ProjectEvidence, AuditEvent]
+    Base.metadata.create_all(engine, tables=[model.__table__ for model in tables])
+    session_local = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
+    def override_get_db():
+        with session_local() as db:
+            yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    yield
+    app.dependency_overrides.pop(get_db, None)
 
 
 @pytest.fixture
@@ -263,7 +323,13 @@ def test_cache_hit_expiry_and_no_raw_token(client, supabase, monkeypatch):
     assert supabase.call_count == 1
     stored = json.dumps(list(member_auth._member_cache.items()))
     assert token not in stored
-    assert list(member_auth._member_cache) == [member_auth._cache_key(token)]
+    assert list(member_auth._member_cache) == [
+        member_auth._cache_key(
+            token,
+            base_url="https://project.supabase.co",
+            anon_key="anon-key",
+        )
+    ]
     clock[0] += 61
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
     assert supabase.call_count == 2
@@ -292,6 +358,26 @@ def test_cache_not_used_when_supabase_config_removed(client, supabase, monkeypat
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
     monkeypatch.delenv("OC_SUPABASE_URL")
     assert client.get(READ_URL, headers=_bearer(token)).status_code == 503
+
+
+def test_cache_is_scoped_to_supabase_configuration(client, supabase, monkeypatch):
+    token = _jwt()
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 1
+
+    monkeypatch.setenv("OC_SUPABASE_URL", "https://other-project.supabase.co")
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 2
+    assert supabase.call_args.args[0] == "https://other-project.supabase.co/auth/v1/user"
+
+    monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "rotated-anon-key")
+    assert client.get(READ_URL, headers=_bearer(token)).status_code == 200
+    assert supabase.call_count == 3
+    assert supabase.call_args.kwargs["headers"]["apikey"] == "rotated-anon-key"
+    stored = json.dumps(list(member_auth._member_cache.items()))
+    assert token not in stored
+    assert "anon-key" not in stored
+    assert "rotated-anon-key" not in stored
 
 
 # --- feature switch -----------------------------------------------------------------
@@ -403,6 +489,13 @@ def test_owner_only_403_is_identical_whether_or_not_the_resource_exists(client, 
         ("POST", "/api/candidate-knowledge/preview"),
         ("POST", "/api/evidence-aggregation/aggregates/999999/withdraw"),
         ("PUT", "/api/literature-extraction/papers/x/source-binding"),
+        ("GET", "/api/evidence-feedback/review/cases/efc-does-not-exist"),
+        ("POST", "/api/evidence-feedback/review/cases/efc-does-not-exist/decision"),
+        ("GET", "/api/research/projects"),
+        ("POST", "/api/research/projects"),
+        ("GET", "/api/research/projects/00000000-0000-0000-0000-000000000000"),
+        ("PATCH", "/api/research/projects/not-a-uuid"),
+        ("GET", "/api/research/projects/00000000-0000-0000-0000-000000000000/reasoning-ledgers"),
     ]
     bodies = set()
     for method, url in urls:
@@ -425,20 +518,86 @@ def test_owner_only_route_keeps_401_when_member_cannot_be_verified(client, supab
     assert client.get(url).json()["detail"] == "Owner session or API key is required"
 
 
-_NON_REDACTING = ("/api/research/traits", "/api/literature-extraction")
+_NON_REDACTING = ("/api/literature-extraction",)
 
 
 def test_member_read_matches_owner_read(client, owner_token, supabase):
     """Members get the owner's response, except for the locality fields redacted for members."""
-    assert client.get(READ_URL, headers=_bearer(_jwt())).json() == TRAITS_PAYLOAD
+    traits = client.get(READ_URL, headers=_bearer(_jwt())).json()
+    assert traits == {
+        "contract_version": None,
+        "subject": None,
+        "state": "WITHHELD",
+        "generated_at": None,
+        "distributions": [],
+    }
     for method, path in sorted(EXPECTED_MEMBER_READS):
         owner_response = _call(client, method, path, _bearer(owner_token))
         member_response = _call(client, method, path, _bearer(_jwt()))
         assert owner_response.status_code == member_response.status_code, path
-        if path.startswith(_NON_REDACTING) or owner_response.status_code >= 400:
+        if path == "/api/research/traits" and owner_response.status_code < 400:
+            assert member_response.json() == {
+                "contract_version": owner_response.json().get("contract_version"),
+                "subject": owner_response.json().get("subject"),
+                "state": "WITHHELD",
+                "generated_at": owner_response.json().get("generated_at"),
+                "distributions": [],
+            }
+        elif path.startswith(_NON_REDACTING) or owner_response.status_code >= 400:
             assert owner_response.content == member_response.content, path
         else:
             assert member_response.json() == redact_member_locality(owner_response.json()), path
+
+
+def test_member_trait_read_withholds_all_free_form_scientific_fields(
+    client, owner_token, supabase, monkeypatch
+):
+    from app.research_traits import routes as traits_routes
+
+    payload = {
+        "contract_version": "oc-research-traits-v1",
+        "subject": {"rank": "genus", "name": "Dracula"},
+        "state": "AVAILABLE",
+        "generated_at": "2026-09-26T00:00:00+00:00",
+        "distributions": [
+            {
+                "trait_id": "private-site-trait",
+                "label": "Seen at Cerro Toledo",
+                "unit": None,
+                "evidence_state": "VERIFIED",
+                "confidence": 1.0,
+                "sample_size": 1,
+                "buckets": [{"value": "-4.0123,-79.1234", "count": 1}],
+                "receipts": [
+                    {
+                        "source_id": "private-observation",
+                        "source_name": "Collector notebook at exact locality",
+                        "record_id": "restricted-1",
+                        "source_url": "https://example.org/private-site",
+                        "retrieved_at": "2026-09-26",
+                        "license": "restricted",
+                    }
+                ],
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        traits_routes, "get_service", lambda: Mock(get=Mock(return_value=payload))
+    )
+
+    owner_response = client.get(READ_URL, headers=_bearer(owner_token))
+    assert owner_response.json() == payload
+    member_response = client.get(READ_URL, headers=_bearer(_jwt(marker="traits")))
+    assert member_response.json() == {
+        "contract_version": "oc-research-traits-v1",
+        "subject": {"rank": "genus", "name": "Dracula"},
+        "state": "WITHHELD",
+        "generated_at": "2026-09-26T00:00:00+00:00",
+        "distributions": [],
+    }
+    assert "Cerro Toledo" not in member_response.text
+    assert "-4.0123" not in member_response.text
+    assert "Collector notebook" not in member_response.text
 
 
 # --- CORS ---------------------------------------------------------------------------
@@ -613,8 +772,52 @@ def _ck_evidence(ident: int, text: str, metadata: dict) -> dict:
     }
 
 
+# The seeded services stamp records with the wall clock (``now()`` isoformat with
+# microseconds) and time run execution with ``time.perf_counter``. Left live, those
+# machine-generated digits occasionally contain a planted value (a created_at of
+# ``...45.712400+00:00`` contains "2400"), which made the planted-locality check fail
+# intermittently without any locality reaching a member. The clock is frozen so every
+# seeded payload is deterministic; collision clocks deliberately reproduce that
+# condition so the member view is proven safe under it.
+@dataclass(frozen=True)
+class Clock:
+    timestamp: str
+    elapsed_seconds: float
+    collides: bool = False
+
+
+NEUTRAL_CLOCK = Clock("2026-09-26T12:00:00.000000+00:00", 0.5)
+COLLISION_CLOCKS = {
+    # Both timestamps were captured from failing runs of the live-clock test.
+    "timestamp-microseconds": Clock("2026-09-26T20:26:45.712400+00:00", 0.5, True),
+    "timestamp-straddle": Clock("2026-09-26T20:26:38.024003+00:00", 0.5, True),
+    "elapsed-seconds": Clock(NEUTRAL_CLOCK.timestamp, 0.24003, True),
+}
+
+
 @pytest.fixture
-def seeded(client, owner_token, monkeypatch):
+def frozen_clock(request, monkeypatch) -> Clock:
+    from app.candidate_knowledge import repository as ck_repository
+    from app.candidate_knowledge import service as ck_service
+    from app.evidence_aggregation import repository as ea_repository
+    from app.evidence_aggregation import service as ea_service
+
+    clock = getattr(request, "param", NEUTRAL_CLOCK)
+    for module in (ck_repository, ck_service, ea_repository, ea_service):
+        monkeypatch.setattr(module, "now", lambda: clock.timestamp)
+    ticks = itertools.cycle((0.0, clock.elapsed_seconds))  # execute(): start, then end
+    monkeypatch.setattr(ea_service, "time", SimpleNamespace(perf_counter=lambda: next(ticks)))
+    return clock
+
+
+def _mask_clock(text: str, clock: Clock) -> str:
+    """Remove exactly the frozen clock's own output (lower-cased text), nothing else."""
+    text = text.replace(clock.timestamp.lower(), "<clock>")
+    return re.sub(r'"elapsed_seconds":\s*' + re.escape(repr(clock.elapsed_seconds)), '"elapsed_seconds":<clock>', text)
+
+
+@pytest.fixture
+def seeded(client, owner_token, monkeypatch, frozen_clock):
     from app.candidate_knowledge import routes as ck_routes
     from app.candidate_knowledge.repository import MemoryCandidateRepository
     from app.candidate_knowledge.service import CandidateExtractionService
@@ -789,7 +992,13 @@ def _collect(client, urls, headers) -> str:
     return text
 
 
-def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded):
+@pytest.mark.parametrize(
+    "frozen_clock",
+    [NEUTRAL_CLOCK, *COLLISION_CLOCKS.values()],
+    ids=["neutral-clock", *COLLISION_CLOCKS],
+    indirect=True,
+)
+def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, seeded, frozen_clock):
     assert seeded["ck_resolved"] == 200
     urls = _seeded_urls(seeded)
     member_paths = {path for _, path in EXPECTED_MEMBER_READS}
@@ -800,8 +1009,14 @@ def test_planted_locality_never_reaches_a_member(client, owner_token, supabase, 
         member_response = client.get(url, headers=_bearer(_jwt()))
         assert member_response.status_code == 403, (url, member_response.status_code)
         assert member_response.json() == OWNER_ACCESS_REQUIRED_BODY
-    owner_text = _collect(client, urls, _bearer(owner_token)).lower()
-    member_text = json.dumps([_mv(client, url) for url in urls], ensure_ascii=False).lower()
+    owner_raw = _collect(client, urls, _bearer(owner_token)).lower()
+    member_raw = json.dumps([_mv(client, url) for url in urls], ensure_ascii=False).lower()
+    # The collision condition really is present in what the member view carries ...
+    assert ("2400" in _mask_clock(member_raw, NEUTRAL_CLOCK)) is frozen_clock.collides
+    # ... and only the frozen clock's own output is excluded: plants are matched as raw
+    # substrings everywhere else, so an owner hit must come from the plant itself.
+    owner_text = _mask_clock(owner_raw, frozen_clock)
+    member_text = _mask_clock(member_raw, frozen_clock)
     plants = (
         [p.lower() for p in CONTEXT_PLANTS]
         + sorted(seeded["ea_redacted"])

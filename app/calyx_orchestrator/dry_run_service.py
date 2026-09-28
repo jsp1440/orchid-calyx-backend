@@ -5,6 +5,8 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
+from app.security import credentials_match
+
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .executor import DeterministicDryRunExecutor, ExecutionReceipt
 from .models import utcnow
@@ -48,7 +50,10 @@ def execute_deterministic_dry_run(
     if (
         job.status != "running"
         or job.lease_owner != worker_id
-        or job.lease_token != lease_token
+        # Constant-time; a cleared (None) or empty lease token never matches.
+        or not job.lease_token
+        or not lease_token
+        or not credentials_match(lease_token, job.lease_token)
         or _lease_is_expired(job.lease_expires_at)
     ):
         raise PermissionError("STALE_PROGRAM_JOB_LEASE")

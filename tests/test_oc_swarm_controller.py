@@ -448,3 +448,16 @@ def test_edit_mode_marker_matches_the_worker_parser():
     assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: reconcile"}) is False
     assert swarm.is_edit_mode({"body": "text OC-SWARM-PROVIDER-FREE: edit"}) is False
     assert swarm.is_edit_mode({"body": None}) is False
+    # The first marker decides, exactly as the worker's MODE.search does.
+    validate_first = "OC-SWARM-PROVIDER-FREE: validate\nOC-SWARM-PROVIDER-FREE: edit"
+    edit_first = "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-PROVIDER-FREE: validate"
+    assert swarm.is_edit_mode({"body": validate_first}) is False
+    assert swarm.is_edit_mode({"body": edit_first}) is True
+    worker = importlib.util.spec_from_file_location(
+        "oc_swarm_provider_free_worker", ROOT / "scripts" / "oc_swarm_provider_free_worker.py"
+    )
+    module = importlib.util.module_from_spec(worker)
+    worker.loader.exec_module(module)
+    for body in (validate_first, edit_first, "OC-SWARM-PROVIDER-FREE: EDIT"):
+        planned = module.execution_plan({"number": 1, "body": body})["mode"]
+        assert swarm.is_edit_mode({"body": body}) is (planned == "edit")

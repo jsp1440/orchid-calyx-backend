@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -44,8 +43,10 @@ from app.security import (
     OWNER_SESSION_COOKIE,
     _decode_owner_token,
     api_key_header,
+    credentials_match,
     get_api_key,
     verify_owner_or_api_key,
+    verify_owner_session,
 )
 from app.university.learner_auth import resolve_supabase_actor
 
@@ -105,8 +106,16 @@ _cache_lock = threading.Lock()
 _member_cache: OrderedDict[str, tuple[float, dict[str, object]]] = OrderedDict()
 
 
-def _cache_key(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+def _cache_key(token: str, *, base_url: str | None = None, anon_key: str | None = None) -> str:
+    """Return a non-reversible cache identity bound to the verifier configuration.
+
+    A bearer accepted by one Supabase project must never remain authenticated after
+    the process is pointed at a different project or anonymous key.  Hashing the
+    configuration with the token keeps all three values out of cache keys while
+    making a configuration change an immediate cache miss.
+    """
+    material = "\0".join((base_url or "", anon_key or "", token))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _unverified_jwt_exp(token: str) -> float | None:
@@ -122,8 +131,10 @@ def _unverified_jwt_exp(token: str) -> float | None:
         return None
 
 
-def _cache_get(token: str) -> dict[str, object] | None:
-    key = _cache_key(token)
+def _cache_get(
+    token: str, *, base_url: str, anon_key: str
+) -> dict[str, object] | None:
+    key = _cache_key(token, base_url=base_url, anon_key=anon_key)
     now = time.monotonic()
     with _cache_lock:
         entry = _member_cache.get(key)
@@ -136,14 +147,20 @@ def _cache_get(token: str) -> dict[str, object] | None:
         return dict(principal)
 
 
-def _cache_put(token: str, principal: dict[str, object]) -> None:
+def _cache_put(
+    token: str,
+    principal: dict[str, object],
+    *,
+    base_url: str,
+    anon_key: str,
+) -> None:
     ttl = MEMBER_TOKEN_CACHE_TTL_SECONDS
     exp = _unverified_jwt_exp(token)
     if exp is not None:
         ttl = min(ttl, exp - time.time())
     if ttl <= 0:
         return
-    key = _cache_key(token)
+    key = _cache_key(token, base_url=base_url, anon_key=anon_key)
     now = time.monotonic()
     with _cache_lock:
         _member_cache[key] = (now + ttl, dict(principal))
@@ -170,7 +187,7 @@ def verify_member_access_token(token: str) -> dict[str, object]:
     base_url = member_supabase_url()
     anon_key = member_supabase_anon_key()
     if base_url and anon_key:
-        cached = _cache_get(token)
+        cached = _cache_get(token, base_url=base_url, anon_key=anon_key)
         if cached is not None:
             return cached
     identity = resolve_supabase_actor(
@@ -188,7 +205,13 @@ def verify_member_access_token(token: str) -> dict[str, object]:
         "auth_type": "supabase_member",
         "role": "member",
     }
-    _cache_put(token, principal)
+    if base_url and anon_key:
+        _cache_put(
+            token,
+            principal,
+            base_url=base_url,
+            anon_key=anon_key,
+        )
     return principal
 
 
@@ -216,7 +239,7 @@ async def verify_member_or_owner_read(
         expected_key = get_api_key()
         if not expected_key:
             raise HTTPException(status_code=401, detail="API key authentication is not configured")
-        if hmac.compare_digest(api_key, expected_key):
+        if credentials_match(api_key, expected_key):
             return {"actor": "backend_api_key", "auth_type": "api_key", "role": "api_key"}
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
@@ -288,3 +311,37 @@ async def owner_or_member_read(
         if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
             raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
         raise
+
+
+OWNER_SESSION_REQUIRED = {
+    "code": "OWNER_SESSION_REQUIRED",
+    "message": "This action requires the owner session; the backend API key is not accepted",
+}
+
+
+async def owner_session_only(
+    request: Request, api_key: str | None = Security(api_key_header)
+) -> dict[str, object]:
+    """Router-level dependency for owner-session-only routes (owner review).
+
+    Stricter than ``verify_owner_or_api_key``: the backend API key is a
+    service credential, not the owner, so a request carrying only a valid key
+    gets 403 ``OWNER_SESSION_REQUIRED`` (an invalid key stays 401). A verified
+    member gets 403 ``OWNER_ACCESS_REQUIRED`` exactly as on other owner-only
+    routes; anonymous and invalid tokens stay 401. It runs before path/body
+    validation and before any lookup, so a 403 never reveals whether a
+    resource exists.
+    """
+    if request.cookies.get(OWNER_SESSION_COOKIE) or request.headers.get("authorization"):
+        try:
+            return _record(request, {**await verify_owner_session(request), "role": "owner"})
+        except HTTPException as exc:
+            if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
+                raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
+            raise
+    if api_key:
+        expected_key = get_api_key()
+        if expected_key and credentials_match(api_key, expected_key):
+            raise HTTPException(status_code=403, detail=dict(OWNER_SESSION_REQUIRED))
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    raise HTTPException(status_code=401, detail="Owner session is required")

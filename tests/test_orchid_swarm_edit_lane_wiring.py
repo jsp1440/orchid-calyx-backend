@@ -105,14 +105,21 @@ def test_execute_step_runs_the_edit_lane_and_hands_its_receipt_to_the_worker():
 
 
 def test_blocked_case_records_the_pull_request_the_issue_waits_on():
+    from scripts.oc_swarm_settlement import settle_worker
+    from tests.test_oc_swarm_acquisition_worker import claimed
+
     run = _step("Publish durable result and release lease")["run"]
-    blocked = run.split("blocked)", maxsplit=1)[1].split("*)", maxsplit=1)[0]
-    assert "--add-label oc-blocked" in blocked
-    assert "blocked_on=$(jq -r '.blocked_on // empty'" in blocked
-    assert "OC-BLOCKED-ON: ${blocked_on}" in blocked
-    # done / owner-gate branches are unchanged.
-    assert "--add-label oc-done" in run
-    assert "--add-label oc-owner-gate" in run
+    assert "python3 -m scripts.oc_swarm_settlement" in run
+    assert '--result "$RUNNER_TEMP/provider-free-result.json"' in run
+    for disposition in ("blocked", "done", "owner-gate"):
+        transport, identity = claimed()
+        result = {"disposition": disposition, "blocked_on": "PR #1681"}
+        receipt = settle_worker(result=result, **identity, call=transport)
+        assert f"oc-{disposition}" in transport.issue["labels"]
+        assert "oc-running" not in transport.issue["labels"]
+        assert receipt["lease_comment_id"] == identity["comment_id"]
+        comments = "\n".join(c["body"] for c in transport.comments.values())
+        assert ("OC-BLOCKED-ON: PR #1681" in comments) == (disposition == "blocked")
 
 
 def test_edit_receipt_is_retained_as_evidence():

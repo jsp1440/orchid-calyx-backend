@@ -34,6 +34,7 @@ from .firecrawl_acquisition import (
     verify_swarm_acquisition_lease,
 )
 from .firecrawl_provider import (
+    ACQUISITION_PREDICATES,
     AcquisitionBlocked,
     FirecrawlConfig,
     FirecrawlProvider,
@@ -185,6 +186,24 @@ def validate_persisted_acquisition(result, literature_repository):
     }
 
 
+def authorize_external_acquisition(
+    request, config, provider, predicates, *, verify_lease
+):
+    """The production post-audit boundary, before reservations or paid HTTP."""
+    if not config.dry_run and not predicates:
+        raise AcquisitionBlocked("EXPLICIT_PREDICATE_SCOPE_REQUIRED")
+    if (
+        config.pilot_mode
+        and not config.dry_run
+        and str(request.issue_number) != os.getenv("FIRECRAWL_PILOT_ISSUE_NUMBER", "")
+    ):
+        raise AcquisitionBlocked("LIVE_PILOT_ISSUE_SCOPE_REQUIRED")
+    provider._gate()
+    if config.pilot_mode and not config.dry_run:
+        verify_lease()
+        reserve_live_pilot_attempt(request)
+
+
 async def execute_acquisition(
     request: AcquisitionRequest, *, github=None, fixture_transport=None
 ):
@@ -209,12 +228,6 @@ async def execute_acquisition(
     ):
         raise AcquisitionBlocked("OUTSIDE_ACQUISITION_PILOT")
     reservation = PostgresFirecrawlReservation(connection)
-    if (
-        config.pilot_mode
-        and not config.dry_run
-        and str(request.issue_number) != os.getenv("FIRECRAWL_PILOT_ISSUE_NUMBER", "")
-    ):
-        raise AcquisitionBlocked("LIVE_PILOT_ISSUE_SCOPE_REQUIRED")
     provider = FirecrawlProvider(
         config,
         governor=_governor(config),
@@ -224,7 +237,6 @@ async def execute_acquisition(
         fixture_transport=fixture_transport,
     )
     provider.lease_check = lambda: verify_swarm_acquisition_lease(**lease)
-    provider._gate()
     identity = request.model_dump()
     key = {
         "owner_key": SCOPE.owner_id,
@@ -280,17 +292,59 @@ async def execute_acquisition(
                 or not name.startswith(genera[0] + " ")
             ):
                 raise AcquisitionBlocked("UNBOUND_TARGETED_GAP")
+        predicate_markers = re.findall(
+            r"^OC-ACQUISITION-PREDICATES:\s*(\[[^\n]*\])\s*$",
+            issue.get("body", ""),
+            re.MULTILINE,
+        )
+        if len(predicate_markers) > 1:
+            raise AcquisitionBlocked("AMBIGUOUS_REQUIRED_PREDICATES")
+        predicates = json.loads(predicate_markers[0]) if predicate_markers else []
+        if (
+            not isinstance(predicates, list)
+            or len(predicates) > 32
+            or any(
+                not isinstance(value, str) or value not in ACQUISITION_PREDICATES
+                for value in predicates
+            )
+        ):
+            raise AcquisitionBlocked("INVALID_REQUIRED_PREDICATES")
         database_url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
         candidate_repository = PostgresCandidateRepository(database_url)
         aggregate_repository = PostgresAggregateRepository(database_url)
-        if config.pilot_mode and not config.dry_run:
-            verify_swarm_acquisition_lease(**lease)
-            reserve_live_pilot_attempt(request)
+        from .corpus_audit import audit_existing_corpus, load_corpus_document
+        from .firecrawl_provider import AcquiredSource
+
+        def before_acquire():
+            authorize_external_acquisition(
+                request,
+                config,
+                provider,
+                predicates,
+                verify_lease=lambda: verify_swarm_acquisition_lease(**lease),
+            )
+
+        def corpus_audit():
+            return audit_existing_corpus(
+                connection, genus=genera[0], taxon_names=targets
+            )
+
+        def load_held_source(document):
+            return AcquiredSource(
+                document["source_url"],
+                load_corpus_document(connection, document),
+                document.get("mocked", False),
+            )
+
         result = await acquire_for_swarm_issue(
             **lease,
             provider=provider,
+            corpus_audit=corpus_audit,
+            load_held_source=load_held_source,
+            before_acquire=before_acquire,
             genus=genera[0],
             target_names=targets,
+            required_predicates=predicates,
             taxonomy=taxonomy,
             literature_repository=literature,
             register_and_bind=PostgresFirecrawlRegistration(connection, scope=SCOPE),

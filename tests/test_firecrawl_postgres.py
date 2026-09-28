@@ -20,7 +20,7 @@ TEXT = (
     "Synthetic morphology source; not published scientific measurements.\n\n"
     "Paphiopedilum delenatii leaf length 10-12 cm.\n"
     "Paphiopedilum delenatii leaf length 15 cm.\n"
-    "Paphiopedilum armeniacum petal width 3 cm.\n"
+    "Paphiopedilum armeniacum leaf length 3 cm.\n"
 )
 
 
@@ -123,10 +123,88 @@ def firecrawl_transport(endpoint, payload):
     }
 
 
+def seed_held_document(database_url):
+    """Import a held source through production registry and importer, no extraction."""
+    from hashlib import sha256
+
+    from psycopg.rows import dict_row
+
+    from app.document_import.models import RetrievedDocument
+    from app.document_import.repository import PostgresDocumentImportRepository
+    from app.document_import.service import DocumentImportService
+    from app.source_registry.models import DriveFile
+    from app.source_registry.repository import PostgresSourceRegistryRepository
+
+    def connect():
+        return psycopg.connect(database_url, row_factory=dict_row)
+
+    registry = PostgresSourceRegistryRepository(connect)
+    source = registry.register_web_source("flora.example", "oc-autonomy")
+    source_id = str(source["source_id"])
+    scan_id = registry.start_scan(source_id)
+    registry.inventory_file(
+        source_id,
+        scan_id,
+        DriveFile(
+            file_id=URL,
+            filename="Paphiopedilum monograph.md",
+            folder_path="/Acquisition/",
+            mime_type="text/markdown",
+            size=len(TEXT.encode()),
+            checksum=sha256(TEXT.encode()).hexdigest(),
+            created_at=None,
+            modified_at=None,
+            raw_metadata={
+                "source_url": URL,
+                "mocked": True,
+                "provider": "held-fixture",
+            },
+        ),
+    )
+    registry_id = registry.inventory_id(source_id, URL)
+    registry.finish_scan(scan_id, source_id, "COMPLETED", 1, 0, 0, 0)
+
+    class HeldFileGateway:
+        def retrieve(self, document):
+            assert document.registry_id == registry_id
+            return RetrievedDocument(TEXT.encode(), None, "text/markdown", ".md")
+
+    result = DocumentImportService(
+        PostgresDocumentImportRepository(connect),
+        HeldFileGateway(),
+        pilot_folder="/Acquisition/",
+    ).import_one(registry_id, "oc-autonomy")
+    assert result.state == "IMPORTED"
+    return result
+
+
 @pytest.fixture
-def database_url(monkeypatch):
-    dsn = os.environ.get("TEST_DATABASE_URL") or os.environ["DATABASE_URL"]
+def isolated_database_url(monkeypatch):
+    """Use actual PostgreSQL with isolation from unrelated corpus fixtures."""
+    from uuid import uuid4
+
+    from psycopg import sql
+    from psycopg.conninfo import make_conninfo
+
+    base_dsn = os.environ.get("TEST_DATABASE_URL") or os.environ["DATABASE_URL"]
+    name = "firecrawl_test_" + uuid4().hex
+    with psycopg.connect(base_dsn, autocommit=True) as conn:
+        conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+    dsn = make_conninfo(base_dsn, dbname=name)
     monkeypatch.setenv("DATABASE_URL", dsn)
+    monkeypatch.setenv("TEST_DATABASE_URL", dsn)
+    try:
+        yield dsn
+    finally:
+        with psycopg.connect(base_dsn, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
+            )
+
+
+@pytest.fixture
+def database_url(monkeypatch, isolated_database_url):
+    dsn = isolated_database_url
     migrations = [
         "070_knowledge_intake.sql",
         "076a_universal_intake.sql",
@@ -161,7 +239,6 @@ def database_url(monkeypatch):
         for taxon_id, name in (
             (91001, "Paphiopedilum delenatii"),
             (91002, "Paphiopedilum armeniacum"),
-            (91003, "Paphiopedilum rothschildianum"),
         ):
             conn.execute(
                 """INSERT INTO public.orchid_taxonomy
@@ -203,7 +280,8 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     from scripts.oc_work_materialize import apply_plan, plan
 
     for name, value in {
-        "FIRECRAWL_ENABLED": "true",
+        "FIRECRAWL_ENABLED": "false",
+        "FIRECRAWL_REQUIRED_PREDICATES": "leaf_length",
         "FIRECRAWL_DRY_RUN": "true",
         "FIRECRAWL_PILOT_MODE": "true",
         "FIRECRAWL_APPROVED_DOMAINS": "flora.example",
@@ -215,10 +293,14 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     monkeypatch.delenv("FIRECRAWL_API_KEY", raising=False)
     connect = lambda: psycopg.connect(database_url)
     taxonomy = load_persistent_canonical_registry(connect)
-    assert set(taxonomy.taxa) == {91001, 91002, 91003}
+    assert set(taxonomy.taxa) == {91001, 91002}
+    held = seed_held_document(database_url)
+    assert held.revision_id is not None
     aggregates = PostgresAggregateRepository(database_url)
-    before = export_matrix_acquisition_coverage(taxonomy, aggregates)
-    assert before["gaps"][0]["missing_taxon_ids"] == [91001, 91002, 91003]
+    before = export_matrix_acquisition_coverage(
+        taxonomy, aggregates, required_predicates=("leaf_length",)
+    )
+    assert before["gaps"][0]["missing_taxon_ids"] == [91001, 91002]
     candidates = discover_matrix_coverage(before)
     report = {
         "schema": "oc.work-discovery.v1",
@@ -256,7 +338,9 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
         receipt = asyncio.run(
             execute_acquisition(
                 AcquisitionRequest(**identity),
-                fixture_transport=firecrawl_transport,
+                fixture_transport=lambda *_: pytest.fail(
+                    "held evidence must use zero provider calls"
+                ),
             )
         )
 
@@ -284,6 +368,11 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     assert result["disposition"] == "done"
     assert result["replenishment_signal"] == "canonical-controller-refill"
     assert receipts[0]["validation"]["status"] == "passed"
+    assert receipts[0]["corpus_metrics"]["existing_documents_reused"] == 1
+    assert receipts[0]["corpus_metrics"]["new_documents_acquired"] == 0
+    assert receipts[0]["firecrawl_credits"]["attempts"] == 0
+    assert receipts[0]["firecrawl_credits"]["reserved"] == 0
+    assert receipts[0]["corpus_metrics"]["remaining_gaps"] == []
     source_receipt = receipts[0]["sources"][0]
     assert source_receipt["source_registration_id"] > 0
     assert source_receipt["source_url"] == URL
@@ -302,23 +391,27 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     # A fresh repository instance must recover the persisted artifacts.
     persisted = PostgresCandidateRepository(database_url)
     persisted_aggregates = PostgresAggregateRepository(database_url)
-    assert len(persisted.candidates) == 3
-    assert {candidate["normalized_subject"] for candidate in persisted.candidates} == {
+    own_ids = set(receipts[0]["sources"][0]["candidate_ids"])
+    owned_candidates = [c for c in persisted.candidates if c["candidate_id"] in own_ids]
+    assert len(owned_candidates) == 3
+    assert {candidate["normalized_subject"] for candidate in owned_candidates} == {
         "local:orchid_taxonomy:91001",
         "local:orchid_taxonomy:91002",
     }
-    assert all(not candidate["published"] for candidate in persisted.candidates)
+    assert all(not candidate["published"] for candidate in owned_candidates)
     assert len(persisted.conflicts) >= 1
     assert persisted_aggregates.conflicts
     assert all(
         link["relationship_type"] != "DUPLICATES"
         for link in persisted_aggregates.relationships
     )
-    serialized = json.dumps(persisted.candidates)
+    serialized = json.dumps(owned_candidates)
     assert "Paphiopedilum delenatii leaf length 10-12 cm." in serialized
     assert "Paphiopedilum delenatii leaf length 15 cm." in serialized
     assert "Paphiopedilum armeniacum" in serialized
     for aggregate in persisted_aggregates.aggregates:
+        if not own_ids.intersection(aggregate["contributing_candidate_ids"]):
+            continue
         assert aggregate["measurement_summary"]["unweighted_mean"] is None
         assert aggregate["measurement_summary"]["pooled_estimate"] is None
         assert aggregate["measurement_summary"]["pooled_estimate_prohibited"] is True
@@ -368,30 +461,64 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     with connect() as conn:
         assert (
             conn.execute(
-                "SELECT count(*) FROM oc_sources.document_inventory"
-            ).fetchone()[0]
-            == 1
-        )
-        assert (
-            conn.execute("SELECT count(*) FROM oc_import.hash_index").fetchone()[0] == 1
-        )
-        assert (
-            conn.execute(
-                "SELECT count(*) FROM oc_document_intelligence.literature_source_bindings"
+                "SELECT count(*) FROM oc_sources.document_inventory WHERE external_file_id=%s",
+                (URL,),
             ).fetchone()[0]
             == 1
         )
         assert (
             conn.execute(
-                "SELECT count(*) FROM oc_document_intelligence.literature_evidence_bindings"
+                "SELECT count(*) FROM oc_import.hash_index WHERE sha256=%s",
+                (source_receipt["source_hash"],),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM oc_document_intelligence.literature_source_bindings WHERE paper_id=%s",
+                (source_receipt["paper_id"],),
+            ).fetchone()[0]
+            == 1
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM oc_document_intelligence.literature_evidence_bindings e JOIN oc_document_intelligence.literature_source_bindings b USING(binding_id) WHERE b.paper_id=%s",
+                (source_receipt["paper_id"],),
             ).fetchone()[0]
             == 3
         )
         (raw,) = conn.execute(
-            "SELECT content_bytes FROM oc_import.document_revisions"
+            "SELECT content_bytes FROM oc_import.document_revisions WHERE revision_id=%s",
+            (source_receipt["revision_id"],),
         ).fetchone()
         assert bytes(raw).decode() == TEXT
-    after = export_matrix_acquisition_coverage(taxonomy, persisted_aggregates)
+    from app.literature_extraction.firecrawl_acquisition import (
+        missing_morphology_requirements,
+    )
+
+    exact_gap = missing_morphology_requirements(
+        taxonomy,
+        "Paphiopedilum",
+        ("Paphiopedilum delenatii",),
+        ("leaf_width",),
+        persisted_aggregates,
+    )
+    assert exact_gap == [
+        {
+            "taxon_name": "Paphiopedilum delenatii",
+            "taxon_id": 91001,
+            "missing_predicates": ["leaf_width"],
+        }
+    ]
+    with connect() as conn:
+        conn.execute("""INSERT INTO public.orchid_taxonomy (id,scientific_name,genus)
+            VALUES (91003,'Paphiopedilum rothschildianum','Paphiopedilum')""")
+        conn.execute("""INSERT INTO oc_source.world_plants_load (snapshot_id,name,taxon_code)
+            VALUES ('firecrawl-fixture-release','Paphiopedilum rothschildianum','S')""")
+    taxonomy = load_persistent_canonical_registry(connect)
+    after = export_matrix_acquisition_coverage(
+        taxonomy, persisted_aggregates, required_predicates=("leaf_length",)
+    )
     assert after["covered_taxa"] == 2
     assert after["gaps"][0]["missing_taxon_ids"] == [91003]
     next_candidates = discover_matrix_coverage(after)
@@ -416,3 +543,102 @@ def test_postgres_canonical_vertical_slice(database_url, tmp_path, monkeypatch):
     assert (
         "OC-ACQUISITION-TARGETS:" in github.issues[next_worker["issue_number"]]["body"]
     )
+    monkeypatch.setenv("FIRECRAWL_ENABLED", "true")
+    next_snapshot = {"issues": list(deepcopy(github.issues).values())}
+    next_claim = claim_workers(
+        next_admission, next_snapshot, repository=REPOSITORY, run_id=78, call=github
+    )
+    assert next_claim["launch_count"] == 1
+    next_identity = {
+        "repository": REPOSITORY,
+        "issue_number": next_worker["issue_number"],
+        "run_id": 78,
+        "run_attempt": 1,
+        "comment_id": next_claim["confirmed"][0]["lease_comment_id"],
+    }
+    new_url = "https://flora.example/revision"
+    new_text = "Synthetic targeted gap fixture\nPaphiopedilum rothschildianum leaf length 20 cm.\n"
+    provider_calls = []
+
+    def missing_gap_transport(endpoint, payload):
+        provider_calls.append((endpoint, deepcopy(payload)))
+        if endpoint == "search":
+            return 200, {
+                "success": True,
+                "data": {"web": [{"url": URL}, {"url": new_url}]},
+            }
+        assert endpoint == "scrape" and payload["url"] == new_url
+        return 200, {
+            "success": True,
+            "data": {
+                "markdown": new_text,
+                "metadata": {"sourceURL": new_url},
+            },
+        }
+
+    def missing_gap_dispatch(identity):
+        from app.literature_extraction.firecrawl_provider import AcquisitionBlocked
+
+        # A genuinely unavailable required relation cannot earn a paid fallback.
+        with connect() as conn:
+            conn.execute(
+                "ALTER TABLE oc_import.document_revisions RENAME TO document_revisions_unavailable"
+            )
+        try:
+            with pytest.raises(
+                AcquisitionBlocked, match="EXISTING_CORPUS_AUDIT_UNAVAILABLE"
+            ):
+                asyncio.run(
+                    execute_acquisition(
+                        AcquisitionRequest(**identity),
+                        fixture_transport=missing_gap_transport,
+                    )
+                )
+            assert provider_calls == []
+        finally:
+            with connect() as conn:
+                conn.execute(
+                    "ALTER TABLE oc_import.document_revisions_unavailable RENAME TO document_revisions"
+                )
+        return asyncio.run(
+            execute_acquisition(
+                AcquisitionRequest(**identity), fixture_transport=missing_gap_transport
+            )
+        )
+
+    paid_mock_result = execute_claim(
+        **next_identity, dispatch=missing_gap_dispatch, call=github
+    )
+    assert paid_mock_result["disposition"] == "done"
+    assert [call[0] for call in provider_calls] == ["search", "scrape"]
+    assert paid_mock_result["corpus_metrics"]["duplicate_documents_avoided"] == 1
+    assert paid_mock_result["corpus_metrics"]["new_documents_acquired"] == 1
+    assert paid_mock_result["corpus_metrics"]["remaining_gaps"] == []
+    complete_ids = {
+        cid for source in paid_mock_result["sources"] for cid in source["candidate_ids"]
+    }
+    assert (
+        len(
+            [
+                c
+                for c in PostgresCandidateRepository(database_url).candidates
+                if c["candidate_id"] in complete_ids
+            ]
+        )
+        == 4
+    )
+    with connect() as conn:
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM oc_sources.document_inventory WHERE external_file_id=ANY(%s)",
+                ([URL, new_url],),
+            ).fetchone()[0]
+            == 2
+        )
+        assert (
+            conn.execute(
+                "SELECT count(*) FROM oc_import.hash_index WHERE sha256=ANY(%s)",
+                ([source["source_hash"] for source in paid_mock_result["sources"]],),
+            ).fetchone()[0]
+            == 2
+        )
