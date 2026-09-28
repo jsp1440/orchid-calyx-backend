@@ -70,6 +70,32 @@ def _record_store():
     return PostgresProjectRecordStore(execute)
 
 
+def reserve_live_pilot_attempt(request):
+    """Consume one issue-scoped live authorization before transport, durably.
+
+    An uncertain outcome is not permission to repeat under a different lease.
+    Existing completed receipts can still be read without another provider call.
+    """
+    from psycopg.types.json import Jsonb
+
+    from runtime.research_station_store import TABLE
+
+    with connection() as conn, conn.cursor() as cursor:
+        cursor.execute(
+            f"""INSERT INTO {TABLE}(owner_key,project_id,kind,record_id,payload,created_at,updated_at)
+            VALUES (%s,%s,'artifact',%s,%s,NOW(),NOW())
+            ON CONFLICT(owner_key,project_id,kind,record_id) DO NOTHING RETURNING record_id""",
+            (
+                SCOPE.owner_id,
+                SCOPE.project_id,
+                f"live-pilot:{request.issue_number}",
+                Jsonb({**request.model_dump(), "status": "attempt_started"}),
+            ),
+        )
+        if cursor.fetchone() is None:
+            raise AcquisitionBlocked("LIVE_PILOT_ALREADY_ATTEMPTED")
+
+
 def _governor(config):
     # Reuse the existing governor; durable provider reservations independently
     # enforce the daily ceiling across processes/restarts, without refilling it.
@@ -257,6 +283,9 @@ async def execute_acquisition(
         database_url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
         candidate_repository = PostgresCandidateRepository(database_url)
         aggregate_repository = PostgresAggregateRepository(database_url)
+        if config.pilot_mode and not config.dry_run:
+            verify_swarm_acquisition_lease(**lease)
+            reserve_live_pilot_attempt(request)
         result = await acquire_for_swarm_issue(
             **lease,
             provider=provider,

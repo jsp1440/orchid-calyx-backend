@@ -208,6 +208,18 @@ def test_persistent_credit_cap_serializes_concurrent_workers(monkeypatch):
         assert payload["provider_reported_credits"] == 1
         assert payload["credit_usage_reports"] == 1
         assert payload["reserved_usd"] == "0.01"
+
+        # A new process/lease cannot reuse the one-live-acquisition authority.
+        from app.literature_extraction import firecrawl_runtime as runtime
+
+        monkeypatch.setattr(runtime, "connection", lambda: psycopg.connect(url))
+        request = runtime.AcquisitionRequest(
+            issue_number=123, run_id=77, run_attempt=1, comment_id=100
+        )
+        runtime.reserve_live_pilot_attempt(request)
+        later_lease = request.model_copy(update={"run_id": 78, "comment_id": 101})
+        with pytest.raises(AcquisitionBlocked, match="LIVE_PILOT_ALREADY_ATTEMPTED"):
+            runtime.reserve_live_pilot_attempt(later_lease)
     finally:
         from psycopg import sql
 
