@@ -120,12 +120,15 @@ def validate_persisted_acquisition(result, literature_repository):
             ):
                 raise AcquisitionBlocked("PERSISTED_BINDING_MISMATCH")
             cursor.execute(
-                "SELECT content_bytes FROM oc_import.document_revisions WHERE revision_id=%s",
+                "SELECT content_bytes,registry_id FROM oc_import.document_revisions WHERE revision_id=%s",
                 (source["revision_id"],),
             )
             row = cursor.fetchone()
             if row is None:
                 raise AcquisitionBlocked("PERSISTED_SOURCE_MISSING")
+            if source.get("source_registration_id", row[1]) != row[1]:
+                raise AcquisitionBlocked("PERSISTED_SOURCE_IDENTITY_MISMATCH")
+            source["source_registration_id"] = row[1]
             binding.binding.validate_integrity(paper, bytes(row[0]))
         ids = set(source["candidate_ids"])
         persisted = [
@@ -179,10 +182,19 @@ async def execute_acquisition(
         "FIRECRAWL_PILOT_GENUS", "Paphiopedilum"
     ):
         raise AcquisitionBlocked("OUTSIDE_ACQUISITION_PILOT")
+    reservation = PostgresFirecrawlReservation(connection)
+    if (
+        config.pilot_mode
+        and not config.dry_run
+        and str(request.issue_number) != os.getenv("FIRECRAWL_PILOT_ISSUE_NUMBER", "")
+    ):
+        raise AcquisitionBlocked("LIVE_PILOT_ISSUE_SCOPE_REQUIRED")
     provider = FirecrawlProvider(
         config,
         governor=_governor(config),
-        reserve=PostgresFirecrawlReservation(connection),
+        reserve=reservation,
+        reserve_credits=reservation.reserve_credits,
+        observe_credits=reservation.observe_credits,
         fixture_transport=fixture_transport,
     )
     provider.lease_check = lambda: verify_swarm_acquisition_lease(**lease)
@@ -259,6 +271,7 @@ async def execute_acquisition(
             aggregation_service=EvidenceAggregationService(aggregate_repository),
         )
         result.update(identity)
+        result["firecrawl_credits"] = provider.credit_receipt()
         result["validation"] = validate_persisted_acquisition(result, literature)
         verify_swarm_acquisition_lease(**lease)
         store.put(**key, record=result)

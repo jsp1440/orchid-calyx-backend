@@ -11,6 +11,7 @@ from copy import deepcopy
 from dataclasses import asdict
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import urlsplit
 
 from app.evidence_aggregation.models import CandidateInput
 from app.literature_extraction.firecrawl_provider import AcquisitionBlocked
@@ -195,6 +196,20 @@ async def acquire_matrix_sources(
             {
                 "paper_id": paper.paper_id,
                 "source_hash": source.content_hash,
+                "source_url": source.url,
+                "source_domain": urlsplit(source.url).hostname,
+                "taxonomy_snapshot_id": release.snapshot_id,
+                "taxonomy_source_hash": release.file_sha256,
+                "taxon_names": sorted(
+                    {
+                        entity.name
+                        for entity in paper.entities
+                        if entity.entity_type == "taxon"
+                    }
+                ),
+                "extracted_characters": sorted(
+                    {candidate["predicate"] for candidate in candidates}
+                ),
                 "binding_fingerprint": binding.fingerprint,
                 "analysis_id": paper.analysis_manifest.analysis_id,
                 "revision_id": binding.revision_id,

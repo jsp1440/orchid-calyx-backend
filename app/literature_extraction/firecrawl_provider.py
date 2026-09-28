@@ -66,6 +66,7 @@ class FirecrawlConfig:
     max_bytes: int = 2_000_000
     max_call_cost: Decimal = Decimal(0)
     daily_budget: Decimal = Decimal(0)
+    daily_credit_cap: int = 25
 
     def __post_init__(self):
         if not (
@@ -76,6 +77,11 @@ class FirecrawlConfig:
             and 1 <= self.max_bytes <= 10_000_000
         ):
             raise AcquisitionBlocked("INVALID_BOUNDS")
+        if (
+            type(self.daily_credit_cap) is not int
+            or not 1 <= self.daily_credit_cap <= 25
+        ):
+            raise AcquisitionBlocked("INVALID_DAILY_CREDIT_CAP")
         if any(
             not n.is_finite() or n < 0 for n in (self.max_call_cost, self.daily_budget)
         ):
@@ -106,6 +112,7 @@ class FirecrawlConfig:
             backoff_seconds=float(e.get("FIRECRAWL_BACKOFF_SECONDS", "1")),
             max_call_cost=Decimal(e.get("FIRECRAWL_MAX_CALL_COST_USD", "0")),
             daily_budget=Decimal(e.get("FIRECRAWL_DAILY_BUDGET_USD", "0")),
+            daily_credit_cap=int(e.get("FIRECRAWL_DAILY_CREDIT_CAP", "25")),
         )
 
 
@@ -135,6 +142,8 @@ class FirecrawlProvider:
         *,
         governor=None,
         reserve: Callable | None = None,
+        reserve_credits: Callable | None = None,
+        observe_credits: Callable | None = None,
         fixture_transport=None,
         env=None,
         sleep=time.sleep,
@@ -142,6 +151,13 @@ class FirecrawlProvider:
         self.config = config
         self.governor = governor
         self.reserve = reserve
+        self.reserve_credits = reserve_credits or getattr(
+            reserve, "reserve_credits", None
+        )
+        self.observe_credits = observe_credits or getattr(
+            reserve, "observe_credits", None
+        )
+        self.credits_reserved = self.reported_credits = self.usage_reports = 0
         self.fixture_transport = fixture_transport
         self.env = os.environ if env is None else env
         self.sleep = sleep
@@ -171,18 +187,54 @@ class FirecrawlProvider:
         if (
             self.governor is None
             or self.reserve is None
+            or self.reserve_credits is None
+            or self.observe_credits is None
             or self.lease_check is None
             or self.config.max_call_cost <= 0
             or self.config.daily_budget <= 0
         ):
             raise AcquisitionBlocked("DURABLE_BUDGET_AUTHORITY_REQUIRED")
 
+    @staticmethod
+    def credit_cost(endpoint, payload):
+        """Only the bounded basic tariff is admitted (Firecrawl billing docs)."""
+        if endpoint == "search" and set(payload) == {"query", "limit"}:
+            limit = payload["limit"]
+            if type(limit) is int and 1 <= limit <= 100:
+                return 2 * ((limit + 9) // 10)
+        if (
+            endpoint == "scrape"
+            and set(payload)
+            == {"url", "formats", "onlyMainContent", "parsers", "proxy"}
+            and payload["formats"] == ["markdown"]
+            and payload["parsers"] == []
+            and payload["proxy"] == "basic"
+            and payload["onlyMainContent"] is True
+        ):
+            # Reserve base page plus a possible account-level threat-protection scan.
+            return 3
+        raise AcquisitionBlocked("UNBOUNDED_CREDIT_OPTIONS")
+
+    def credit_receipt(self):
+        return {
+            "reserved": self.credits_reserved,
+            "daily_cap": self.config.daily_credit_cap,
+            "provider_reported": self.reported_credits if self.usage_reports else None,
+            "reported_attempts": self.usage_reports,
+            "attempts": self.calls,
+            "usage_complete": not self.config.dry_run
+            and self.calls > 0
+            and self.usage_reports == self.calls,
+        }
+
     def _request(self, endpoint, payload, task_id):
+        credit_cost = self.credit_cost(endpoint, payload)
         for attempt in range(self.config.retry_cap + 1):
             self._gate()
             if self.lease_check is not None:
                 self.lease_check()
             entry = None
+            credit_reservation = None
             if not self.config.dry_run:
                 entry = self.governor.begin(
                     ExecutionRequest(
@@ -194,6 +246,10 @@ class FirecrawlProvider:
                     )
                 )
                 try:
+                    credit_reservation = self.reserve_credits(
+                        task_id, credit_cost, self.config.daily_credit_cap
+                    )
+                    self.credits_reserved += credit_cost
                     self.reserve(
                         task_id, self.config.max_call_cost, self.config.daily_budget
                     )
@@ -230,6 +286,30 @@ class FirecrawlProvider:
                         status = response.status_code
                         # A transient HTTP response need not contain valid JSON.
                         result = {} if status != 200 else json.loads(raw)
+                if not self.config.dry_run:
+                    used = (
+                        result.get("creditsUsed") if isinstance(result, dict) else None
+                    )
+                    if used is None and isinstance(result, dict):
+                        data = result.get("data")
+                        if isinstance(data, dict):
+                            used = data.get(
+                                "creditsUsed",
+                                data.get("metadata", {}).get("creditsUsed"),
+                            )
+                    if type(used) is not int or used < 0:
+                        used = None
+                    try:
+                        self.observe_credits(credit_reservation, used)
+                    except Exception:  # noqa: BLE001 - sanitize persistent ledger failures
+                        raise AcquisitionBlocked(
+                            "CREDIT_USAGE_PERSISTENCE_FAILED"
+                        ) from None
+                    if used is not None:
+                        self.reported_credits += used
+                        self.usage_reports += 1
+                        if used > credit_cost:
+                            raise AcquisitionBlocked("CREDIT_TARIFF_EXCEEDED")
                 if status == 429 or status >= 500:
                     if attempt < self.config.retry_cap:
                         self.sleep(min(10, self.config.backoff_seconds * (2**attempt)))
@@ -380,10 +460,79 @@ class PostgresFirecrawlReservation:
                     day,
                     Jsonb(
                         {
+                            **payload,
                             "reserved_usd": str(spent + amount),
                             "last_task": task_id,
                             "reservations": int(payload.get("reservations", 0)) + 1,
                         }
                     ),
                 ),
+            )
+
+    def reserve_credits(self, task_id, amount, cap):
+        """Reserve each attempt conservatively; no refund for unknown outcomes."""
+        from datetime import datetime, timezone
+
+        if (
+            type(amount) is not int
+            or type(cap) is not int
+            or amount <= 0
+            or not 1 <= cap <= 25
+        ):
+            raise AcquisitionBlocked("INVALID_DAILY_CREDIT_CAP")
+        day = datetime.now(timezone.utc).date().isoformat()
+
+        def update(payload):
+            spent = payload.get("reserved_credits", 0)
+            if type(spent) is not int or spent < 0 or spent + amount > cap:
+                raise AcquisitionBlocked("DAILY_CREDIT_CAP")
+            payload.update(
+                reserved_credits=spent + amount,
+                last_task=task_id,
+                credit_reservations=payload.get("credit_reservations", 0) + 1,
+            )
+
+        self._update_credit_ledger(day, update)
+        return {"day": day, "reserved": amount}
+
+    def observe_credits(self, reservation, used):
+        """Record provider-reported usage separately; never turn estimates into usage."""
+        if used is not None and (type(used) is not int or used < 0):
+            raise AcquisitionBlocked("INVALID_REPORTED_CREDITS")
+
+        def update(payload):
+            if used is not None:
+                payload["provider_reported_credits"] = (
+                    payload.get("provider_reported_credits", 0) + used
+                )
+                payload["credit_usage_reports"] = (
+                    payload.get("credit_usage_reports", 0) + 1
+                )
+                # Unexpected charges fence later work; never refund a conservative reservation.
+                payload["reserved_credits"] += max(0, used - reservation["reserved"])
+
+        self._update_credit_ledger(reservation["day"], update)
+
+    def _update_credit_ledger(self, day, update):
+        from psycopg.types.json import Jsonb
+
+        from runtime.research_station_store import TABLE
+
+        with self.connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(%s)", (742931601,))
+            key = ("oc-autonomy", "firecrawl", "provider_budget", day)
+            cur.execute(
+                f"SELECT payload FROM {TABLE} WHERE owner_key=%s AND project_id=%s AND kind=%s AND record_id=%s FOR UPDATE",
+                key,
+            )
+            row = cur.fetchone()
+            payload = dict(
+                (row["payload"] if isinstance(row, dict) else row[0]) if row else {}
+            )
+            update(payload)
+            cur.execute(
+                f"""INSERT INTO {TABLE}(owner_key,project_id,kind,record_id,payload,created_at,updated_at)
+                VALUES (%s,%s,%s,%s,%s,NOW(),NOW()) ON CONFLICT(owner_key,project_id,kind,record_id)
+                DO UPDATE SET payload=EXCLUDED.payload,updated_at=NOW()""",
+                (*key, Jsonb(payload)),
             )
