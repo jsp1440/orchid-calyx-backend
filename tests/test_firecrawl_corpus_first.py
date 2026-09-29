@@ -21,7 +21,13 @@ from app.literature_extraction.firecrawl_provider import (
 )
 from app.literature_extraction.repository import LiteratureResultRepository
 from app.literature_extraction.source_binding import CanonicalLiteratureSourceBinding
-from tests.test_firecrawl_matrix_acquisition import CONFIG, TEXT, URL, taxonomy, transport
+from tests.test_firecrawl_matrix_acquisition import (
+    CONFIG,
+    TEXT,
+    URL,
+    taxonomy,
+    transport,
+)
 
 
 def services(tmp_path):
