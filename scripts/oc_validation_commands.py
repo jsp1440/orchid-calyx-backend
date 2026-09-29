@@ -98,6 +98,16 @@ _COMMANDS = (
         ),
     ),
     ValidationCommand(
+        command_id="autonomy-restart-continuity-tests",
+        argv=_pytest("tests/test_autonomy_process_restart_continuity.py"),
+        summary="Run the provider-free cross-process restart continuity proof.",
+        proves=(
+            "the canonical autonomy engine survives an abrupt interpreter exit, "
+            "recovers an abandoned lease, completes three consecutive cycles, "
+            "and suppresses replayed work across fresh processes on this exact revision"
+        ),
+    ),
+    ValidationCommand(
         command_id="firecrawl-matrix-fixture",
         argv=_pytest("tests/test_firecrawl_matrix_acquisition.py"),
         summary="Run the offline Firecrawl canonical integration fixture.",
