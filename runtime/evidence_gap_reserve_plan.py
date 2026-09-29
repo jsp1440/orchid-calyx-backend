@@ -24,6 +24,7 @@ from typing import Any
 
 from runtime.evidence_coverage_gaps import EvidenceCoverageGapSource
 from runtime.evidence_gap_reserve_adapter import plan_evidence_gap_refill
+from runtime.knowledge_gap_queue_bridge import EVIDENCE_GAP_DOMAIN_LABELS
 
 UNAVAILABLE_STATUS = "evidence_gaps_unavailable"
 SNAPSHOT_BASIS = (
@@ -32,6 +33,7 @@ SNAPSHOT_BASIS = (
 )
 MAX_RESERVE_DEPTH = 3
 MAX_CALLER_FINGERPRINTS = 100
+MAX_CALLER_DOMAINS = 10
 _FINGERPRINT = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -45,11 +47,26 @@ def valid_fingerprints(values: list[str]) -> list[str] | None:
     return sorted(set(cleaned))
 
 
+def valid_domains(values: list[str]) -> frozenset[str] | None:
+    """Requested evidence domains, or ``None`` when any is unknown or there are too many.
+
+    An empty request is represented by the caller as "no filter"; this helper
+    only validates the values it is given.
+    """
+    if len(values) > MAX_CALLER_DOMAINS:
+        return None
+    cleaned = {value.strip() for value in values}
+    if any(value not in EVIDENCE_GAP_DOMAIN_LABELS for value in cleaned):
+        return None
+    return frozenset(cleaned)
+
+
 def evidence_gap_reserve_plan(
     source: EvidenceCoverageGapSource,
     *,
     reserve_depth: int = MAX_RESERVE_DEPTH,
     fingerprints: list[str] | None = None,
+    domains: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     depth = max(0, min(MAX_RESERVE_DEPTH, int(reserve_depth)))
     snapshot = {
@@ -58,7 +75,9 @@ def evidence_gap_reserve_plan(
         "dispatch_fingerprints": list(fingerprints or []),
     }
     try:
-        result = plan_evidence_gap_refill(snapshot, source, reserve_depth=depth)
+        result = plan_evidence_gap_refill(
+            snapshot, source, reserve_depth=depth, domains=domains
+        )
     except Exception as exc:  # noqa: BLE001 - any failure is a blocked upstream, never a 500
         return {
             "schema": "oc.reserve-refill.v1",
@@ -70,6 +89,7 @@ def evidence_gap_reserve_plan(
             "proposals": [],
             "rejections": [],
             "snapshot_basis": SNAPSHOT_BASIS,
+            "source_domains": sorted(domains) if domains is not None else None,
         }
     reason = result.get("source_unavailable_reason")
     if reason or result.get("source_gap_source") != "evidence_coverage_kg":

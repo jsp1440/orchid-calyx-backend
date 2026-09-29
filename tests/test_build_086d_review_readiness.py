@@ -76,8 +76,9 @@ def test_pagination_bounds_auth_and_malformed_json_are_framework_validated(monke
  from fastapi.testclient import TestClient
 
  from app.evidence_aggregation import routes
+ from app.member_auth import owner_or_member_read
  from app.security import verify_owner_or_api_key
- repo=MemoryAggregateRepository();monkeypatch.setattr(routes,"REPOSITORY",repo);monkeypatch.setattr(routes,"SERVICE",EvidenceAggregationService(repo));app=FastAPI();app.include_router(routes.router);app.dependency_overrides[verify_owner_or_api_key]=lambda:{"actor":"test"};client=TestClient(app)
+ repo=MemoryAggregateRepository();monkeypatch.setattr(routes,"REPOSITORY",repo);monkeypatch.setattr(routes,"SERVICE",EvidenceAggregationService(repo));app=FastAPI();app.include_router(routes.router);app.dependency_overrides[verify_owner_or_api_key]=lambda:{"actor":"test"};app.dependency_overrides[owner_or_member_read]=lambda:{"actor":"test"};client=TestClient(app)
  assert client.get("/api/evidence-aggregation/aggregates?limit=0").status_code==422
  assert client.post("/api/evidence-aggregation/preview",content="{",headers={"content-type":"application/json"}).status_code==422
  app.dependency_overrides.clear();assert client.get("/api/evidence-aggregation/aggregates").status_code==401

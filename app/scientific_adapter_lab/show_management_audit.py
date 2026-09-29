@@ -382,13 +382,18 @@ CAPABILITY_INVENTORY: list[dict] = [
         "module": "app/routers/reference_docs.py",
         "status": "CONVERGE",
         "accessible": True,
+        "notes": (
+            "Admin key now travels only in the X-Orchid-Admin-Key header and is compared in "
+            "constant time; the api_key form field and query parameter were removed (no consumer) "
+            "and a query-string key is refused with a 400"
+        ),
         "gap_description": (
-            "Admin upload uses form field api_key checked against ADMIN_API_KEY; "
-            "inconsistent with standardized X-Orchid-Admin-Key header pattern in security.py"
+            "Reference-docs admin key is still ADMIN_API_KEY (falling back to CALYX_API_KEY), "
+            "not the ORCHID_JUDGE_ADMIN_KEY used by security.require_admin"
         ),
         "child_task": (
-            "Align reference_docs admin endpoints to use require_admin "
-            "(X-Orchid-Admin-Key header) instead of form field api_key"
+            "Owner decision: unify the reference-docs admin secret with ORCHID_JUDGE_ADMIN_KEY "
+            "(security.require_admin) or document the separate key"
         ),
     },
     # -------------------------------------------------------------------------
@@ -443,8 +448,8 @@ CAPABILITY_INVENTORY: list[dict] = [
         "status": "KEEP",
         "accessible": True,
         "notes": (
-            "POST/GET .../templates and POST .../templates/{id}/render (str.format) "
-            "implemented; renders to text but does not dispatch"
+            "POST/GET .../templates and POST .../templates/{id}/render (owner-only, bounded "
+            "{name} substitution, no str.format) implemented; renders to text but does not dispatch"
         ),
     },
     {

@@ -184,6 +184,16 @@ SQL_DOMAIN_EXAMPLES = f"""
     WHERE {_TAXON} AND t.kg_node_id NOT IN ({_COVERED_TAXA})
     ORDER BY t.source_pk LIMIT %s
 """
+#: Keyset page of the same lacking taxa as :data:`SQL_DOMAIN_EXAMPLES`, strictly
+#: after a ``source_pk`` (params: types, relations, after_source_pk, limit).
+SQL_DOMAIN_LACKING_PAGE = f"""
+    SELECT t.source_pk FROM oc_graph.kg_nodes t
+    WHERE {_TAXON} AND t.kg_node_id NOT IN ({_COVERED_TAXA})
+      AND t.source_pk > %s
+    ORDER BY t.source_pk LIMIT %s
+"""
+#: Upper bound on one :meth:`EvidenceCoverageGapSource.domain_lacking_taxa` page.
+MAX_LACKING_PAGE = 50
 SQL_EVIDENCE_SOURCES = f"""
     SELECT n.source_table, COUNT(DISTINCT t.kg_node_id) AS taxa
     FROM oc_graph.kg_nodes t
@@ -313,6 +323,55 @@ class EvidenceCoverageGapSource:
                 if label and row.get("source_pk") is not None:
                     labels[str(row["source_pk"])] = label
             return labels
+
+        try:
+            result = self._db_execute(_work)
+        except Exception as exc:
+            raise EvidenceCoverageUnavailable(
+                f"knowledge-graph read failed: {type(exc).__name__}"
+            ) from exc
+        if result is None:
+            raise EvidenceCoverageUnavailable(
+                "no knowledge-graph connection is configured"
+            )
+        return result
+
+    def domain_lacking_taxa(
+        self, domain_name: str, *, after_source_pk: str | None, limit: int
+    ) -> list[str]:
+        """``source_pk`` of active taxa lacking ``domain_name`` evidence (read-only).
+
+        Same taxa and order as a gap's ``example_taxon_ids`` (``SQL_DOMAIN_EXAMPLES``),
+        continued by keyset pagination strictly after ``after_source_pk`` (``None``
+        starts at the beginning). ``limit`` is clamped to ``1..MAX_LACKING_PAGE``.
+        Locality-gated domains are never paged: they return ``[]`` without a
+        query. Raises ``ValueError`` for an unknown domain and
+        :class:`EvidenceCoverageUnavailable` if the KG cannot be read.
+        """
+        domain = next((d for d in EVIDENCE_DOMAINS if d.name == domain_name), None)
+        if domain is None:
+            raise ValueError(f"unknown evidence domain: {domain_name!r}")
+        if domain.locality_gated:
+            return []
+        limit = max(1, min(int(limit), MAX_LACKING_PAGE))
+        if self._db_execute is None:
+            raise EvidenceCoverageUnavailable(
+                self._unavailable_reason
+                or "no knowledge-graph connection is configured"
+            )
+        params = (
+            list(domain.evidence_types),
+            list(domain.relation_edge_types),
+            "" if after_source_pk is None else str(after_source_pk),
+            limit,
+        )
+
+        def _work(cur: Any) -> list[str] | None:
+            if cur is None:
+                return None
+            cur.execute("SET TRANSACTION READ ONLY")
+            cur.execute(f"SET LOCAL statement_timeout = '{STATEMENT_TIMEOUT}'")
+            return _ids(cur, SQL_DOMAIN_LACKING_PAGE, params)
 
         try:
             result = self._db_execute(_work)

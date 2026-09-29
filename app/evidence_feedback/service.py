@@ -18,7 +18,12 @@ from .models import (
     content_hash,
     feedback_fingerprint,
 )
-from .repository import FileEvidenceFeedbackRepository
+from .repository import (
+    EvidenceFeedbackRepository,
+    normalized_key,
+    validate_free_text,
+    validate_label,
+)
 
 Clock = Callable[[], str]
 
@@ -39,7 +44,7 @@ class EvidenceFeedbackService:
 
     def __init__(
         self,
-        repository: FileEvidenceFeedbackRepository,
+        repository: EvidenceFeedbackRepository,
         *,
         clock: Clock = utc_now,
     ) -> None:
@@ -63,8 +68,7 @@ class EvidenceFeedbackService:
             created_at=now,
             previous_version_hash=previous_version_hash,
         )
-        self.repository.save_object_version(version)
-        return version
+        return self.repository.save_object_version(version)
 
     def submit(
         self,
@@ -84,6 +88,21 @@ class EvidenceFeedbackService:
     ) -> SubmissionResult:
         if not statement.strip():
             raise ValueError("FEEDBACK_STATEMENT_REQUIRED")
+        # Refused identically by both stores (422), before any store access.
+        for name, text in (
+            ("STATEMENT", statement),
+            ("PAGE_CONTEXT", page_context),
+            ("PROPOSED_REPLACEMENT", proposed_replacement),
+            ("CITATION", citation),
+        ):
+            validate_free_text(text, code=f"{name}_INVALID_CHARACTERS")
+        for name, label in (
+            ("SOURCE_PARTNER_ID", source_partner_id),
+            ("DEFECT_KIND", defect_kind),
+            ("SEVERITY", severity),
+        ):
+            validate_label(label, code=f"{name}_INVALID_CHARACTERS")
+        normalized_key(object_id, code="OBJECT_ID_REQUIRED")
         persisted = self.repository.get_object_version(
             object_id,
             object_version_hash,
@@ -99,6 +118,45 @@ class EvidenceFeedbackService:
             proposed_replacement=proposed_replacement,
             citation=citation,
         )
+        # The duplicate check and the write are one serialized unit per
+        # fingerprint, so concurrent identical submissions yield one case and
+        # the case is never stored without its ``case_submitted`` event.
+        return self.repository.atomic(
+            lambda: self._submit_new_or_duplicate(
+                fingerprint=fingerprint,
+                object_id=object_id,
+                object_version_hash=object_version_hash,
+                object_type=object_type,
+                page_context=page_context,
+                feedback_class=feedback_class,
+                statement=statement,
+                proposed_replacement=proposed_replacement,
+                citation=citation,
+                submitter_id=submitter_id,
+                source_partner_id=source_partner_id,
+                defect_kind=defect_kind,
+                severity=severity,
+            ),
+            lock_key=f"fingerprint:{fingerprint}",
+        )
+
+    def _submit_new_or_duplicate(
+        self,
+        *,
+        fingerprint: str,
+        object_id: str,
+        object_version_hash: str,
+        object_type: ObjectType,
+        page_context: str,
+        feedback_class: FeedbackClass,
+        statement: str,
+        proposed_replacement: str | None,
+        citation: str | None,
+        submitter_id: str | None,
+        source_partner_id: str | None,
+        defect_kind: str | None,
+        severity: str,
+    ) -> SubmissionResult:
         existing = self.repository.find_by_fingerprint(fingerprint)
         if existing is not None:
             self.repository.append_event(
@@ -166,13 +224,29 @@ class EvidenceFeedbackService:
         reviewer_id: str,
         corrected_payload: dict[str, Any],
     ) -> EvidenceFeedbackCase:
+        # Serialized per case so two reviewers cannot both resolve it. The id
+        # is validated before it becomes a lock key.
+        case_key = normalized_key(case_id, code="CASE_ID_REQUIRED")
+        return self.repository.atomic(
+            lambda: self._accept_trivial_correction(
+                case_id=case_key,
+                reviewer_id=reviewer_id,
+                corrected_payload=corrected_payload,
+            ),
+            lock_key=f"case:{case_key}",
+        )
+
+    def _accept_trivial_correction(
+        self,
+        *,
+        case_id: str,
+        reviewer_id: str,
+        corrected_payload: dict[str, Any],
+    ) -> EvidenceFeedbackCase:
         case = self.repository.get_case(case_id)
-        if case.disposition is not Disposition.AUTO_CORRECTABLE:
-            raise ValueError("GOVERNED_REVIEW_REQUIRED")
-        if case.object_type is not ObjectType.LEXICON:
-            raise ValueError("SCIENTIFIC_OBJECT_CANNOT_AUTO_CORRECT")
-        if case.defect_kind not in {"typo", "format"}:
-            raise ValueError("DEFECT_CLASS_NOT_AUTO_CORRECTABLE")
+        blocker = self.trivial_correction_blocker(case)
+        if blocker is not None:
+            raise ValueError(blocker)
         previous = self.repository.get_object_version(
             case.object_id,
             case.object_version_hash,
@@ -211,6 +285,25 @@ class EvidenceFeedbackService:
             },
         )
         return resolved
+
+    @staticmethod
+    def trivial_correction_blocker(case: EvidenceFeedbackCase) -> str | None:
+        """Why ``case`` cannot take the deterministic trivial path, or ``None``.
+
+        Only a lexicon typo/format defect triaged as auto-correctable and not
+        routed to governed review qualifies; everything else stays with
+        governed review.
+        """
+
+        if case.status is CaseStatus.GOVERNED_REVIEW_REQUIRED:
+            return "GOVERNED_REVIEW_REQUIRED"
+        if case.disposition is not Disposition.AUTO_CORRECTABLE:
+            return "GOVERNED_REVIEW_REQUIRED"
+        if case.object_type is not ObjectType.LEXICON:
+            return "SCIENTIFIC_OBJECT_CANNOT_AUTO_CORRECT"
+        if case.defect_kind not in {"typo", "format"}:
+            return "DEFECT_CLASS_NOT_AUTO_CORRECTABLE"
+        return None
 
     def status_for_submitter(
         self,

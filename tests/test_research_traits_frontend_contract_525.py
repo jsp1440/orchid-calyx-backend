@@ -39,6 +39,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from app.member_auth import owner_or_member_read
 from app.research_traits import routes
 from app.research_traits.service import ResearchTraitsService
 from app.security import verify_owner_or_api_key
@@ -251,6 +252,7 @@ def client_for(
     app.dependency_overrides[verify_owner_or_api_key] = lambda: {
         "subject": "test-owner"
     }
+    app.dependency_overrides[owner_or_member_read] = lambda: {"subject": "test-owner"}
     app.include_router(routes.router)
     return TestClient(app)
 

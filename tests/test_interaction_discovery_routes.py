@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.calyx_conversation.interaction_discovery_ingest import (
     ingest_globi_interactions_for_canonical_dataset,
 )
+from app.interaction_discovery.models import InteractionDiscoveryRecord
 from app.interaction_discovery.routes import router
-from app.interaction_discovery.service import discover_interactions
+from app.interaction_discovery.service import (
+    _record_from_document,
+    discover_interactions,
+)
 from app.semantic_index import repository_runtime
 from app.semantic_index.memory_repository import MemoryIndexRepository
 
@@ -136,3 +142,247 @@ def test_discovery_endpoint_empty_when_nothing_ingested(monkeypatch):
     body = response.json()
     assert body["count"] == 0
     assert body["interactions"] == []
+
+
+class _FakeDurableRepository(MemoryIndexRepository):
+    """In-memory stand-in exposing the transactional surface of the Postgres repository."""
+
+    def atomic(self, operation):
+        return operation()
+
+    def refresh_for_read(self):
+        return None
+
+
+def _durable_repository(monkeypatch) -> None:
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+    runtime._activate(_FakeDurableRepository())
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+
+def test_unprovisioned_index_is_labelled_so_empty_is_not_absence(monkeypatch):
+    _fresh_repository(monkeypatch)
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Dendrobium nobile"}).json()
+
+    assert body["status"] == "ok"
+    assert body["count"] == 0
+    assert body["index_state"] == "memory_unprovisioned"
+    assert "not evidence that no interactions are known" in body["index_note"]
+
+
+def test_durable_index_is_labelled_durable_without_unprovisioned_note(monkeypatch):
+    _durable_repository(monkeypatch)
+    _ingest_sample()
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Orchis"}).json()
+
+    assert body["index_state"] == "durable"
+    assert body["index_note"] is None
+    assert body["count"] == 1
+
+
+def test_durable_index_empty_result_is_still_durable(monkeypatch):
+    _durable_repository(monkeypatch)
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Nothing here"}).json()
+
+    assert body["count"] == 0
+    assert body["index_state"] == "durable"
+    assert body["index_note"] is None
+
+
+def test_configured_but_unreachable_durable_index_returns_503_not_empty_ok(monkeypatch):
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+
+    def _unreachable():
+        raise ConnectionError("database down")
+
+    monkeypatch.setattr(runtime, "_build_repository", _unreachable)
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == "SEMANTIC_INDEX_DATABASE_UNAVAILABLE"
+
+
+def test_memory_repository_is_not_durable_even_when_database_url_configured(monkeypatch):
+    """Negative control: a non-transactional repository never reports durable."""
+    runtime = repository_runtime.SemanticIndexRepositoryRuntime(database_url="postgresql://fake-durable-index/test")
+    runtime._activate(MemoryIndexRepository())
+    monkeypatch.setattr(repository_runtime, "RUNTIME", runtime)
+
+    assert discover_interactions()["index_state"] == "memory_unprovisioned"
+
+
+def test_revision_id_string_is_exact_beyond_javascript_safe_integer(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    response = client().get("/api/interactions/discovery", params={"taxon": "Orchis"})
+    record = response.json()["interactions"][0]
+
+    assert record["revision_id"] > 2**53
+    assert record["revision_id_str"] == str(record["revision_id"])
+    # The raw JSON text carries the full integer; the string form survives a
+    # float64 round-trip where the integer would not.
+    assert f'"revision_id":{record["revision_id"]}' in response.text.replace(" ", "")
+    assert int(float(record["revision_id"])) != record["revision_id"]
+    assert int(record["revision_id_str"]) == record["revision_id"]
+
+
+def test_discovery_response_schema_declares_index_state_and_revision_id_str():
+    schema = client().get("/openapi.json").json()
+    components = schema["components"]["schemas"]
+    response_schema = components["InteractionDiscoveryResponse"]
+    record_schema = components["InteractionDiscoveryRecord"]
+
+    assert "index_state" in response_schema["required"]
+    assert set(response_schema["properties"]["index_state"]["enum"]) == {"durable", "memory_unprovisioned"}
+    assert "index_note" in response_schema["properties"]
+    assert "revision_id" in record_schema["properties"]
+    assert "revision_id_str" in record_schema["properties"]
+    route = schema["paths"]["/api/interactions/discovery"]["get"]
+    assert route["responses"]["200"]["content"]["application/json"]["schema"]["$ref"].endswith("InteractionDiscoveryResponse")
+
+
+def test_response_model_keeps_every_legacy_field(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    body = client().get("/api/interactions/discovery").json()
+
+    for key in ("status", "count", "total_matched", "truncated", "category", "taxon_filter",
+                "review_bound", "knowledge_graph_mutation", "note", "interactions"):
+        assert key in body
+    legacy_record_keys = {
+        "source_taxon_name", "source_taxon_id", "target_taxon_name", "target_taxon_id", "interaction_type",
+        "categories", "study_citation", "study_source_citation", "study_external_id", "provider",
+        "provider_stability", "dataset_version", "verification_state", "knowledge_graph_mutation",
+        "revision_id", "locator",
+    }
+    assert legacy_record_keys <= set(body["interactions"][0])
+
+
+def _corrupt_stored_record(source_taxon_name: str, **metadata_overrides) -> None:
+    """Overwrite stored metadata of one ingested record with values the contract cannot represent."""
+    repository = repository_runtime.get_repository_runtime().read()
+    matches = [
+        document
+        for document in repository.documents
+        if document.get("source_object_type") == "INTERACTION_DISCOVERY_RECORD"
+        and (document.get("metadata") or {}).get("source_taxon_name") == source_taxon_name
+    ]
+    assert len(matches) == 1
+    matches[0]["metadata"].update(metadata_overrides)
+
+
+def _ingest_good_and_bad(**bad_metadata) -> None:
+    _ingest_sample()
+    _ingest_sample(sourceTaxonName="Ophrys apifera", targetTaxonName="Eucera longicornis", targetTaxonId="GBIF:999")
+    _corrupt_stored_record("Ophrys apifera", **bad_metadata)
+
+
+def test_non_scalar_study_citation_excludes_only_that_record(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested", "year": 2020})
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unreadable_count"] == 1
+    assert body["count"] == 1
+    assert body["total_matched"] == 1
+    assert body["truncated"] is False
+    assert [record["source_taxon_name"] for record in body["interactions"]] == ["Orchis mascula"]
+
+
+def test_string_locator_excludes_only_that_record(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(locator="not-a-mapping")
+
+    response = client().get("/api/interactions/discovery")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["unreadable_count"] == 1
+    assert [record["source_taxon_name"] for record in body["interactions"]] == ["Orchis mascula"]
+
+
+def test_unreadable_record_fixture_really_violates_the_record_contract(monkeypatch):
+    """Negative control: without per-record validation this record would reject the whole list."""
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+    repository = repository_runtime.get_repository_runtime().read()
+    raw_records = [_record_from_document(document) for document in repository.documents]
+    bad = [record for record in raw_records if record and record["source_taxon_name"] == "Ophrys apifera"]
+
+    assert len(bad) == 1
+    with pytest.raises(ValidationError):
+        InteractionDiscoveryRecord.model_validate(bad[0])
+
+
+def test_all_records_unreadable_is_not_reported_as_plain_empty(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+    _corrupt_stored_record("Orchis mascula", study_citation=["a", "list"])
+
+    body = client().get("/api/interactions/discovery").json()
+
+    assert body["count"] == 0
+    assert body["interactions"] == []
+    assert body["unreadable_count"] == 1
+
+
+def test_unreadable_records_outside_the_query_filter_are_not_counted(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+
+    body = client().get("/api/interactions/discovery", params={"taxon": "Orchis mascula"}).json()
+
+    assert body["count"] == 1
+    assert body["unreadable_count"] == 0
+
+
+def test_truncation_counts_only_readable_records(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_good_and_bad(study_citation={"title": "nested"})
+
+    body = client().get("/api/interactions/discovery", params={"limit": 1}).json()
+
+    assert body["count"] == 1
+    assert body["total_matched"] == 1
+    assert body["truncated"] is False
+    assert body["unreadable_count"] == 1
+
+
+def test_numeric_string_fields_remain_readable(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+    _corrupt_stored_record("Orchis mascula", source_taxon_id=123, study_external_id=456)
+
+    body = client().get("/api/interactions/discovery").json()
+
+    assert body["unreadable_count"] == 0
+    record = body["interactions"][0]
+    assert record["source_taxon_id"] == "123"
+    assert record["study_external_id"] == "456"
+
+
+def test_readable_results_report_zero_unreadable(monkeypatch):
+    _fresh_repository(monkeypatch)
+    _ingest_sample()
+
+    assert discover_interactions()["unreadable_count"] == 0
+    assert client().get("/api/interactions/discovery").json()["unreadable_count"] == 0
+
+
+def test_discovery_response_schema_declares_optional_unreadable_count():
+    schema = client().get("/openapi.json").json()
+    response_schema = schema["components"]["schemas"]["InteractionDiscoveryResponse"]
+
+    assert response_schema["properties"]["unreadable_count"]["type"] == "integer"
+    assert response_schema["properties"]["unreadable_count"]["default"] == 0
+    assert "unreadable_count" not in response_schema.get("required", [])

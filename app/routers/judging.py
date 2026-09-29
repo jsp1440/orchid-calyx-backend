@@ -1,36 +1,58 @@
+import hashlib
 import json
 import uuid
-import hashlib
-from datetime import datetime
-from typing import Any, Dict, Optional, List
+from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.models import (
-    Show, Entry, Judge, ScoreSubmission,
-    JudgingEvent, PlantCategory, JudgingCriterion, JudgingAward,
-    Exhibitor, Plant, Score,
-    JudgeAssignment, Scorecard, ScorecardAuditLog,
+    Entry,
+    Exhibitor,
+    Judge,
+    JudgeAssignment,
+    JudgingAward,
+    JudgingCriterion,
+    JudgingEvent,
+    Plant,
+    PlantCategory,
+    Score,
+    Scorecard,
+    ScorecardAuditLog,
+    ScoreSubmission,
+    Show,
 )
 from app.schemas import (
-    JudgeCreate, JudgeOut,
-    ScoreSubmissionCreate, ScoreSubmissionOut,
-    JudgingEventCreate, JudgingEventOut, JudgingEventUpdate,
-    PlantCategoryCreate, PlantCategoryOut,
-    JudgingCriterionCreate, JudgingCriterionOut,
+    ExhibitorCreate,
+    ExhibitorOut,
+    JudgeAssignmentCreate,
+    JudgeAssignmentOut,
+    JudgeCreate,
+    JudgeOut,
     JudgingAwardOut,
-    ExhibitorCreate, ExhibitorOut,
-    PlantCreate, PlantOut,
-    ScoreCreate, ScoreOut, ScoreBatchCreate,
-    JudgeAssignmentCreate, JudgeAssignmentOut,
-    ScorecardOut, ScorecardSaveRequest, ScorecardSubmitRequest,
+    JudgingCriterionCreate,
+    JudgingCriterionOut,
+    JudgingEventCreate,
+    JudgingEventOut,
+    JudgingEventUpdate,
+    PlantCategoryCreate,
+    PlantCategoryOut,
+    PlantCreate,
+    PlantOut,
+    ScoreBatchCreate,
     ScorecardAuditOut,
+    ScorecardOut,
+    ScorecardSaveRequest,
+    ScorecardSubmitRequest,
+    ScoreOut,
+    ScoreSubmissionCreate,
+    ScoreSubmissionOut,
 )
-from app.security import verify_api_key, require_judge
+from app.security import require_judge, verify_api_key
 
 router = APIRouter(
     prefix="/api",
@@ -38,13 +60,23 @@ router = APIRouter(
     dependencies=[Depends(verify_api_key)],
 )
 
+# FastAPI dependency marker singletons keep dependency injection explicit while
+# avoiding a function call in every route signature.
+DB_DEPENDENCY = Depends(get_db)
+JUDGE_DEPENDENCY = Depends(require_judge)
 
-def _parse_points_breakdown(raw: Optional[str]) -> Optional[Dict[str, Any]]:
+
+def _utcnow() -> datetime:
+    """Return naive UTC for the existing timezone-naive SQLAlchemy columns."""
+    return datetime.now(UTC).replace(tzinfo=None)
+
+
+def _parse_points_breakdown(raw: str | None) -> dict[str, Any] | None:
     if not raw:
         return None
     try:
         return json.loads(raw)
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         return None
 
 
@@ -68,13 +100,19 @@ def _generate_qr_code(plant_id: str) -> str:
 def _ensure_show_unlocked(db: Session, show_id: str | None) -> None:
     show = db.get(Show, show_id) if show_id else None
     if show and show.judging_locked:
-        raise HTTPException(status_code=409, detail="Judging is locked for this show. Edits are frozen.")
+        raise HTTPException(
+            status_code=409, detail="Judging is locked for this show. Edits are frozen."
+        )
 
 
-def _get_scorable_criterion(db: Session, criterion_id: str, value: float | None) -> JudgingCriterion:
+def _get_scorable_criterion(
+    db: Session, criterion_id: str, value: float | None
+) -> JudgingCriterion:
     criterion = db.get(JudgingCriterion, criterion_id)
     if not criterion:
-        raise HTTPException(status_code=404, detail=f"Criterion {criterion_id} not found")
+        raise HTTPException(
+            status_code=404, detail=f"Criterion {criterion_id} not found"
+        )
     if value is not None:
         if criterion.points_min is not None and value < criterion.points_min:
             raise HTTPException(
@@ -91,8 +129,11 @@ def _get_scorable_criterion(db: Session, criterion_id: str, value: float | None)
 
 # ── Judging Events ────────────────────────────────────────────────
 
+
 @router.post("/shows/{show_id}/judging/events", response_model=JudgingEventOut)
-def create_judging_event(show_id: str, data: JudgingEventCreate, db: Session = Depends(get_db)):
+def create_judging_event(
+    show_id: str, data: JudgingEventCreate, db: Session = DB_DEPENDENCY
+):
     show = db.get(Show, show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
@@ -109,16 +150,18 @@ def create_judging_event(show_id: str, data: JudgingEventCreate, db: Session = D
     return event
 
 
-@router.get("/shows/{show_id}/judging/events", response_model=List[JudgingEventOut])
-def list_judging_events(show_id: str, db: Session = Depends(get_db)):
-    events = db.execute(
-        select(JudgingEvent).where(JudgingEvent.show_id == show_id)
-    ).scalars().all()
+@router.get("/shows/{show_id}/judging/events", response_model=list[JudgingEventOut])
+def list_judging_events(show_id: str, db: Session = DB_DEPENDENCY):
+    events = (
+        db.execute(select(JudgingEvent).where(JudgingEvent.show_id == show_id))
+        .scalars()
+        .all()
+    )
     return events
 
 
 @router.get("/judging/events/{event_id}", response_model=JudgingEventOut)
-def get_judging_event(event_id: str, db: Session = Depends(get_db)):
+def get_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
@@ -126,7 +169,9 @@ def get_judging_event(event_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/judging/events/{event_id}", response_model=JudgingEventOut)
-def update_judging_event(event_id: str, data: JudgingEventUpdate, db: Session = Depends(get_db)):
+def update_judging_event(
+    event_id: str, data: JudgingEventUpdate, db: Session = DB_DEPENDENCY
+):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
@@ -140,28 +185,30 @@ def update_judging_event(event_id: str, data: JudgingEventUpdate, db: Session = 
 
 
 @router.post("/judging/events/{event_id}/publish", response_model=JudgingEventOut)
-def publish_judging_event(event_id: str, db: Session = Depends(get_db)):
+def publish_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
     if event.status == "closed":
-        raise HTTPException(status_code=409, detail="Closed events cannot be re-published")
+        raise HTTPException(
+            status_code=409, detail="Closed events cannot be re-published"
+        )
 
     event.status = "published"
-    event.published_at = datetime.utcnow()
+    event.published_at = _utcnow()
     db.commit()
     db.refresh(event)
     return event
 
 
 @router.post("/judging/events/{event_id}/close", response_model=JudgingEventOut)
-def close_judging_event(event_id: str, db: Session = Depends(get_db)):
+def close_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
 
     event.status = "closed"
-    event.closed_at = datetime.utcnow()
+    event.closed_at = _utcnow()
     db.commit()
     db.refresh(event)
     return event
@@ -169,8 +216,11 @@ def close_judging_event(event_id: str, db: Session = Depends(get_db)):
 
 # ── Plant Categories ──────────────────────────────────────────────
 
+
 @router.post("/judging/events/{event_id}/categories", response_model=PlantCategoryOut)
-def create_category(event_id: str, data: PlantCategoryCreate, db: Session = Depends(get_db)):
+def create_category(
+    event_id: str, data: PlantCategoryCreate, db: Session = DB_DEPENDENCY
+):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
@@ -187,18 +237,25 @@ def create_category(event_id: str, data: PlantCategoryCreate, db: Session = Depe
     return cat
 
 
-@router.get("/judging/events/{event_id}/categories", response_model=List[PlantCategoryOut])
-def list_categories(event_id: str, db: Session = Depends(get_db)):
-    cats = db.execute(
-        select(PlantCategory).where(PlantCategory.judging_event_id == event_id)
-    ).scalars().all()
+@router.get(
+    "/judging/events/{event_id}/categories", response_model=list[PlantCategoryOut]
+)
+def list_categories(event_id: str, db: Session = DB_DEPENDENCY):
+    cats = (
+        db.execute(
+            select(PlantCategory).where(PlantCategory.judging_event_id == event_id)
+        )
+        .scalars()
+        .all()
+    )
     return cats
 
 
 # ── Judging Awards (read-only from Orchid Continuum) ─────────────
 
-@router.get("/judging/awards", response_model=List[JudgingAwardOut])
-def list_awards(system_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+
+@router.get("/judging/awards", response_model=list[JudgingAwardOut])
+def list_awards(system_id: str | None = Query(None), db: Session = DB_DEPENDENCY):
     q = select(JudgingAward)
     if system_id:
         q = q.where(JudgingAward.system_id == system_id)
@@ -206,7 +263,7 @@ def list_awards(system_id: Optional[str] = Query(None), db: Session = Depends(ge
 
 
 @router.get("/judging/awards/{award_id}", response_model=JudgingAwardOut)
-def get_award(award_id: str, db: Session = Depends(get_db)):
+def get_award(award_id: str, db: Session = DB_DEPENDENCY):
     award = db.get(JudgingAward, award_id)
     if not award:
         raise HTTPException(status_code=404, detail="Award not found")
@@ -215,8 +272,11 @@ def get_award(award_id: str, db: Session = Depends(get_db)):
 
 # ── Judging Criteria (per award) ─────────────────────────────────
 
+
 @router.post("/judging/awards/{award_id}/criteria", response_model=JudgingCriterionOut)
-def create_criterion(award_id: str, data: JudgingCriterionCreate, db: Session = Depends(get_db)):
+def create_criterion(
+    award_id: str, data: JudgingCriterionCreate, db: Session = DB_DEPENDENCY
+):
     award = db.get(JudgingAward, award_id)
     if not award:
         raise HTTPException(status_code=404, detail="Award not found")
@@ -239,23 +299,33 @@ def create_criterion(award_id: str, data: JudgingCriterionCreate, db: Session = 
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Criterion with this name already exists for this award.")
+        raise HTTPException(
+            status_code=409,
+            detail="Criterion with this name already exists for this award.",
+        )
     db.refresh(criterion)
     return criterion
 
 
-@router.get("/judging/awards/{award_id}/criteria", response_model=List[JudgingCriterionOut])
-def list_criteria(award_id: str, db: Session = Depends(get_db)):
-    criteria = db.execute(
-        select(JudgingCriterion).where(JudgingCriterion.award_id == award_id)
-    ).scalars().all()
+@router.get(
+    "/judging/awards/{award_id}/criteria", response_model=list[JudgingCriterionOut]
+)
+def list_criteria(award_id: str, db: Session = DB_DEPENDENCY):
+    criteria = (
+        db.execute(
+            select(JudgingCriterion).where(JudgingCriterion.award_id == award_id)
+        )
+        .scalars()
+        .all()
+    )
     return criteria
 
 
 # ── Exhibitors ────────────────────────────────────────────────────
 
+
 @router.post("/exhibitors", response_model=ExhibitorOut)
-def create_exhibitor(data: ExhibitorCreate, db: Session = Depends(get_db)):
+def create_exhibitor(data: ExhibitorCreate, db: Session = DB_DEPENDENCY):
     exhibitor = Exhibitor(
         name=data.name,
         email=data.email,
@@ -267,13 +337,13 @@ def create_exhibitor(data: ExhibitorCreate, db: Session = Depends(get_db)):
     return exhibitor
 
 
-@router.get("/exhibitors", response_model=List[ExhibitorOut])
-def list_exhibitors(db: Session = Depends(get_db)):
+@router.get("/exhibitors", response_model=list[ExhibitorOut])
+def list_exhibitors(db: Session = DB_DEPENDENCY):
     return db.execute(select(Exhibitor)).scalars().all()
 
 
 @router.get("/exhibitors/{exhibitor_id}", response_model=ExhibitorOut)
-def get_exhibitor(exhibitor_id: str, db: Session = Depends(get_db)):
+def get_exhibitor(exhibitor_id: str, db: Session = DB_DEPENDENCY):
     ex = db.get(Exhibitor, exhibitor_id)
     if not ex:
         raise HTTPException(status_code=404, detail="Exhibitor not found")
@@ -282,8 +352,9 @@ def get_exhibitor(exhibitor_id: str, db: Session = Depends(get_db)):
 
 # ── Plants ────────────────────────────────────────────────────────
 
+
 @router.post("/judging/events/{event_id}/plants", response_model=PlantOut)
-def create_plant(event_id: str, data: PlantCreate, db: Session = Depends(get_db)):
+def create_plant(event_id: str, data: PlantCreate, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
@@ -296,7 +367,9 @@ def create_plant(event_id: str, data: PlantCreate, db: Session = Depends(get_db)
     if not cat:
         raise HTTPException(status_code=404, detail="Category not found")
     if cat.judging_event_id != event_id:
-        raise HTTPException(status_code=409, detail="Category does not belong to this judging event")
+        raise HTTPException(
+            status_code=409, detail="Category does not belong to this judging event"
+        )
 
     plant_id = str(uuid.uuid4())
     plant = Plant(
@@ -314,8 +387,10 @@ def create_plant(event_id: str, data: PlantCreate, db: Session = Depends(get_db)
     return plant
 
 
-@router.get("/judging/events/{event_id}/plants", response_model=List[PlantOut])
-def list_plants(event_id: str, category_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+@router.get("/judging/events/{event_id}/plants", response_model=list[PlantOut])
+def list_plants(
+    event_id: str, category_id: str | None = Query(None), db: Session = DB_DEPENDENCY
+):
     q = select(Plant).where(Plant.judging_event_id == event_id)
     if category_id:
         q = q.where(Plant.category_id == category_id)
@@ -323,7 +398,7 @@ def list_plants(event_id: str, category_id: Optional[str] = Query(None), db: Ses
 
 
 @router.get("/judging/plants/{plant_id}", response_model=PlantOut)
-def get_plant(plant_id: str, db: Session = Depends(get_db)):
+def get_plant(plant_id: str, db: Session = DB_DEPENDENCY):
     plant = db.get(Plant, plant_id)
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
@@ -332,8 +407,13 @@ def get_plant(plant_id: str, db: Session = Depends(get_db)):
 
 # ── Scores (per-criterion) ───────────────────────────────────────
 
-@router.post("/judging/plants/{plant_id}/scores/{judge_id}", response_model=List[ScoreOut])
-def submit_scores(plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Session = Depends(get_db)):
+
+@router.post(
+    "/judging/plants/{plant_id}/scores/{judge_id}", response_model=list[ScoreOut]
+)
+def submit_scores(
+    plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Session = DB_DEPENDENCY
+):
     plant = db.get(Plant, plant_id)
     if not plant:
         raise HTTPException(status_code=404, detail="Plant not found")
@@ -344,7 +424,9 @@ def submit_scores(plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Sess
 
     event = db.get(JudgingEvent, plant.judging_event_id)
     if event and event.status == "closed":
-        raise HTTPException(status_code=409, detail="Judging event is closed. Edits are frozen.")
+        raise HTTPException(
+            status_code=409, detail="Judging event is closed. Edits are frozen."
+        )
     _ensure_show_unlocked(db, event.show_id if event else None)
 
     results = []
@@ -380,8 +462,10 @@ def submit_scores(plant_id: str, judge_id: str, data: ScoreBatchCreate, db: Sess
     return results
 
 
-@router.get("/judging/plants/{plant_id}/scores", response_model=List[ScoreOut])
-def get_plant_scores(plant_id: str, judge_id: Optional[str] = Query(None), db: Session = Depends(get_db)):
+@router.get("/judging/plants/{plant_id}/scores", response_model=list[ScoreOut])
+def get_plant_scores(
+    plant_id: str, judge_id: str | None = Query(None), db: Session = DB_DEPENDENCY
+):
     q = select(Score).where(Score.plant_id == plant_id)
     if judge_id:
         q = q.where(Score.judge_id == judge_id)
@@ -390,52 +474,63 @@ def get_plant_scores(plant_id: str, judge_id: Optional[str] = Query(None), db: S
 
 # ── Results / Leaderboard ────────────────────────────────────────
 
+
 @router.get("/judging/events/{event_id}/results")
-def get_event_results(event_id: str, db: Session = Depends(get_db)):
+def get_event_results(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
 
-    plants = db.execute(
-        select(Plant).where(Plant.judging_event_id == event_id)
-    ).scalars().all()
+    plants = (
+        db.execute(select(Plant).where(Plant.judging_event_id == event_id))
+        .scalars()
+        .all()
+    )
 
     results = []
     for plant in plants:
-        scores = db.execute(
-            select(Score).where(Score.plant_id == plant.id)
-        ).scalars().all()
+        scores = (
+            db.execute(select(Score).where(Score.plant_id == plant.id)).scalars().all()
+        )
 
         if not scores:
             continue
 
-        judge_ids = set(s.judge_id for s in scores)
+        judge_ids = {s.judge_id for s in scores}
         total_by_judge = {}
         for s in scores:
             total_by_judge.setdefault(s.judge_id, 0)
             if s.value is not None:
                 criterion = db.execute(
-                    select(JudgingCriterion).where(JudgingCriterion.criteria_id == s.criterion_id)
+                    select(JudgingCriterion).where(
+                        JudgingCriterion.criteria_id == s.criterion_id
+                    )
                 ).scalar_one_or_none()
-                weight = criterion.weighting if criterion and criterion.weighting else 1.0
+                weight = (
+                    criterion.weighting if criterion and criterion.weighting else 1.0
+                )
                 total_by_judge[s.judge_id] += s.value * weight
 
-        avg_total = sum(total_by_judge.values()) / len(total_by_judge) if total_by_judge else 0
+        avg_total = (
+            sum(total_by_judge.values()) / len(total_by_judge) if total_by_judge else 0
+        )
 
         exhibitor = db.get(Exhibitor, plant.exhibitor_id)
         category = db.get(PlantCategory, plant.category_id)
 
-        results.append({
-            "plant_id": plant.id,
-            "plant_name": plant.name,
-            "exhibitor_name": exhibitor.name if exhibitor else None,
-            "category_name": category.name if category else None,
-            "avg_weighted_score": round(avg_total, 2),
-            "num_judges": len(judge_ids),
-            "scores_by_judge": {
-                jid: round(total_by_judge.get(jid, 0), 2) for jid in judge_ids
-            },
-        })
+        results.append(
+            {
+                "plant_id": plant.id,
+                "plant_name": plant.name,
+                "exhibitor_name": exhibitor.name if exhibitor else None,
+                "category_name": category.name if category else None,
+                "avg_weighted_score": round(avg_total, 2),
+                "num_judges": len(judge_ids),
+                "scores_by_judge": {
+                    jid: round(total_by_judge.get(jid, 0), 2) for jid in judge_ids
+                },
+            }
+        )
 
     results.sort(key=lambda r: r["avg_weighted_score"], reverse=True)
 
@@ -449,8 +544,9 @@ def get_event_results(event_id: str, db: Session = Depends(get_db)):
 
 # ── Judges (existing + updated) ─────────────────────────────────
 
+
 @router.post("/judges", response_model=JudgeOut)
-def create_judge(data: JudgeCreate, db: Session = Depends(get_db)):
+def create_judge(data: JudgeCreate, db: Session = DB_DEPENDENCY):
     show = db.get(Show, data.show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
@@ -467,51 +563,52 @@ def create_judge(data: JudgeCreate, db: Session = Depends(get_db)):
     return judge
 
 
-@router.get("/judges", response_model=List[JudgeOut])
+@router.get("/judges", response_model=list[JudgeOut])
 def list_judges(
-        show_id: str = Query(..., description="Show ID"),
-        db: Session = Depends(get_db),
+    show_id: str = Query(..., description="Show ID"),
+    db: Session = DB_DEPENDENCY,
 ):
-    judges = db.execute(
-        select(Judge).where(Judge.show_id == show_id)).scalars().all()
+    judges = db.execute(select(Judge).where(Judge.show_id == show_id)).scalars().all()
     return judges
 
 
 # ── Score Submissions (legacy/simple) ────────────────────────────
 
+
 @router.post("/score-submissions", response_model=ScoreSubmissionOut)
-def create_score_submission(data: ScoreSubmissionCreate,
-                            db: Session = Depends(get_db)):
+def create_score_submission(data: ScoreSubmissionCreate, db: Session = DB_DEPENDENCY):
     show = db.get(Show, data.show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
 
     if getattr(show, "judging_locked", False):
-        raise HTTPException(status_code=409,
-                            detail="Judging is locked for this show.")
+        raise HTTPException(status_code=409, detail="Judging is locked for this show.")
 
     entry = db.get(Entry, data.entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
     if entry.show_id != data.show_id:
-        raise HTTPException(status_code=409,
-                            detail="Entry does not belong to this show.")
+        raise HTTPException(
+            status_code=409, detail="Entry does not belong to this show."
+        )
 
     judge = db.get(Judge, data.judge_id)
     if not judge:
         raise HTTPException(status_code=404, detail="Judge not found")
 
     if judge.show_id != data.show_id:
-        raise HTTPException(status_code=409,
-                            detail="Judge is not registered for this show.")
+        raise HTTPException(
+            status_code=409, detail="Judge is not registered for this show."
+        )
 
     existing = db.execute(
         select(ScoreSubmission).where(
             ScoreSubmission.show_id == data.show_id,
             ScoreSubmission.entry_id == data.entry_id,
             ScoreSubmission.judge_id == data.judge_id,
-        )).scalar_one_or_none()
+        )
+    ).scalar_one_or_none()
 
     if existing:
         raise HTTPException(
@@ -519,8 +616,9 @@ def create_score_submission(data: ScoreSubmissionCreate,
             detail="Score already submitted for this judge and entry.",
         )
 
-    breakdown_json = json.dumps(
-        data.points_breakdown) if data.points_breakdown else None
+    breakdown_json = (
+        json.dumps(data.points_breakdown) if data.points_breakdown else None
+    )
 
     submission = ScoreSubmission(
         show_id=data.show_id,
@@ -545,22 +643,23 @@ def create_score_submission(data: ScoreSubmissionCreate,
     return _score_to_out(submission)
 
 
-@router.get("/entries/{entry_id}/scores",
-            response_model=List[ScoreSubmissionOut])
-def get_entry_scores(entry_id: str, db: Session = Depends(get_db)):
+@router.get("/entries/{entry_id}/scores", response_model=list[ScoreSubmissionOut])
+def get_entry_scores(entry_id: str, db: Session = DB_DEPENDENCY):
     entry = db.get(Entry, entry_id)
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
 
-    scores = db.execute(
-        select(ScoreSubmission).where(
-            ScoreSubmission.entry_id == entry_id)).scalars().all()
+    scores = (
+        db.execute(select(ScoreSubmission).where(ScoreSubmission.entry_id == entry_id))
+        .scalars()
+        .all()
+    )
 
     return [_score_to_out(s) for s in scores]
 
 
 @router.get("/shows/{show_id}/leaderboard")
-def show_leaderboard(show_id: str, db: Session = Depends(get_db)):
+def show_leaderboard(show_id: str, db: Session = DB_DEPENDENCY):
     show = db.get(Show, show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
@@ -580,27 +679,38 @@ def show_leaderboard(show_id: str, db: Session = Depends(get_db)):
     entries = []
     for row in rows:
         entry = db.get(Entry, row.entry_id)
-        entries.append({
-            "entry_id": row.entry_id,
-            "exhibitor_name": entry.exhibitor_name if entry else None,
-            "plant_name": entry.plant_name if entry else None,
-            "avg_score": round(float(row.avg_score), 2),
-            "total_score": int(row.total_score),
-            "num_scores": row.num_scores,
-        })
+        entries.append(
+            {
+                "entry_id": row.entry_id,
+                "exhibitor_name": entry.exhibitor_name if entry else None,
+                "plant_name": entry.plant_name if entry else None,
+                "avg_score": round(float(row.avg_score), 2),
+                "total_score": int(row.total_score),
+                "num_scores": row.num_scores,
+            }
+        )
 
     return {"show_id": show_id, "leaderboard": entries}
 
 
 # ── Judging Widget (plug-in stubs) ─────────────────────────────────
 
+
 @router.get("/judging/criteria")
-def get_judging_criteria(show_id: str = Query(None), db: Session = Depends(get_db)):
+def get_judging_criteria(show_id: str = Query(None), db: Session = DB_DEPENDENCY):
     return {
         "criteria": [
             {"name": "form", "max_points": 35, "description": "Overall form and shape"},
-            {"name": "color", "max_points": 35, "description": "Color quality and intensity"},
-            {"name": "size", "max_points": 30, "description": "Size relative to species norms"},
+            {
+                "name": "color",
+                "max_points": 35,
+                "description": "Color quality and intensity",
+            },
+            {
+                "name": "size",
+                "max_points": 30,
+                "description": "Size relative to species norms",
+            },
         ],
         "total_max_points": 100,
         "note": "Default AOS-style criteria. Configurable per show in future release.",
@@ -608,13 +718,15 @@ def get_judging_criteria(show_id: str = Query(None), db: Session = Depends(get_d
 
 
 @router.post("/judging/evaluate")
-def evaluate_entry(body: dict, db: Session = Depends(get_db)):
+def evaluate_entry(body: dict, db: Session = DB_DEPENDENCY):
     entry_id = body.get("entry_id")
     judge_id = body.get("judge_id")
     scores = body.get("scores", {})
 
     if not entry_id or not judge_id:
-        raise HTTPException(status_code=422, detail="entry_id and judge_id are required")
+        raise HTTPException(
+            status_code=422, detail="entry_id and judge_id are required"
+        )
 
     total = sum(int(v) for v in scores.values() if isinstance(v, (int, float)))
 
@@ -629,14 +741,16 @@ def evaluate_entry(body: dict, db: Session = Depends(get_db)):
 
 
 @router.post("/judging/submit")
-def submit_judging(body: dict, db: Session = Depends(get_db)):
+def submit_judging(body: dict, db: Session = DB_DEPENDENCY):
     show_id = body.get("show_id")
     entry_id = body.get("entry_id")
     judge_id = body.get("judge_id")
     scores = body.get("scores", {})
 
     if not show_id or not entry_id or not judge_id:
-        raise HTTPException(status_code=422, detail="show_id, entry_id, and judge_id are required")
+        raise HTTPException(
+            status_code=422, detail="show_id, entry_id, and judge_id are required"
+        )
 
     total = sum(int(v) for v in scores.values() if isinstance(v, (int, float)))
 
@@ -653,8 +767,13 @@ def submit_judging(body: dict, db: Session = Depends(get_db)):
 
 # ── Judge Assignments (admin) ─────────────────────────────────────
 
-@router.post("/judging/events/{event_id}/assignments", response_model=JudgeAssignmentOut)
-def create_judge_assignment(event_id: str, data: JudgeAssignmentCreate, db: Session = Depends(get_db)):
+
+@router.post(
+    "/judging/events/{event_id}/assignments", response_model=JudgeAssignmentOut
+)
+def create_judge_assignment(
+    event_id: str, data: JudgeAssignmentCreate, db: Session = DB_DEPENDENCY
+):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
@@ -679,49 +798,74 @@ def create_judge_assignment(event_id: str, data: JudgeAssignmentCreate, db: Sess
         db.commit()
     except IntegrityError:
         db.rollback()
-        raise HTTPException(status_code=409, detail="Judge already assigned to this event/category combination.")
+        raise HTTPException(
+            status_code=409,
+            detail="Judge already assigned to this event/category combination.",
+        )
     db.refresh(assignment)
     return assignment
 
 
-@router.get("/judging/events/{event_id}/assignments", response_model=List[JudgeAssignmentOut])
-def list_judge_assignments(event_id: str, db: Session = Depends(get_db)):
-    rows = db.execute(
-        select(JudgeAssignment).where(JudgeAssignment.judging_event_id == event_id)
-    ).scalars().all()
+@router.get(
+    "/judging/events/{event_id}/assignments", response_model=list[JudgeAssignmentOut]
+)
+def list_judge_assignments(event_id: str, db: Session = DB_DEPENDENCY):
+    rows = (
+        db.execute(
+            select(JudgeAssignment).where(JudgeAssignment.judging_event_id == event_id)
+        )
+        .scalars()
+        .all()
+    )
     return rows
 
 
 # ── Admin: Generate Scorecards ────────────────────────────────────
 
-@router.post("/admin/judging_events/{event_id}/generate_scorecards", response_model=List[ScorecardOut])
-def generate_scorecards(event_id: str, db: Session = Depends(get_db)):
+
+@router.post(
+    "/admin/judging_events/{event_id}/generate_scorecards",
+    response_model=list[ScorecardOut],
+)
+def generate_scorecards(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
 
-    assignments = db.execute(
-        select(JudgeAssignment).where(
-            JudgeAssignment.judging_event_id == event_id,
-            JudgeAssignment.active == True,
+    assignments = (
+        db.execute(
+            select(JudgeAssignment).where(
+                JudgeAssignment.judging_event_id == event_id,
+                JudgeAssignment.active == True,
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     if not assignments:
-        raise HTTPException(status_code=409, detail="No active judge assignments for this event.")
+        raise HTTPException(
+            status_code=409, detail="No active judge assignments for this event."
+        )
 
-    plants = db.execute(
-        select(Plant).where(Plant.judging_event_id == event_id)
-    ).scalars().all()
+    plants = (
+        db.execute(select(Plant).where(Plant.judging_event_id == event_id))
+        .scalars()
+        .all()
+    )
 
     if not plants:
-        raise HTTPException(status_code=409, detail="No plants registered for this event.")
+        raise HTTPException(
+            status_code=409, detail="No plants registered for this event."
+        )
 
     created = []
     for assignment in assignments:
         relevant_plants = plants
         if assignment.category_id:
-            relevant_plants = [p for p in plants if p.category_id == assignment.category_id]
+            relevant_plants = [
+                p for p in plants if p.category_id == assignment.category_id
+            ]
 
         for plant in relevant_plants:
             existing = db.execute(
@@ -753,62 +897,80 @@ def generate_scorecards(event_id: str, db: Session = Depends(get_db)):
 
 # ── Judge-facing endpoints ────────────────────────────────────────
 
+
 def _verify_judge_exists(judge_id: str, db: Session) -> Judge:
     judge = db.get(Judge, judge_id)
     if not judge:
-        raise HTTPException(status_code=404, detail="Judge not found. Ensure X-Judge-Id is a valid judge ID.")
+        raise HTTPException(
+            status_code=404,
+            detail="Judge not found. Ensure X-Judge-Id is a valid judge ID.",
+        )
     return judge
 
 
 @router.get("/judge/me", response_model=JudgeOut)
-def judge_me(judge_id: str = Depends(require_judge), db: Session = Depends(get_db)):
+def judge_me(judge_id: str = JUDGE_DEPENDENCY, db: Session = DB_DEPENDENCY):
     return _verify_judge_exists(judge_id, db)
 
 
-@router.get("/judge/events", response_model=List[JudgingEventOut])
-def judge_events(judge_id: str = Depends(require_judge), db: Session = Depends(get_db)):
+@router.get("/judge/events", response_model=list[JudgingEventOut])
+def judge_events(judge_id: str = JUDGE_DEPENDENCY, db: Session = DB_DEPENDENCY):
     _verify_judge_exists(judge_id, db)
 
-    event_ids_q = select(JudgeAssignment.judging_event_id).where(
-        JudgeAssignment.judge_id == judge_id,
-        JudgeAssignment.active == True,
-    ).distinct()
+    event_ids_q = (
+        select(JudgeAssignment.judging_event_id)
+        .where(
+            JudgeAssignment.judge_id == judge_id,
+            JudgeAssignment.active == True,
+        )
+        .distinct()
+    )
 
-    events = db.execute(
-        select(JudgingEvent).where(JudgingEvent.id.in_(event_ids_q))
-    ).scalars().all()
+    events = (
+        db.execute(select(JudgingEvent).where(JudgingEvent.id.in_(event_ids_q)))
+        .scalars()
+        .all()
+    )
     return events
 
 
-@router.get("/judge/events/{judging_event_id}/scorecards", response_model=List[ScorecardOut])
+@router.get(
+    "/judge/events/{judging_event_id}/scorecards", response_model=list[ScorecardOut]
+)
 def judge_event_scorecards(
     judging_event_id: str,
-    judge_id: str = Depends(require_judge),
-    db: Session = Depends(get_db),
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
 ):
     _verify_judge_exists(judge_id, db)
 
-    scorecards = db.execute(
-        select(Scorecard).where(
-            Scorecard.judging_event_id == judging_event_id,
-            Scorecard.judge_id == judge_id,
+    scorecards = (
+        db.execute(
+            select(Scorecard).where(
+                Scorecard.judging_event_id == judging_event_id,
+                Scorecard.judge_id == judge_id,
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return scorecards
 
 
 @router.get("/judge/scorecards/{scorecard_id}", response_model=ScorecardOut)
 def judge_get_scorecard(
     scorecard_id: str,
-    judge_id: str = Depends(require_judge),
-    db: Session = Depends(get_db),
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
 ):
     _verify_judge_exists(judge_id, db)
     scorecard = db.get(Scorecard, scorecard_id)
     if not scorecard:
         raise HTTPException(status_code=404, detail="Scorecard not found")
     if scorecard.judge_id != judge_id:
-        raise HTTPException(status_code=403, detail="Access denied: scorecard belongs to another judge.")
+        raise HTTPException(
+            status_code=403, detail="Access denied: scorecard belongs to another judge."
+        )
     return scorecard
 
 
@@ -816,8 +978,8 @@ def judge_get_scorecard(
 def judge_autosave_scorecard(
     scorecard_id: str,
     data: ScorecardSaveRequest,
-    judge_id: str = Depends(require_judge),
-    db: Session = Depends(get_db),
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
 ):
     _verify_judge_exists(judge_id, db)
 
@@ -825,13 +987,19 @@ def judge_autosave_scorecard(
     if not scorecard:
         raise HTTPException(status_code=404, detail="Scorecard not found")
     if scorecard.judge_id != judge_id:
-        raise HTTPException(status_code=403, detail="Access denied: scorecard belongs to another judge.")
+        raise HTTPException(
+            status_code=403, detail="Access denied: scorecard belongs to another judge."
+        )
     if scorecard.status == "submitted":
-        raise HTTPException(status_code=409, detail="Scorecard already submitted. Cannot edit.")
+        raise HTTPException(
+            status_code=409, detail="Scorecard already submitted. Cannot edit."
+        )
 
     event = db.get(JudgingEvent, scorecard.judging_event_id)
     if event and event.status == "closed":
-        raise HTTPException(status_code=409, detail="Judging event is closed. Edits are frozen.")
+        raise HTTPException(
+            status_code=409, detail="Judging event is closed. Edits are frozen."
+        )
     _ensure_show_unlocked(db, event.show_id if event else None)
 
     changed_scores = []
@@ -846,13 +1014,23 @@ def judge_autosave_scorecard(
         ).scalar_one_or_none()
 
         if existing:
-            old_val = {"value": existing.value, "choice": existing.choice, "value_rank": existing.value_rank}
+            old_val = {
+                "value": existing.value,
+                "choice": existing.choice,
+                "value_rank": existing.value_rank,
+            }
             existing.value = item.value
             existing.choice = item.choice
             existing.value_rank = item.value_rank
-            new_val = {"value": item.value, "choice": item.choice, "value_rank": item.value_rank}
+            new_val = {
+                "value": item.value,
+                "choice": item.choice,
+                "value_rank": item.value_rank,
+            }
             if old_val != new_val:
-                changed_scores.append({"criterion_id": item.criterion_id, "old": old_val, "new": new_val})
+                changed_scores.append(
+                    {"criterion_id": item.criterion_id, "old": old_val, "new": new_val}
+                )
         else:
             score = Score(
                 plant_id=scorecard.plant_id,
@@ -863,16 +1041,28 @@ def judge_autosave_scorecard(
                 value_rank=item.value_rank,
             )
             db.add(score)
-            changed_scores.append({"criterion_id": item.criterion_id, "old": None, "new": {"value": item.value, "choice": item.choice, "value_rank": item.value_rank}})
+            changed_scores.append(
+                {
+                    "criterion_id": item.criterion_id,
+                    "old": None,
+                    "new": {
+                        "value": item.value,
+                        "choice": item.choice,
+                        "value_rank": item.value_rank,
+                    },
+                }
+            )
 
     scorecard.status = "draft"
-    scorecard.updated_at = datetime.utcnow()
+    scorecard.updated_at = _utcnow()
 
     audit = ScorecardAuditLog(
         scorecard_id=scorecard_id,
         actor_judge_id=judge_id,
         action="autosave",
-        diff_json=json.dumps({"scores": changed_scores, "notes": data.notes}) if changed_scores else None,
+        diff_json=json.dumps({"scores": changed_scores, "notes": data.notes})
+        if changed_scores
+        else None,
     )
     db.add(audit)
 
@@ -885,8 +1075,8 @@ def judge_autosave_scorecard(
 def judge_submit_scorecard(
     scorecard_id: str,
     data: ScorecardSubmitRequest,
-    judge_id: str = Depends(require_judge),
-    db: Session = Depends(get_db),
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
 ):
     _verify_judge_exists(judge_id, db)
 
@@ -894,7 +1084,9 @@ def judge_submit_scorecard(
     if not scorecard:
         raise HTTPException(status_code=404, detail="Scorecard not found")
     if scorecard.judge_id != judge_id:
-        raise HTTPException(status_code=403, detail="Access denied: scorecard belongs to another judge.")
+        raise HTTPException(
+            status_code=403, detail="Access denied: scorecard belongs to another judge."
+        )
     if scorecard.status == "submitted":
         raise HTTPException(status_code=409, detail="Scorecard already submitted.")
 
@@ -903,23 +1095,29 @@ def judge_submit_scorecard(
         raise HTTPException(status_code=409, detail="Judging event is closed.")
     _ensure_show_unlocked(db, event.show_id if event else None)
 
-    all_scores = db.execute(
-        select(Score).where(
-            Score.plant_id == scorecard.plant_id,
-            Score.judge_id == judge_id,
+    all_scores = (
+        db.execute(
+            select(Score).where(
+                Score.plant_id == scorecard.plant_id,
+                Score.judge_id == judge_id,
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     total = 0.0
     for s in all_scores:
         if s.value is not None:
             criterion = db.execute(
-                select(JudgingCriterion).where(JudgingCriterion.criteria_id == s.criterion_id)
+                select(JudgingCriterion).where(
+                    JudgingCriterion.criteria_id == s.criterion_id
+                )
             ).scalar_one_or_none()
             weight = criterion.weighting if criterion and criterion.weighting else 1.0
             total += float(s.value) * float(weight)
 
-    now = datetime.utcnow()
+    now = _utcnow()
     scorecard.status = "submitted"
     scorecard.submitted_at = now
     scorecard.total = round(total, 2)
@@ -930,7 +1128,11 @@ def judge_submit_scorecard(
         scorecard_id=scorecard_id,
         actor_judge_id=judge_id,
         action="submit",
-        diff_json=json.dumps({"final_comment": data.final_comment, "total": round(total, 2)}) if data.final_comment else None,
+        diff_json=json.dumps(
+            {"final_comment": data.final_comment, "total": round(total, 2)}
+        )
+        if data.final_comment
+        else None,
     )
     db.add(audit)
 
@@ -939,22 +1141,30 @@ def judge_submit_scorecard(
     return scorecard
 
 
-@router.get("/judge/scorecards/{scorecard_id}/audit", response_model=List[ScorecardAuditOut])
+@router.get(
+    "/judge/scorecards/{scorecard_id}/audit", response_model=list[ScorecardAuditOut]
+)
 def judge_scorecard_audit(
     scorecard_id: str,
-    judge_id: str = Depends(require_judge),
-    db: Session = Depends(get_db),
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
 ):
     _verify_judge_exists(judge_id, db)
     scorecard = db.get(Scorecard, scorecard_id)
     if not scorecard:
         raise HTTPException(status_code=404, detail="Scorecard not found")
     if scorecard.judge_id != judge_id:
-        raise HTTPException(status_code=403, detail="Access denied: scorecard belongs to another judge.")
+        raise HTTPException(
+            status_code=403, detail="Access denied: scorecard belongs to another judge."
+        )
 
-    logs = db.execute(
-        select(ScorecardAuditLog)
-        .where(ScorecardAuditLog.scorecard_id == scorecard_id)
-        .order_by(ScorecardAuditLog.created_at.desc())
-    ).scalars().all()
+    logs = (
+        db.execute(
+            select(ScorecardAuditLog)
+            .where(ScorecardAuditLog.scorecard_id == scorecard_id)
+            .order_by(ScorecardAuditLog.created_at.desc())
+        )
+        .scalars()
+        .all()
+    )
     return logs

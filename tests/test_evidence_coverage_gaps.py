@@ -118,6 +118,12 @@ class FakeKGCursor:
             covered = self._covered(params[0], params[1])
             ids = sorted(t for t in self.kg.taxa if t not in covered)[: params[2]]
             self._rows = [{"source_pk": t} for t in ids]
+        elif sql == ecg.SQL_DOMAIN_LACKING_PAGE:
+            covered = self._covered(params[0], params[1])
+            ids = sorted(
+                t for t in self.kg.taxa if t not in covered and t > params[2]
+            )[: params[3]]
+            self._rows = [{"source_pk": t} for t in ids]
         elif sql == ecg.SQL_SOURCE_DOMAIN_TAXA:
             self._rows = [{"n": len(self._held(params[0], params[1]))}]
         elif sql in (ecg.SQL_PARTIAL_COUNT, ecg.SQL_PARTIAL_EXAMPLES):
@@ -435,3 +441,82 @@ def test_sql_against_postgres_matches_the_fake():
         assert EvidenceCoverageGapSource(db_execute).collect(now=NOW) == source_for(
             kg
         ).collect(now=NOW)
+
+
+def test_domain_lacking_taxa_pages_read_only_by_keyset_past_covered_taxa():
+    kg = sample_kg()
+    kg.taxa = [*kg.taxa, "105", "106", "107"]
+    source = source_for(kg)
+    # 101/102 hold Yong Gee nomenclature evidence; everything else lacks it.
+    assert source.domain_lacking_taxa("nomenclature", after_source_pk=None, limit=2) == [
+        "103",
+        "104",
+    ]
+    kg.statements.clear()
+    assert source.domain_lacking_taxa(
+        "nomenclature", after_source_pk="104", limit=10
+    ) == ["105", "106", "107"]
+    assert kg.statements[0] == "SET TRANSACTION READ ONLY"
+    assert kg.statements[1] == f"SET LOCAL statement_timeout = '{ecg.STATEMENT_TIMEOUT}'"
+    assert kg.statements[2] == ecg.SQL_DOMAIN_LACKING_PAGE
+    assert len(kg.statements) == 3
+    # The same lacking-taxa predicate as the gap examples, plus the keyset bound.
+    sql = ecg.SQL_DOMAIN_LACKING_PAGE
+    assert ecg._COVERED_TAXA in sql and ecg._TAXON in sql
+    assert sql.index("t.source_pk > %s") < sql.index("ORDER BY t.source_pk LIMIT %s")
+    # Literature counts its relation edge: 103 is covered there.
+    assert "103" not in source.domain_lacking_taxa(
+        "literature", after_source_pk=None, limit=10
+    )
+
+
+def test_domain_lacking_taxa_param_order_and_limit_clamp():
+    calls: list[tuple[str, tuple]] = []
+
+    class Cursor:
+        def execute(self, sql, params=()):
+            calls.append((sql, params))
+
+        def fetchall(self):
+            return [{"source_pk": "10001"}, {"source_pk": None}]
+
+    source = EvidenceCoverageGapSource(lambda callback: callback(Cursor()))
+    assert source.domain_lacking_taxa(
+        "literature", after_source_pk="10000", limit=10_000
+    ) == ["10001"]
+    sql, params = calls[-1]
+    assert sql == ecg.SQL_DOMAIN_LACKING_PAGE
+    literature = next(d for d in ecg.EVIDENCE_DOMAINS if d.name == "literature")
+    assert params == (
+        list(literature.evidence_types),
+        ["documented_by"],
+        "10000",
+        ecg.MAX_LACKING_PAGE,
+    )
+    source.domain_lacking_taxa("literature", after_source_pk=None, limit=0)
+    assert calls[-1][1][2:] == ("", 1)
+
+
+def test_domain_lacking_taxa_never_pages_locality_gated_and_fails_closed():
+    kg = sample_kg()
+    source = source_for(kg)
+    assert source.domain_lacking_taxa("distribution", after_source_pk=None, limit=5) == []
+    assert kg.statements == []  # no query at all for a locality-gated domain
+    with pytest.raises(ValueError, match="unknown evidence domain"):
+        source.domain_lacking_taxa("habitat", after_source_pk=None, limit=5)
+
+    def broken(_callback):
+        raise RuntimeError("connection reset")
+
+    with pytest.raises(EvidenceCoverageUnavailable, match="read failed"):
+        EvidenceCoverageGapSource(broken).domain_lacking_taxa(
+            "nomenclature", after_source_pk="1", limit=5
+        )
+    with pytest.raises(EvidenceCoverageUnavailable, match="DATABASE_URL"):
+        EvidenceCoverageGapSource(
+            None, unavailable_reason="DATABASE_URL is not configured"
+        ).domain_lacking_taxa("nomenclature", after_source_pk="1", limit=5)
+    with pytest.raises(EvidenceCoverageUnavailable, match="no knowledge-graph"):
+        EvidenceCoverageGapSource(lambda cb: cb(None)).domain_lacking_taxa(
+            "nomenclature", after_source_pk="1", limit=5
+        )

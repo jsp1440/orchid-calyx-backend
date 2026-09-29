@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 from uuid import UUID
@@ -36,8 +38,38 @@ class ResearchWorkspaceError(Exception):
     extra: dict[str, Any] | None = None
 
 
+_CANONICAL_POSITIVE_INT = re.compile(r"[1-9][0-9]{0,18}")
+
+
+def _runtime_identifier(identifier: str) -> int | None:
+    """Parse a canonical decimal runtime-store identity; anything else cannot exist."""
+    if not isinstance(identifier, str) or not _CANONICAL_POSITIVE_INT.fullmatch(identifier):
+        return None
+    return int(identifier)
+
+
+def _serving_aggregate_repository() -> Any:
+    from app.evidence_aggregation.lookup import serving_repository
+
+    return serving_repository()
+
+
+def _serving_candidate_repository() -> Any:
+    from app.candidate_knowledge.lookup import serving_repository
+
+    return serving_repository()
+
+
 class CanonicalReferenceValidator:
-    """Validate identifiers against the canonical owning Calyx stores."""
+    """Validate identifiers against the canonical owning Calyx stores.
+
+    Taxa and documents are relational rows. Candidates and evidence aggregates are
+    owned by the BUILD-086 runtime repositories (JSON snapshots in
+    ``oc_candidate_knowledge.runtime_repository_snapshots``); they are resolved through
+    the same repository instances the candidate-knowledge and evidence-aggregation
+    routes serve from, never through the unwritten 086a/086b relational tables.
+    Any store failure fails closed with ``REFERENCE_VALIDATION_UNAVAILABLE``.
+    """
 
     QUERIES: ClassVar[dict[str, str]] = {
         "taxon": """
@@ -47,30 +79,71 @@ class CanonicalReferenceValidator:
         "document": """
             SELECT 1 FROM oc_intake.documents WHERE id::text = :identifier LIMIT 1
         """,
-        "CANDIDATE": """
-            SELECT 1 FROM oc_candidate_knowledge.candidates
-            WHERE candidate_id::text = :identifier AND active LIMIT 1
-        """,
-        "AGGREGATE": """
-            SELECT 1 FROM oc_candidate_knowledge.aggregate_assertions
-            WHERE aggregate_id::text = :identifier LIMIT 1
-        """,
     }
 
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        aggregate_repository: Callable[[], Any] | None = None,
+        candidate_repository: Callable[[], Any] | None = None,
+    ):
         self.db = db
+        self._aggregate_repository = aggregate_repository or _serving_aggregate_repository
+        self._candidate_repository = candidate_repository or _serving_candidate_repository
 
     def require(self, kind: str, identifier: str) -> None:
+        if kind == "AGGREGATE":
+            exists = self._aggregate_exists(identifier)
+        elif kind == "CANDIDATE":
+            exists = self._candidate_exists(identifier)
+        else:
+            exists = self._relational_exists(kind, identifier)
+        if not exists:
+            raise ResearchWorkspaceError(f"{kind.upper()}_NOT_FOUND", 404)
+
+    def _relational_exists(self, kind: str, identifier: str) -> bool:
         try:
-            exists = self.db.execute(
-                text(self.QUERIES[kind]), {"identifier": identifier}
-            ).first()
+            return bool(
+                self.db.execute(
+                    text(self.QUERIES[kind]), {"identifier": identifier}
+                ).first()
+            )
         except SQLAlchemyError as exc:
             raise ResearchWorkspaceError(
                 "REFERENCE_VALIDATION_UNAVAILABLE", 503
             ) from exc
-        if not exists:
-            raise ResearchWorkspaceError(f"{kind.upper()}_NOT_FOUND", 404)
+
+    def _runtime_repository(self, provider: Callable[[], Any]) -> Any:
+        try:
+            repository = provider()
+        except Exception as exc:  # unavailable is never valid
+            raise ResearchWorkspaceError(
+                "REFERENCE_VALIDATION_UNAVAILABLE", 503
+            ) from exc
+        if repository is None:
+            raise ResearchWorkspaceError("REFERENCE_VALIDATION_UNAVAILABLE", 503)
+        return repository
+
+    def _aggregate_exists(self, identifier: str) -> bool:
+        repository = self._runtime_repository(self._aggregate_repository)
+        aggregate_id = _runtime_identifier(identifier)
+        if aggregate_id is None:
+            return False
+        # Same semantics as GET /api/evidence-aggregation/aggregates/{id}: only an
+        # aggregate with a current active version exists; superseded or withdrawn
+        # aggregates answer 404 there and are rejected here.
+        return repository.current_aggregate(aggregate_id) is not None
+
+    def _candidate_exists(self, identifier: str) -> bool:
+        repository = self._runtime_repository(self._candidate_repository)
+        candidate_id = _runtime_identifier(identifier)
+        if candidate_id is None:
+            return False
+        candidate = repository.candidate_by_id(candidate_id)
+        # The candidate route resolves any identity; evidence links additionally
+        # require the candidate to still be active (preserving the prior contract),
+        # so superseded candidate versions cannot be newly attached as evidence.
+        return candidate is not None and bool(candidate.get("active"))
 
 
 class ResearchWorkspaceService:
