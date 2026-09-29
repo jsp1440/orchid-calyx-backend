@@ -2,6 +2,7 @@ import os
 from typing import Any
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response as StarletteResponse
@@ -23,6 +24,10 @@ from app.document_import.routes import router as document_import_router
 from app.document_intelligence.routes import router as document_intelligence_router
 from app.engineering_memory.routes import router as engineering_memory_router
 from app.evidence_aggregation.routes import router as evidence_aggregation_router
+from app.evidence_feedback.routes import (
+    review_router as evidence_feedback_review_router,
+)
+from app.evidence_feedback.routes import router as evidence_feedback_router
 from app.evidence_retrieval.routes import router as evidence_retrieval_router
 from app.executive_telemetry.routes import router as executive_telemetry_router
 from app.field_hypotheses.routes import (
@@ -67,7 +72,9 @@ from app.routers import (
     health,
     judging,
     reference_docs,
+    show_day,
     shows,
+    tiles,
     volunteer_ops,
 )
 from app.routers.health import (
@@ -90,6 +97,7 @@ from app.semantic.routers import router as semantic_router
 from app.semantic_index.routes import router as semantic_index_router
 from app.source_registry.routes import router as source_registry_router
 from app.species_dossier.routes import router as species_dossier_router
+from app.validation_errors import request_validation_exception_handler
 from app.vision_lexicon.routes import router as vision_lexicon_router
 from runtime.autonomous_runner import (
     enqueue_default_jobs,
@@ -113,6 +121,10 @@ from runtime.runtime_engine import RuntimeEngine
 from runtime.scheduler import CalyxHeartbeat
 
 app = FastAPI()
+
+# Malformed request input (a lone surrogate, NaN) is a 422, never a 500: the
+# default handler could not render the input it echoed.
+app.add_exception_handler(RequestValidationError, request_validation_exception_handler)
 
 
 @app.exception_handler(ConversationStoreUnavailable)
@@ -599,6 +611,8 @@ app.include_router(entries.router)
 app.include_router(feedback.router)
 app.include_router(harvesters.router, dependencies=[Depends(add_mission_control_cors_headers)])
 app.include_router(judging.router)
+app.include_router(show_day.router)
+app.include_router(tiles.router)
 app.include_router(reference_docs.router)
 app.include_router(intake_router)
 app.include_router(semantic_router)
@@ -610,6 +624,8 @@ app.include_router(interaction_discovery_router)
 app.include_router(evidence_retrieval_router)
 app.include_router(candidate_knowledge_router)
 app.include_router(evidence_aggregation_router)
+app.include_router(evidence_feedback_router)
+app.include_router(evidence_feedback_review_router)
 app.include_router(design_intelligence_router)
 app.include_router(design_planning_router)
 app.include_router(implementation_planning_router)

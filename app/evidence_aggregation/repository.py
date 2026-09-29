@@ -1,7 +1,9 @@
 from __future__ import annotations
+
 from copy import deepcopy
-from datetime import datetime,timezone
-from typing import Any
+from datetime import datetime, timezone
+
+
 def now(): return datetime.now(timezone.utc).isoformat()
 
 class MemoryAggregateRepository:

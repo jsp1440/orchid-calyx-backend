@@ -1,28 +1,59 @@
 import os
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from typing import Annotated
+
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.models import SystemReferenceDocument
-from app.schemas import ReferenceDocumentOut, ReferenceDocumentListOut, ReferenceDocumentUpdate
-from app.storage import compute_sha256, save_file, read_file, file_exists
-from app.species_exhibit.routes import router as species_exhibit_router
 from app.routers.matrix_identification import router as matrix_identification_router
-from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
-from app.routers.matrix_identification_registry_persistence import router as matrix_identification_registry_persistence_router
-from app.routers.matrix_identification_session import router as matrix_identification_session_router
-from app.routers.matrix_identification_explanation import router as matrix_identification_explanation_router
-from app.routers.matrix_identification_vision import router as matrix_identification_vision_router
-from app.routers.matrix_identification_report import router as matrix_identification_report_router
-from app.routers.matrix_identification_durability_readiness import router as matrix_identification_durability_readiness_router
-from app.routers.vision_activation_preflight import router as vision_activation_preflight_router
+from app.routers.matrix_identification_durability_readiness import (
+    router as matrix_identification_durability_readiness_router,
+)
+from app.routers.matrix_identification_explanation import (
+    router as matrix_identification_explanation_router,
+)
+from app.routers.matrix_identification_registry import (
+    router as matrix_identification_registry_router,
+)
+from app.routers.matrix_identification_registry_persistence import (
+    router as matrix_identification_registry_persistence_router,
+)
+from app.routers.matrix_identification_report import (
+    router as matrix_identification_report_router,
+)
+from app.routers.matrix_identification_session import (
+    router as matrix_identification_session_router,
+)
+from app.routers.matrix_identification_vision import (
+    router as matrix_identification_vision_router,
+)
+from app.routers.vision_activation_preflight import (
+    router as vision_activation_preflight_router,
+)
+from app.schemas import (
+    ReferenceDocumentListOut,
+    ReferenceDocumentOut,
+    ReferenceDocumentUpdate,
+)
+from app.security import credentials_match
+from app.species_exhibit.routes import router as species_exhibit_router
+from app.storage import compute_sha256, file_exists, read_file, save_file
 
 router = APIRouter()
 
-ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
-CALYX_API_KEY = os.getenv("CALYX_API_KEY", "")
+ADMIN_KEY_HEADER = "X-Orchid-Admin-Key"
 
 VALID_DOCUMENT_TYPES = [
     "AOS_JUDGING_SCORE_SHEET",
@@ -33,21 +64,53 @@ VALID_DOCUMENT_TYPES = [
 ]
 
 
-def require_admin(api_key: str = None):
-    effective_key = ADMIN_API_KEY or CALYX_API_KEY
+def _effective_admin_key() -> str:
+    """The configured reference-docs admin key, read per request (never cached)."""
+    return os.getenv("ADMIN_API_KEY", "") or os.getenv("CALYX_API_KEY", "")
+
+
+def require_admin(
+    request: Request,
+    admin_key: Annotated[str | None, Header(alias=ADMIN_KEY_HEADER)] = None,
+) -> None:
+    """Reference-docs admin gate: the admin key travels ONLY in the ``X-Orchid-Admin-Key`` header.
+
+    The key used to be accepted as an ``api_key`` form field (upload) or query
+    parameter (PATCH). A query parameter lands in URLs, proxy and access logs,
+    and no consumer used either channel, so both were removed; a request that
+    still puts ``api_key`` in the query string is refused with a 400 that says
+    where the key belongs. Comparison is constant-time on UTF-8 bytes, and an
+    unset key still refuses every request (503) rather than authorising it.
+    """
+    if "api_key" in request.query_params:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "The admin key is no longer accepted as a query parameter; "
+                f"send it in the {ADMIN_KEY_HEADER} header."
+            ),
+        )
+    effective_key = _effective_admin_key()
     if not effective_key:
         raise HTTPException(status_code=503, detail="Admin API key not configured")
-    if api_key != effective_key:
-        raise HTTPException(status_code=403, detail="Admin access required")
+    if not admin_key or not credentials_match(admin_key, effective_key):
+        raise HTTPException(
+            status_code=403,
+            detail=f"Admin access required: send the admin key in the {ADMIN_KEY_HEADER} header.",
+        )
+
+
+DbSession = Annotated[Session, Depends(get_db)]
+AdminGate = Annotated[None, Depends(require_admin)]
 
 
 @router.get("/reference-docs", response_model=list[ReferenceDocumentListOut])
-def list_reference_docs(db: Session = Depends(get_db)):
+def list_reference_docs(db: DbSession):
     return db.execute(select(SystemReferenceDocument).where(SystemReferenceDocument.is_active == True)).scalars().all()
 
 
 @router.get("/reference-docs/{doc_id}", response_model=ReferenceDocumentOut)
-def get_reference_doc(doc_id: str, db: Session = Depends(get_db)):
+def get_reference_doc(doc_id: str, db: DbSession):
     doc = db.get(SystemReferenceDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -55,7 +118,7 @@ def get_reference_doc(doc_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/reference-docs/{doc_id}/download")
-def download_reference_doc(doc_id: str, db: Session = Depends(get_db)):
+def download_reference_doc(doc_id: str, db: DbSession):
     doc = db.get(SystemReferenceDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
@@ -68,11 +131,16 @@ def download_reference_doc(doc_id: str, db: Session = Depends(get_db)):
 
 @router.post("/admin/reference-docs", response_model=ReferenceDocumentOut)
 def upload_reference_doc(
-    document_type: str = Form(...), title: str = Form(...), version_label: str = Form(...),
-    source_org: str = Form("AOS"), source_url: str = Form(None), notes: str = Form(None),
-    file: UploadFile = File(...), api_key: str = Form(None), db: Session = Depends(get_db)
+    document_type: Annotated[str, Form()],
+    title: Annotated[str, Form()],
+    version_label: Annotated[str, Form()],
+    file: Annotated[UploadFile, File()],
+    _admin: AdminGate,
+    db: DbSession,
+    source_org: Annotated[str, Form()] = "AOS",
+    source_url: Annotated[str | None, Form()] = None,
+    notes: Annotated[str | None, Form()] = None,
 ):
-    require_admin(api_key)
     if document_type not in VALID_DOCUMENT_TYPES:
         raise HTTPException(status_code=400, detail=f"Invalid document_type. Must be one of: {VALID_DOCUMENT_TYPES}")
     if not file.content_type or "pdf" not in file.content_type.lower():
@@ -97,8 +165,9 @@ def upload_reference_doc(
 
 
 @router.patch("/admin/reference-docs/{doc_id}", response_model=ReferenceDocumentOut)
-def update_reference_doc(doc_id: str, update: ReferenceDocumentUpdate, api_key: str = None, db: Session = Depends(get_db)):
-    require_admin(api_key)
+def update_reference_doc(
+    doc_id: str, update: ReferenceDocumentUpdate, _admin: AdminGate, db: DbSession
+):
     doc = db.get(SystemReferenceDocument, doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")

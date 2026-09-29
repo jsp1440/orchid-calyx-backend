@@ -47,6 +47,10 @@ class CaseStatus(str, Enum):
     SUBMITTED = "submitted"
     PENDING_REVIEW = "pending_review"
     RESOLVED = "resolved"
+    # The owner routed the case to governed (scientific/taxonomic) review. It
+    # is not resolved: any correction stays outside code until that review,
+    # which is owner-gated, concludes.
+    GOVERNED_REVIEW_REQUIRED = "governed_review_required"
 
 
 class ReviewLane(str, Enum):

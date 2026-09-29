@@ -1,0 +1,99 @@
+{
+  "schema": "oc.decision-fabric.v1",
+  "purpose": "Canonical provider-neutral contract for typed probabilistic judgments. Models interpret meaning; deterministic code validates fields, applies thresholds, routes, counts, ranks and records provenance.",
+  "decision_types": ["choice", "score", "boolean", "extraction"],
+  "escape_answers": ["unknown", "unclear", "not_stated", "other"],
+  "required_spec_fields": ["id", "version", "questions", "accept_confidence", "escalate_confidence", "provider_policy"],
+  "required_question_fields": ["id", "type", "instructions", "allowed_source_fields", "unknown_allowed"],
+  "required_result_fields": ["spec_id", "spec_version", "provider", "provider_model", "answers", "latency_ms", "input_tokens", "cost_usd"],
+  "required_answer_fields": ["question_id", "answer", "confidence", "probabilities", "source_fields_used"],
+  "routing": {
+    "accepted": "all required answers satisfy accept_confidence",
+    "escalate": "at least one required answer is below accept_confidence but at or above escalate_confidence and a stronger configured provider is available",
+    "review": "otherwise"
+  },
+  "invariants": {
+    "provider_neutral": true,
+    "jev_optional": true,
+    "threshold_changes_require_new_provider_call": false,
+    "source_field_contract_enforced": true,
+    "probabilities_preserved": true,
+    "model_version_logged": true,
+    "unknown_escape_supported": true,
+    "deterministic_routing": true,
+    "scientific_truth_automatic_promotion": false
+  },
+  "reference_specs": {
+    "literature_triage": {
+      "id": "oc.literature-triage",
+      "version": "1.0.0",
+      "questions": [
+        {
+          "id": "orchid_relevance",
+          "type": "choice",
+          "instructions": "Does the supplied title/abstract materially concern Orchidaceae?",
+          "allowed_source_fields": ["title", "abstract", "keywords"],
+          "unknown_allowed": true,
+          "options": ["direct", "indirect", "none", "unknown"]
+        },
+        {
+          "id": "primary_data",
+          "type": "choice",
+          "instructions": "Does the supplied text explicitly report primary observations, experiments or measurements?",
+          "allowed_source_fields": ["title", "abstract"],
+          "unknown_allowed": true,
+          "options": ["yes", "no", "unclear"]
+        },
+        {
+          "id": "topic",
+          "type": "choice",
+          "instructions": "Classify the paper by its primary Orchid Continuum scientific destination.",
+          "allowed_source_fields": ["title", "abstract", "keywords"],
+          "unknown_allowed": true,
+          "options": ["taxonomy", "pollination", "mycorrhiza", "conservation", "ecology", "genetics", "morphology", "horticulture", "methods", "other", "unknown"]
+        },
+        {
+          "id": "full_text_warranted",
+          "type": "boolean",
+          "instructions": "Would full-text retrieval likely add evidence needed for Orchid Continuum rather than only prose detail?",
+          "allowed_source_fields": ["title", "abstract", "keywords"],
+          "unknown_allowed": true
+        }
+      ],
+      "accept_confidence": 0.80,
+      "escalate_confidence": 0.55,
+      "provider_policy": ["deterministic-cache", "fast-classifier", "strong-reasoner", "human-review"]
+    },
+    "autonomy_gate": {
+      "id": "oc.autonomy-gate",
+      "version": "1.0.0",
+      "questions": [
+        {
+          "id": "blocker_type",
+          "type": "choice",
+          "instructions": "Classify the blocker using only supplied machine state and bounded task metadata.",
+          "allowed_source_fields": ["ci_status", "mergeability", "changed_files", "task_metadata", "lease_state"],
+          "unknown_allowed": true,
+          "options": ["none", "test_failure", "contract_failure", "dependency", "authorization", "spend", "deployment", "unknown"]
+        },
+        {
+          "id": "safe_to_merge",
+          "type": "boolean",
+          "instructions": "Given the supplied machine-verifiable state, is this change inside the configured safe autonomous merge boundary?",
+          "allowed_source_fields": ["ci_status", "mergeability", "changed_files", "task_metadata"],
+          "unknown_allowed": true
+        },
+        {
+          "id": "acceptance_met",
+          "type": "boolean",
+          "instructions": "Do supplied test/evidence receipts satisfy the task's declared acceptance criteria?",
+          "allowed_source_fields": ["ci_status", "acceptance_receipts", "task_metadata"],
+          "unknown_allowed": true
+        }
+      ],
+      "accept_confidence": 0.90,
+      "escalate_confidence": 0.70,
+      "provider_policy": ["deterministic-checks", "reasoning-provider", "human-gate"]
+    }
+  }
+}
