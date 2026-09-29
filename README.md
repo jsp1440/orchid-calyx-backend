@@ -9,6 +9,29 @@ For Replit Deployments:
 uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-3000}
 ```
 
+### Show Day profile
+
+To run only orchid show operations (shows, entries, judging, QR tags, results,
+volunteers), without the scientific and agent-automation layers:
+
+```bash
+uvicorn app.show_app:app --host 0.0.0.0 --port ${PORT:-3000}
+```
+
+Every `/api` route still needs `X-API-Key`. For a local rehearsal on SQLite, set
+`CALYX_SHOW_CREATE_TABLES=1` to create the show tables on startup. Set
+`CALYX_TAG_BASE_URL` to make tag QR codes link to a scan page (for example
+`https://<frontend>/scan`); otherwise they encode the bare token. The show
+endpoints added in this profile are:
+
+- `GET /api/judging/events/{event_id}/tags`: a printable HTML sheet of entry tags, grouped by class (`?category_id=` for one class).
+- `GET /api/judging/plants/{plant_id}/qr.svg`: one plant's QR code.
+- `GET /api/judging/scan/{qr_token}`: resolves a scanned tag to its plant, class and scorecard progress.
+- `GET /api/judging/events/{event_id}/class-results`: placements per class, from submitted scorecards only.
+
+Blind judging events withhold exhibitor names from tags, scans and results.
+Setting a show's `judging_locked` freezes all score writes.
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
