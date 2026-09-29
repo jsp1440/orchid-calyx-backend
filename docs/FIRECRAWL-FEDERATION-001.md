@@ -59,3 +59,17 @@ The mapper emits a source profile containing:
 - raw discovery metadata needed for provenance
 
 The profile is reconnaissance evidence. It must be reviewed before it is promoted into a durable production connector configuration.
+
+## Pilot command
+
+Once `FIRECRAWL_API_KEY` is present in the runtime environment, run:
+
+```bash
+python scripts/oc_firecrawl_federation_pilot.py --source all --limit 50 --output /tmp/oc-federation-phragmipedium.json
+```
+
+The pilot intentionally requests at most 50 URLs per source by default and uses
+`Phragmipedium` as the discovery search term. Review the resulting JSON before
+building or changing any production connector.
+
+Do **not** use the pilot output as scientific publication evidence by itself.
