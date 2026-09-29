@@ -93,7 +93,6 @@ def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
     body = {
         "model": model,
         "max_tokens": 8192,
-        "temperature": 0,
         "system": system,
         "messages": [{"role": "user", "content": json.dumps(user_payload)}],
     }
