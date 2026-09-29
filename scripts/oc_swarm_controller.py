@@ -299,9 +299,14 @@ def _provider_free_snapshot(snapshot: dict) -> dict:
     issues = []
     for original in snapshot.get("issues") or []:
         issue = dict(original)
+        routing = route_task(issue)
+        held_corpus_audit = (
+            "firecrawl-acquisition" in routing.blocking_provider_capabilities
+        )
         if (
             str(issue.get("state") or "").upper() == "OPEN"
             and not is_lane_executable(issue)
+            and not held_corpus_audit
         ):
             labels = []
             for label in issue.get("labels") or []:

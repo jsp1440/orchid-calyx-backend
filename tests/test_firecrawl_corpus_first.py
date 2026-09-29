@@ -21,7 +21,7 @@ from app.literature_extraction.firecrawl_provider import (
 )
 from app.literature_extraction.repository import LiteratureResultRepository
 from app.literature_extraction.source_binding import CanonicalLiteratureSourceBinding
-from tests.test_firecrawl_matrix_acquisition import TEXT, URL, taxonomy
+from tests.test_firecrawl_matrix_acquisition import CONFIG, TEXT, URL, taxonomy, transport
 
 
 def services(tmp_path):
@@ -89,6 +89,26 @@ async def test_sufficient_held_corpus_uses_zero_provider_calls(tmp_path):
     assert metrics["zero_credit_reuse"] is True
     assert metrics["new_taxa_covered"] == metrics["new_characters_extracted"] == 1
     assert metrics["duplicate_sources_avoided"] == 0
+
+
+@pytest.mark.asyncio
+async def test_partial_coverage_refuses_completion_after_transport(tmp_path):
+    provider = FirecrawlProvider(CONFIG, fixture_transport=transport)
+    with pytest.raises(AcquisitionBlocked, match="MORPHOLOGY_COVERAGE_INCOMPLETE"):
+        await acquire_matrix_sources(
+            **services(tmp_path),
+            provider=provider,
+            corpus_audit=lambda: {
+                "available": True,
+                "complete": True,
+                "documents": [],
+                "identities": [],
+            },
+            load_held_source=lambda document: None,
+            target_names=("Paphiopedilum delenatii",),
+            required_predicates=("leaf_length", "leaf_width"),
+        )
+    assert provider.calls > 0
 
 
 @pytest.mark.asyncio

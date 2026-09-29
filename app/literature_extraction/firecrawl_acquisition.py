@@ -414,6 +414,12 @@ async def acquire_matrix_sources(
     metrics["remaining_gaps"] = missing_morphology_requirements(
         taxonomy, genus, target_names, required_predicates, aggregation_service.repo
     )
+    if required_predicates and metrics["remaining_gaps"]:
+        # A successful transport is not successful work when the requested
+        # taxon/predicate scope is still incomplete. Refuse settlement so the
+        # durable worker releases/parks the claim instead of permanently
+        # duplicate-suppressing an unresolved gap.
+        raise AcquisitionBlocked("MORPHOLOGY_COVERAGE_INCOMPLETE")
     credit_receipt = provider.credit_receipt()
     reserved = credit_receipt["reserved"]
     remaining_ids = {gap["taxon_id"] for gap in metrics["remaining_gaps"]}

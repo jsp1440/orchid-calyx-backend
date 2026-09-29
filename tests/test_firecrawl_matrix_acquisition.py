@@ -278,6 +278,16 @@ def test_acquisition_is_not_misrouted_to_a_coding_provider():
     assert plan["provider_matrix"] == {"include": []}
     assert plan["acquisition_matrix"]["include"][0]["issue_number"] == 123
 
+    # NO-API mode still admits the deterministic held-corpus audit. The
+    # acquisition boundary remains disabled; only external calls are gated.
+    no_api_plan = build_swarm_plan(
+        {"issues": [issue], "pull_requests": []},
+        worker_slots=1,
+        provider_free_only=True,
+    )
+    assert no_api_plan["provider_matrix"] == {"include": []}
+    assert no_api_plan["acquisition_matrix"]["include"][0]["issue_number"] == 123
+
 
 @pytest.mark.asyncio
 async def test_canonical_worker_rechecks_real_claim_contract_before_acquisition(
