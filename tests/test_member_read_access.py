@@ -48,6 +48,7 @@ EXPECTED_MEMBER_READS = {
 }
 # Every other GET on the scoped prefixes is owner-only (owner decision "Narrow the scope").
 EXPECTED_OWNER_ONLY_READS = {
+    ("GET", "/api/literature-extraction/acquisition/coverage"),
     ("GET", "/api/candidate-knowledge/runs/{run_id}"),
     ("GET", "/api/candidate-knowledge/runs"),
     ("GET", "/api/candidate-knowledge/runs/{run_id}/items"),

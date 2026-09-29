@@ -146,13 +146,16 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
     # workflow can hand provider-free work to the deterministic worker job and
     # provider-dependent work to the governed completion lane independently.
     provider_free = [w for w in confirmed if w.get("provider_free")]
-    provider = [w for w in confirmed if not w.get("provider_free")]
+    acquisition = [w for w in confirmed if w.get("acquisition")]
+    provider = [w for w in confirmed if not w.get("provider_free") and not w.get("acquisition")]
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),
             "matrix": {"include": confirmed}, "confirmed": confirmed,
             "provider_free_matrix": {"include": provider_free},
             "provider_matrix": {"include": provider},
+            "acquisition_matrix": {"include": acquisition},
+            "acquisition_launch_count": len(acquisition),
             "provider_free_launch_count": len(provider_free),
             "provider_launch_count": len(provider),
             "skipped": skipped, "errors": errors}
@@ -161,7 +164,7 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
 def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                       comment_id, reason, blocker_fingerprint=None,
                       denied_provider=None, providers=None, shared_budget=None,
-                      call=github):
+                      provider_called=False, call=github):
     """Settle a confirmed claim after denial, at the disposition the denial earns.
 
     Releasing the lease is not in question — a denied worker never keeps one.
@@ -216,7 +219,7 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                "blocker_fingerprint": (blocker_fingerprint
                                        if budget_denial and route.records_blocker else None),
                "blocker": durable_blocker if route.records_blocker else None,
-               "state": route.target_label, "provider_called": False,
+               "state": route.target_label, "provider_called": provider_called,
                "route": route.to_record()}
     if route.requeues:
         # No OC-BLOCKED-ON line: this task is not blocked on anything. Writing
@@ -283,6 +286,8 @@ def main():
                            run_id=args.run_id, run_attempt=args.run_attempt)
     with open(args.github_output, "a", encoding="utf-8") as handle:
         handle.write(f"launch_count={result['launch_count']}\n")
+        handle.write("acquisition_matrix=" + json.dumps(result["acquisition_matrix"], separators=(",", ":")) + "\n")
+        handle.write(f"acquisition_launch_count={result['acquisition_launch_count']}\n")
         handle.write("matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n")
         handle.write(f"provider_free_launch_count={result['provider_free_launch_count']}\n")
         handle.write(f"provider_launch_count={result['provider_launch_count']}\n")

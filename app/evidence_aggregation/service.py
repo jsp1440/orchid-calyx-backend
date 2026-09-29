@@ -1,10 +1,19 @@
 from __future__ import annotations
-import hashlib,json,math,time
-from collections import Counter,defaultdict
-from dataclasses import asdict
-from typing import Any
-from .models import AggregateType,CANDIDATE_TYPE_MAP,CandidateInput,ConsensusStatus,EvidenceRelationship
-from .repository import MemoryAggregateRepository,now
+
+import hashlib
+import json
+import time
+from collections import Counter, defaultdict
+
+from .models import (
+ CANDIDATE_TYPE_MAP,
+ AggregateType,
+ ConsensusStatus,
+ EvidenceRelationship,
+)
+from .repository import now
+
+
 def digest(v): return hashlib.sha256(json.dumps(v,sort_keys=True,default=str,separators=(",",":")).encode()).hexdigest()
 def norm(v): return " ".join(str(v).casefold().split())
 UNIT_FACTORS={"mm":("length",1.0),"cm":("length",10.0),"m":("length",1000.0),"c":("temperature",1.0),"°c":("temperature",1.0)}
@@ -29,7 +38,8 @@ class EvidenceAggregationService:
    if item["state"] not in {"PLANNED","FAILED"}: continue
    if rid in self.repo.cancelled: return self.repo.transition(rid,"CANCELLED")
    try: self._process(rid,item); self.repo.runs[rid]["last_completed_item_id"]=item["item_id"]
-   except Exception as exc: item.update(state="FAILED",failure={"code":type(exc).__name__,"message":type(exc).__name__}); self.repo.warnings.append({"item_id":item["item_id"],"code":type(exc).__name__}); self.repo.runs[rid]["metrics"]["failed_clusters"]+=1; self.repo.review(rid,"FAILED_VALIDATION",item["failure"],severity="HIGH")
+   except Exception as exc:  # noqa: BLE001 - persist sanitized failure without leaking source text
+    item.update(state="FAILED",failure={"code":type(exc).__name__,"message":type(exc).__name__}); self.repo.warnings.append({"item_id":item["item_id"],"code":type(exc).__name__}); self.repo.runs[rid]["metrics"]["failed_clusters"]+=1; self.repo.review(rid,"FAILED_VALIDATION",item["failure"],severity="HIGH")
   self.repo.runs[rid]["metrics"]["elapsed_seconds"]=time.perf_counter()-started; state="PARTIAL" if any(x["state"]=="FAILED" for x in self.repo.items[rid]) else "COMPLETED"; return self.repo.transition(rid,state)
  def _process(self,rid,item):
   members=item["candidates"]; key=item["cluster_key"]; policy=self.repo.runs[rid]["policies"]; identity=self._identity(key,members,policy); existing=next((v for v in reversed(self.repo.versions) if v["identity_hash"]==identity),None)
@@ -57,7 +67,7 @@ class EvidenceAggregationService:
   for i,left in enumerate(members):
    for right in members[i+1:]:
     same=self._value(left)==self._value(right); same_doc=bool(left.document_hash and left.document_hash==right.document_hash) or left.source_revision_id==right.source_revision_id
-    if same_doc: rel=EvidenceRelationship.DUPLICATES
+    if same_doc and same: rel=EvidenceRelationship.DUPLICATES
     elif same: rel=EvidenceRelationship.SUPPORTS
     elif left.geographic_context!=right.geographic_context and left.geographic_context and right.geographic_context: rel=EvidenceRelationship.GEOGRAPHICALLY_LIMITS
     elif left.temporal_context!=right.temporal_context and left.temporal_context and right.temporal_context: rel=EvidenceRelationship.QUALIFIES

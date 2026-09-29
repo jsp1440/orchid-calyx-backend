@@ -28,6 +28,7 @@ class RegistryDocument:
     owner: str | None
     created_at: datetime | None
     modified_at: datetime | None
+    source_type: str = "GOOGLE_DRIVE"
 
 
 @dataclass(frozen=True)

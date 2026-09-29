@@ -695,9 +695,51 @@ def binding_questions(candidates: list[Candidate]) -> list[Candidate]:
     ]
 
 
+def discover_matrix_coverage(coverage: dict[str, Any]) -> list[Candidate]:
+    """Consume a current canonical coverage export, never infer gaps from no DB."""
+    if coverage.get("schema") != "oc.matrix-acquisition-coverage.v1":
+        raise ValueError("INVALID_MATRIX_COVERAGE")
+    if coverage.get("available") is not True:
+        return []
+    generated = datetime.fromisoformat(coverage["generated_at"])
+    if generated.tzinfo is None or not 0 <= (datetime.now(timezone.utc) - generated).total_seconds() <= 86400:
+        raise ValueError("STALE_MATRIX_COVERAGE")
+    result = []
+    for gap in coverage["gaps"]:
+        genus = gap["genus"]
+        if not re.fullmatch(r"[A-Z][a-z]{2,40}", genus) or not gap["missing_taxon_ids"] or not gap["taxonomy_snapshot"]:
+            raise ValueError("INVALID_MATRIX_GAP")
+        targets = gap.get("target_taxon_names", [])
+        if (not isinstance(targets, list) or len(targets) > 5
+                or any(not isinstance(name, str) or not re.fullmatch(re.escape(genus) + r" [a-z][a-z-]{1,80}", name) for name in targets)
+                or (targets and gap.get("strategy") != "targeted-species-gap")
+                or (gap.get("strategy") == "targeted-species-gap" and not targets)):
+            raise ValueError("INVALID_MATRIX_GAP_TARGETS")
+        target_marker = "\nOC-ACQUISITION-TARGETS: " + json.dumps(targets) if targets else ""
+        predicates = gap.get("required_predicates", [])
+        if (not isinstance(predicates, list) or len(predicates) > 32
+                or any(not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", value) for value in predicates)):
+            raise ValueError("INVALID_MATRIX_PREDICATES")
+        predicate_marker = "\nOC-ACQUISITION-PREDICATES: " + json.dumps(predicates) if predicates else ""
+        key = json.dumps(gap, sort_keys=True, separators=(",", ":"))
+        result.append(Candidate(
+            source="matrix-coverage", title=f"Acquire missing {genus} morphology sources",
+            summary=f"Audit and extract held corpus before any external acquisition. Acquire only confirmed gaps from monographs, revisions, floras or keys for {genus}; multi-taxon extraction remains review-only.\nOC-ACQUISITION-GENUS: {genus}{target_marker}{predicate_marker}",
+            lane=lane_for_path("app/literature_extraction/firecrawl_acquisition.py"),
+            evidence=(Evidence("canonical-coverage", "runtime/matrix_coverage/latest.json", key),),
+            semantic_key="matrix-coverage:" + key,
+            capabilities=("firecrawl-acquisition", "taxonomy-resolution", "provenance-assembly"),
+        ))
+    return result
+
+
 def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
     """Run every source and return a ranked, deduplicated report."""
     candidates = discover_dependency_gaps(root)
+    coverage_path = root / "runtime/matrix_coverage/latest.json"
+    coverage_evaluated = coverage_path.is_file()
+    if coverage_evaluated:
+        candidates.extend(discover_matrix_coverage(json.loads(coverage_path.read_text())))
     candidates.extend(discover_undeclared_imports(root))
     candidates.extend(discover_failing_tests(pytest_report, root))
 
@@ -734,6 +776,7 @@ def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
         "sources_evaluated": sorted(
             {"dependency-gap", "undeclared-import", "binding-gap"}
             | ({"failing-test"} if pytest_report.strip() else set())
+            | ({"matrix-coverage"} if coverage_evaluated else set())
         ),
         "candidate_count": len(deduplicated),
         "candidates": [candidate.to_record() for candidate in deduplicated],

@@ -299,9 +299,14 @@ def _provider_free_snapshot(snapshot: dict) -> dict:
     issues = []
     for original in snapshot.get("issues") or []:
         issue = dict(original)
+        routing = route_task(issue)
+        held_corpus_audit = (
+            "firecrawl-acquisition" in routing.blocking_provider_capabilities
+        )
         if (
             str(issue.get("state") or "").upper() == "OPEN"
             and not is_lane_executable(issue)
+            and not held_corpus_audit
         ):
             labels = []
             for label in issue.get("labels") or []:
@@ -417,6 +422,7 @@ def build_swarm_plan(
                 "writes": list(item.get("writes") or []),
                 "dependencies": list(dep_status.get("dependencies") or []),
                 "provider_free": is_provider_free(issues[issue_number]),
+                "acquisition": "firecrawl-acquisition" in route_task(issues[issue_number]).blocking_provider_capabilities,
                 "lane_executable": is_lane_executable(issues[issue_number]),
             }
         )
@@ -430,7 +436,8 @@ def build_swarm_plan(
     # sending it to the paid lane is the misrouting the router was repaired to
     # stop. It is recorded instead, so it stays visible as a missing capability.
     provider_free_workers = [worker for worker in workers if worker["lane_executable"]]
-    provider_workers = [worker for worker in workers if not worker["lane_executable"]]
+    acquisition_workers = [worker for worker in workers if worker["acquisition"]]
+    provider_workers = [worker for worker in workers if not worker["lane_executable"] and not worker["acquisition"]]
     # Recorded from the withdrawn set rather than from the selected workers:
     # they are withdrawn precisely so they never become workers, and a refusal
     # nobody writes down is how the 01:04 diagnosis got lost the first time.
@@ -458,6 +465,8 @@ def build_swarm_plan(
         "matrix": {"include": workers},
         "provider_free_workers": provider_free_workers,
         "provider_workers": provider_workers,
+        "acquisition_matrix": {"include": acquisition_workers},
+        "acquisition_launch_count": len(acquisition_workers),
         "provider_free_matrix": {"include": provider_free_workers},
         "provider_matrix": {"include": provider_workers},
         "provider_free_launch_count": len(provider_free_workers),
@@ -506,6 +515,8 @@ def _write_github_output(path: str, plan: dict) -> None:
     summary = json.dumps(plan, separators=(",", ":"))
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(f"matrix={matrix}\n")
+        handle.write("acquisition_matrix=" + json.dumps(plan["acquisition_matrix"], separators=(",", ":")) + "\n")
+        handle.write(f"acquisition_launch_count={plan['acquisition_launch_count']}\n")
         handle.write(f"launch_count={plan['launch_count']}\n")
         handle.write(
             "provider_free_matrix="
