@@ -14,6 +14,14 @@ def test_scientific_priorities_precede_support_work():
     assert priorities["taxonomy"] < priorities["website"]
     assert priorities["knowledge_graph"] < priorities["education"]
     assert priorities["matrix"] < priorities["harvesters"]
+    assert priorities["calyx_finish_line"] < priorities["taxonomy"]
+
+
+def test_deep_reservoir_has_substantive_queue_depth_and_unique_domains():
+    profile = task_profile()
+    assert len(profile) >= 80
+    assert len({task.domain for task in profile}) == len(profile)
+    assert [task.priority for task in profile] == sorted(task.priority for task in profile)
 
 
 def test_every_approved_task_is_read_only_and_executable():
@@ -48,7 +56,8 @@ def test_mutating_task_is_rejected():
 
 def test_prohibited_actions_and_activation_gates_are_explicit():
     status = task_provider_status()
-    assert status["provider"] == "reviewed-static-v2"
+    assert status["provider"] == "reviewed-static-v3-deep-reservoir"
+    assert status["task_count"] == len(APPROVED_TASKS)
     assert "merge_pull_request" in PROHIBITED_AUTONOMOUS_ACTIONS
     assert "publish_scientific_knowledge" in PROHIBITED_AUTONOMOUS_ACTIONS
     assert status["production_activation"] is False

@@ -16,12 +16,22 @@ from app.conversation_memory.service import (
 )
 from app.database import get_db
 from app.security import verify_owner_or_api_key
-from runtime.continuum_conversation import ContinuumConversationService
 from runtime.operator_chat import GovernedOperatorChat
 
 router = APIRouter(prefix="/brain/mission-control/chat", tags=["mission-control-chat"])
 _chat = GovernedOperatorChat()
-_continuum = ContinuumConversationService()
+_continuum = None
+
+
+def _get_continuum():
+    global _continuum
+    if _continuum is None:
+        from runtime.continuum_conversation import ContinuumConversationService
+
+        _continuum = ContinuumConversationService()
+    return _continuum
+
+
 OwnerIdentity = Annotated[dict[str, object], Depends(verify_owner_or_api_key)]
 Db = Annotated[Session, Depends(get_db)]
 
@@ -105,17 +115,27 @@ def chat_status() -> dict[str, Any]:
     }
 
 
-@router.get("/transcript")
+# The in-memory operator transcript is owner-only: it holds whatever the operator
+# typed to Calyx. Reading it and appending to it (operator messages or Calyx replies)
+# require the owner session or the API key via ``verify_owner_or_api_key``, exactly
+# like the other chat routes (``/ask``, ``/conversations``). There is no member
+# contract for chat, so a member bearer is rejected with 401 like any non-owner
+# credential, before any body validation. ``/status`` stays public: it reports only a
+# message count and flags.
+OwnerOnly = [Depends(verify_owner_or_api_key)]
+
+
+@router.get("/transcript", dependencies=OwnerOnly)
 def chat_transcript() -> dict[str, Any]:
     return {"messages": [message.as_dict() for message in _chat.transcript()]}
 
 
-@router.post("/messages")
+@router.post("/messages", dependencies=OwnerOnly)
 def post_operator_message(request: OperatorMessageRequest) -> dict[str, Any]:
     return _chat.receive(request.content).as_dict()
 
 
-@router.post("/replies")
+@router.post("/replies", dependencies=OwnerOnly)
 def post_calyx_reply(request: CalyxReplyRequest) -> dict[str, Any]:
     return _chat.reply(
         request.content, proposed_action=request.proposed_action
@@ -128,7 +148,7 @@ def ask_the_continuum(
 ) -> dict[str, Any]:
     owner = _owner(identity)
     try:
-        result = _continuum.ask(
+        result = _get_continuum().ask(
             request.question,
             context=request.context,
             limit=request.limit,
@@ -234,7 +254,7 @@ def ask_persistent_conversation(
     stored = _memory_call(db, lambda: memory.get_session(conversation_id, owner))
     context = _resolved_context(stored, request.context)
     try:
-        result = _continuum.ask(
+        result = _get_continuum().ask(
             request.question,
             context=context,
             limit=request.limit,

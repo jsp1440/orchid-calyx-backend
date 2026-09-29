@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .cds_loader import get_cds_loader
-
+from .mission_alignment import evaluate_work_alignment
 
 STATUS_WEIGHT = {
     "live-ready": 100,
@@ -115,12 +115,18 @@ class RuntimePlanner:
 
         for module in modules:
             score = self._score_module(module, priority_text)
+            alignment = evaluate_work_alignment(module)
+            executable = self._is_selectable(module)
+            selected = executable and alignment.aligned
             planned_modules.append(
                 {
                     **self._module_summary(module),
                     "priority_score": score,
-                    "selected": self._is_selectable(module),
-                    "skip_reason": None if self._is_selectable(module) else self._skip_reason(module),
+                    "mission_alignment": alignment.to_dict(),
+                    "selected": selected,
+                    "skip_reason": None
+                    if selected
+                    else self._skip_reason(module, alignment.aligned, alignment.reason),
                     "planned_action": module.get("next_action"),
                 }
             )
@@ -151,6 +157,7 @@ class RuntimePlanner:
                         "module_id": module["module_id"],
                         "module_name": module["name"],
                         "priority_score": module["priority_score"],
+                        "mission_alignment": module["mission_alignment"],
                         "action": module.get("planned_action"),
                     }
                 )
@@ -159,6 +166,7 @@ class RuntimePlanner:
                     {
                         "module_id": module["module_id"],
                         "module_name": module["name"],
+                        "mission_alignment": module["mission_alignment"],
                         "reason": module["skip_reason"],
                     }
                 )
@@ -224,7 +232,14 @@ class RuntimePlanner:
     def _is_selectable(self, module: dict[str, Any]) -> bool:
         return module.get("status") in {"live-ready", "framework", "prototype"}
 
-    def _skip_reason(self, module: dict[str, Any]) -> str:
+    def _skip_reason(
+        self,
+        module: dict[str, Any],
+        mission_aligned: bool,
+        alignment_reason: str,
+    ) -> str:
+        if not mission_aligned:
+            return f"mission alignment gate: {alignment_reason}"
         if module.get("status") == "planned":
             return "module is still planned"
         return f"module status is not executable: {module.get('status')}"

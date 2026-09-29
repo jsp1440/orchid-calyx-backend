@@ -112,6 +112,15 @@
       "status": "gap"
     }
   },
+  "freshness": {
+    "age_days": 75,
+    "assessed_at": "2026-09-25T00:00:00+00:00",
+    "generated_at": "2026-07-12T07:23:53.016619+00:00",
+    "max_record_age_days": 30,
+    "method": "keyword match over discovery-memory module and capability names; not an inventory of app/ modules or database tables",
+    "reason": "record is 75 days old, older than 30 days; generated from discovery snapshot DSM-20260712072353008811-57c7a72b captured 2026-07-12; its domain gaps count discovery-memory module/capability names containing a keyword, so KG-TAXONOMY-001 'Matched runtime items: 0' says nothing about app/, which contains taxonomy modules; do not act on domain gaps from this record until it is regenerated from a real inventory",
+    "stale": true
+  },
   "gaps": [
     {
       "domain": "Taxonomy",

@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from sqlalchemy.orm import Session
 
+from .agent_security_gateway import (
+    SecuredCodingAgentProvider,
+    SecuredRepositoryInspectionGateway,
+    build_github_coding_security_gateway,
+)
 from .github_agent_ci_policy import RequiredCiCheckPolicy
 from .github_agent_dispatch_cycle import (
     GitHubCodingAgentDispatchCycle,
@@ -30,15 +35,28 @@ def build_production_claude_code_dispatch_cycle(
     by ``app.main`` and is not attached to a route, scheduler, or worker. The same
     runtime policy and explicit execute confirmation used by the existing Copilot
     path remain mandatory before a mutating dispatch can occur.
+
+    Repository inspection and provider dispatch are additionally wrapped by the
+    provider-neutral Agent Security Gateway so changing model/provider capacity
+    cannot change the authorized tool surface.
     """
     repository_allowlist = tuple(policy.repository_allowlist)
-    inspector = GitHubRepositoryConvergenceInspector(
+    security = build_github_coding_security_gateway(repository_allowlist)
+    raw_inspector = GitHubRepositoryConvergenceInspector(
         transport=transport,
         repository_allowlist=repository_allowlist,
     )
-    provider = GitHubClaudeCodeActionProvider(
+    inspector = SecuredRepositoryInspectionGateway(
+        inner=raw_inspector,
+        security=security,
+    )
+    raw_provider = GitHubClaudeCodeActionProvider(
         transport=transport,
         repository_allowlist=repository_allowlist,
+    )
+    provider = SecuredCodingAgentProvider(
+        inner=raw_provider,
+        security=security,
     )
     executor = GitHubCodingAgentExecutor(inspector=inspector, provider=provider)
     observer = GitHubIssueLinkedPullRequestObserver(

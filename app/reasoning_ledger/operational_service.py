@@ -23,7 +23,12 @@ from .models import (
     ReasoningLedger,
     ReviewDecision,
 )
-from .persistence import SqlAlchemyReasoningLedgerRepository
+from .persistence import (
+    LedgerRevisionNotFoundError,
+    LedgerRevisionUnreadableError,
+    SqlAlchemyReasoningLedgerRepository,
+)
+from .serialization import dict_to_ledger
 from .service import _assign_sequence
 
 
@@ -206,12 +211,45 @@ class OperationalReasoningLedgerService:
         self.projects.require_owned(ledger.project_id, owner)
         return ledger
 
+    def revision(self, ledger_id: str, owner: str, version: int) -> ReasoningLedger:
+        """Retrieve one exact owned revision without loading ledger history."""
+        payload = self.repository.revision_payload(ledger_id, owner, version)
+        if payload is None:
+            raise LedgerRevisionNotFoundError(
+                ledger_id,
+                version,
+                self.repository.available_versions(ledger_id, owner),
+            )
+        try:
+            ledger = dict_to_ledger(payload)
+        # A stored payload that will not deserialize is damage, whatever
+        # exception the decode raises. Narrowing here would let an
+        # unanticipated one escape as an unlabelled 500.
+        except Exception as exc:
+            raise LedgerRevisionUnreadableError(ledger_id, version) from exc
+        self.projects.require_owned(ledger.project_id, owner)
+        return ledger
+
     def history(self, ledger_id: str, owner: str):
         self.current(ledger_id, owner)
         return {
             "revisions": self.repository.history(ledger_id, owner),
             "audit_events": self.repository.audit_history(ledger_id, owner),
         }
+
+    def exact_revision(self, ledger_id: str, owner: str, version: int):
+        revision, available = self.repository.exact_revision(ledger_id, owner, version)
+        # Exact retrieval has its own lightweight query path, but it must retain
+        # the same active-project boundary as current() and history(). The
+        # repository query is owner-scoped; this validation additionally rejects
+        # archived projects without loading history or audit events.
+        project_id = (
+            revision.project_id
+            if revision is not None
+            else self.repository.project_id(ledger_id, owner)
+        )
+        self.projects.require_owned(project_id, owner)
+        return revision, available
 
     def validate(self, ledger_id: str, owner: str) -> list[dict[str, str]]:
         ledger = self.current(ledger_id, owner)

@@ -186,6 +186,16 @@ def _load_entries(*, q: str | None = None, limit: int = 500) -> list[dict[str, A
     ]
 
 
+def search_concepts(*, q: str, limit: int = 50) -> list[dict[str, Any]]:
+    """Public read-only concept search interface for internal consumers.
+
+    This is the stable package-level boundary for callers such as the Calyx
+    knowledge bridge. It intentionally preserves the ACTIVE + APPROVED filtering
+    and bounded limits implemented by the Lexicon repository query.
+    """
+    return _load_entries(q=q, limit=limit)
+
+
 def _load_entry_by_concept_id(concept_id: UUID) -> dict[str, Any] | None:
     try:
         with _connect() as conn, conn.cursor() as cur:

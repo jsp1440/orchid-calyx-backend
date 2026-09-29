@@ -223,8 +223,8 @@ def test_routes_use_durable_repository_when_database_url_is_set(monkeypatch):
     """When DATABASE_URL is set the builder must attempt PostgresIndexRepository."""
     import pathlib
 
-    source = pathlib.Path("app/semantic_index/routes.py").read_text()
-    # The source must contain the conditional import of PostgresIndexRepository
+    source = pathlib.Path("app/semantic_index/repository_runtime.py").read_text()
+    # The shared runtime owns durable repository selection for indexing and retrieval.
     assert "PostgresIndexRepository" in source
     assert "configured_database_url" in source
     assert "_build_repository" in source
@@ -234,8 +234,8 @@ def test_routes_fall_back_to_memory_when_no_database_url(monkeypatch):
     """When DATABASE_URL is absent the builder must fall back to MemoryIndexRepository."""
     import pathlib
 
-    source = pathlib.Path("app/semantic_index/routes.py").read_text()
-    # Without a database URL the fallback is MemoryIndexRepository
+    source = pathlib.Path("app/semantic_index/repository_runtime.py").read_text()
+    # Without a database URL the shared runtime falls back to MemoryIndexRepository.
     assert "MemoryIndexRepository" in source
     # The build pattern includes a try/except fallback
     assert "except" in source
@@ -501,7 +501,7 @@ def test_empty_corpus_returns_zero_results_not_fabricated_evidence():
 def test_status_endpoint_source_in_evidence_retrieval_routes():
     code = (Path("app/evidence_retrieval/routes.py")).read_text()
     assert "/status" in code
-    assert "retrieval_backend_status" in code
+    assert "get_repository_runtime" in code
     assert "ranking_version" in code
 
 
@@ -536,6 +536,13 @@ def test_durable_startup_failure_recovers_without_memory_fallback(monkeypatch):
     module.PostgresIndexRepository = RecoveringPostgresRepo
     monkeypatch.setitem(sys.modules, module_name, module)
     monkeypatch.setenv("DATABASE_URL", "postgres://durable-test")
+    from app.semantic_index import repository_runtime
+
+    monkeypatch.setattr(
+        repository_runtime,
+        "RUNTIME",
+        repository_runtime.SemanticIndexRepositoryRuntime(),
+    )
     sys.modules.pop("app.semantic_index.routes", None)
     routes = importlib.import_module("app.semantic_index.routes")
 
@@ -563,6 +570,13 @@ def test_status_reports_unavailable_when_durable_backend_fails(monkeypatch):
     module = ModuleType(module_name)
     module.PostgresIndexRepository = FailingRepository
     monkeypatch.setitem(sys.modules, module_name, module)
+    from app.semantic_index import repository_runtime
+
+    monkeypatch.setattr(
+        repository_runtime,
+        "RUNTIME",
+        repository_runtime.SemanticIndexRepositoryRuntime(),
+    )
     sys.modules.pop("app.semantic_index.routes", None)
     importlib.import_module("app.semantic_index.routes")
     sys.modules.pop("app.evidence_retrieval.routes", None)

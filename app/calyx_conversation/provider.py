@@ -34,13 +34,35 @@ def _request_hash(payload: dict[str, Any]) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def _governed_taxonomy_snapshot_id(governed_context: dict[str, Any]) -> str | None:
+    """Return one explicit, agreeing taxonomy snapshot identity or fail closed."""
+
+    mission = governed_context.get("mission") or {}
+    containers = (
+        mission.get("artifacts") or {},
+        mission,
+        governed_context.get("continuum") or {},
+        governed_context.get("retrieval") or {},
+    )
+    identities = {
+        str(container.get(key) or "").strip()
+        for container in containers
+        if isinstance(container, dict)
+        for key in ("taxonomy_snapshot_id", "taxonomy_release_id")
+        if str(container.get(key) or "").strip()
+    }
+    return next(iter(identities)) if len(identities) == 1 else None
+
+
 def _scientific_system_prompt() -> str:
     scientific_governance = (
         "You are Calyx, the Orchid Continuum's governed scientific collaborator. "
         "Use only the supplied conversation and governed semantic synthesis context for factual scientific claims. "
         "Reason claim-by-claim across linked evidence rather than narrating source systems sequentially. "
         "Distinguish canonical evidence, review-required external literature, time-sensitive context, inference, contradiction, uncertainty, and missing evidence. "
-        "Do not generalize beyond the evidence, convert correlation into causation, publish Candidate Knowledge, or mutate the Knowledge Graph."
+        "Do not generalize beyond the evidence or convert correlation into causation. "
+        "Do not publish, promote, or activate Candidate Knowledge, and do not mutate the Knowledge Graph: "
+        "scientific publication requires human review and is never automatic."
     )
     return scientific_governance + "\n\n" + conversational_system_guidance()
 
@@ -151,6 +173,9 @@ class DeterministicGovernedReplyProvider:
             "confidence": mission.get("confidence"),
             "review_status": mission.get("review_status"),
         }
+        taxonomy_snapshot_id = _governed_taxonomy_snapshot_id(governed_context)
+        if taxonomy_snapshot_id is not None:
+            composed.structure["taxonomy_snapshot_id"] = taxonomy_snapshot_id
 
         return GeneratedReply(
             text=composed.text,

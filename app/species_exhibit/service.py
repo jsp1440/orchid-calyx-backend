@@ -30,17 +30,103 @@ def _state(value: Any, *, limitation: str | None = None) -> dict[str, Any]:
     }
 
 
+INFRASPECIFIC_RANKS: dict[str, str] = {
+    "subsp.": "subspecies",
+    "ssp.": "subspecies",
+    "var.": "variety",
+    "subvar.": "subvariety",
+    "f.": "form",
+    "fo.": "form",
+    "forma": "form",
+    "subf.": "subform",
+    "nothosubsp.": "nothosubspecies",
+    "nothovar.": "nothovariety",
+    "cv.": "cultivar",
+}
+HYBRID_SIGNS = {"×", "x"}
+
+#: Latin connectives that join two authorities in a citation ("Wall. ex Lindl.",
+#: "Rchb. f. et Warsz."). They are lowercase and can follow a token that looks
+#: like a rank marker, so they must never be read as an infraspecific epithet.
+AUTHOR_CONNECTIVES = {"ex", "et", "in", "and", "nec", "non", "emend", "sensu"}
+
+
+def _is_epithet(token: str, *, cultivar: bool = False) -> bool:
+    """A plausible infraspecific epithet with rank-scoped cultivar casing.
+
+    ``f.`` is both a form marker and the ``filius`` of a spaced author
+    abbreviation such as ``Rchb. f.``. Requiring a real epithet after the marker
+    keeps ``Dendrochilum cootesii Rchb. f. ex Lindl.`` a species whose author is
+    ``Rchb. f. ex Lindl.``, instead of inventing the form ``... f. ex``.
+
+    Normal epithets are lowercase; a ``cv.`` epithet conventionally starts with
+    a capital and is accepted only when ``cultivar`` is true. Hyphens are part
+    of the epithet, not a reason to reject it. Hyphenated
+    infraspecific epithets are ordinary botanical names — this repository's own
+    registry carries ``Ophrys vernixia ssp. regis-ferdinandii``, ``Cypripedium
+    chamberlainianum f. victoria-mariae`` and four more. Demanding
+    ``str.isalpha`` would collapse every one of them onto its species and
+    present the rank text as authorship, which is the pair of failures this
+    module exists to remove.
+    """
+    if not token or token.lower() in AUTHOR_CONNECTIVES:
+        return False
+    if cultivar:
+        if not token[:1].isupper():
+            return False
+    elif not token[:1].islower():
+        return False
+    if not token[-1:].isalpha():
+        return False
+    return token.replace("-", "").isalpha()
+
+
 def _split_scientific_name(value: str) -> tuple[str, str | None]:
-    """Separate the normalized binomial from any retained authorship text."""
+    """Separate the name from any retained authorship text.
+
+    The name is the genus and epithet, plus a hybrid sign between them
+    (``Phalaenopsis × intermedia``) and one infraspecific rank marker with its
+    epithet wherever the row placed it (``Calypso bulbosa (L.) Oakes var.
+    americana (R.Br.) Luer`` -> ``Calypso bulbosa var. americana``). Rank text is
+    never presented as authorship, and an infraspecific taxon is never collapsed
+    onto its species. The authorship returned is the text that follows the last
+    name token; the row itself stays verbatim in ``full_scientific_name``.
+    """
     normalized = " ".join((value or "").strip().split())
     if not normalized:
         return "", None
     parts = normalized.split(" ")
     if len(parts) < 2:
         return normalized, None
-    display_name = " ".join(parts[:2])
-    authorship = " ".join(parts[2:]).strip() or None
+    end = 3 if parts[1] in HYBRID_SIGNS and len(parts) > 2 else 2
+    name_parts = parts[:end]
+    rest = parts[end:]
+    for index, token in enumerate(rest):
+        follower = rest[index + 1] if index + 1 < len(rest) else ""
+        marker = token.lower()
+        if marker in INFRASPECIFIC_RANKS and _is_epithet(
+            follower, cultivar=marker == "cv."
+        ):
+            name_parts.extend([token, follower])
+            rest = rest[index + 2 :]
+            break
+    display_name = " ".join(name_parts)
+    authorship = " ".join(rest).strip() or None
     return display_name, authorship
+
+
+def taxon_rank(display_name: str) -> str:
+    """Rank implied by a display name produced by :func:`_split_scientific_name`."""
+    parts = " ".join((display_name or "").split()).split(" ")
+    if len(parts) < 2 or not parts[0]:
+        return "genus" if parts and parts[0] else "unknown"
+    for token in parts[2:]:
+        rank = INFRASPECIFIC_RANKS.get(token.lower())
+        if rank:
+            return rank
+    if parts[1] in HYBRID_SIGNS:
+        return "hybrid"
+    return "species"
 
 
 def _normalized_name(value: str) -> str:
@@ -197,13 +283,42 @@ def _evidence_receipt(
     }
 
 
-def _graph_rows(cur, taxon_id: str) -> list[dict[str, Any]]:
+def graph_taxon_keys(cur, accepted_name: str) -> list[str]:
+    """Graph taxon keys whose node carries exactly this accepted name (at most two).
+
+    ``public.orchid_taxonomy.id`` is not the graph's identifier: ``taxon:<id>``
+    keys come from the ``public.taxonomy_species`` backbone and the two id ranges
+    overlap, so ``taxon:{orchid_taxonomy.id}`` names a different species. Callers
+    link a taxon to the graph only when exactly one key comes back.
+    """
+    name = " ".join(str(accepted_name or "").split())
+    if not name:
+        return []
+    cur.execute(
+        """
+        SELECT canonical_key
+        FROM oc_graph.kg_nodes
+        WHERE node_type = 'taxon'
+          AND is_active IS TRUE
+          AND lower(display_label) = lower(%s)
+        ORDER BY canonical_key
+        LIMIT 2
+        """,
+        (name,),
+    )
+    return [str(row["canonical_key"]) for row in cur.fetchall()]
+
+
+def _graph_rows(cur, display_name: str) -> list[dict[str, Any]]:
     cur.execute(
         "SELECT to_regclass('oc_graph.kg_nodes') IS NOT NULL AS nodes_present, "
         "to_regclass('oc_graph.kg_edges') IS NOT NULL AS edges_present"
     )
     present = cur.fetchone()
     if not present or not present["nodes_present"] or not present["edges_present"]:
+        return []
+    keys = graph_taxon_keys(cur, display_name)
+    if len(keys) != 1:
         return []
     cur.execute(
         """
@@ -217,7 +332,7 @@ def _graph_rows(cur, taxon_id: str) -> list[dict[str, Any]]:
         ORDER BY e.kg_edge_id
         LIMIT 100
         """,
-        (f"taxon:{taxon_id}",),
+        (keys[0],),
     )
     return [dict(row) for row in cur.fetchall()]
 
@@ -388,7 +503,7 @@ def build_species_exhibit(dsn: str, genus: str, limit: int = 9) -> dict[str, Any
                 (taxon["id"],),
             )
             media = [dict(row) for row in cur.fetchall()]
-            graph = _graph_rows(cur, taxon_id)
+            graph = _graph_rows(cur, display_name)
             item = _build_card(taxon, media, graph, used_media_urls)
             items.append(item)
             seen_taxa.add(taxon_id)

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
+from app.member_auth import owner_or_member_read
 from app.reasoning_ledger.models import (
     ConflictDisposition,
     ConflictDispositionType,
@@ -472,6 +473,10 @@ def api_client():
             yield db
 
     app.dependency_overrides[get_db] = db_override
+    # The project router's member gate (owner_or_member_read) is covered by
+    # tests/test_research_projects_member_access.py; here each endpoint's own
+    # verify_owner_or_api_key, overridden per test, still decides the owner.
+    app.dependency_overrides[owner_or_member_read] = lambda: None
     with TestClient(app) as client:
         yield app, client, project_id
 

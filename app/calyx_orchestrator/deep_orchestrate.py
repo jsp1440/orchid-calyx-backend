@@ -378,8 +378,15 @@ class DeepOrchestrate:
             leaf.updated_at = time.time()
             return leaf
 
-    def recover_from_backoff(self, key: str) -> TaskLeaf:
-        """Restore a repair-backoff task to READY after a real recovery event."""
+    def recover_from_backoff(
+        self, key: str, *, evidence: dict[str, Any] | None = None
+    ) -> TaskLeaf:
+        """Restore a repair-backoff task to READY after a real recovery event.
+
+        ``evidence`` (optional) is merged into the leaf so a recovery process
+        can persist bounded retry accounting (for example ``lease_recoveries``)
+        alongside the task instead of in process memory.
+        """
         with self._lock:
             leaf = self._tasks.get(key)
             if leaf is None:
@@ -392,6 +399,8 @@ class DeepOrchestrate:
             )
             leaf.state = target
             leaf.blocked_reason = None
+            if evidence:
+                leaf.evidence.update(evidence)
             leaf.updated_at = time.time()
             return leaf
 

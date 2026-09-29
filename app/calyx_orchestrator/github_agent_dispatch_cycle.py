@@ -40,6 +40,8 @@ class GitHubCodingRuntimePolicy:
     owner_allowlist: frozenset[str] = frozenset()
     repository_allowlist: frozenset[str] = frozenset()
     max_budget_class: BudgetClass = BudgetClass.NORMAL
+    no_api_mode: bool = False
+    provider_free_executors: frozenset[str] = frozenset()
 
     def validate_owner(self, owner: str) -> None:
         if not self.enabled:
@@ -62,6 +64,9 @@ class GitHubCodingRuntimePolicy:
             raise ValueError("GITHUB_CODING_BUDGET_CLASS_INVALID") from exc
         if _BUDGET_RANK[budget] > _BUDGET_RANK[self.max_budget_class]:
             raise PermissionError("GITHUB_CODING_BUDGET_CLASS_EXCEEDS_POLICY")
+        executor_class = str(job.get("executor_class") or "").strip()
+        if self.no_api_mode and executor_class not in self.provider_free_executors:
+            raise PermissionError("GITHUB_CODING_PROVIDER_PROHIBITED_NO_API")
         return budget
 
     @staticmethod

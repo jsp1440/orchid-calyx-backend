@@ -7,6 +7,8 @@ from uuid import uuid4
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.security import credentials_match
+
 from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramJob
 from .sandbox_supervisor_evidence import (
@@ -141,7 +143,13 @@ class SandboxSupervisorService:
             raise LookupError("SANDBOX_VALIDATION_REQUEST_NOT_FOUND")
         if record.status != "claimed":
             raise ValueError("SANDBOX_VALIDATION_REQUEST_NOT_CLAIMED")
-        if record.claim_worker != worker_id or record.claim_token != claim_token:
+        # The claim token is a bearer secret: compare it in constant time, and a
+        # cleared (None) token never matches.
+        if (
+            record.claim_worker != worker_id
+            or not record.claim_token
+            or not credentials_match(claim_token, record.claim_token)
+        ):
             raise PermissionError("SANDBOX_VALIDATION_CLAIM_MISMATCH")
         if (
             record.claim_expires_at is None

@@ -70,7 +70,7 @@ def test_passing_validation_creates_draft_pr_package_with_evidence():
         {"ruff": True, "pytest": True, "diff_check": True},
     )
     assert package.draft is True
-    assert package.base_branch == "main"
+    assert package.base_branch == "oc-autonomous-integration"
     assert package.evidence["task_key"] == task.task_key
     assert package.evidence["validation_results"]["pytest"] is True
 
@@ -80,3 +80,11 @@ def test_path_traversal_is_rejected():
         GovernedDraftEngineeringExecutor().plan(
             approved_task(allowed_paths=("runtime/../secrets",))
         )
+
+
+def test_executor_rejects_main_or_arbitrary_base_target():
+    executor = GovernedDraftEngineeringExecutor()
+
+    for base_branch in ("main", "feature/unreviewed"):
+        with pytest.raises(PermissionError):
+            executor.plan(approved_task(base_branch=base_branch))

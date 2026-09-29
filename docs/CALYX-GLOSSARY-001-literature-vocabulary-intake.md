@@ -68,3 +68,33 @@ The seed list is deliberately small. Future vocabulary expansion should come fro
 ## Validation
 
 Dedicated CI runs Ruff plus the glossary-specific tests and existing Literature Intelligence E2E/regression tests. The E2E contract now requires the ordered `glossary` stage and confirms that glossary candidates are serialized through the existing API.
+
+
+## Current integrated Scientific Language layer
+
+The canonical implementation now uses one governed path rather than a second
+glossary store:
+
+`literature glossary term → deterministic candidate → concept resolution/review
+→ approved concept projection → governed figure request`
+
+Integrated components on `oc-autonomous-integration`:
+
+- authenticated candidate intake/list/read with deterministic source-bound IDs;
+- restart-safe, idempotent file persistence for candidates and figure requests;
+- fail-closed concept resolution and reviewed canonical projection from
+  `app.concepts`;
+- all seven governed figure-request types with exact source provenance;
+- read-only Brain capability eligibility with no execution or publication
+  authority.
+
+`migrations/710_scientific_language_persistence.sql` is the additive
+PostgreSQL persistence contract for candidates, append-only review events,
+figure requests, and figure review events. It preserves all governed states,
+foreign-keys canonical concepts, denies public table privileges, and prevents
+in-place mutation. Committing this migration does **not** apply it to production;
+production database migration remains an owner-gated operation.
+
+Neither file-backed nor PostgreSQL persistence grants canonical promotion,
+figure approval, Knowledge Graph publication, scientific publication, or
+production deployment authority.

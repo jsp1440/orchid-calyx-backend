@@ -12,6 +12,7 @@ def test_runtime_planner_queue_contains_selectable_modules():
     assert queue["build"] == "BUILD-012C"
     assert queue["queue_depth"] >= 1
     assert any(item["module_name"] == "DatabaseInspector" for item in queue["queue"])
+    assert all(item["mission_alignment"]["aligned"] for item in queue["queue"])
 
 
 def test_runtime_planner_skips_planned_modules():

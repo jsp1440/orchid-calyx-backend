@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import hashlib
 import io
 import math
 import os
@@ -14,12 +15,20 @@ from pydantic import BaseModel, Field
 
 from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
-from app.evidence_retrieval.routes import REPO
 from app.security import verify_owner_or_api_key
 from app.semantic_index.provider import DeterministicLocalProvider
+from app.semantic_index.repository_runtime import get_repository_runtime
 from runtime.knowledge_graph import PostgresGraphRepository, canonical_key, traverse
 
+from .observability import ScientificTrace
 from .store import ConversationStore
+from .teaching_synthesis import (
+    AudienceLevel,
+    DepthLevel,
+    SubjectIdentity,
+    build_teaching_synthesis,
+    knowledge_gap_to_research_question,
+)
 
 router = APIRouter(
     prefix="/calyx",
@@ -27,7 +36,14 @@ router = APIRouter(
     dependencies=[Depends(verify_owner_or_api_key)],
 )
 
-ENGINE = RetrievalEngine(REPO, DeterministicLocalProvider())
+_ENGINE: RetrievalEngine | None = None
+
+
+def get_engine() -> RetrievalEngine:
+    global _ENGINE
+    if _ENGINE is None:
+        _ENGINE = RetrievalEngine(get_repository_runtime().read(), DeterministicLocalProvider())
+    return _ENGINE
 STORE = ConversationStore()
 
 
@@ -79,10 +95,47 @@ class ConversationRequest(BaseModel):
     dataset_analysis: DatasetAnalysisRequest | None = None
     graph_context: GraphContextRequest | None = None
     brain_query: BrainQueryRequest | None = None
+    epistemic_projection: dict[str, Any] | None = None
     retrieval_mode: Literal["LEXICAL", "SEMANTIC", "HYBRID"] = "HYBRID"
     limit: int = Field(8, ge=1, le=25)
     internal_access: bool = True
     include_history: bool = True
+
+
+class ResearchMissionRequest(BaseModel):
+    """Bounded execution settings for one synthesis-derived knowledge gap."""
+
+    taxon_name: str = Field(min_length=1, max_length=300)
+    max_sources: int = Field(default=20, ge=1, le=100)
+    max_execution_steps: int = Field(default=10, ge=1, le=10)
+    timeout_seconds: float = Field(default=30, ge=0.1, le=300)
+
+
+def _brain_mission_service():
+    """Resolve lazily so Calyx does not create a second mission runtime."""
+
+    from app.brain_mission.routes import SERVICE
+
+    return SERVICE
+
+
+def _authenticated_actor(auth: dict[str, Any]) -> str:
+    actor = str(auth.get("subject") or auth.get("actor") or "").strip()
+    if not actor:
+        raise HTTPException(401, detail={"code": "AUTHENTICATED_SUBJECT_REQUIRED"})
+    return actor
+
+
+def _research_mission_project_id(taxon_id: str, domain: str) -> str:
+    """Return a stable, non-enumerable key for one canonical taxon/domain gap."""
+
+    normalized_taxon_id = " ".join(taxon_id.split()).casefold()
+    if not normalized_taxon_id:
+        raise HTTPException(422, detail={"code": "CANONICAL_TAXON_ID_REQUIRED"})
+    fingerprint = hashlib.sha256(
+        f"{normalized_taxon_id}:{domain}".encode()
+    ).hexdigest()[:24]
+    return f"calyx-gap-{fingerprint}"
 
 
 _ALLOWED_BINOPS = {
@@ -388,7 +441,7 @@ def _retrieval(message: str, mode: str, limit: int, internal_access: bool) -> di
         parent_expansion="AUTO",
         internal_access=internal_access,
     )
-    return ENGINE.search(query)
+    return get_engine().search(query)
 
 
 def _compose_answer(
@@ -398,6 +451,7 @@ def _compose_answer(
     dataset: dict[str, Any] | None,
     graph: dict[str, Any] | None,
     brain: dict[str, Any] | None,
+    epistemic: dict[str, Any] | None = None,
 ) -> str:
     results = retrieval.get("results", [])
     lines = ["Calyx searched the Orchid Continuum before answering."]
@@ -413,6 +467,13 @@ def _compose_answer(
     if brain is not None:
         lines.append("")
         lines.append(f"Brain graph query: nodes={len(brain.get('nodes', []))}; edges={len(brain.get('edges', []))}.")
+    if epistemic is not None:
+        lines.append("")
+        lines.append(
+            f"Epistemic memory: nodes={len(epistemic.get('nodes', []))}; "
+            f"edges={len(epistemic.get('edges', []))}; "
+            f"authority=institutional_record; canonical_knowledge=False."
+        )
     if analysis is not None:
         lines.append("")
         lines.append(f"Mathematical analysis: {analysis['operation']} = {analysis['result']}")
@@ -469,19 +530,47 @@ def _build_report(payload: ConversationRequest, answer: dict[str, Any]) -> str:
 
 
 def _execute(payload: ConversationRequest) -> dict[str, Any]:
+    trace = ScientificTrace("calyx.query")
     title = " ".join(payload.message.split())[:120]
-    conversation_id = STORE.create_or_touch(payload.conversation_id, title=title, context=payload.context)
-    history = STORE.history_text(conversation_id) if payload.include_history else ""
-    operator_message = STORE.append(conversation_id, "operator", payload.message, {"context": payload.context})
+    with trace.span("calyx.conversation.initialize", history_requested=payload.include_history):
+        conversation_id = STORE.create_or_touch(payload.conversation_id, title=title, context=payload.context)
+        history = STORE.history_text(conversation_id) if payload.include_history else ""
+        operator_message = STORE.append(conversation_id, "operator", payload.message, {"context": payload.context})
     try:
-        retrieval = _retrieval(payload.message, payload.retrieval_mode, payload.limit, payload.internal_access)
-        analysis = run_analysis(payload.analysis) if payload.analysis else None
-        dataset = run_dataset_analysis(payload.dataset_analysis) if payload.dataset_analysis else None
-        graph = run_graph_context(payload.graph_context) if payload.graph_context else None
-        brain = run_brain_query(payload.brain_query) if payload.brain_query else None
+        with trace.span(
+            "calyx.retrieval",
+            retrieval_mode=payload.retrieval_mode,
+            requested_limit=payload.limit,
+            internal_access=payload.internal_access,
+        ) as retrieval_attributes:
+            retrieval = _retrieval(payload.message, payload.retrieval_mode, payload.limit, payload.internal_access)
+            retrieval_attributes["eligible_results"] = retrieval.get("total_eligible_results")
+            retrieval_attributes["shown_results"] = len(retrieval.get("results", []))
+            retrieval_attributes["ranking_version"] = retrieval.get("ranking_configuration_version")
+        if payload.analysis:
+            with trace.span("calyx.analysis", operation=payload.analysis.operation):
+                analysis = run_analysis(payload.analysis)
+        else:
+            analysis = None
+        if payload.dataset_analysis:
+            with trace.span("calyx.dataset_analysis", operation=payload.dataset_analysis.operation):
+                dataset = run_dataset_analysis(payload.dataset_analysis)
+        else:
+            dataset = None
+        if payload.graph_context:
+            with trace.span("calyx.knowledge_graph", read_only=True):
+                graph = run_graph_context(payload.graph_context)
+        else:
+            graph = None
+        if payload.brain_query:
+            with trace.span("calyx.brain_query", read_only=True):
+                brain = run_brain_query(payload.brain_query)
+        else:
+            brain = None
     except (ValueError, TypeError, SyntaxError, ZeroDivisionError, OverflowError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain)
+    with trace.span("calyx.synthesis", generative_claims_without_evidence=False):
+        answer_text = _compose_answer(payload.message, retrieval, analysis, dataset, graph, brain, payload.epistemic_projection)
     evidence_summary = {
         "eligible_results": retrieval.get("total_eligible_results"),
         "shown_results": len(retrieval.get("results", [])),
@@ -489,13 +578,16 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "graph_nodes": len((graph or {}).get("nodes", [])),
         "graph_edges": len((graph or {}).get("edges", [])),
         "brain_nodes": len((brain or {}).get("nodes", [])),
+        "epistemic_nodes": len((payload.epistemic_projection or {}).get("nodes", [])),
     }
-    calyx_message = STORE.append(
-        conversation_id,
-        "calyx",
-        answer_text,
-        {"evidence": evidence_summary, "analysis": analysis, "dataset_operation": (dataset or {}).get("operation")},
-    )
+    with trace.span("calyx.conversation.persist_result", knowledge_graph_mutation=False):
+        calyx_message = STORE.append(
+            conversation_id,
+            "calyx",
+            answer_text,
+            {"evidence": evidence_summary, "analysis": analysis, "dataset_operation": (dataset or {}).get("operation")},
+        )
+    observability = trace.finish(retrieval)
     return {
         "conversation_id": conversation_id,
         "operator_message_id": operator_message["message_id"],
@@ -505,10 +597,12 @@ def _execute(payload: ConversationRequest) -> dict[str, Any]:
         "dataset_analysis": dataset,
         "knowledge_graph": graph,
         "brain": brain,
+        "epistemic_projection": payload.epistemic_projection,
         "retrieval": retrieval,
         "context": payload.context,
         "history_context": history,
         "persistence_mode": STORE.persistence_mode,
+        "observability": observability,
         "epistemic_policy": {
             "continuum_first": True,
             "generative_claims_without_evidence": False,
@@ -590,6 +684,199 @@ def report(payload: ConversationRequest) -> PlainTextResponse:
     )
 
 
+@router.get("/synthesis/{taxon_id}")
+def teaching_synthesis(
+    taxon_id: str,
+    taxon_name: str = Query(..., min_length=1, max_length=300),
+    audience: str = Query("public"),
+    depth: str = Query("standard"),
+    taxon_rank: str = Query("species", max_length=50),
+    canonical_source: str = Query("pending", max_length=200),
+) -> dict[str, Any]:
+    """Return a TeachingSynthesisV1 for the given taxon.
+
+    All domain data is fetched from available sources; UNAVAILABLE states appear
+    where providers are not connected. No KG mutation, no live model calls.
+    """
+    audience_level = AudienceLevel.PUBLIC
+    try:
+        audience_level = AudienceLevel(audience)
+    except ValueError:
+        pass
+
+    depth_level = DepthLevel.STANDARD
+    try:
+        depth_level = DepthLevel(depth)
+    except ValueError:
+        pass
+
+    subject = SubjectIdentity(
+        taxon_name=taxon_name,
+        taxon_id=taxon_id,
+        common_names=(),
+        taxon_rank=taxon_rank,
+        canonical_source=canonical_source,
+        synonym_names=(),
+        authority=None,
+    )
+
+    domain_data: dict[str, dict[str, Any] | None] = {
+        "morphology_anatomy_physiology": None,
+        "habitat": None,
+        "geography": None,
+        "pollination": None,
+        "mycorrhizae": None,
+        "literature": None,
+        "neighboring_taxa_community": None,
+        "conservation": None,
+    }
+
+    try:
+        synthesis = build_teaching_synthesis(
+            subject,
+            domain_data,
+            audience=audience_level.value,
+            depth=depth_level.value,
+            sensitive_locality_withheld=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"synthesis_error: {exc}") from exc
+
+    return synthesis.to_dict()
+
+
+@router.get("/synthesis/{taxon_id}/research-questions")
+def synthesis_research_questions(
+    taxon_id: str,
+    taxon_name: str = Query(..., min_length=1, max_length=300),
+    audience: str = Query("public"),
+    depth: str = Query("standard"),
+    taxon_rank: str = Query("species", max_length=50),
+    canonical_source: str = Query("pending", max_length=200),
+) -> dict[str, Any]:
+    """Return researchable questions derived from knowledge gaps in the synthesis.
+
+    Builds a TeachingSynthesisV1 for the taxon (all domains UNAVAILABLE until providers
+    are connected) and converts each gap domain to a bounded research question template.
+    No model API calls; no KG mutation. Questions may be submitted to the Calyx speak
+    endpoint to initiate BrainMission research cycles.
+    """
+    audience_level = AudienceLevel.PUBLIC
+    try:
+        audience_level = AudienceLevel(audience)
+    except ValueError:
+        pass
+    depth_level = DepthLevel.STANDARD
+    try:
+        depth_level = DepthLevel(depth)
+    except ValueError:
+        pass
+    subject = SubjectIdentity(
+        taxon_name=taxon_name,
+        taxon_id=taxon_id,
+        common_names=(),
+        taxon_rank=taxon_rank,
+        canonical_source=canonical_source,
+        synonym_names=(),
+        authority=None,
+    )
+    domain_data: dict[str, dict[str, Any] | None] = {
+        "morphology_anatomy_physiology": None,
+        "habitat": None,
+        "geography": None,
+        "pollination": None,
+        "mycorrhizae": None,
+        "literature": None,
+        "neighboring_taxa_community": None,
+        "conservation": None,
+    }
+    try:
+        synthesis = build_teaching_synthesis(
+            subject,
+            domain_data,
+            audience=audience_level.value,
+            depth=depth_level.value,
+            sensitive_locality_withheld=True,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"synthesis_error: {exc}") from exc
+
+    research_questions = []
+    for gap in synthesis.knowledge_gaps:
+        domain = gap.split(":")[0].strip() if ":" in gap else gap.strip()
+        question = knowledge_gap_to_research_question(domain, taxon_name)
+        if question:
+            research_questions.append(
+                {
+                    "domain": domain,
+                    "gap_description": gap,
+                    "research_question": question,
+                    "graph_mutation": False,
+                }
+            )
+
+    return {
+        "taxon_id": taxon_id,
+        "taxon_name": taxon_name,
+        "research_questions": research_questions,
+        "graph_mutation": False,
+        "contract_version": synthesis.contract_version,
+    }
+
+
+@router.post("/synthesis/{taxon_id}/research-missions/{domain}", status_code=201)
+def start_synthesis_research_mission(
+    taxon_id: str,
+    domain: str,
+    payload: ResearchMissionRequest,
+    auth: dict[str, Any] = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Execute one bounded Brain mission from a canonical synthesis gap.
+
+    The question is selected from the closed domain vocabulary rather than
+    accepted as caller-authored free text. BrainMissionService owns durable
+    idempotency and the evidence -> reasoning -> review lifecycle. This bridge
+    grants no publication, graph-mutation, taxonomy, or provider authority.
+    """
+
+    normalized_domain = domain.strip().lower()
+    question = knowledge_gap_to_research_question(
+        normalized_domain,
+        payload.taxon_name,
+    )
+    if question is None:
+        raise HTTPException(
+            422,
+            detail={"code": "UNSUPPORTED_SYNTHESIS_DOMAIN"},
+        )
+
+    actor = _authenticated_actor(auth)
+    project_id = _research_mission_project_id(taxon_id, normalized_domain)
+    try:
+        mission = _brain_mission_service().start(
+            question=question,
+            tenant_id=actor,
+            project_id=project_id,
+            actor=actor,
+            max_sources=payload.max_sources,
+            max_steps=payload.max_execution_steps,
+            timeout_seconds=payload.timeout_seconds,
+        )
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(422, detail={"code": str(exc)}) from exc
+
+    return {
+        "taxon_id": taxon_id,
+        "taxon_name": payload.taxon_name,
+        "domain": normalized_domain,
+        "research_question": question,
+        "mission": mission,
+        "review_required": True,
+        "automatic_publication": False,
+        "knowledge_graph_mutation": False,
+    }
+
+
 @router.get("/capabilities")
 def capabilities() -> dict[str, Any]:
     return {
@@ -599,6 +886,9 @@ def capabilities() -> dict[str, Any]:
             "/api/calyx/query",
             "/api/calyx/analyze",
             "/api/calyx/dataset/analyze",
+            "/api/calyx/synthesis/{taxon_id}",
+            "/api/calyx/synthesis/{taxon_id}/research-questions",
+            "/api/calyx/synthesis/{taxon_id}/research-missions/{domain}",
             "/api/calyx/knowledge-graph",
             "/api/calyx/brain-query",
             "/api/calyx/conversations",

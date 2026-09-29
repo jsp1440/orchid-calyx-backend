@@ -313,3 +313,20 @@ def test_10_dispatcher_failure_fail_closed():
     assert second["admitted_count"] == 1, (
         "Queue state must not be corrupted by a dispatcher failure"
     )
+
+
+def test_refill_snapshot_omits_validating_records_without_exact_head_metadata():
+    validating = {
+        "number": 999,
+        "title": "Validation owned elsewhere",
+        "labels": [{"name": "oc-validating"}],
+    }
+    queued = {
+        "number": 1000,
+        "title": "Queued refill-owned record",
+        "labels": [{"name": "oc-queued"}],
+    }
+    snapshot = build_frontend_snapshot([validating, queued])
+    numbers = {row["number"] for row in snapshot["issues"]}
+    assert 999 not in numbers
+    assert 1000 in numbers

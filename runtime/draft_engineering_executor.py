@@ -21,6 +21,7 @@ class EngineeringTask:
     allowed_paths: tuple[str, ...]
     risk: str = "low"
     owner_approved: bool = False
+    base_branch: str = "oc-autonomous-integration"
 
 
 @dataclass(frozen=True)
@@ -115,7 +116,7 @@ class GovernedDraftEngineeringExecutor:
                 f"## Changed paths\n{', '.join(changed_paths) or 'None'}"
             ),
             branch_name=plan.branch_name,
-            base_branch="main",
+            base_branch=task.base_branch,
             draft=True,
             evidence={
                 "task_key": task.task_key,
@@ -130,6 +131,10 @@ class GovernedDraftEngineeringExecutor:
             raise PermissionError("owner approval is required")
         if task.risk not in self.supported_risks:
             raise PermissionError(f"unsupported autonomous risk: {task.risk}")
+        if task.base_branch != "oc-autonomous-integration":
+            raise PermissionError(
+                "bounded engineering may target only oc-autonomous-integration"
+            )
         if not task.allowed_paths:
             raise ValueError("at least one allowed path is required")
         if any(

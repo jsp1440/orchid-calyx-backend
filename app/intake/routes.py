@@ -1,33 +1,65 @@
 import os
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
-from app.security import verify_owner_or_api_key
+
 from app.routers.health import add_mission_control_cors_headers
+from app.security import verify_owner_or_api_key
+from app.storage import LocalImmutableStorage
+
 from .extractor import content_hash, extract
+from .gmail_collector import GoogleApiGmailGateway, collect_twin_intelligence
 from .intelligence import (
     assimilation_summary,
     canonical_email_text,
     intelligence_tasks,
     parse_external_intelligence,
 )
+from .intelligence_bridge import ProposeTaskRequest
 from .intelligence_repository import (
     get_intelligence_item,
     list_intelligence_items,
     record_intelligence_items,
 )
-from .gmail_collector import GoogleApiGmailGateway, collect_twin_intelligence
+from .journal_club import (
+    JournalClubIntakeRequest,
+    canonical_journal_club_text,
+    journal_club_summary,
+    parse_journal_club_transcript,
+)
 from .knowledge_delta import assess_item
 from .knowledge_delta_repository import record_comparison
-from app.storage import LocalImmutableStorage
-from .repository import (add_document, create_batch, create_source, decide, finalize_batch,
-                         get_batch, get_source, list_batches, list_review, mark_published, review_document)
-from .schemas import DocumentReview, EmailIntakeRequest, ReviewDecision, TextIntakeRequest, UrlIntakeRequest
+from .repository import (
+    add_document,
+    create_batch,
+    create_source,
+    decide,
+    finalize_batch,
+    get_batch,
+    get_source,
+    list_batches,
+    list_review,
+    mark_published,
+    review_document,
+)
+from .schemas import (
+    DocumentReview,
+    EmailIntakeRequest,
+    ReviewDecision,
+    TextIntakeRequest,
+    UrlIntakeRequest,
+)
+from .technology_scout import ScoutBatch, ingest_scout_batch
 from .universal import CLASSIFICATIONS, classify, extract_safe_text, validate_file
 
 router = APIRouter(
     prefix="/api/intake",
     tags=["knowledge-intake"],
-    dependencies=[Depends(verify_owner_or_api_key), Depends(add_mission_control_cors_headers)],
+    dependencies=[
+        Depends(verify_owner_or_api_key),
+        Depends(add_mission_control_cors_headers),
+    ],
 )
 
 
@@ -101,6 +133,52 @@ def ingest_email(payload: EmailIntakeRequest):
     }
 
 
+@router.post("/journal-club", status_code=201)
+def ingest_journal_club(payload: JournalClubIntakeRequest):
+    """Ingest owner-authorized JournalClub.io transcript text as review-bound technology intelligence."""
+    source_url = str(payload.source_url) if payload.source_url else None
+    items = parse_journal_club_transcript(
+        title=payload.title,
+        transcript=payload.transcript,
+        source_url=source_url,
+        episode_id=payload.episode_id,
+        doi=payload.doi,
+    )
+    canonical_content = canonical_journal_club_text(
+        title=payload.title,
+        transcript=payload.transcript,
+        source_url=source_url,
+        episode_id=payload.episode_id,
+        doi=payload.doi,
+    )
+    result = extract(canonical_content)
+    result.tasks.extend(intelligence_tasks(items))
+    source = create_source(
+        source_type="text",
+        title=payload.title,
+        content=canonical_content,
+        content_hash=content_hash(canonical_content),
+        source_url=source_url,
+        imported_by=payload.imported_by or "journal-club-transcript",
+        extraction=result,
+    )
+    persisted = record_intelligence_items(
+        source_id=source["id"],
+        items=items,
+        sender="journalclub.io",
+        message_id=payload.episode_id,
+    )
+    return {
+        **source,
+        "journal_club": journal_club_summary(items),
+        "intelligence_items": persisted,
+        "external_contacted": False,
+        "canonical_graph_mutated": False,
+        "publication_performed": False,
+        "automatic_implementation_performed": False,
+    }
+
+
 @router.get("/intelligence")
 def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
     return {
@@ -108,6 +186,37 @@ def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
         "canonical_graph_mutated": False,
         "external_contacted": False,
     }
+
+
+@router.post("/intelligence/scout", status_code=201)
+def technology_scout(payload: ScoutBatch):
+    """Screen bibliographic leads through the existing authenticated intake."""
+    return ingest_scout_batch(payload)
+
+
+@router.post("/intelligence/propose-task", status_code=201)
+def propose_intelligence_task(payload: ProposeTaskRequest):
+    """Validate evidence gates and promote an assessed intelligence item to a TaskLeaf.
+
+    A paper-discovery metadata signal (lifecycle='DISCOVERED') is rejected.
+    All twelve triage dimensions must be explicitly assessed.
+    The material fingerprint must match the computed sha256 of specification + criteria.
+    Returns 201 with the TaskLeaf dict on success; 409 with gate rejection details on failure.
+    """
+    from .intelligence_bridge import GateRejection
+    from .intelligence_bridge import bridge as _bridge
+
+    result = _bridge.propose_task(
+        item_id=payload.item_id,
+        gate=payload.gate,
+        assessor=payload.assessor,
+    )
+    if isinstance(result, GateRejection):
+        raise HTTPException(
+            status_code=409,
+            detail={"code": result.gate, "reason": result.reason},
+        )
+    return result.to_dict()
 
 
 @router.post("/intelligence/collect/twin-gmail")
@@ -130,7 +239,9 @@ def intelligence_compare(item_id: int):
         assessment = assess_item(item_id)
         return record_comparison(assessment)
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail={"code": str(exc).strip("'")}) from exc
+        raise HTTPException(
+            status_code=404, detail={"code": str(exc).strip("'")}
+        ) from exc
     except ValueError as exc:
         raise HTTPException(status_code=409, detail={"code": str(exc)}) from exc
 
@@ -139,7 +250,9 @@ def intelligence_compare(item_id: int):
 def intelligence_detail(item_id: int):
     result = get_intelligence_item(item_id)
     if not result:
-        raise HTTPException(status_code=404, detail={"code": "INTELLIGENCE_ITEM_NOT_FOUND"})
+        raise HTTPException(
+            status_code=404, detail={"code": "INTELLIGENCE_ITEM_NOT_FOUND"}
+        )
     return result
 
 
@@ -168,15 +281,27 @@ def reject(source_id: int, decision: ReviewDecision):
 def publish(source_id: int):
     result = mark_published(source_id)
     if not result:
-        raise HTTPException(status_code=409, detail="Source must exist and be APPROVED before publication")
-    return {**result, "graph_mutated": False, "message": "Approved intake package published to the intake registry; canonical graph mutation remains disabled."}
+        raise HTTPException(
+            status_code=409,
+            detail="Source must exist and be APPROVED before publication",
+        )
+    return {
+        **result,
+        "graph_mutated": False,
+        "message": "Approved intake package published to the intake registry; canonical graph mutation remains disabled.",
+    }
 
 
 @router.post("/batches", status_code=207)
-async def upload_batch(display_name: str = Form(...), source_label: str | None = Form(None),
-                       notes: str | None = Form(None), uploader: str | None = Form(None),
-                       files: list[UploadFile] = File(...)):
-    if not files: raise HTTPException(400, detail={"code": "NO_FILES"})
+async def upload_batch(
+    files: Annotated[list[UploadFile], File()],
+    display_name: str = Form(...),
+    source_label: str | None = Form(None),
+    notes: str | None = Form(None),
+    uploader: str | None = Form(None),
+):
+    if not files:
+        raise HTTPException(400, detail={"code": "NO_FILES"})
     batch = create_batch(display_name[:500], source_label, notes, uploader)
     storage = LocalImmutableStorage()
     results, accepted, duplicates, failed, review_required = [], 0, 0, 0, 0
@@ -188,20 +313,49 @@ async def upload_batch(display_name: str = Form(...), source_label: str | None =
             stored = storage.preserve(data, upload.filename or "unnamed")
             text, _ = extract_safe_text(extension, data)
             analysis = classify(stored.display_filename, text)
-            document = add_document(batch_id=batch["id"], filename=upload.filename or "unnamed",
-                                    media_type=upload.content_type, extension=extension, stored=stored,
-                                    analysis=analysis, uploader=uploader)
+            document = add_document(
+                batch_id=batch["id"],
+                filename=upload.filename or "unnamed",
+                media_type=upload.content_type,
+                extension=extension,
+                stored=stored,
+                analysis=analysis,
+                uploader=uploader,
+            )
             is_duplicate = document["duplicate_of_id"] is not None
-            duplicates += int(is_duplicate); accepted += int(not is_duplicate); review_required += int(not is_duplicate)
-            results.append({"filename": stored.display_filename, "status": "DUPLICATE" if is_duplicate else "PRESERVED", "document": document})
+            duplicates += int(is_duplicate)
+            accepted += int(not is_duplicate)
+            review_required += int(not is_duplicate)
+            results.append(
+                {
+                    "filename": stored.display_filename,
+                    "status": "DUPLICATE" if is_duplicate else "PRESERVED",
+                    "document": document,
+                }
+            )
         except ValueError as exc:
-            failed += 1; results.append({"filename": upload.filename, "status": "FAILED", "error": str(exc)})
-        except Exception:
-            failed += 1; results.append({"filename": upload.filename, "status": "FAILED", "error": "INGESTION_FAILED"})
+            failed += 1
+            results.append(
+                {"filename": upload.filename, "status": "FAILED", "error": str(exc)}
+            )
+        except Exception:  # noqa: BLE001 -- isolate each upload and withhold internal error details
+            failed += 1
+            results.append(
+                {
+                    "filename": upload.filename,
+                    "status": "FAILED",
+                    "error": "INGESTION_FAILED",
+                }
+            )
         finally:
             await upload.close()
     batch = finalize_batch(batch["id"], accepted, duplicates, failed, review_required)
-    return {"batch": batch, "files": results, "partial_success": failed > 0 and accepted + duplicates > 0, "canonical_graph_mutated": False}
+    return {
+        "batch": batch,
+        "files": results,
+        "partial_success": failed > 0 and accepted + duplicates > 0,
+        "canonical_graph_mutated": False,
+    }
 
 
 @router.get("/batches")
@@ -212,7 +366,8 @@ def batches(limit: int = Query(50, ge=1, le=200), offset: int = Query(0, ge=0)):
 @router.get("/batches/{batch_id}")
 def batch_detail(batch_id: int):
     batch = get_batch(batch_id)
-    if not batch: raise HTTPException(404, detail={"code": "BATCH_NOT_FOUND"})
+    if not batch:
+        raise HTTPException(404, detail={"code": "BATCH_NOT_FOUND"})
     return batch
 
 
@@ -221,10 +376,17 @@ def document_review(document_id: int, decision: DocumentReview):
     if decision.classification and decision.classification not in CLASSIFICATIONS:
         raise HTTPException(422, detail={"code": "INVALID_CLASSIFICATION"})
     try:
-        result = review_document(document_id, decision.action, decision.actor, decision.note, decision.classification)
+        result = review_document(
+            document_id,
+            decision.action,
+            decision.actor,
+            decision.note,
+            decision.classification,
+        )
     except ValueError as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
-    if not result: raise HTTPException(404, detail={"code": "DOCUMENT_NOT_FOUND"})
+    if not result:
+        raise HTTPException(404, detail={"code": "DOCUMENT_NOT_FOUND"})
     return result
 
 
@@ -232,15 +394,29 @@ def document_review(document_id: int, decision: DocumentReview):
 def original(document_id: int):
     import psycopg
     from psycopg.rows import dict_row
+
     from .repository import database_url
-    with psycopg.connect(database_url(), row_factory=dict_row) as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT storage_key, display_title, media_type FROM oc_intake.documents WHERE id=%s", (document_id,))
-            document = cur.fetchone()
-    if not document: raise HTTPException(404, detail={"code": "DOCUMENT_NOT_FOUND"})
+
+    with (
+        psycopg.connect(database_url(), row_factory=dict_row) as conn,
+        conn.cursor() as cur,
+    ):
+        cur.execute(
+            "SELECT storage_key, display_title, media_type FROM oc_intake.documents WHERE id=%s",
+            (document_id,),
+        )
+        document = cur.fetchone()
+    if not document:
+        raise HTTPException(404, detail={"code": "DOCUMENT_NOT_FOUND"})
     data = LocalImmutableStorage().read(document["storage_key"])
-    return Response(data, media_type=document["media_type"] or "application/octet-stream",
-                    headers={"Content-Disposition": f'attachment; filename="{document["display_title"]}"', "Cache-Control": "private, no-store"})
+    return Response(
+        data,
+        media_type=document["media_type"] or "application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="{document["display_title"]}"',
+            "Cache-Control": "private, no-store",
+        },
+    )
 
 
 # Keep this legacy dynamic route after every static GET route. Otherwise paths such

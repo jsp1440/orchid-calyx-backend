@@ -7,7 +7,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.member_auth import owner_or_member_read
 from app.routers.health import add_mission_control_cors_headers
+from app.scientific_memory.routes import router as scientific_memory_router
 from app.security import verify_owner_or_api_key
 
 from .models import ProjectDocument, ProjectEvidence, ProjectTaxon
@@ -22,10 +24,19 @@ from .schemas import (
 )
 from .service import ResearchWorkspaceError, ResearchWorkspaceService
 
+# Owner-only. ``owner_or_member_read`` is default-deny and no route here is marked
+# ``@member_readable``, so a verified member gets 403 OWNER_ACCESS_REQUIRED before
+# path/body validation or any project lookup (no existence disclosure), exactly as
+# on the other owner-only product routers. Owner and API-key requests pass through
+# the same ``verify_owner_or_api_key`` checks as before; anonymous stays 401. The
+# included scientific-memory routes inherit this dependency.
 router = APIRouter(
     prefix="/api/research/projects",
     tags=["research-workspace"],
-    dependencies=[Depends(add_mission_control_cors_headers)],
+    dependencies=[
+        Depends(add_mission_control_cors_headers),
+        Depends(owner_or_member_read),
+    ],
 )
 
 Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
@@ -328,3 +339,6 @@ def activity(
             project_id, actor, limit, offset, privileged
         ),
     )
+
+
+router.include_router(scientific_memory_router)

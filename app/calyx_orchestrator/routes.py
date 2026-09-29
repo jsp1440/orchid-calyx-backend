@@ -11,6 +11,8 @@ from app.database import get_db
 from app.security import verify_owner_or_api_key
 
 from .autonomy_routes import router as autonomy_router
+from .capability_memory import load_owner_capability_registry
+from .meta_orchestrator import plan as meta_plan
 from .models import CalyxJob
 from .operations import operational_status, renew_lease, seed_approved_tasks
 from .portfolio_routes import router as portfolio_router
@@ -22,6 +24,7 @@ from .service import (
     READ_ONLY_JOB_TYPES,
     CalyxOrchestrator,
 )
+from .specialist_routes import router as specialist_router
 
 router = APIRouter(prefix="/orchestrator", tags=["calyx-orchestrator"])
 
@@ -152,6 +155,51 @@ def requeue_dead_letter(job_id: str, auth: AuthDependency, db: DbDependency) -> 
     return CalyxOrchestrator.job_dict(job)
 
 
+class PlanTaskRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    task_id: str = Field(min_length=1, max_length=240)
+    objective: str = Field(min_length=1, max_length=2000)
+    consequence_class: str = Field(default="read_only", max_length=60)
+    minimum_required_authority: str | None = Field(default=None, max_length=10)
+    allowed_role_keys: list[str] = Field(default_factory=list)
+    memory_reference_ids: list[str] = Field(default_factory=list)
+
+
+class PlanRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    objective: str = Field(min_length=1, max_length=2000)
+    consequence_class: str = Field(default="read_only", max_length=60)
+    tasks: list[PlanTaskRequest] = Field(default_factory=list)
+    plan_id: str | None = Field(default=None, max_length=80)
+
+
+@router.post("/plan")
+def create_plan(
+    payload: PlanRequest,
+    auth: AuthDependency,
+    db: DbDependency,
+) -> dict:
+    """Return a governed orchestration plan — proposal only, no execution."""
+    owner = _owner(auth)
+    capability_registry = load_owner_capability_registry(db, owner=owner)
+    profiles: list[dict[str, Any]] = capability_registry.get("profiles", [])
+    request_dict: dict[str, Any] = {
+        "objective": payload.objective,
+        "consequence_class": payload.consequence_class,
+        "tasks": [t.model_dump(exclude_none=False) for t in payload.tasks],
+    }
+    governed_plan = meta_plan(
+        request_dict,
+        profiles,
+        plan_id=payload.plan_id,
+    )
+    governed_plan["_capability_registry_boundary"] = capability_registry.get("boundary")
+    return governed_plan
+
+
+router.include_router(specialist_router)
 router.include_router(program_router)
 router.include_router(autonomy_router)
 router.include_router(portfolio_router)

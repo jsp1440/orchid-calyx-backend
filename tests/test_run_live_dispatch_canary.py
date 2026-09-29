@@ -33,6 +33,11 @@ from app.calyx_orchestrator.github_proposal_mutation_adapter import (
 from app.database import Base
 from scripts import run_live_dispatch_canary as canary
 
+# Every test provisions a throwaway database through ``psql`` against the
+# cluster behind DATABASE_URL, so the whole module is gated in tests/conftest.py
+# by a real connection probe plus a psql-on-PATH check.
+pytestmark = pytest.mark.requires_postgres("DATABASE_URL", psql=True)
+
 NO_DUPLICATE_FOUND = GitHubTransportResponse(200, [])
 
 

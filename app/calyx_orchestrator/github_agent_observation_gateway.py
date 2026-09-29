@@ -36,15 +36,19 @@ class GitHubIssueLinkedPullRequestObserver:
         *,
         transport: GitHubTransport,
         required_checks: RequiredCiCheckPolicy,
-        bot_login: str = COPILOT_BOT_LOGIN,
+        bot_login: str | None = COPILOT_BOT_LOGIN,
+        require_bound_pr: bool = False,
     ) -> None:
         self._transport = transport
         self._required_checks = required_checks
         self._bot_login = bot_login
+        self._require_bound_pr = require_bound_pr
 
     def observe(self, dispatch: GitHubAgentDispatchRecord) -> PullRequestObservation:
         pr_number = dispatch.pull_request_number
         if pr_number is None:
+            if self._require_bound_pr:
+                raise PermissionError("GITHUB_OBSERVATION_BOUND_PR_REQUIRED")
             pr_number = self._resolve_linked_pr(dispatch)
             if pr_number is None:
                 return PullRequestObservation(
@@ -104,7 +108,7 @@ class GitHubIssueLinkedPullRequestObserver:
             if "pull_request" not in source_issue:
                 continue
             user = self._loose_mapping(source_issue.get("user"))
-            if user.get("login") != self._bot_login:
+            if self._bot_login is not None and user.get("login") != self._bot_login:
                 continue
             repo = self._loose_mapping(source_issue.get("repository"))
             full_name = str(repo.get("full_name") or "")
@@ -128,7 +132,7 @@ class GitHubIssueLinkedPullRequestObserver:
         if str(base_repo.get("full_name") or "") != repository:
             raise PermissionError("GITHUB_OBSERVATION_REPOSITORY_MISMATCH")
         user = self._strict_mapping(pr.get("user"))
-        if user.get("login") != self._bot_login:
+        if self._bot_login is not None and user.get("login") != self._bot_login:
             raise PermissionError("GITHUB_OBSERVATION_PR_PROVENANCE_MISMATCH")
         return pr
 

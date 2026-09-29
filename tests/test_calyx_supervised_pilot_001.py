@@ -19,7 +19,7 @@ def test_enabled_pilot_prepares_one_draft_only_package(monkeypatch):
     assert result["executed"] is True
     assert result["reason"] == "draft-package-prepared-no-github-write"
     assert result["package"]["draft"] is True
-    assert result["package"]["base_branch"] == "main"
+    assert result["package"]["base_branch"] == "oc-autonomous-integration"
     assert result["package"]["evidence"]["validation_results"] == {
         "draft-only": True,
         "no-connector-execution": True,

@@ -358,6 +358,18 @@ def compose_conversational_answer(
         "integrated_across_source_families": _crosses_source_families(groups),
         "cited_source_families": sorted(cited_families),
         "source_families": reconciliation.get("source_families") or [],
+        "evidence_class_readiness": reconciliation.get("evidence_class_readiness")
+        or {
+            "status": "evidence_incomplete",
+            "literature_present": False,
+            "literature_review_required": False,
+            "continuum_evidence_classes": [],
+            "continuum_evidence_class_count": 0,
+            "required_continuum_evidence_class_count": 2,
+            "missing_requirements": [
+                "evidence readiness was not supplied by the governed producer"
+            ],
+        },
         "missing_evidence": missing,
         "canonical_retrieval_gap": bool(reconciliation.get("canonical_retrieval_gap")),
         "external_literature_review_required": bool(

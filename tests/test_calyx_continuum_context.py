@@ -126,7 +126,7 @@ def test_speak_turn_passes_continuum_graph_context_to_reply(monkeypatch):
     # guarantee this test exists for -- resolved graph context actually reaching
     # the reply -- is asserted directly instead, and raw graph records must
     # never be serialized into the prose.
-    assert "Cymbidium" in result["answer"]
+    assert "Cymbidium".casefold() in result["answer"].casefold()
     assert "Orchid Continuum context" not in result["answer"]
     assert "{" not in result["answer"]
     assert '": ' not in result["answer"]

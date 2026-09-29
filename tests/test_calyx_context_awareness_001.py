@@ -43,7 +43,10 @@ def isolated(monkeypatch):
 
 
 def auth():
-    return {"subject": "owner-context"}
+    # Owner session shape as produced by app.security.verify_owner_session;
+    # the access-economics gate meters non-privileged subjects, and this test
+    # is about what reaches the generative provider.
+    return {"subject": "owner-context", "auth_type": "owner_session"}
 
 
 def test_sanitizer_forces_ui_context_to_non_evidence_and_bounds_trail():

@@ -22,6 +22,13 @@ class ClaimExtractor(Extractor):
     }
     _sentence_pattern = re.compile(r"[^.!?\n]+(?:[.!?]+|$)")
 
+    @classmethod
+    def _claim_type(cls, section: object) -> str | None:
+        heading = str(getattr(section, "heading", "") or "").strip().casefold()
+        if heading in {"recommendations", "cultivation guidance"}:
+            return "recommendation"
+        return cls._claim_types.get(str(getattr(section, "canonical_type", "")))
+
     async def run(
         self,
         context: PipelineContext,
@@ -32,13 +39,29 @@ class ClaimExtractor(Extractor):
         evidence_items: list[Evidence] = []
 
         for section in paper.sections:
-            claim_type = self._claim_types.get(section.canonical_type)
+            claim_type = self._claim_type(section)
             if claim_type is None:
                 continue
             if section.span.char_start is None or section.span.char_end is None:
                 continue
 
             section_source = text[section.span.char_start : section.span.char_end]
+            contextual_subject_ids = (
+                sorted(
+                    entity.entity_id
+                    for entity in paper.entities
+                    if any(
+                        mention.char_start is not None
+                        and mention.char_end is not None
+                        and mention.char_start >= section.span.char_start
+                        and mention.char_end <= section.span.char_end
+                        for mention in entity.mentions
+                    )
+                )
+                if str(section.heading or "").strip().casefold()
+                == "cultivation guidance"
+                else []
+            )
             heading_offset = section_source.find("\n")
             body_offset = heading_offset + 1 if heading_offset >= 0 else 0
             body_source = section_source[body_offset:]
@@ -84,16 +107,25 @@ class ClaimExtractor(Extractor):
                         claim_id=claim_id,
                         statement=statement,
                         claim_type=claim_type,
-                        subject_ids=sorted(
-                            entity.entity_id
-                            for entity in paper.entities
-                            if any(
-                                mention.char_start is not None
-                                and mention.char_end is not None
-                                and mention.char_start >= char_start
-                                and mention.char_end <= char_end
-                                for mention in entity.mentions
+                        subject_ids=(
+                            sorted(
+                                entity.entity_id
+                                for entity in paper.entities
+                                if any(
+                                    mention.char_start is not None
+                                    and mention.char_end is not None
+                                    and mention.char_start >= char_start
+                                    and mention.char_end <= char_end
+                                    for mention in entity.mentions
+                                )
                             )
+                            or contextual_subject_ids
+                        ),
+                        predicate=(
+                            "cultivation_guidance"
+                            if str(section.heading or "").strip().casefold()
+                            == "cultivation guidance"
+                            else None
                         ),
                         evidence_ids=[evidence_id],
                         polarity="uncertain",

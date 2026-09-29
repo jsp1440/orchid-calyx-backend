@@ -1,0 +1,62 @@
+{
+  "schema": "oc.autonomy-context.v1",
+  "version": "1.0.0",
+  "purpose": "Provider-neutral canonical operating context for Orchid Continuum autonomous engineering.",
+  "authority_order": [
+    "repository_evidence",
+    "canonical_context",
+    "durable_receipts",
+    "task_specific_acceptance_criteria"
+  ],
+  "loop": [
+    "discover",
+    "prioritize",
+    "queue",
+    "reconcile",
+    "admit",
+    "lease",
+    "execute",
+    "test",
+    "validate",
+    "evidence",
+    "complete",
+    "replenish"
+  ],
+  "operating_rules": {
+    "provider_free_first": true,
+    "fail_closed_on_unknown_capability": true,
+    "merge_only_when_green_and_safe": true,
+    "persist_failure_memory": true,
+    "require_evidence_for_completion": true,
+    "human_escalation_only_for": [
+      "irreversible_or_high_consequence_change",
+      "credential_or_secret_requirement",
+      "financially_material_external_spend",
+      "scientific_ambiguity_requiring_human_judgment",
+      "owner_governed_authority"
+    ]
+  },
+  "memory_layers": {
+    "canonical": "Small durable operating truths loaded every run.",
+    "retrievable": "Detailed architecture, decisions, failures, and knowledge objects fetched on demand.",
+    "episodic": "Run receipts, failures, retries, test evidence, and merge outcomes."
+  },
+  "required_evidence": [
+    "task_identity",
+    "declared_capability",
+    "execution_lane",
+    "tests_or_validation",
+    "provider_call_count",
+    "terminal_state",
+    "failure_reason_when_not_complete"
+  ],
+  "evaluation": {
+    "autonomy_proof_target": 10,
+    "success_definition": "Ten consecutive autonomous loops without an unhandled blockage, silent refusal, duplicate lease, unsafe merge, or missing completion evidence."
+  },
+  "release": {
+    "target": "R1",
+    "target_date": "2026-09-27"
+  },
+  "provider_neutral": true
+}

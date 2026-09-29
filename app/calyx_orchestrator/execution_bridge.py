@@ -5,6 +5,8 @@ from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
+from app.security import credentials_match
+
 from .executor import ExecutionReceipt, ExecutionState
 from .program_models import CalyxProgram, CalyxProgramJob
 from .program_worker import PersistentProgramWorker
@@ -148,7 +150,10 @@ class LeaseExecutionBridge:
         if (
             job.status != "running"
             or job.lease_owner != worker_id
-            or job.lease_token != lease_token
+            # Constant-time; a cleared (None) or empty lease token never matches.
+            or not job.lease_token
+            or not lease_token
+            or not credentials_match(lease_token, job.lease_token)
         ):
             raise PermissionError("STALE_PROGRAM_JOB_LEASE")
         program = self.db.get(CalyxProgram, job.program_id)

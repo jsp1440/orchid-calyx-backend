@@ -7,6 +7,12 @@ from sqlalchemy.orm import Session
 
 from .models import CalyxFinding, CalyxJob
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
+from .specialist_models import (
+    SpecialistApproval,
+    SpecialistArtifact,
+    SpecialistMission,
+    SpecialistReview,
+)
 
 _SCHEMA_LOCK = Lock()
 _SCHEMA_READY_ENGINES: set[int] = set()
@@ -16,9 +22,9 @@ def ensure_orchestrator_schema(db: Session) -> None:
     """Idempotently create the durable Calyx orchestrator tables used by status/jobs.
 
     Production historically shipped the SQL migration files without guaranteeing that
-    every Render database had applied the original orchestrator migration.  This narrow
-    bootstrap intentionally creates only the orchestrator/program tables owned by this
-    subsystem; it does not call global ``Base.metadata.create_all``.
+    every Render database had applied the original orchestrator migration. This narrow
+    bootstrap intentionally creates only the orchestrator/program/specialist tables owned
+    by this subsystem; it does not call global ``Base.metadata.create_all``.
     """
 
     bind = db.get_bind()
@@ -37,11 +43,15 @@ def ensure_orchestrator_schema(db: Session) -> None:
             CalyxProgram.__table__,
             CalyxProgramJob.__table__,
             CalyxProgramDependency.__table__,
+            SpecialistMission.__table__,
+            SpecialistArtifact.__table__,
+            SpecialistReview.__table__,
+            SpecialistApproval.__table__,
         ):
             table.create(bind=bind, checkfirst=True)
 
         # Older installations may have the original jobs table but not the autonomy
-        # columns introduced later.  PostgreSQL supports safe idempotent repair here.
+        # columns introduced later. PostgreSQL supports safe idempotent repair here.
         if bind.dialect.name == "postgresql":
             with bind.begin() as conn:
                 conn.execute(

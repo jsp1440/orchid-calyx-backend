@@ -16,7 +16,7 @@ from app.security import verify_owner_or_api_key
 from runtime.knowledge_graph import PostgresGraphRepository
 
 from .adaptive_communication import VoiceProfile, render_adaptive_answer
-from .routes import ENGINE
+from .routes import get_engine
 
 router = APIRouter(
     prefix="/calyx",
@@ -77,7 +77,7 @@ def _retrieval(
         parent_expansion="AUTO",
         internal_access=internal_access,
     )
-    return ENGINE.search(query)
+    return get_engine().search(query)
 
 
 def _reasoning_path_summary(path: dict[str, Any], index: int) -> str:

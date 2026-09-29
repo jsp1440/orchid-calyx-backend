@@ -1,11 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Protocol, Sequence
-from urllib.parse import unquote, urlparse
 import re
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Protocol
+from urllib.parse import unquote, urlparse
 
-from .models import FederationResolveRequest, FederationResolveResult, SpeciesAtlasEnvelope, SpeciesDossierEnvelope
+from .models import (
+    FederationResolveRequest,
+    FederationResolveResult,
+    SpeciesAtlasEnvelope,
+    SpeciesDossierEnvelope,
+)
 
 
 class SpeciesRepository(Protocol):
@@ -13,7 +19,9 @@ class SpeciesRepository(Protocol):
     def get_atlas(self, taxon_id: str) -> SpeciesAtlasEnvelope | None: ...
     def resolve_taxon_id(self, taxon_id: str) -> tuple[str, str] | None: ...
     def resolve_name(self, normalized_name: str) -> Sequence[tuple[str, str, str]]: ...
-    def resolve_partner_slug(self, partner_slug: str, species_slug: str) -> Sequence[tuple[str, str, str]]: ...
+    def resolve_partner_slug(
+        self, partner_slug: str, species_slug: str
+    ) -> Sequence[tuple[str, str, str]]: ...
 
 
 @dataclass(frozen=True)
@@ -51,7 +59,9 @@ class SpeciesDossierService:
             if result.status != "unresolved":
                 return result
 
-        incoming_name = request.name or extract_species_name_from_url(str(request.source_url or ""))
+        incoming_name = request.name or extract_species_name_from_url(
+            str(request.source_url or "")
+        )
         if not incoming_name:
             return FederationResolveResult(
                 status="invalid",
@@ -106,7 +116,11 @@ class SpeciesDossierService:
                 matched_name=None,
                 match_state="none",
                 candidates=[
-                    {"taxon_id": taxon_id, "accepted_name": accepted_name, "match_state": match_state}
+                    {
+                        "taxon_id": taxon_id,
+                        "accepted_name": accepted_name,
+                        "match_state": match_state,
+                    }
                     for taxon_id, accepted_name, match_state in hits
                 ],
                 partner_slug=request.partner_slug,
@@ -132,7 +146,11 @@ class SpeciesDossierService:
         match_state: str,
         request: FederationResolveRequest,
     ) -> FederationResolveResult:
-        allowed_state = match_state if match_state in {"taxon_id", "accepted_name", "synonym", "partner_slug"} else "accepted_name"
+        allowed_state = (
+            match_state
+            if match_state in {"taxon_id", "accepted_name", "synonym", "partner_slug"}
+            else "accepted_name"
+        )
         return FederationResolveResult(
             status="resolved",
             incoming_name=incoming_name,
@@ -149,7 +167,11 @@ class SpeciesDossierService:
 def normalize_scientific_name(value: str) -> str | None:
     cleaned = " ".join(unquote(value).replace("_", " ").replace("-", " ").split())
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
-    match = re.match(r"^([A-Za-z][A-Za-z-]+)\s+([a-z][a-z-]+)(?:\s+(subsp\.|var\.|f\.)\s+([a-z][a-z-]+))?", cleaned)
+    match = re.match(
+        r"^([A-Za-z][A-Za-z-]+)\s+([a-z][a-z-]+)(?:\s+(subsp\.|var\.|f\.)\s+([a-z][a-z-]+))?",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
     if not match:
         return None
     genus, epithet, rank, infra = match.groups()

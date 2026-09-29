@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchidcontinuum.org/contracts/oc-federation-v1.json",
+  "schema": "oc.federation-work-record.v1",
+  "description": "Small, provider-free handoff record shared by Brain, backend, and frontend. It describes evidence, not authority to publish science or deploy production.",
+  "required": [
+    "work_id",
+    "repository",
+    "issue",
+    "pull_request",
+    "capability",
+    "dependencies",
+    "dependency_repository",
+    "state",
+    "block_reason",
+    "lease",
+    "attempt",
+    "implementation_sha",
+    "verification_sha",
+    "integration_sha",
+    "receipt",
+    "provider_requirement",
+    "owner_gate",
+    "settlement",
+    "downstream_dependents"
+  ],
+  "properties": {
+    "work_id": { "type": "string", "minLength": 1 },
+    "repository": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+    "issue": { "type": ["integer", "null"], "minimum": 1 },
+    "pull_request": { "type": ["integer", "null"], "minimum": 1 },
+    "capability": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 },
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "dependencies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["work_id", "repository"],
+        "properties": {
+          "work_id": { "type": "string", "minLength": 1 },
+          "repository": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+          "state": { "type": "string" }
+        },
+        "additionalProperties": true
+      }
+    },
+    "dependency_repository": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+      "uniqueItems": true
+    },
+    "state": {
+      "enum": ["discovered", "admitted", "leased", "executing", "verifying", "integrated", "settled", "blocked", "failed"]
+    },
+    "block_reason": {
+      "enum": ["none", "repository_dependency", "external_provider", "owner_gate", "deterministic_failure"]
+    },
+    "lease": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["none", "reserved", "running", "released", "expired", "blocked"] },
+        "lease_id": { "type": ["string", "null"] }
+      },
+      "additionalProperties": true
+    },
+    "attempt": {
+      "type": "object",
+      "required": ["run_id", "run_attempt"],
+      "properties": {
+        "run_id": { "type": "string", "minLength": 1 },
+        "run_attempt": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "implementation_sha": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40}$" },
+    "verification_sha": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40}$" },
+    "integration_sha": { "type": ["string", "null"], "pattern": "^[a-f0-9]{40}$" },
+    "receipt": {
+      "type": "object",
+      "required": ["schema", "kind", "id"],
+      "properties": {
+        "schema": { "type": "string", "minLength": 1 },
+        "kind": { "type": "string", "minLength": 1 },
+        "id": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    },
+    "provider_requirement": { "type": "boolean" },
+    "owner_gate": { "type": "boolean" },
+    "settlement": {
+      "type": "object",
+      "required": ["state"],
+      "properties": {
+        "state": { "enum": ["pending", "settled", "not-executed", "failed", "owner-gate"] }
+      },
+      "additionalProperties": true
+    },
+    "downstream_dependents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["work_id", "repository"],
+        "properties": {
+          "work_id": { "type": "string", "minLength": 1 },
+          "repository": { "type": "string", "pattern": "^[^/]+/[^/]+$" },
+          "issue": { "type": ["integer", "null"], "minimum": 1 },
+          "pull_request": { "type": ["integer", "null"], "minimum": 1 },
+          "capability": { "type": "string", "minLength": 1 }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

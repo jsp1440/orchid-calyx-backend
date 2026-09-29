@@ -5,15 +5,21 @@ from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.orm import Session
 
 from app.brain_mission.routes import SERVICE as BRAIN_MISSION_SERVICE
+from app.database import get_db
+from app.scientific_memory.service import ScientificMemoryError, ScientificMemoryService
 from app.security import verify_owner_or_api_key
 
+from .access_economics import ACCESS_POLICY as _DEFAULT_ACCESS_POLICY
+from .access_economics import CalyxAccessPolicy
 from .climate_context import build_seasonal_climate_context
 from .continuum_context import build_continuum_context
 from .conversational_synthesis import is_follow_up, resolve_subject
 from .external_literature import augment_retrieval_with_external_literature
 from .interaction_context import sanitize_interaction_context
+from .knowledge_context import build_knowledge_context
 from .provider import DeterministicGovernedReplyProvider
 from .provider_runtime import (
     configured_runtime_provider,
@@ -22,8 +28,12 @@ from .provider_runtime import (
 from .routes import STORE, _retrieval
 
 configured_reply_provider = configured_runtime_provider
+#: Generative (paid) provider access policy for Speak turns. Module attribute so
+#: tests and operators can substitute a policy without touching the routes.
+ACCESS_POLICY: CalyxAccessPolicy = _DEFAULT_ACCESS_POLICY
 
 AuthDependency = Annotated[dict[str, Any], Depends(verify_owner_or_api_key)]
+Db = Annotated[Session, Depends(get_db)]
 router = APIRouter(prefix="/calyx/speak", tags=["calyx-speak"])
 
 MAX_USER_TURN_CHARS = 100000
@@ -42,6 +52,10 @@ class ConversationTurnRequest(BaseModel):
     context: dict[str, Any] = Field(default_factory=dict)
     research_mode: Literal["auto", "always", "never"] = "auto"
     retrieval_limit: int = Field(default=12, ge=1, le=50)
+    # "never" asks for the deterministic governed composer even when a
+    # generative provider is configured and the caller is entitled to it. The
+    # AI and non-AI paths stay visibly distinguishable in the response.
+    generative_mode: Literal["auto", "never"] = "auto"
 
 
 def _subject(auth: dict[str, Any]) -> str:
@@ -49,6 +63,19 @@ def _subject(auth: dict[str, Any]) -> str:
     if not subject:
         raise HTTPException(401, detail={"code": "AUTHENTICATED_SUBJECT_REQUIRED"})
     return subject
+
+
+def _scientific_memory_context(
+    db: Session | None, project_id: str, owner: str, privileged: bool
+) -> dict[str, Any]:
+    if db is None:
+        return {}
+    try:
+        return ScientificMemoryService().recall(
+            db, project_id, owner, privileged=privileged
+        )
+    except ScientificMemoryError:
+        return {}
 
 
 def _is_casual(message: str) -> bool:
@@ -153,6 +180,22 @@ def _safe_climate_context(message: str) -> dict[str, Any]:
             "diagnostics": [{"source": "climate_context", "error": str(exc)}],
             "external": True, "time_sensitive": True,
             "automatic_publication": False, "knowledge_graph_mutation": False,
+        }
+
+
+def _safe_knowledge_context(message: str) -> dict[str, Any]:
+    try:
+        return build_knowledge_context(message)
+    except Exception:  # noqa: BLE001
+        return {
+            "schema": "oc.calyx-knowledge-context.v1",
+            "query": message[:200],
+            "lexicon": {"available": False, "source": "oc_lexicon", "canonical_graph_mutated": False, "read_only": True},
+            "literature": {"available": False, "source": "oc_literature_extraction", "canonical_graph_mutated": False, "read_only": True},
+            "read_only": True,
+            "canonical_graph_mutated": False,
+            "engineering_dispatch_authorized": False,
+            "provider_calls": 0,
         }
 
 
@@ -433,7 +476,21 @@ def speak_status(auth: AuthDependency) -> dict[str, Any]:
         },
         "deliverables": _deliverable_capabilities(),
         "interaction_context": {"supported": True, "evidence": False, "max_session_trail": 8},
+        "access_policy": ACCESS_POLICY.describe(),
         "automatic_publication": False, "knowledge_graph_mutation": False,
+    }
+
+
+@router.get("/entitlement")
+def speak_entitlement(auth: AuthDependency) -> dict[str, Any]:
+    """The generative-access decision this caller would receive, without spending a turn."""
+    subject = _subject(auth)
+    decision = ACCESS_POLICY.preview(auth=auth, subject=subject, candidate=configured_reply_provider())
+    return {
+        "subject": subject,
+        "decision": decision.as_dict(),
+        "policy": ACCESS_POLICY.describe(),
+        "deterministic_path_always_available": True,
     }
 
 
@@ -475,7 +532,12 @@ def get_conversation(
 
 
 @router.post("/conversations/{conversation_id}/turns")
-def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: AuthDependency) -> dict[str, Any]:
+def append_turn(
+    conversation_id: str,
+    payload: ConversationTurnRequest,
+    auth: AuthDependency,
+    db: Db = None,
+) -> dict[str, Any]:
     owner = _subject(auth)
     existing = STORE.get(conversation_id, owner=owner)
     if existing is None:
@@ -494,6 +556,7 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         owner=owner, conversation_id=conversation_id, project_id=project_id, message=payload.message,
         research_mode=payload.research_mode, retrieval_limit=payload.retrieval_limit,
     )
+    knowledge = _safe_knowledge_context(payload.message)
 
     if mission is not None:
         STORE.append(
@@ -533,10 +596,25 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
              "canonical_orchid_evidence": False}, owner=owner,
         )
 
+    _knowledge_lex_count = knowledge.get("lexicon", {}).get("matched_terms") or 0
+    _knowledge_lit_count = knowledge.get("literature", {}).get("matched_papers") or 0
+    if _knowledge_lex_count or _knowledge_lit_count:
+        STORE.append(
+            conversation_id, "tool",
+            f"OC knowledge bridge: {_knowledge_lex_count} lexicon term(s), {_knowledge_lit_count} literature paper(s) retrieved.",
+            {"tool": "knowledge_context", "lexicon_terms": _knowledge_lex_count,
+             "literature_papers": _knowledge_lit_count,
+             "read_only": True, "canonical_graph_mutated": False, "provider_calls": 0},
+            owner=owner,
+        )
+
     governed_context = {
         "casual": casual, "conversation_id": conversation_id, "project_id": project_id,
         "interaction_context": interaction_context, "retrieval": retrieval, "continuum": continuum,
-        "climate": climate, "mission": mission, "mission_error": mission_error,
+        "climate": climate, "knowledge": knowledge, "mission": mission, "mission_error": mission_error,
+        "scientific_memory": _scientific_memory_context(
+            db, project_id, owner, auth.get("auth_type") == "api_key"
+        ),
         # The investigation subject this turn continues, resolved server-side
         # from persistent conversation state. Interaction context, not evidence.
         "resolved_subject": retrieval.get("resolved_subject"),
@@ -556,14 +634,27 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
         },
     }
     messages = STORE.provider_messages(conversation_id, owner=owner, turns=8)
-    provider = configured_reply_provider()
+    # Access economics: the configured provider is only a candidate. Whether a
+    # generative (paid) turn may be spent is decided per subject and tier, and
+    # the deterministic governed composer answers whenever it may not.
+    candidate = configured_reply_provider()
+    access = ACCESS_POLICY.decide(
+        auth=auth, subject=owner, generative_mode=payload.generative_mode, candidate=candidate,
+    )
+    provider = candidate if access.generative_allowed else DeterministicGovernedReplyProvider()
     provider_error: str | None = None
+    provider_outcome = "generative" if access.generative_allowed else "deterministic"
     try:
         reply = provider.generate(messages=messages, governed_context=governed_context)
     except Exception as exc:  # noqa: BLE001
         provider_error = str(exc)
+        if access.generative_allowed:
+            # The reserved turn produced nothing; give it back before falling back.
+            ACCESS_POLICY.release(access)
+            provider_outcome = "deterministic_fallback_after_provider_error"
         fallback = DeterministicGovernedReplyProvider()
         reply = fallback.generate(messages=messages, governed_context=governed_context)
+    access_policy = {**access.as_dict(), "provider_outcome": provider_outcome}
 
     calyx_message = STORE.append(
         conversation_id, "calyx", reply.text,
@@ -572,6 +663,7 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
             "synthesis_structure": reply.synthesis_structure,
             "provider_response_id": reply.provider_response_id, "request_hash": reply.request_hash,
             "provider_error": provider_error, "provider_configuration": runtime_provider_configuration(),
+            "access_policy": access_policy,
             "mission_id": mission.get("mission_id") if mission else None,
             "mission_state": mission.get("state") if mission else None,
             "review_status": mission.get("review_status") if mission else None,
@@ -597,13 +689,16 @@ def append_turn(conversation_id: str, payload: ConversationTurnRequest, auth: Au
             "name": reply.provider, "model": reply.model, "request_hash": reply.request_hash,
             "provider_response_id": reply.provider_response_id, "fallback_error": provider_error,
             "configuration": runtime_provider_configuration(),
+            "generative": provider_outcome == "generative",
         },
+        "access_policy": access_policy,
         "interaction_context": interaction_context,
         "synthesis_structure": reply.synthesis_structure,
         "research": {
             "casual": casual, "mission": mission, "mission_error": mission_error,
             "retrieval": retrieval, "continuum": continuum, "climate": climate,
-            "citations": citations,
+            "knowledge": knowledge,
+            "citations": citations, "scientific_memory": governed_context["scientific_memory"],
         },
         "workspace_outputs": _workspace_outputs(
             mission=mission, citations=citations, calyx_message=calyx_message,

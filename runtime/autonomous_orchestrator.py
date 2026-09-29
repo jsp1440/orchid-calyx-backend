@@ -1,3 +1,4 @@
+# ruff: noqa: UP045, SIM117, BLE001 — pre-existing legacy findings; audit adapter is additive
 """BUILD-044 Calyx Autonomous Orchestrator.
 
 This module gives Calyx a durable task queue and a conservative run-once
@@ -877,6 +878,30 @@ class CalyxAutonomousOrchestrator:
                 )
             conn.commit()
         return {"task": task}
+
+    def queue_audit_followthrough(self, findings: Any, store: Any = None) -> dict[str, Any]:
+        """Turn an audit's actionable findings into durable remediation tasks.
+
+        Thin adapter onto ``runtime.audit_followthrough``: this orchestrator
+        already owns ``oc_admin.calyx_tasks``, so follow-through persistence
+        lives here rather than in a second write path. Idempotent on the
+        follow-through dedupe key; risky task types stay ``needs_review``
+        behind the existing approval gate. ``store`` is an injection point for
+        tests; production callers leave it unset. Imported lazily because
+        ``audit_followthrough`` imports :class:`DefaultTaskExecutor` from this
+        module.
+        """
+
+        from runtime.audit_followthrough import (
+            OrchestratorFollowthroughStore,
+            persist_followthrough,
+        )
+
+        return persist_followthrough(
+            findings,
+            store if store is not None else OrchestratorFollowthroughStore(self),
+            executor=self.executor,
+        )
 
     def approve_task(self, task_id: int) -> dict[str, Any]:
         with self.connect() as conn:

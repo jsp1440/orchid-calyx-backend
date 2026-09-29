@@ -29,7 +29,7 @@ class GitHubRepositoryConvergenceInspector:
         )
         if not allowlist:
             raise ValueError("GITHUB_INSPECTOR_REPOSITORY_ALLOWLIST_REQUIRED")
-        if base_ref != "main":
+        if base_ref not in {"main", "oc-autonomous-integration"}:
             raise ValueError("GITHUB_INSPECTOR_BASE_REF_NOT_ALLOWED")
         self._transport = transport
         self._repository_allowlist = allowlist

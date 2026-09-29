@@ -1,0 +1,720 @@
+{
+  "schema": "oc.autonomy-durable-proof.v1",
+  "status": "PASS",
+  "target": 10,
+  "consecutive_completed_cycles": 10,
+  "distinct_work_items": 10,
+  "provider_calls": 0,
+  "missing_completion_evidence": 0,
+  "unsettled_completions": 0,
+  "duplicate_settlements": 0,
+  "durable_storage": {
+    "reservoir": "sqlite file, shared by every cycle",
+    "journal_cycles_persisted": 15,
+    "reservoir_tasks_persisted": 10,
+    "state_reset_between_cycles": false
+  },
+  "canonical_context": {
+    "schema": "oc.autonomy-context.v1",
+    "version": "1.0.0",
+    "loop_steps_declared": 12,
+    "loop_steps_implemented": 12,
+    "loop_coverage": {
+      "discover": "WorkSource.discover() polled once per cycle in _discover_and_admit",
+      "prioritize": "DecisionEngine.decide() ranks candidates in _decide",
+      "queue": "DurableOrchestrate.register() persists admitted work",
+      "reconcile": "_reconcile recovers stale leases and repair-backoff work",
+      "admit": "normalize_work() plus fingerprint deduplication in _discover_and_admit",
+      "lease": "DurableOrchestrate.lease() under a conditional UPDATE",
+      "execute": "_execute_with_recovery drives the executor with bounded retries",
+      "test": "validate_execution() checks execution status and task identity",
+      "validate": "validate_execution() enforces the required_evidence contract",
+      "evidence": "CycleRecord.evidence plus the evidence written through settle()",
+      "complete": "DurableOrchestrate.settle() with lease ownership enforced",
+      "replenish": "_replenish reports ready, backoff, and starvation state"
+    }
+  },
+  "adversarial_scenarios": {
+    "total": 12,
+    "passed": 12,
+    "failed": [],
+    "detail": [
+      {
+        "scenario": "F1 provider unavailable",
+        "expected": "work deferred and classified; orchestration loop survives",
+        "observed": "deferred",
+        "classification": "provider_unavailable",
+        "loop_alive": true,
+        "passed": true
+      },
+      {
+        "scenario": "F2 transient execution fault",
+        "expected": "retried inside the cycle and completed",
+        "observed": "completed",
+        "retries": 1,
+        "passed": true
+      },
+      {
+        "scenario": "C malformed work item",
+        "expected": "bad payloads rejected with reasons; valid work still runs",
+        "observed": "completed",
+        "rejected": 2,
+        "reasons": [
+          "MALFORMED_WORK:not_a_mapping:str",
+          "MALFORMED_WORK:issue_number_not_positive:-7"
+        ],
+        "passed": true
+      },
+      {
+        "scenario": "G duplicate completion request",
+        "expected": "replay suppressed; settled evidence unchanged",
+        "observed": "settled=False duplicate=True",
+        "evidence_preserved": true,
+        "passed": true
+      },
+      {
+        "scenario": "B/G completion without ownership",
+        "expected": "refused: completion requires an active lease",
+        "observed": "COMPLETION_WITHOUT_LEASE:issue-8504:retrieve-evidence:state=ready",
+        "passed": true
+      },
+      {
+        "scenario": "B duplicate lease attempt",
+        "expected": "refused: a held task cannot be leased again",
+        "observed": "TASK_NOT_READY:issue-8504:retrieve-evidence:state=leased",
+        "passed": true
+      },
+      {
+        "scenario": "D worker interruption and restart",
+        "expected": "abandoned lease reclaimed and the work finished",
+        "observed": "reclaimed=True final_state=completed cycles=['completed', 'completed']",
+        "passed": true
+      },
+      {
+        "scenario": "J partial/corrupt persisted state",
+        "expected": "corrupt journal recovered; engine still operates",
+        "observed": "journal_recovered=True",
+        "cycles_lost_to_corruption": 3,
+        "passed": true
+      },
+      {
+        "scenario": "H queue empty / starvation",
+        "expected": "reported as no-work; no crash and no fabricated success",
+        "observed": "status=no-work starved=True decision=await-replenishment",
+        "passed": true
+      },
+      {
+        "scenario": "I mismatched autonomy context version",
+        "expected": "engine refuses to start; fails closed",
+        "observed": "CONTEXT_VERSION_UNSUPPORTED:supported_major=1:got=2.0.0",
+        "passed": true
+      },
+      {
+        "scenario": "A stale lease recovery",
+        "expected": "expired lease reclaimed and the work re-run",
+        "observed": "status=completed recovery=['backoff_recovered', 'stale_lease_recovered']",
+        "passed": true
+      },
+      {
+        "scenario": "E validation failure",
+        "expected": "not completed; parked for repair with a recorded reason",
+        "observed": "status=validation-failed reason=VALIDATION_FAILED:output_present",
+        "task_state": "repair_backoff",
+        "passed": true
+      }
+    ]
+  },
+  "cycles": [
+    {
+      "cycle": 6,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9101:retrieve-evidence",
+      "issue_number": 9101,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9101:retrieve-evidence:7f9382fd",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9101:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9101:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.4996000118117081e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9101:retrieve-evidence",
+        "issue_number": 9101,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.711535+00:00",
+      "ended_at": "2026-09-21T02:16:19.733604+00:00"
+    },
+    {
+      "cycle": 7,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9102:retrieve-evidence",
+      "issue_number": 9102,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9102:retrieve-evidence:f08e4cb6",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9102:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9102:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.4868999642203562e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9102:retrieve-evidence",
+        "issue_number": 9102,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.734924+00:00",
+      "ended_at": "2026-09-21T02:16:19.749877+00:00"
+    },
+    {
+      "cycle": 8,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9103:retrieve-evidence",
+      "issue_number": 9103,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9103:retrieve-evidence:8140ea77",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9103:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9103:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.595799994902336e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9103:retrieve-evidence",
+        "issue_number": 9103,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.751331+00:00",
+      "ended_at": "2026-09-21T02:16:19.766869+00:00"
+    },
+    {
+      "cycle": 9,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9104:retrieve-evidence",
+      "issue_number": 9104,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9104:retrieve-evidence:70ee126d",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9104:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9104:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.250100012839539e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9104:retrieve-evidence",
+        "issue_number": 9104,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.768404+00:00",
+      "ended_at": "2026-09-21T02:16:19.783344+00:00"
+    },
+    {
+      "cycle": 10,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9105:retrieve-evidence",
+      "issue_number": 9105,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9105:retrieve-evidence:4192effb",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9105:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9105:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.212799998029368e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9105:retrieve-evidence",
+        "issue_number": 9105,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.785076+00:00",
+      "ended_at": "2026-09-21T02:16:19.800704+00:00"
+    },
+    {
+      "cycle": 11,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9106:retrieve-evidence",
+      "issue_number": 9106,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9106:retrieve-evidence:69e8dff1",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9106:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9106:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.235999980053748e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9106:retrieve-evidence",
+        "issue_number": 9106,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.802492+00:00",
+      "ended_at": "2026-09-21T02:16:19.817894+00:00"
+    },
+    {
+      "cycle": 12,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9107:retrieve-evidence",
+      "issue_number": 9107,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9107:retrieve-evidence:6a824bc0",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9107:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9107:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.2587999663082883e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9107:retrieve-evidence",
+        "issue_number": 9107,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.819772+00:00",
+      "ended_at": "2026-09-21T02:16:19.835575+00:00"
+    },
+    {
+      "cycle": 13,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9108:retrieve-evidence",
+      "issue_number": 9108,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9108:retrieve-evidence:057c469b",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9108:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9108:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.1984999673586572e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9108:retrieve-evidence",
+        "issue_number": 9108,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.837688+00:00",
+      "ended_at": "2026-09-21T02:16:19.853680+00:00"
+    },
+    {
+      "cycle": 14,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9109:retrieve-evidence",
+      "issue_number": 9109,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9109:retrieve-evidence:fdf948e7",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9109:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9109:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.23310001072241e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9109:retrieve-evidence",
+        "issue_number": 9109,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.855741+00:00",
+      "ended_at": "2026-09-21T02:16:19.871700+00:00"
+    },
+    {
+      "cycle": 15,
+      "run_id": "autonomy-durable-proof",
+      "status": "completed",
+      "work_id": "issue-9110:retrieve-evidence",
+      "issue_number": 9110,
+      "source_of_work": "static-backlog",
+      "admission": {
+        "discovered": 1,
+        "admitted": 1,
+        "rejected": 0,
+        "deduplicated": 0
+      },
+      "lease_id": "autonomy-durable-proof:issue-9110:retrieve-evidence:d411bfbb",
+      "lease_owner": "autonomy-cycle-engine-v1",
+      "decision": {
+        "decider": "brain-priority-decision-engine-v1",
+        "action": "execute",
+        "selected": "issue-9110:retrieve-evidence",
+        "deferred": [],
+        "rationale": "Selected issue-9110:retrieve-evidence with score 4.0 from 1 admissible candidate(s); queue depth 1, 0 active lease(s). Prior recorded failures for this task: 0."
+      },
+      "execution": {
+        "attempts": 1,
+        "classification": "executed",
+        "status": "completed",
+        "worker_id": "deterministic-research-worker-v1",
+        "duration_seconds": 1.1862000064866152e-05,
+        "error": null
+      },
+      "validation": {
+        "passed": true,
+        "checks": 8
+      },
+      "evidence": {
+        "task_key": "issue-9110:retrieve-evidence",
+        "issue_number": 9110,
+        "worker_id": "deterministic-research-worker-v1",
+        "provider_api_called": false,
+        "canonical_context_schema": "oc.autonomy-context.v1",
+        "canonical_context_version": "1.0.0",
+        "required_evidence_satisfied": true
+      },
+      "settlement": {
+        "settled": true,
+        "duplicate_suppressed": false,
+        "terminal_state": "completed"
+      },
+      "replenishment": {
+        "ready_next": 0,
+        "ready_keys": [],
+        "repair_backoff": 0,
+        "active_leases": 0,
+        "starved": true
+      },
+      "recovery_used": [],
+      "started_at": "2026-09-21T02:16:19.873847+00:00",
+      "ended_at": "2026-09-21T02:16:19.889619+00:00"
+    }
+  ],
+  "scope_note": "Proves the deterministic provider-free autonomy core on durable storage. Does not prove paid-provider execution, GitHub credentialed dispatch, external scheduling, or Render deployment health; those require production evidence of their own."
+}

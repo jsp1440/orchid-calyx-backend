@@ -65,3 +65,19 @@ def test_administrator_contract_preserves_governance_boundaries() -> None:
 
 def test_frontend_contract_requires_authentication() -> None:
     assert client.get("/api/executive/frontend-contract").status_code == 401
+
+def test_frontend_contract_composes_scientific_readiness_without_authority() -> None:
+    app.dependency_overrides[authenticated_principal] = lambda: _principal(
+        MissionControlRole.PUBLIC
+    )
+    payload = client.get("/api/executive/frontend-contract").json()
+    readiness = payload["scientific_readiness"]
+
+    assert readiness["contract_version"] == "sci-obs-readiness-v1"
+    assert len(readiness["dimensions"]) == 6
+    assert readiness["publication_authority"] is False
+    assert readiness["human_approval_required"] is True
+    assert all(
+        dimension["score"] is None
+        for dimension in readiness["dimensions"].values()
+    )

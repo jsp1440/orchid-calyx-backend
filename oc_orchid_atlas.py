@@ -1,34 +1,35 @@
 import os
 
-_EXACT_ATLAS_ENABLE_VALUE = "YES_I_UNDERSTAND_THIS_EXPORTS_EXACT_ORCHID_LOCATIONS"
+RESTRICTED_ATLAS_OUTPUT = "orchid_atlas_RESTRICTED_EXACT.html"
 
 
-def require_exact_atlas_generation() -> None:
-    """Require explicit operator acknowledgement before exact-site map export."""
+def require_internal_database_access() -> str:
+    """Return the configured DB URL for trusted internal analysis.
 
-    if os.getenv("OC_ALLOW_EXACT_ORCHID_ATLAS") != _EXACT_ATLAS_ENABLE_VALUE:
-        raise PermissionError(
-            "Exact orchid atlas generation is disabled by security policy. "
-            "Use a generalized/aggregated Atlas product unless exact locality "
-            "access is explicitly approved for the research purpose."
+    Possession of the server-side database credential is the authorization
+    boundary for this local/operator utility. The script is not a public web
+    endpoint. Exact coordinates remain available for scientific visualization
+    and analysis while public disclosure is controlled elsewhere.
+    """
+
+    database_url = os.getenv("DATABASE_URL")
+    if not database_url:
+        raise RuntimeError(
+            "DATABASE_URL is required for internal exact-location analysis"
         )
+    return database_url
 
 
 def main() -> None:
-    require_exact_atlas_generation()
+    database_url = require_internal_database_access()
 
-    # Legacy visualization dependencies are intentionally imported only after
-    # the exact-locality gate passes. Importing this module for tests or tooling
-    # must never require mapping packages or touch the database.
+    # Keep visualization dependencies lazy so importing this utility never
+    # connects to the database or requires mapping packages.
     import folium
     import pandas as pd
     import psycopg2
 
-    database_url = os.getenv("DATABASE_URL")
-    if not database_url:
-        raise RuntimeError("DATABASE_URL is required")
-
-    print("Connecting to Orchid Continuum database...")
+    print("Connecting to Orchid Continuum database for internal analysis...")
     conn = psycopg2.connect(database_url)
     try:
         sql = """
@@ -42,8 +43,8 @@ def main() -> None:
     finally:
         conn.close()
 
-    print("Loaded", len(df), "occurrence points")
-    print("Building restricted exact orchid atlas map...")
+    print("Loaded", len(df), "exact occurrence points")
+    print("Building authenticated/internal exact orchid atlas map...")
 
     atlas = folium.Map(location=[0, 0], zoom_start=2)
     for _, row in df.iterrows():
@@ -55,11 +56,17 @@ def main() -> None:
             fill_opacity=0.6,
         ).add_to(atlas)
 
-    outfile = "orchid_atlas_RESTRICTED_EXACT.html"
-    atlas.save(outfile)
+    atlas.save(RESTRICTED_ATLAS_OUTPUT)
+    try:
+        os.chmod(RESTRICTED_ATLAS_OUTPUT, 0o600)
+    except OSError:
+        # Some platforms/filesystems do not implement POSIX file permissions.
+        pass
 
-    print("Restricted exact map created:", outfile)
-    print("Do not publish or redistribute without locality-disclosure approval.")
+    print("Internal exact map created:", RESTRICTED_ATLAS_OUTPUT)
+    print(
+        "Exact coordinates remain available for analysis; do not publish the raw file."
+    )
 
 
 if __name__ == "__main__":

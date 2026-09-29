@@ -44,7 +44,10 @@ from app.calyx_orchestrator.deep_orchestrate import (
     TaskState,
 )
 from app.calyx_orchestrator.durable_reservoir import DurableOrchestrate
-from app.calyx_orchestrator.durable_reservoir_models import DurableReservoirTask
+from app.calyx_orchestrator.durable_reservoir_models import (
+    DurableReservoirRun,
+    DurableReservoirTask,
+)
 from app.calyx_orchestrator.leaf_worker import DeterministicResearchWorker
 from app.database import Base
 from runtime.deep_orchestrate_queue_bridge import plan_deep_orchestrate_refill
@@ -67,7 +70,7 @@ def engine():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     yield e
     e.dispose()
 
@@ -394,7 +397,7 @@ def test_queue_bridge_acceptance_run_1_summary():
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
-    Base.metadata.create_all(e)
+    Base.metadata.create_all(e, tables=[DurableReservoirRun.__table__, DurableReservoirTask.__table__])
     factory = sessionmaker(bind=e, autocommit=False, autoflush=False)
     session = factory()
     run_id = f"qb-summary-{uuid.uuid4().hex[:8]}"
