@@ -87,6 +87,17 @@ def _pytest(*targets: str) -> tuple[str, ...]:
 
 _COMMANDS = (
     ValidationCommand(
+        command_id="bounded-lane-runtime-tests",
+        argv=_pytest("tests/test_lane_runtime.py"),
+        summary="Run the provider-free bounded lane runtime proof.",
+        proves=(
+            "the deterministic lane runtime tests prove three concurrent lane "
+            "identities, collision prevention, failure release, queue refill, "
+            "bounded capacity, unknown-cost honesty and absence of production "
+            "mutation methods on this exact revision"
+        ),
+    ),
+    ValidationCommand(
         command_id="firecrawl-matrix-fixture",
         argv=_pytest("tests/test_firecrawl_matrix_acquisition.py"),
         summary="Run the offline Firecrawl canonical integration fixture.",
