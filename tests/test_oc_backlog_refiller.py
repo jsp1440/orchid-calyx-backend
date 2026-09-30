@@ -119,14 +119,71 @@ def test_planner_failure_is_distinct_from_healthy_empty_queue():
 
 
 def test_unhealthy_health_snapshot_fails_closed_without_proposals():
+    # Two executable states on one issue is not an isolatable conflict.
     result = plan_refill(
-        snapshot(issue(40, "oc-queued", "oc-blocked")),
+        snapshot(issue(40, "oc-queued", "oc-validating", head_sha="a" * 40)),
         [candidate("#41", "fp-41")],
         reserve_depth=2,
     )
     assert result["status"] == "planner_failed"
     assert result["proposals"] == []
     assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+
+
+def test_one_executable_parked_conflict_is_skipped_and_others_are_proposed():
+    # Real shape from the scheduled run: #238 carried both oc-queued and a
+    # backoff label, and that single issue failed the whole planner.
+    state = snapshot(
+        issue(238, "oc-queued", "oc-runtime-backoff"),
+        issue(1, "oc-queued"),
+    )
+    result = plan_refill(
+        state,
+        [
+            candidate("#238", "fp-238"),
+            candidate("#2", "fp-2"),
+            candidate("#3", "fp-3"),
+        ],
+        reserve_depth=3,
+    )
+    assert result["status"] == "refill_planned"
+    # The contradictory issue is not counted as executable reserve.
+    assert result["queued_count"] == 1
+    assert result["deficit"] == 2
+    assert [p["source_ref"] for p in result["proposals"]] == ["#2", "#3"]
+    assert {"source_ref": "#238", "reason": "executable_parked_conflict"} in result[
+        "rejections"
+    ]
+    assert result["conflicts"] == [
+        {
+            "type": "executable_parked_conflict",
+            "issue": 238,
+            "executable": ["oc-queued"],
+            "parked": ["oc-runtime-backoff"],
+            "anomaly": "queue_backoff_contradiction",
+            "action": "issue_skipped",
+            "counted_as_reserve": False,
+        }
+    ]
+
+
+def test_conflict_does_not_mask_a_planner_blocking_violation():
+    state = snapshot(
+        issue(238, "oc-queued", "oc-repair-backoff"),
+        issue(50, "oc-running"),  # running without a lease
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=2)
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert [c["issue"] for c in result["conflicts"]] == [238]
+
+
+def test_healthy_plan_keeps_its_wire_shape_without_a_conflicts_key():
+    result = plan_refill(snapshot(), [candidate("#2", "fp-2")], reserve_depth=1)
+    assert "conflicts" not in result
+    assert result["status"] == "refill_planned"
 
 
 def test_unauthorized_source_cannot_enter_reserve():
