@@ -72,6 +72,12 @@ def mission_control_options(full_path: str, request: Request, response: Response
     return {"status": "ok", "path": full_path}
 
 
+@router.options("/api/system/{full_path:path}")
+def system_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
 @router.options("/api/conservatory/{full_path:path}")
 def conservatory_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)

@@ -22,10 +22,18 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import member_auth
-from app.release_env import RELEASE1_ENV, RELEASE1_ENV_NAMES, config_readiness
+from app.release_env import (
+    OTHER_APP_ENV,
+    OTHER_APP_ENV_NAMES,
+    RELEASE1_ENV,
+    RELEASE1_ENV_NAMES,
+    UNRESOLVED_ENV_READ_SITES,
+    config_readiness,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "preflight_release1_env.py"
+SCANNER = ROOT / "scripts" / "list_env_reads.py"
 ROUTE = "/api/system/config-readiness"
 TEST_API_KEY = "local-test-api-key-not-a-credential"
 TEST_SESSION_SECRET = "local-test-session-secret-not-a-credential"
@@ -102,17 +110,111 @@ def test_readme_documents_every_catalogue_variable():
     for item in RELEASE1_ENV:
         required = "**Yes**" if item.required else "No"
         assert f"| `{item.name}` | {required}" in readme, item.name
+    for reason, names in OTHER_APP_ENV:
+        row = f"| {reason} | " + ", ".join(f"`{n}`" for n in names) + " |"
+        assert row in readme, reason
 
 
-def test_catalogue_names_match_what_the_code_reads():
-    """Guard against a renamed variable leaving a stale checklist entry."""
-    sources = "\n".join(
-        path.read_text(encoding="utf-8")
-        for path in (ROOT / "app").rglob("*.py")
-        if path.name != "release_env.py"
+def _scanner():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("list_env_reads", SCANNER)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+@pytest.fixture(scope="module")
+def app_env_reads():
+    return _scanner().env_reads(ROOT)
+
+
+def test_every_env_name_app_reads_is_catalogued_or_justified(app_env_reads):
+    """The README claim is only true while this holds for the current code."""
+    names, unresolved = app_env_reads
+    documented = set(RELEASE1_ENV_NAMES) | set(OTHER_APP_ENV_NAMES)
+    undocumented = sorted(set(names) - documented)
+    assert not undocumented, f"read by app/ but in neither table: {undocumented}"
+    assert set(unresolved) == set(UNRESOLVED_ENV_READ_SITES), unresolved
+    assert all(UNRESOLVED_ENV_READ_SITES.values())
+
+
+def test_catalogue_and_appendix_hold_only_names_app_reads(app_env_reads):
+    """Guard against a renamed or removed variable leaving a stale entry."""
+    names, _ = app_env_reads
+    assert not set(RELEASE1_ENV_NAMES) & set(OTHER_APP_ENV_NAMES)
+    assert len(OTHER_APP_ENV_NAMES) == len(set(OTHER_APP_ENV_NAMES))
+    for name in (*RELEASE1_ENV_NAMES, *OTHER_APP_ENV_NAMES):
+        assert name in names, name
+
+
+def test_env_read_scanner_finds_every_read_shape(tmp_path):
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "sample.py").write_text(
+        """
+import os
+
+FLAG_ENV = "S_CONST_ENV"
+LOOPED = ("S_LOOP_A", "S_LOOP_B")
+
+
+def _env_first(*names):
+    for name in names:
+        if os.getenv(name):
+            return name
+
+
+def flag(name, default):
+    e = os.environ
+    return e.get(name, default)
+
+
+class Store:
+    def _environ(self):
+        return os.environ
+
+    def mode(self):
+        return self._environ().get("S_METHOD")
+
+
+def reads(key):
+    os.getenv("S_GETENV")
+    os.environ.get("S_GET")
+    os.environ["S_SUBSCRIPT"]
+    "S_IN" in os.environ
+    [os.environ.get(k) for k in LOOPED]
+    _env_first("S_STAR_A", "S_STAR_B")
+    flag("S_PARAM", "false")
+    os.environ.get(key.upper())
+""",
+        encoding="utf-8",
     )
-    for name in RELEASE1_ENV_NAMES:
-        assert f'"{name}"' in sources, name
+    names, unresolved = _scanner().env_reads(tmp_path)
+    assert set(names) == {
+        "S_CONST_ENV",
+        "S_GETENV",
+        "S_GET",
+        "S_SUBSCRIPT",
+        "S_IN",
+        "S_LOOP_A",
+        "S_LOOP_B",
+        "S_STAR_A",
+        "S_STAR_B",
+        "S_PARAM",
+        "S_METHOD",
+    }
+    assert unresolved == ["app/sample.py:reads"]
+
+
+def test_evidence_feedback_entries_do_not_overstate_the_warning():
+    text = " ".join(
+        f"{v.purpose} {v.when_missing}"
+        for v in RELEASE1_ENV
+        if v.name in {"DATABASE_URL", "CALYX_EVIDENCE_FEEDBACK_ROOT"}
+    )
+    assert "every response" not in text
+    assert "only logs a NON-DURABLE warning once at startup" in text
 
 
 # --- readiness function ------------------------------------------------------
@@ -286,6 +388,24 @@ def test_anonymous_is_unauthorized(client, planted):
     assert response.status_code == 401
     assert "variables" not in response.text
     assert_no_values(response.text, planted)
+
+
+def test_cors_preflight_is_answered_like_other_owner_routes(client):
+    origin = "https://orchidcontinuum.org"
+    response = client.options(
+        ROUTE,
+        headers={
+            "Origin": origin,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": "authorization",
+        },
+    )
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == origin
+    bare = client.options(ROUTE)
+    assert bare.status_code == 200
+    assert "access-control-allow-origin" not in bare.headers
+    assert "variables" not in bare.text
 
 
 def test_backend_api_key_alone_is_not_the_owner(client, planted):
