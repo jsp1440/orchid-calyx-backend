@@ -45,6 +45,16 @@ completed it (the ABA case a cleared token would allow). The claim loop,
 including the retry after a unique-key insert race, is bounded; exhausting it
 raises :class:`LedgerContentionError` rather than recursing or handing out a
 lease.
+
+Schema
+------
+
+The table is created only by ``migrations/20260930_acquisition_ledger.sql``,
+never at request time. Before its first claim on an engine the ledger runs a
+read-only schema check (:mod:`.acquisition_ledger_schema`); a missing table,
+a missing ``lease_token`` or other column, an incompatible type or a missing
+unique key raises :class:`LedgerSchemaUnavailableError` before any lease is
+handed out, so the caller makes zero provider calls.
 """
 
 from __future__ import annotations
@@ -60,7 +70,20 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from .acquisition import AcquisitionRecord, AcquisitionRequest
+from .acquisition_ledger_schema import (
+    LedgerSchemaUnavailableError,
+    require_ledger_schema,
+)
 from .acquisition_models import AcquisitionLedgerRow
+
+__all__ = [
+    "MAX_LEDGER_ATTEMPTS",
+    "AcquisitionLedger",
+    "ClaimResult",
+    "LedgerContentionError",
+    "LedgerSchemaUnavailableError",
+    "StaleLeaseError",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +210,12 @@ class AcquisitionLedger:
         lease_seconds: int = 120,
         now: datetime | None = None,
     ) -> ClaimResult:
+        """Coalesce ``request`` onto the ledger; only ``acquired_lease`` may fetch.
+
+        Raises :class:`LedgerSchemaUnavailableError` (no lease, nothing
+        written) when the ledger table is missing or incompatible.
+        """
+        require_ledger_schema(self.session)
         now = _utc_now(now)
         for _attempt in range(MAX_LEDGER_ATTEMPTS):
             result = self._try_claim(
