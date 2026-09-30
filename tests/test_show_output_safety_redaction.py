@@ -233,8 +233,11 @@ def test_short_header_tuples_keep_only_the_secret_name():
         "h3": ["Authorization", REDACTED, REDACTED],
         "h4": ["Cookie", REDACTED, REDACTED, REDACTED],
         "fields": ["region", "zone"],
-        "long": ["token", "a", "b", "c", "d"],  # not a header tuple
-        "nested": ["password", {"x": 1}],
+        # Not a header tuple, but an odd-length flat name/value list: the value
+        # after the secret name is masked (over-redaction is preferred).
+        "long": ["token", REDACTED, "b", "c", "d"],
+        # A nested value after a secret name is masked whole.
+        "nested": ["password", REDACTED],
     }
 
 
@@ -553,9 +556,11 @@ def test_cli_user_words_past_the_segment_bound_mask_the_rest_of_the_text(tail):
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
-        ("curl -u admin:'Zq9\nsEcr' -s\nnext", "curl -u admin:*** -s\nnext"),
-        ('curl -u admin:"Zq9\r\nsEcr" -s', "curl -u admin:*** -s"),
-        ('curl -u "admin:Zq9\nsEcr" -s', 'curl -u "admin:***" -s'),
+        # a value that crosses a line break masks to the end of the text: its
+        # quotes may belong to a later command
+        ("curl -u admin:'Zq9\nsEcr' -s\nnext", "curl -u admin:***"),
+        ('curl -u admin:"Zq9\r\nsEcr" -s', "curl -u admin:***"),
+        ('curl -u "admin:Zq9\nsEcr" -s', 'curl -u "admin:***'),
         # an unterminated quote runs to the end of the text
         ("curl -u admin:'Zq9\nsEcr -s\nmore", "curl -u admin:***"),
     ],

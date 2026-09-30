@@ -28,13 +28,20 @@
   - Header lists of any length: the whole value of a secret-named ``Name: value``
     header line (in a string or as a list element) and of a quoted ``curl -H``
     argument, and every value after a secret name in a flat name/value list
-    (``["Accept", "a", "X-Api-Key", "k", ...]``). A list element that is a whole
-    header line is never kept verbatim as a header-tuple name.
+    (``["Accept", "a", "X-Api-Key", "k", ...]``, odd-length too, a nested list or
+    object value masked whole). A list element that is a whole header line is never
+    kept verbatim as a header-tuple name.
   - Command-line credentials: the password of ``curl -u``/``--user``/``--user=``/
-    ``--proxy-user``/``-U`` ``user:password`` (quoted or not; the username stays),
-    or the username when the password is empty (``-u sk_key:``). HTTP Digest
-    ``response`` and ``cnonce`` values, whatever their length, once a ``Digest
-    <param>=`` credential appears in the text.
+    ``--proxy-user``/``-U`` and HTTPie ``-a``/``--auth``/``--auth=``
+    ``user:password`` (quoted or not, backslash escapes included; the username stays),
+    or the username when the password is empty (``-u sk_key:``). A value that
+    crosses a line break, reaches an unterminated quote or contains another
+    credential flag is masked to the end of the text. HTTP Digest ``response`` and
+    ``cnonce`` values, whatever their length, once a ``Digest <param>=`` credential
+    appears in the text, and ``response``/``cnonce`` dict keys whose sibling value
+    names Digest (``{"scheme": "Digest", "response": "..."}``).
+  - ``secret = value`` with any whitespace gap and doubled separators
+    (``password ==``, ``password = =``).
   - Bounds: nesting deeper than ``MAX_REDACT_DEPTH`` (containers plus embedded JSON
     layers) is masked as a whole, so a deeply nested stored value can never raise
     ``RecursionError``. A stored value that is not valid JSON, is larger than
@@ -187,7 +194,8 @@ _AUTH_SCHEME_VALUE = re.compile(
 _QUOTED_VALUE = r"\"(?:[^\"\\]|\\.){0,256}\"?|'[^']{0,256}'?|\{[^}]{0,256}\}?"
 _NAME_VALUE_PAIR = re.compile(
     r"(?P<prefix>(?P<q>[\"']?)(?<![A-Za-z0-9_.\-])"
-    r"(?P<name>[A-Za-z_][A-Za-z0-9_.\- ]{0,40}?)(?P=q)\s{0,8}[:=]\s{0,8})"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_.\- ]{0,40}?)(?P=q)\s{0,8}[:=](?:\s{0,8}[:=]){0,3}"
+    r"\s{0,8})"
     rf"(?P<value>(?i:(?:{_AUTH_SCHEMES})\s{{1,8}}[^\s;&,\"'#]+)|{_QUOTED_VALUE}"
     r"|[^;&,\s\"'#]+)"
 )
@@ -195,10 +203,22 @@ _NAME_VALUE_PAIR = re.compile(
 # Only the name and its whitespace are consumed per match, so every word is a
 # candidate name; the value is matched separately (see ``_mask_spaced_values``).
 _SPACED_NAME = re.compile(
-    r"(?<![A-Za-z0-9_\-])-{0,2}(?P<name>[A-Za-z][A-Za-z0-9_\-]{0,40})\s{1,8}(?=\S)"
+    r"(?<![A-Za-z0-9_\-])-{0,2}(?P<name>[A-Za-z][A-Za-z0-9_\-]{0,40})\s+(?=\S)"
 )
 _SPACED_VALUE = re.compile(rf"{_QUOTED_VALUE}|[^\s\"']+")
-_SPACED_SEPARATOR_GAP = re.compile(r"\s{0,8}")
+# ``password=`` / ``"password":`` followed by more than 8 whitespace characters, which
+# ``_NAME_VALUE_PAIR`` (bounded gaps) does not reach. The name has no spaces, so only
+# the word right before the separator can start a match, and the gap is possessive:
+# each whitespace run is scanned once.
+_LONG_GAP_PAIR = re.compile(
+    r"(?<![A-Za-z0-9_.\-])(?P<name>[A-Za-z_][A-Za-z0-9_.\-]{0,40})[\"']?"
+    r"\s{0,8}[:=](?:\s{0,8}[:=]){0,3}\s{9,}+(?=\S)"
+)
+_SPACED_SEPARATOR_GAP = re.compile(r"\s*")
+# ``password = x``, ``password == x``, ``password = = x``: up to this many separator
+# words (``=``, ``:``, ``==``, ``:=``) sit between a secret name and its value.
+_SPACED_SEPARATOR = re.compile(r"[:=]{1,4}")
+_MAX_SPACED_SEPARATORS = 4
 # A value that runs to its closing quote, or (unquoted) to the next separator. Each
 # branch always matches (the closing quote is optional), so a match attempt cannot fail
 # after a long scan, and a match consumes what it scanned.
@@ -232,11 +252,18 @@ _CLI_HEADERS = (
 # unterminated one runs to the end of the text (the string is at most MAX_SCAN_CHARS).
 _MAX_CLI_WORD_SEGMENTS = 64
 _CLI_QUOTED_SEGMENT = r"\"(?:[^\"\\]|\\[\s\S])*\"?|'[^']*'?"
+# An unquoted run; as in a shell, a backslash escapes the next character, including a
+# space or a line break (``pa\<newline>ss`` is one word, ``pass``).
+_CLI_UNQUOTED_SEGMENT = r"(?:[^\s\"'\\]|\\[\s\S])+"
 _CLI_USER = re.compile(
     r"(?<![A-Za-z0-9_\-])(?P<flag>--(?:proxy-)?user(?:\s{1,8}|=)"
+    # HTTPie: ``-a user:pw``, ``--auth user:pw``, ``--auth=user:pw``
+    r"|--auth(?:\s{1,8}|=)|-a\s{1,8}"
     r"|-[A-Za-z]{0,6}[uU]\s{1,8}|-[uU]=?)"
-    rf"(?P<value>(?:[^\s\"']+|{_CLI_QUOTED_SEGMENT}){{1,{_MAX_CLI_WORD_SEGMENTS}}})"
+    rf"(?P<value>(?:{_CLI_UNQUOTED_SEGMENT}|{_CLI_QUOTED_SEGMENT})"
+    rf"{{1,{_MAX_CLI_WORD_SEGMENTS}}})"
 )
+_CLI_SEGMENT = re.compile(rf"{_CLI_UNQUOTED_SEGMENT}|{_CLI_QUOTED_SEGMENT}")
 # HTTP Digest (RFC 7616): ``response`` and ``cnonce`` are masked whatever their length
 # once a ``Digest <param>=`` credential appears; only the text from there on is scanned.
 _DIGEST_SCHEME = re.compile(
@@ -252,6 +279,12 @@ _CAMEL_LOWER_UPPER = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _CAMEL_UPPER_WORD = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
 _PAIR_NAME_FIELDS = {"name", "key", "header", "field", "param", "parameter"}
 _PAIR_VALUE_FIELDS = {"value", "val", "content", "data"}
+# HTTP Digest parameters stored as separate dict keys: ``response`` and ``cnonce``
+# are masked when a sibling value names the Digest scheme.
+_DIGEST_FIELDS = {"response", "cnonce"}
+# ``"Digest"``, ``"digest"``, ``"http_digest"``, ``"Digest username=..."``; a sibling
+# that merely mentions the word also counts (over-redaction is preferred).
+_DIGEST_SIBLING = re.compile(r"(?<![a-z])digest(?![a-z])", re.IGNORECASE)
 _HEADER_NAME = re.compile(r"[A-Za-z][A-Za-z_.\- ]{0,63}")
 # A bare header/field name as a list element: no ``:``/``=``, so a whole header line
 # such as ``"Authorization: Bearer x"`` is never mistaken for a name and kept verbatim.
@@ -336,16 +369,39 @@ def _mask_spaced_values(text: str) -> str:
         value = _SPACED_VALUE.match(text, match.end())
         if value is None:
             continue
-        if value.group(0) in {":", "="}:
-            # ``X-Auth-Token : a`` / ``password = a``: mask the word after the
-            # separator, keeping the separator itself.
-            after = _SPACED_SEPARATOR_GAP.match(text, value.end())
-            following = _SPACED_VALUE.match(text, after.end())
+        if _SPACED_SEPARATOR.fullmatch(value.group(0)):
+            # ``X-Auth-Token : a`` / ``password = a`` / ``password = = a``: mask the
+            # word after the separators, keeping the separators themselves.
+            following = value
+            for _ in range(_MAX_SPACED_SEPARATORS):
+                if not _SPACED_SEPARATOR.fullmatch(following.group(0)):
+                    break
+                after = _SPACED_SEPARATOR_GAP.match(text, following.end())
+                following = _SPACED_VALUE.match(text, after.end())
+                if following is None:
+                    break
             if following is None:
                 continue
-            parts.append(text[position : after.end()])
+            parts.append(text[position : following.start()])
             parts.append(REDACTED)
             position = following.end()
+            continue
+        parts.append(text[position : match.end()])
+        parts.append(REDACTED)
+        position = value.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _mask_long_gap_pairs(text: str) -> str:
+    """Mask the value of ``secret_name=<9+ spaces>value``; the gap is kept."""
+    parts: list[str] = []
+    position = 0
+    for match in _LONG_GAP_PAIR.finditer(text):
+        if match.start() < position or not _is_secret_key(match.group("name")):
+            continue
+        value = _SPACED_VALUE.match(text, match.end())
+        if value is None:
             continue
         parts.append(text[position : match.end()])
         parts.append(REDACTED)
@@ -389,12 +445,61 @@ def _mask_cli_user(match: re.Match) -> str:
     return f"{match.group('flag')}{opening}{REDACTED}:{password}"
 
 
+def _ends_unterminated(value: str) -> bool:
+    """True when the last segment of a ``-u`` word opens a quote it never closes."""
+    last = None
+    for last in _CLI_SEGMENT.finditer(value):
+        pass
+    if last is None:
+        return False
+    segment = last.group(0)
+    if segment[0] == "'":
+        return len(segment) == 1 or not segment.endswith("'")
+    if segment[0] == '"':
+        # Closed when it ends in a ``"`` preceded by an even run of backslashes.
+        body = segment[1:]
+        if not body.endswith('"'):
+            return True
+        backslashes = len(body[:-1]) - len(body[:-1].rstrip("\\"))
+        return backslashes % 2 == 1
+    return False
+
+
+def _cli_user_unsure(value: str) -> bool:
+    """A ``-u`` word whose extent cannot be trusted.
+
+    It crosses a line break, runs into an unterminated quote, or contains another
+    credential flag: then a quote in it may belong to a later command (``-u a:"x`` on
+    one line, ``-u b:"pw two"`` on the next), and the word boundary the pattern found
+    may sit inside a later password.
+    """
+    return (
+        "\n" in value
+        or "\r" in value
+        or _ends_unterminated(value)
+        or _CLI_USER.search(value) is not None
+    )
+
+
+def _mask_cli_user_to_end(match: re.Match) -> str:
+    """``flag user:***`` with nothing after it; the user is kept only when it is a
+    plain word, so masking an already masked text gives the same text."""
+    value = match.group("value")
+    colon = value.find(":")
+    user = value[:colon] if colon >= 0 else ""
+    if user and not any(ch.isspace() for ch in user) and "\\" not in user:
+        return f"{match.group('flag')}{user}:{REDACTED}"
+    return f"{match.group('flag')}{REDACTED}"
+
+
 def _mask_cli_users(text: str) -> str:
-    """Apply ``_mask_cli_user`` to every ``-u`` value; fail closed past the bound.
+    """Apply ``_mask_cli_user`` to every ``-u`` value; fail closed when unsure.
 
     A shell word longer than ``_MAX_CLI_WORD_SEGMENTS`` segments cannot be split
     reliably (a quote past the bound may hide spaces or line breaks), so everything
-    from its flag to the end of the text is masked: no tail can leak.
+    from its flag to the end of the text is masked: no tail can leak. The same holds
+    for a word that crosses a line break, reaches an unterminated quote or contains
+    another credential flag (``_cli_user_unsure``).
     """
     parts: list[str] = []
     position = 0
@@ -405,6 +510,9 @@ def _mask_cli_users(text: str) -> str:
         end = match.end()
         if end < len(text) and not text[end].isspace():
             parts.append(f"{match.group('flag')}{REDACTED}")  # past the bound
+            return "".join(parts)
+        if ":" in match.group("value") and _cli_user_unsure(match.group("value")):
+            parts.append(_mask_cli_user_to_end(match))
             return "".join(parts)
         parts.append(_mask_cli_user(match))
         position = end
@@ -459,6 +567,7 @@ def _redact_string(value: str, depth: int) -> Any:
         text,
     )
     text = _NAME_VALUE_PAIR.sub(_mask_if_secret_name, text)
+    text = _mask_long_gap_pairs(text)
     text = _mask_spaced_values(text)
     return _TOKEN_RUN.sub(
         lambda m: REDACTED if _looks_random(m.group(0)) else m.group(0), text
@@ -481,11 +590,21 @@ def _redact_dict(value: dict, depth: int) -> dict:
     pair_secret = bool(value_fields) and any(
         _is_secret_key(value[key]) for key in name_fields
     )
+    digest = any(
+        isinstance(item, str)
+        and len(item) <= MAX_SCAN_CHARS
+        and _DIGEST_SIBLING.search(item)
+        for item in value.values()
+    )
     out: dict = {}
     for key, item in value.items():
         if value_fields and key in name_fields and _HEADER_NAME.fullmatch(item):
             out[key] = item  # a header/field name such as "Authorization"
-        elif (pair_secret and key in value_fields) or _is_secret_key(key):
+        elif (
+            (pair_secret and key in value_fields)
+            or (digest and isinstance(key, str) and key.casefold() in _DIGEST_FIELDS)
+            or _is_secret_key(key)
+        ):
             out[key] = REDACTED
         else:
             out[key] = _redact_value(item, depth + 1)
@@ -501,30 +620,26 @@ def _is_list_header_name(item: object) -> bool:
 
 
 def _redact_list(value: list, depth: int) -> list:
-    # null and booleans count as scalar values (``["Via", null]``).
-    scalars = all(item is None or isinstance(item, (str, int, float)) for item in value)
     # ["Authorization", "Bearer x"] and ["Authorization", "Bearer", "x"]: a short
-    # header tuple whose first element names a secret keeps only that name. A whole
+    # header tuple whose first element names a secret keeps only that name, whatever
+    # the other elements are (a nested list or object is masked whole). A whole
     # header line (``"Authorization: Bearer x"``) is not a name: each element of such
     # a list is redacted on its own below, so the line's value is masked.
     if (
         2 <= len(value) <= _MAX_HEADER_TUPLE
-        and scalars
         and _is_list_header_name(value[0])
         and _is_secret_key(value[0])
     ):
         return [_redact_value(value[0], depth + 1), *([REDACTED] * (len(value) - 1))]
     # A flat name/value header list of any length (Node ``rawHeaders``:
     # ["Accept", "a", "X-Api-Key", "k", ...]): every value after a secret name is
-    # masked, wherever the name sits in the list.
+    # masked, wherever the name sits in the list -- also in an odd-length list (a
+    # trailing name with no value) and when a value is a nested list or object.
     masked: set[int] = set()
-    if (
-        scalars
-        and len(value) >= 2
-        and len(value) % 2 == 0
-        and all(_is_list_header_name(name) for name in value[0::2])
-    ):
-        masked = {i + 1 for i in range(0, len(value), 2) if _is_secret_key(value[i])}
+    if len(value) >= 2 and all(_is_list_header_name(name) for name in value[0::2]):
+        masked = {
+            i + 1 for i in range(0, len(value) - 1, 2) if _is_secret_key(value[i])
+        }
     return [
         REDACTED if i in masked else _redact_value(item, depth + 1)
         for i, item in enumerate(value)
