@@ -203,6 +203,9 @@ _COORDINATE_CASED = re.compile(
     r"|\b\d{1,2}\s?[C-HJ-NP-X]\s{1,3}\d{6}(?:\.\d{1,3})?\s?m?E?[\s,;]{1,3}\d{7}\b"
     # UTM easting/northing pair without zone: 630084 4833438 / 630084mE 4833438mN
     r"|\b\d{6}(?:\.\d{1,3})?\s?(?:mE)?[\s,;]{1,3}\d{7}(?:\.\d{1,3})?\s?(?:mN\b)?(?!\d)"
+    # MGRS: 33TWN1234567890 / 33T WN 12345 67890 (kept here for consumers of this
+    # pattern such as scripts/scan_trait_locality.py; _MGRS adds any case/spacing)
+    r"|\b\d{1,2}[C-HJ-NP-X]\s?[A-HJ-NP-Z][A-HJ-NP-V]\s?\d{2,5}\s?\d{2,5}\b"
     # collector abbreviation "col." followed by an initial, a name or a number
     r"|\b[Cc]ol\.\s{0,2}(?:[A-Z]\.|[A-Z][a-z]{1,30}\b|\d)"
 )
