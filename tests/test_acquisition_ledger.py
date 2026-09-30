@@ -14,7 +14,10 @@ from app.source_federation.acquisition_models import AcquisitionLedgerRow
 
 def _ledger():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    # Only the ledger table: the shared Base also carries schema-qualified
+    # tables (e.g. research_station.*) that SQLite cannot create, so a
+    # full-suite run that has imported those models fails here otherwise.
+    Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
     session = sessionmaker(bind=engine)()
     return AcquisitionLedger(session)
 

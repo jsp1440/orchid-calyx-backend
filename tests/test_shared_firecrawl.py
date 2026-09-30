@@ -6,11 +6,15 @@ from sqlalchemy.orm import sessionmaker
 from app.database import Base
 from app.federation.firecrawl_mapper import build_source_profile
 from app.federation.shared_firecrawl import SharedFirecrawlFederationService
+from app.source_federation.acquisition_models import AcquisitionLedgerRow
 
 
 def _service():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    # Only the ledger table: the shared Base also carries schema-qualified
+    # tables (e.g. research_station.*) that SQLite cannot create, so a
+    # full-suite run that has imported those models fails here otherwise.
+    Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
     session = sessionmaker(bind=engine)()
     mapper = Mock()
     mapper.map_source.return_value = build_source_profile(
@@ -49,12 +53,18 @@ def test_two_modules_trigger_one_firecrawl_call():
 def test_different_searches_are_distinct_acquisitions():
     service, mapper = _service()
     service.map_source(
-        consumer_module="lexicon", source_id="powo",
-        root_url="https://powo.science.kew.org/", search="Phragmipedium", limit=25,
+        consumer_module="lexicon",
+        source_id="powo",
+        root_url="https://powo.science.kew.org/",
+        search="Phragmipedium",
+        limit=25,
     )
     service.map_source(
-        consumer_module="lexicon", source_id="powo",
-        root_url="https://powo.science.kew.org/", search="Masdevallia", limit=25,
+        consumer_module="lexicon",
+        source_id="powo",
+        root_url="https://powo.science.kew.org/",
+        search="Masdevallia",
+        limit=25,
     )
     assert mapper.map_source.call_count == 2
 
@@ -62,14 +72,18 @@ def test_different_searches_are_distinct_acquisitions():
 def test_equivalent_root_urls_share_one_firecrawl_call():
     service, mapper = _service()
     service.map_source(
-        consumer_module="lexicon", source_id="powo",
+        consumer_module="lexicon",
+        source_id="powo",
         root_url="https://POWO.science.kew.org:443/?utm_source=x#top",
-        search="Phragmipedium", limit=25,
+        search="Phragmipedium",
+        limit=25,
     )
     status, cached = service.map_source(
-        consumer_module="atlas", source_id="powo",
+        consumer_module="atlas",
+        source_id="powo",
         root_url="https://powo.science.kew.org/",
-        search="Phragmipedium", limit=25,
+        search="Phragmipedium",
+        limit=25,
     )
     assert status == "cache_hit"
     assert cached is not None
