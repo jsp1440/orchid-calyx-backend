@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -352,3 +353,129 @@ def test_one_failing_job_does_not_abort_the_cycle_and_retries_only_after_backoff
         )
         assert after.attempted_jobs == 0
         assert executor.calls.count("job-0") == 3
+
+
+class _RaisingForJobKey(_FailingForJobKey):
+    def __init__(self, failing_job_key: str, error: BaseException) -> None:
+        super().__init__(failing_job_key)
+        self.error = error
+
+    def execute(self, assignment):
+        self.calls.append(assignment.job_key)
+        if assignment.job_key == self.failing_job_key:
+            raise self.error
+        return self.delegate.execute(assignment)
+
+
+def _registry_raising(job_key: str, error: BaseException) -> AuthoritativeExecutorRegistry:
+    registry = AuthoritativeExecutorRegistry()
+    registry._by_role[AUTONOMY_PROBE_ROLE] = RegisteredExecutor(
+        role_key=AUTONOMY_PROBE_ROLE,
+        executor=_RaisingForJobKey(job_key, error),
+        authoritative=True,
+        external_side_effects=False,
+    )
+    return registry
+
+
+def test_non_governance_executor_exception_is_a_job_failure_not_a_crash():
+    # A provider SDK can raise ConnectionError (an OSError), which the cycle
+    # previously did not catch: it escaped run_once and killed the worker.
+    with _db() as db:
+        _independent_program(db, jobs=3)
+        registry = _registry_raising("job-0", ConnectionError("provider reset"))
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=10, registry=registry
+        )
+        assert result.completed_jobs == 2
+        assert result.error is None
+        assert [f["exception_type"] for f in result.failures] == ["ConnectionError"]
+        assert result.failures[0]["disposition"] == "retry_backoff"
+        failed = db.query(CalyxProgramJob).filter(CalyxProgramJob.job_key == "job-0").one()
+        assert failed.status == "queued"
+        assert failed.lease_token is None
+
+
+def test_base_exceptions_still_propagate_out_of_the_cycle():
+    for error in (KeyboardInterrupt(), SystemExit(3)):
+        with _db() as db:
+            _independent_program(db, jobs=1)
+            registry = _registry_raising("job-0", error)
+            with pytest.raises(type(error)):
+                run_deterministic_program_cycle(
+                    db, owner="owner", worker_id="autonomy-worker", max_jobs=2, registry=registry
+                )
+
+
+def test_failed_attempt_frees_its_scheduler_slot_immediately():
+    # Role and repository capacity is 2. Before the fix the failed job stayed
+    # `running` until its lease expired, holding one of the two slots, so only
+    # one other job was runnable.
+    from app.calyx_orchestrator.persisted_scheduler import project_persisted_schedule
+
+    with _db() as db:
+        _independent_program(db, jobs=3)
+        registry, _ = _registry_failing("job-0")
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=1, registry=registry
+        )
+        assert result.stop_reason == "budget_exhausted"
+        assert result.failures[0]["job_key"] == "job-0"
+
+        schedule = project_persisted_schedule(db, owner="owner")
+        assert schedule.snapshot.running_counts["global"] == 0
+        runnable = [schedule.job_keys_by_schedule_key[key] for key in schedule.snapshot.runnable_order]
+        assert runnable == ["job-1", "job-2"]
+        codes = {
+            schedule.job_keys_by_schedule_key[d.job_key]: d.code for d in schedule.snapshot.decisions
+        }
+        assert codes["job-0"] == "RETRY_BACKOFF"
+
+
+def test_run_forever_survives_a_failed_cycle_and_sleeps_before_the_next(monkeypatch):
+    import runtime.program_autonomy_worker as worker_module
+
+    class _Stop(BaseException):
+        pass
+
+    policy = ProgramAutonomyPolicy.from_environ(
+        {
+            "CALYX_PROGRAM_AUTONOMY_ENABLED": "true",
+            "CALYX_PROGRAM_AUTONOMY_OWNER": "owner",
+            "CALYX_PROGRAM_AUTONOMY_POLL_SECONDS": "30",
+        }
+    )
+    outcomes = iter([ConnectionError("database reset"), {"executed": True, "cycle": {}}])
+
+    def fake_run_once(active_policy):
+        outcome = next(outcomes)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    sleeps: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise _Stop()
+
+    seen: list[dict] = []
+    monkeypatch.setattr(worker_module, "run_once", fake_run_once)
+    with pytest.raises(_Stop):
+        worker_module.run_forever(policy, sleeper=sleeper, on_cycle=seen.append)
+    assert seen[0] == {
+        "executed": False,
+        "reason": "cycle_failed",
+        "error": {"exception_type": "ConnectionError"},
+    }
+    assert seen[1] == {"executed": True, "cycle": {}}
+    assert sleeps == [policy.poll_seconds, policy.poll_seconds]
+
+    # A KeyboardInterrupt from a cycle still stops the worker.
+    def interrupted(active_policy):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(worker_module, "run_once", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        worker_module.run_forever(policy, sleeper=lambda _s: None)

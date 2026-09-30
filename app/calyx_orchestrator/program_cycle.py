@@ -170,13 +170,11 @@ def run_deterministic_program_cycle(
                 receipt=receipt,
             )
             _finalize_workspace_mutation(registered, assignment.assignment_id)
-        except (
-            LookupError,
-            PermissionError,
-            RuntimeError,
-            TypeError,
-            ValueError,
-        ) as exc:
+        except Exception as exc:  # noqa: BLE001 - executor boundary
+            # Any ordinary exception from an executor (for example a provider
+            # SDK's ConnectionError) is a job failure: release and back off,
+            # then continue. BaseException (KeyboardInterrupt, SystemExit,
+            # GeneratorExit) is deliberately not caught and still propagates.
             rollback_error = _rollback_workspace_mutation(
                 registered,
                 job.program_job_id,
