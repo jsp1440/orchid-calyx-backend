@@ -1,28 +1,42 @@
 #!/usr/bin/env python3
-"""Run a bounded Firecrawl federation reconnaissance pilot.
+"""Run a bounded Firecrawl federation reconnaissance pilot through the ledger.
 
 Examples:
     python scripts/oc_firecrawl_federation_pilot.py --source powo
     python scripts/oc_firecrawl_federation_pilot.py --source wfo
     python scripts/oc_firecrawl_federation_pilot.py --source all --limit 50
 
-Requires FIRECRAWL_API_KEY in the environment for live calls.
-Outputs reconnaissance JSON only. It never mutates OC scientific stores.
+Every source goes through ``app.federation.federation_pilot.run_pilot``: the
+acquisition ledger (``migrations/20260930_acquisition_ledger.sql``) must be
+present, a completed ledger record is reused, existing corpus/source-registry
+holdings are searched first, and the mapper runs only on an acquired ledger
+lease. A missing or incompatible ledger schema aborts with zero provider
+calls; there is no direct-call fallback and no bypass flag.
+
+Requires the application database (``PGHOST`` or ``DATABASE_URL``). A live call
+additionally requires ``NO_API_MODE=false``, ``FIRECRAWL_KILL_SWITCH`` unset or
+``false``, and ``FIRECRAWL_API_KEY``. Outputs reconnaissance JSON only. It
+never mutates OC scientific stores; it writes only acquisition-ledger rows.
+
+Exit status: 0 every source answered (fetched, ledger cache hit, or already
+held); 2 aborted before any provider call (no database / ledger schema);
+3 at least one source blocked, in flight, or failed.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-from pathlib import Path
+import os
 import sys
+from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from app.federation.federation_pilot import CorpusHoldings, run_pilot
 from app.federation.firecrawl_mapper import FirecrawlFederationMapper
-
 
 SOURCES = {
     "powo": {
@@ -38,7 +52,7 @@ SOURCES = {
 }
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Bounded Firecrawl source-reconnaissance pilot for OC federation."
     )
@@ -65,42 +79,93 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         help="Optional JSON output path. Otherwise prints to stdout.",
     )
-    return parser.parse_args()
+    args = parser.parse_args(argv)
+    if not 1 <= args.limit <= 1000:
+        # Rejected before any ledger claim, so a bad argument costs no lease.
+        parser.error("--limit must be between 1 and 1000")
+    return args
 
 
-def main() -> int:
-    args = parse_args()
-    mapper = FirecrawlFederationMapper()
-    names = tuple(SOURCES) if args.source == "all" else (args.source,)
+def _database_url() -> str | None:
+    """The application database, never the SQLite fallback of ``get_database_url``."""
+    if not (os.environ.get("PGHOST") or os.environ.get("DATABASE_URL")):
+        return None
+    from app.database import get_database_url
 
-    profiles = []
-    for name in names:
-        source = SOURCES[name]
-        profile = mapper.map_source(
-            source_id=source["source_id"],
-            root_url=source["root_url"],
-            search=source["search"],
-            limit=args.limit,
-            sitemap=args.sitemap,
-            include_subdomains=False,
-        )
-        profiles.append(profile.to_dict())
+    return get_database_url()
 
-    result = {
-        "pilot": "firecrawl-federation-phragmipedium-v1",
-        "scientific_status": "reconnaissance_only",
-        "automatic_publication_allowed": False,
-        "profiles": profiles,
-    }
+
+def _sqlalchemy_url(url: str) -> str:
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            return "postgresql+psycopg://" + url[len(prefix) :]
+    return url
+
+
+def build_holdings_check(database_url: str):
+    """Corpus + source-registry holdings lookup on the application database."""
+
+    def connect():
+        import psycopg
+
+        url = database_url
+        for prefix in ("postgresql+psycopg://", "postgres://"):
+            if url.startswith(prefix):
+                url = "postgresql://" + url[len(prefix) :]
+        return psycopg.connect(url, connect_timeout=10)
+
+    return CorpusHoldings(connect)
+
+
+def _emit(result: dict, output: Path | None) -> None:
     rendered = json.dumps(result, indent=2, sort_keys=True)
-
-    if args.output:
-        args.output.parent.mkdir(parents=True, exist_ok=True)
-        args.output.write_text(rendered + "\n", encoding="utf-8")
-        print(args.output)
+    if output:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+        print(output)
     else:
         print(rendered)
-    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    names = tuple(SOURCES) if args.source == "all" else (args.source,)
+    database_url = _database_url()
+    if database_url is None:
+        _emit(
+            {
+                "pilot": "firecrawl-federation-phragmipedium-v1",
+                "status": "aborted",
+                "reason": "LEDGER_DATABASE_REQUIRED",
+                "provider_calls": 0,
+                "automatic_publication_allowed": False,
+            },
+            args.output,
+        )
+        return 2
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(_sqlalchemy_url(database_url), pool_pre_ping=True)
+    session = sessionmaker(bind=engine)()
+    try:
+        report = run_pilot(
+            session=session,
+            sources={name: SOURCES[name] for name in names},
+            mapper=FirecrawlFederationMapper(),
+            holdings=build_holdings_check(database_url),
+            env=os.environ,
+            limit=args.limit,
+            sitemap=args.sitemap,
+        )
+    finally:
+        session.close()
+        engine.dispose()
+    _emit(report.as_dict(), args.output)
+    if report.status == "aborted":
+        return 2
+    return 0 if report.resolved else 3
 
 
 if __name__ == "__main__":
