@@ -61,7 +61,10 @@ CAPABILITY_INVENTORY: list[dict] = [
         "accessible": True,
         "notes": (
             "Show Day Phase 1: judging_locked returns 409 on judge autosave, judge submit and "
-            "the per-criterion score write (tests/test_show_day_phase1.py)"
+            "the per-criterion score write (tests/test_show_day_phase1.py), and on every "
+            "show-scoped judging write: events, status changes, classes, plants, judges, "
+            "assignments, scorecard generation and score submissions, plus entry and "
+            "award writes and show deletion (tests/test_show_day_judging_lock.py)"
         ),
     },
     # -------------------------------------------------------------------------
@@ -555,7 +558,9 @@ def get_audit() -> dict:
         "audit_date": AUDIT_DATE,
         "capability_count": len(CAPABILITY_INVENTORY),
         "status_counts": status_counts,
-        "accessible_count": sum(1 for c in CAPABILITY_INVENTORY if c.get("accessible", True)),
+        "accessible_count": sum(
+            1 for c in CAPABILITY_INVENTORY if c.get("accessible", True)
+        ),
         "inaccessible_count": sum(
             1 for c in CAPABILITY_INVENTORY if not c.get("accessible", True)
         ),
