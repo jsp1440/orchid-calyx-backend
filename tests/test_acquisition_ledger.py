@@ -10,9 +10,16 @@ from app.database import Base
 from app.source_federation.acquisition import AcquisitionRecord, AcquisitionRequest
 from app.source_federation.acquisition_ledger import AcquisitionLedger, _as_utc
 from app.source_federation.acquisition_models import AcquisitionLedgerRow
+from tests.acquisition_ledger_backends import (
+    LEDGER_BACKENDS,
+    ledger_engine_fixture,  # noqa: F401 - the ``ledger_engine`` fixture
+)
 
 
-def _ledger():
+def _ledger(engine=None):
+    """A ledger on ``engine`` (``ledger_engine``), else a fresh SQLite one."""
+    if engine is not None:
+        return AcquisitionLedger(sessionmaker(bind=engine)())
     engine = create_engine("sqlite:///:memory:")
     # Only the ledger table: the shared Base also carries schema-qualified
     # tables (e.g. research_station.*) that SQLite cannot create, so a
@@ -30,16 +37,18 @@ def _request(module="lexicon"):
     )
 
 
-def test_duplicate_modules_coalesce_to_one_external_lease():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_duplicate_modules_coalesce_to_one_external_lease(ledger_engine):
+    ledger = _ledger(ledger_engine)
     first = ledger.claim(_request("lexicon"), worker_id="w1")
     second = ledger.claim(_request("matrix"), worker_id="w2")
     assert first.action == "acquired_lease"
     assert second.action == "in_flight"
 
 
-def test_completed_acquisition_becomes_zero_fetch_cache_hit():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_completed_acquisition_becomes_zero_fetch_cache_hit(ledger_engine):
+    ledger = _ledger(ledger_engine)
     request = _request()
     lease = ledger.claim(request, worker_id="w1")
     record = AcquisitionRecord.completed(
@@ -54,8 +63,9 @@ def test_completed_acquisition_becomes_zero_fetch_cache_hit():
     assert ledger.metrics()["credits_spent"] == 1
 
 
-def test_failure_blocks_immediate_credit_burning_retry():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_failure_blocks_immediate_credit_burning_retry(ledger_engine):
+    ledger = _ledger(ledger_engine)
     now = datetime.now(timezone.utc)
     claim = ledger.claim(_request(), worker_id="w1", now=now)
     ledger.fail(claim, retry_after_seconds=300, now=now)
@@ -65,8 +75,9 @@ def test_failure_blocks_immediate_credit_burning_retry():
     assert retry.action == "retry_blocked"
 
 
-def test_expired_lease_can_be_recovered():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_expired_lease_can_be_recovered(ledger_engine):
+    ledger = _ledger(ledger_engine)
     now = datetime.now(timezone.utc)
     ledger.claim(_request(), worker_id="dead-worker", lease_seconds=2, now=now)
     recovered = ledger.claim(
@@ -177,11 +188,12 @@ def test_naive_stored_retry_window_blocks_until_it_passes():
     assert reopened.action == "acquired_lease"
 
 
-def test_non_utc_caller_offset_does_not_shorten_an_active_lease():
+@LEDGER_BACKENDS
+def test_non_utc_caller_offset_does_not_shorten_an_active_lease(ledger_engine):
     # SQLite drops the offset WITHOUT converting. Unless the ledger writes UTC,
     # a -05:00 instant is stored five hours early and reads back as already
     # expired, handing a second worker a duplicate paid lease.
-    ledger = _ledger()
+    ledger = _ledger(ledger_engine)
     now = datetime(2026, 1, 1, 10, 0, tzinfo=_MINUS_FIVE)
     first = ledger.claim(_request(), worker_id="w1", lease_seconds=120, now=now)
     second = ledger.claim(
@@ -191,8 +203,9 @@ def test_non_utc_caller_offset_does_not_shorten_an_active_lease():
     assert second.action == "in_flight"
 
 
-def test_non_utc_caller_offset_does_not_extend_an_expired_lease():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_non_utc_caller_offset_does_not_extend_an_expired_lease(ledger_engine):
+    ledger = _ledger(ledger_engine)
     now = datetime(2026, 1, 1, 10, 0, tzinfo=_PLUS_FIVE)
     ledger.claim(_request(), worker_id="dead", lease_seconds=2, now=now)
     recovered = ledger.claim(
@@ -201,8 +214,9 @@ def test_non_utc_caller_offset_does_not_extend_an_expired_lease():
     assert recovered.action == "acquired_lease"
 
 
-def test_non_utc_caller_offset_does_not_shorten_a_retry_window():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_non_utc_caller_offset_does_not_shorten_a_retry_window(ledger_engine):
+    ledger = _ledger(ledger_engine)
     now = datetime(2026, 1, 1, 10, 0, tzinfo=_MINUS_FIVE)
     claim = ledger.claim(_request(), worker_id="w1", now=now)
     ledger.fail(claim, retry_after_seconds=300, now=now)
@@ -212,8 +226,9 @@ def test_non_utc_caller_offset_does_not_shorten_a_retry_window():
     assert retry.action == "retry_blocked"
 
 
-def test_naive_caller_now_is_treated_as_utc():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_naive_caller_now_is_treated_as_utc(ledger_engine):
+    ledger = _ledger(ledger_engine)
     aware = datetime(2026, 1, 1, 12, 0, tzinfo=timezone.utc)
     ledger.claim(
         _request(), worker_id="w1", lease_seconds=120, now=aware.replace(tzinfo=None)
@@ -228,8 +243,9 @@ def test_naive_caller_now_is_treated_as_utc():
     assert expired.action == "acquired_lease"
 
 
-def test_retrieved_at_is_stored_as_utc():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_retrieved_at_is_stored_as_utc(ledger_engine):
+    ledger = _ledger(ledger_engine)
     request = _request()
     lease = ledger.claim(request, worker_id="w1")
     record = AcquisitionRecord.completed(

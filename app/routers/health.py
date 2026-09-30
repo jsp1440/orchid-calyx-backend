@@ -8,6 +8,7 @@ from app.multimodal_intelligence.routes import router as multimodal_intelligence
 from app.parallel_platform.routes import router as parallel_platform_router
 from app.research_traits.routes import router as research_traits_router
 from app.routers.calyx_queue import router as calyx_queue_router
+from app.routers.config_readiness import router as config_readiness_router
 from app.routers.conservatory import router as conservatory_router
 from app.routers.github_research_bridge import router as github_research_bridge_router
 from app.routers.graph_pipeline_readiness import (
@@ -67,6 +68,12 @@ def add_mission_control_cors_headers(request: Request, response: Response) -> No
 
 @router.options("/api/mission-control/{full_path:path}")
 def mission_control_options(full_path: str, request: Request, response: Response):
+    add_mission_control_cors_headers(request, response)
+    return {"status": "ok", "path": full_path}
+
+
+@router.options("/api/system/{full_path:path}")
+def system_options(full_path: str, request: Request, response: Response):
     add_mission_control_cors_headers(request, response)
     return {"status": "ok", "path": full_path}
 
@@ -173,6 +180,9 @@ from app.executive_intelligence.routes import router as executive_intelligence_r
 from app.workflow.routes import router as workflow_router
 
 router.include_router(release_identity_router)
+router.include_router(
+    config_readiness_router, dependencies=[Depends(add_mission_control_cors_headers)]
+)
 router.include_router(
     mission_control_router, dependencies=[Depends(add_mission_control_cors_headers)]
 )

@@ -1,0 +1,40 @@
+name: OC Source Compile
+
+# Every tracked Python file must compile, on every pull request and push to
+# main and oc-autonomous-integration. Main once carried acquisition_ledger.py,
+# shared_firecrawl.py and test_shared_firecrawl.py with literal "\n" escapes in
+# place of line breaks; the only compile step then ran on pull requests to the
+# integration branch, so nothing stopped it landing.
+
+on:
+  pull_request:
+    branches: [main, oc-autonomous-integration]
+  push:
+    branches: [main, oc-autonomous-integration]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oc-source-compile-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install pinned test runner
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Compile package trees
+        run: python -m compileall -q app runtime harvesters scripts tests alembic tools
+      - name: Compile every tracked Python file
+        run: python -m pytest -q -p no:cacheprovider tests/test_source_compiles.py
