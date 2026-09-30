@@ -4,7 +4,8 @@ Runs against a throwaway database on the disposable test server
 (TEST_DATABASE_URL, then DATABASE_URL); ``requires_postgres`` skips off-runner
 and fails in CI when that server is unusable. Every planted row below is a
 SYNTHETIC shape written for this test (fictional place names, made-up grid
-references); none is real locality data. The database is dropped afterwards.
+references and coordinates); none is real locality data. The database is
+dropped afterwards.
 """
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import secrets
 import subprocess
 import sys
@@ -27,11 +29,16 @@ SCRIPT = ROOT / "scripts" / "scan_trait_locality.py"
 DMS = "12°34'56\"S 77°01'02\"W"
 UTM = "17N 630084 4833438"
 PLUS_CODE = "849VCWC8+R9"
+MGRS_LOWER = "33twn1234567890"
+DECIMAL_PAIR = "9.12 -83.65"
 TYPE_LOCALITY_VALUE = "Cerro Fixtura synthetic"
 COLLECTION_SITE_VALUE = "Finca Fixtura"
+TYPE_LOCALITY_LABEL = "type locality Volcan Barutown"
+COLLECTED_LABEL = "collected near Montefixture ridge"
 COLLECTOR_LABEL = "Collector: J. Fixturesen 4417"
 ELEV_RAW = "2351 m"
 ELEV_KEY = "verbatimElevationFixture"
+LAT, LON = "9.736512", "-83.917734"
 PLANTED = (
     DMS,
     "12°34",
@@ -39,30 +46,46 @@ PLANTED = (
     "4833438",
     PLUS_CODE,
     "849VCWC8",
+    MGRS_LOWER,
+    "33twn",
+    DECIMAL_PAIR,
+    "83.65",
     TYPE_LOCALITY_VALUE,
     "Cerro",
     COLLECTION_SITE_VALUE,
     "Finca",
+    TYPE_LOCALITY_LABEL,
+    "Volcan",
+    "Barutown",
+    COLLECTED_LABEL,
+    "Montefixture",
     COLLECTOR_LABEL,
     "Fixturesen",
     "4417",
     ELEV_RAW,
     "2351",
     ELEV_KEY,
+    LAT,
+    LON,
+    "9.7365",
+    "83.9177",
 )
+LABELS = (TYPE_LOCALITY_LABEL, COLLECTED_LABEL, COLLECTOR_LABEL, "type locality")
 CLEAN_TRAITS = (
-    ("t5", "tx3", "flower_color", "yellow", None, "synthetic fixture"),
-    ("t6", "tx3", "labellum_length", "12 mm", "mm", "synthetic fixture"),
-    ("t7", "tx4", "growth_habit", "epiphytic", None, "synthetic fixture"),
+    ("t5", "tx3", "flower_color", "yellow", None, "synthetic fixture", ["golden"]),
+    ("t6", "tx3", "labellum_length", "12 mm", "mm", "synthetic fixture", None),
+    ("t7", "tx4", "growth_habit", "epiphytic", None, "synthetic fixture", ["epiphyte"]),
+    ("t8", "tx4", "chromosome_count", "2n = 40", None, "synthetic fixture", None),
+    ("t9", "tx4", "petal_width_range", "12.5 13.2", "mm", "synthetic fixture", None),
 )
 TRAITS_DDL = (
     "CREATE TABLE oc_traits.traits(trait_id text PRIMARY KEY, taxon_id text, "
-    "trait_name text, trait_value text, unit text, source_name text)"
+    "trait_name text, trait_value text, unit text, source_name text, aliases text[])"
 )
 RESOLVED_DDL = (
     (
         "CREATE TABLE oc_fixture.resolved(taxon_id text, predicate text, object text, "
-        "confidence_score numeric)"
+        "confidence_score numeric, point_a double precision, point_b numeric)"
     ),
     "CREATE VIEW oc_views.trait_resolved_v4 AS SELECT * FROM oc_fixture.resolved",
 )
@@ -78,6 +101,15 @@ CREATE TABLE public.record_traits(
     elev_m_valid numeric
 )
 """
+INSERT_TRAIT = "INSERT INTO oc_traits.traits VALUES (%s, %s, %s, %s, %s, %s, %s)"
+INSERT_RESOLVED = "INSERT INTO oc_fixture.resolved VALUES (%s, %s, %s, %s, %s, %s)"
+
+
+def _load():
+    spec = importlib.util.spec_from_file_location("scan_trait_locality", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _dsn(base: str, **overrides: str) -> str:
@@ -119,11 +151,13 @@ def insert_clean(dsn: str) -> None:
     import psycopg
 
     with psycopg.connect(dsn, autocommit=True) as conn:
+        conn.cursor().executemany(INSERT_TRAIT, CLEAN_TRAITS)
         conn.cursor().executemany(
-            "INSERT INTO oc_traits.traits VALUES (%s, %s, %s, %s, %s, %s)", CLEAN_TRAITS
-        )
-        conn.execute(
-            "INSERT INTO oc_fixture.resolved VALUES ('tx3', 'flower_color', 'white', 0.9)"
+            INSERT_RESOLVED,
+            [
+                ("tx3", "flower_color", "white", 0.9, 0.25, 0.5),
+                ("tx3", "petal_ratio", "narrow", 0.8512, 0.1234, 0.5678),
+            ],
         )
 
 
@@ -133,7 +167,7 @@ def insert_planted(dsn: str) -> None:
     with psycopg.connect(dsn, autocommit=True) as conn:
         cur = conn.cursor()
         cur.executemany(
-            "INSERT INTO oc_traits.traits VALUES (%s, %s, %s, %s, %s, %s)",
+            INSERT_TRAIT,
             [
                 (
                     "t1",
@@ -141,19 +175,33 @@ def insert_planted(dsn: str) -> None:
                     "type locality",
                     TYPE_LOCALITY_VALUE,
                     None,
-                    "synthetic fixture",
+                    "fixture",
+                    None,
                 ),
-                ("t2", "tx1", "holotype_coordinates", DMS, None, "synthetic fixture"),
-                ("t3", "tx2", "collection_note", UTM, None, "synthetic fixture"),
-                ("t4", "tx2", "habitat_code", PLUS_CODE, None, "synthetic fixture"),
+                ("t2", "tx1", "holotype_coordinates", DMS, None, "fixture", None),
+                ("t3", "tx2", "collection_note", UTM, None, "fixture", None),
+                ("t4", "tx2", "habitat_code", PLUS_CODE, None, "fixture", None),
+                ("t10", "tx2", "grid_note", MGRS_LOWER, None, "fixture", None),
+                (
+                    "t11",
+                    "tx2",
+                    "flower_color",
+                    "red",
+                    None,
+                    "fixture",
+                    ["red", DECIMAL_PAIR],
+                ),
+                ("t12", "tx5", TYPE_LOCALITY_LABEL, "yes", None, "fixture", None),
+                ("t13", "tx5", COLLECTED_LABEL, "yes", None, "fixture", None),
             ],
         )
         cur.executemany(
-            "INSERT INTO oc_fixture.resolved VALUES (%s, %s, %s, %s)",
+            INSERT_RESOLVED,
             [
-                ("tx1", "collection site", COLLECTION_SITE_VALUE, 0.7),
-                ("tx2", "elevation", ELEV_RAW, 0.6),
-                ("tx4", COLLECTOR_LABEL, "x", 0.5),
+                ("tx1", "collection site", COLLECTION_SITE_VALUE, 0.7, None, None),
+                ("tx2", "elevation", ELEV_RAW, 0.6, None, None),
+                ("tx4", COLLECTOR_LABEL, "x", 0.5, None, None),
+                ("tx6", "habit", "terrestrial", 0.5, float(LAT), LON),
             ],
         )
         conn.execute(RECORD_TRAITS_DDL)
@@ -185,63 +233,115 @@ def by_source(report: dict) -> dict[str, dict]:
     return {item["source"]: item for item in report["sources"]}
 
 
-def assert_no_planted_values(output: str) -> None:
-    for value in PLANTED:
+def assert_no_planted_text(output: str) -> None:
+    lowered = output.lower()
+    for value in (*PLANTED, *LABELS):
         assert value not in output, value
+        assert value.lower() not in lowered, value
         assert json.dumps(value)[1:-1] not in output, value
 
 
+def reported_words(report: dict) -> set[str]:
+    """Every string in the report outside the fixed limitations text."""
+    words: set[str] = set()
+
+    def walk(value):
+        if isinstance(value, dict):
+            for key, item in value.items():
+                if key != "limitations":
+                    words.add(key)
+                    walk(item)
+        elif isinstance(value, list):
+            for item in value:
+                walk(item)
+        elif isinstance(value, str):
+            words.add(value)
+
+    walk(report)
+    return words
+
+
 @pytest.mark.requires_postgres
-def test_planted_locality_is_flagged_and_never_printed(database):
+def test_planted_locality_is_flagged_and_no_text_is_printed(database):
     insert_clean(database)
     insert_planted(database)
     code, report, output = run_scan(database)
     assert code == 1, output
     assert report["status"] == "FLAGGED"
-    assert report["read_only"] is True
     assert report["values_included"] is False
+    assert report["labels_included"] is False
     sources = by_source(report)
-    assert set(sources) == {
-        "oc_views.trait_resolved_v4",
-        "oc_traits.traits",
-        "public.record_traits",
-    }
 
     traits = sources["oc_traits.traits"]
-    assert traits["sampled_rows"] == 7
-    assert traits["rows_flagged"] == 4  # t1..t4; the three clean rows pass
-    assert traits["value_hits"] == [
-        {
-            "column": "trait_value",
-            "rows": 3,
-            "matched": ["coordinates"],
-        }  # DMS, UTM, plus code
-    ]
-    assert [(x["label"], x["rows"]) for x in traits["flagged_labels"]] == [
-        ("holotype_coordinates", 1),
-        ("type locality", 1),
-    ]
-    assert traits["withheld_labels"] == 0
+    assert traits["sampled_rows"] == 13
+    # t1-t4, t10-t13 are planted; the five clean rows (incl. "2n = 40" and
+    # "12.5 13.2") pass.
+    assert traits["rows_flagged"] == 8
+    assert traits["value_hits"] == {
+        "coordinate_value": {
+            "rows": 5,  # DMS, UTM, plus code, lower-case MGRS, decimal pair in text[]
+            "columns": ["aliases", "trait_value"],
+        }
+    }
+    assert traits["label_hits"] == {
+        "collection_site_label": {"rows": 1, "columns": ["trait_name"]},
+        "coordinate_label": {"rows": 1, "columns": ["trait_name"]},
+        "type_locality_label": {"rows": 2, "columns": ["trait_name"]},
+    }
     assert traits["flagged_columns"] == []
 
     resolved = sources["oc_views.trait_resolved_v4"]
-    assert resolved["sampled_rows"] == 4
-    assert resolved["rows_flagged"] == 3
-    labels = {x["label"]: x for x in resolved["flagged_labels"]}
-    assert set(labels) == {"collection site", "elevation"}
-    assert labels["elevation"]["matched"] == ["sensitive_vocabulary"]
-    assert resolved["withheld_labels"] == 1  # the collector label is counted, not shown
+    assert resolved["sampled_rows"] == 6
+    assert resolved["rows_flagged"] == 4
+    assert resolved["label_hits"] == {
+        "collection_site_label": {
+            "rows": 2,
+            "columns": ["predicate"],
+        },  # site + collector
+        "elevation_label": {"rows": 1, "columns": ["predicate"]},
+    }
+    assert resolved["possible_coordinate_pairs"] == [
+        {
+            "category": "possible_coordinate_pair",
+            "columns": ["point_a", "point_b"],
+            "rows": 1,
+        }
+    ]
 
     record = sources["public.record_traits"]
-    assert record["sampled_rows"] == 2
-    assert record["rows_flagged"] == 1  # r2 has no elevation
-    flagged = {c["column"]: c["non_null_in_sample"] for c in record["flagged_columns"]}
-    assert flagged["elev_m"] == 1
-    assert flagged["elev_raw_value"] == 1
-    assert {"elev_min_m", "elev_max_m", "elev_m_valid"} <= set(flagged)
-    assert "elev_flag_invalid" not in flagged  # booleans carry no elevation
+    assert record["rows_flagged"] == 1
+    flagged = {c["column"]: c for c in record["flagged_columns"]}
+    assert flagged["elev_m"]["non_null_in_sample"] == 1
+    assert flagged["elev_raw_value"]["non_null_in_sample"] == 1
+    assert flagged["elev_m"]["category"] == "elevation_column"
+    assert "elev_flag_invalid" not in flagged
 
-    assert_no_planted_values(output)
+    assert_no_planted_text(output)
+
+
+@pytest.mark.requires_postgres
+def test_report_uses_only_fixed_vocabulary_and_column_names(database):
+    insert_clean(database)
+    insert_planted(database)
+    _, report, _ = run_scan(database)
+    module = _load()
+    column_names = {
+        "trait_id", "taxon_id", "trait_name", "trait_value", "unit", "source_name",
+        "aliases", "predicate", "object", "confidence_score", "point_a", "point_b",
+        "record_id", "source", "elev_m", "elev_min_m", "elev_max_m", "elev_raw_key",
+        "elev_raw_value", "elev_parse_method", "elev_m_valid",
+    }  # fmt: skip
+    structure = {
+        "status", "FLAGGED", "read_only", "sample_limit", "rows_flagged", "sources",
+        "values_included", "labels_included", "source", "present", "sampled_rows",
+        "columns_scanned", "flagged_columns", "value_hits", "label_hits",
+        "possible_coordinate_pairs", "column", "category", "non_null_in_sample",
+        "rows", "columns", "oc_views.trait_resolved_v4", "oc_traits.traits",
+        "public.record_traits",
+    }  # fmt: skip
+    unexpected = reported_words(report) - column_names - structure - module.CATEGORIES
+    assert not unexpected, unexpected
+    assert report["limitations"] == list(module.LIMITATIONS)
 
 
 @pytest.mark.requires_postgres
@@ -258,8 +358,9 @@ def test_clean_rows_pass(database):
     }
     for name in ("oc_traits.traits", "oc_views.trait_resolved_v4"):
         assert sources[name]["rows_flagged"] == 0
-        assert sources[name]["value_hits"] == []
-        assert sources[name]["flagged_labels"] == []
+        assert sources[name]["value_hits"] == {}
+        assert sources[name]["label_hits"] == {}
+        assert sources[name]["possible_coordinate_pairs"] == []
 
 
 @pytest.mark.requires_postgres
@@ -268,7 +369,7 @@ def test_sampling_is_bounded_by_limit(database):
 
     with psycopg.connect(database, autocommit=True) as conn:
         conn.cursor().executemany(
-            "INSERT INTO oc_traits.traits VALUES (%s, 'tx', 'flower_color', 'red', NULL, NULL)",
+            "INSERT INTO oc_traits.traits VALUES (%s, 'tx', 'flower_color', 'red', NULL, NULL, NULL)",
             [(f"c{i}",) for i in range(30)],
         )
     _, report, _ = run_scan(database, "--limit", "5")
@@ -280,9 +381,7 @@ def test_sampling_is_bounded_by_limit(database):
 def test_scan_runs_in_a_read_only_transaction(database, monkeypatch):
     import psycopg
 
-    spec = importlib.util.spec_from_file_location("scan_trait_locality", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = _load()
     insert_clean(database)
     observed = []
 
@@ -302,20 +401,31 @@ def test_scan_runs_in_a_read_only_transaction(database, monkeypatch):
     assert observed == ["on"]
 
 
-def test_screens_are_the_member_view_screens():
-    spec = importlib.util.spec_from_file_location("scan_trait_locality", SCRIPT)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+def test_flagging_is_decided_by_the_member_view_screens():
+    module = _load()
     from app import matrix_member_views
 
     for text in (DMS, UTM, PLUS_CODE, "type locality", "collection site", "elev_m"):
         assert module.screen_categories(text), text
         assert matrix_member_views.screened_text(text) == matrix_member_views.WITHHELD
-    for text in ("yellow", "12 mm", "epiphytic", "flower_color", "labellum_length"):
+    for text in (
+        "yellow",
+        "12 mm",
+        "epiphytic",
+        "flower_color",
+        "2n = 40",
+        "12.5 13.2",
+    ):
         assert module.screen_categories(text) == [], text
         assert matrix_member_views.screened_text(text) == text
-    # The scanner's only own pattern is the label print-shape; no locality regex.
-    assert SCRIPT.read_text(encoding="utf-8").count("re.compile(") == 1
+    # Scanner-side folds, reported as limitations of the reused screen.
+    for text in (MGRS_LOWER, DECIMAL_PAIR):
+        assert matrix_member_views.screened_text(text) == text
+        assert module.screen_categories(text) == ["coordinates"], text
+    source = SCRIPT.read_text(encoding="utf-8")
+    # No locality screen of its own: the only local patterns are the two folds
+    # and the four category-naming patterns.
+    assert len(re.findall(r"re\.compile\(", source)) == 5
 
 
 def test_unavailable_database_is_reported_without_the_connection_string():
