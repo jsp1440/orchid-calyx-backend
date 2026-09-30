@@ -1,0 +1,130 @@
+name: OC Autonomy Timer Proof
+
+# Proves the program-autonomy supervisor's own run_forever timer completes at
+# least ten consecutive cycles per supervisor with no manual trigger. It runs
+# real supervisor subprocesses against a disposable PostgreSQL, with a SIGKILL,
+# a fake provider 503, a dead-letter and duplicate-lease attempts injected.
+# The proof is NO-API: fake providers only, and a socket guard allows only the
+# loopback database. It uses no secrets.
+
+on:
+  pull_request:
+    branches: [main, oc-autonomous-integration]
+    paths:
+      - "app/calyx_orchestrator/**"
+      - "app/database.py"
+      - "runtime/program_autonomy_worker.py"
+      - "scripts/oc_program_autonomy_timer_proof.py"
+      - "tests/test_program_autonomy_timer_proof.py"
+      - "tests/conftest.py"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - ".github/workflows/oc-autonomy-timer-proof.yml"
+  push:
+    branches: [main, oc-autonomous-integration]
+    paths:
+      - "app/calyx_orchestrator/**"
+      - "app/database.py"
+      - "runtime/program_autonomy_worker.py"
+      - "scripts/oc_program_autonomy_timer_proof.py"
+      - "tests/test_program_autonomy_timer_proof.py"
+      - "tests/conftest.py"
+      - "requirements.txt"
+      - "requirements-dev.txt"
+      - ".github/workflows/oc-autonomy-timer-proof.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oc-autonomy-timer-proof-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  timer-proof:
+    name: Supervisor timer proof (>=10 consecutive cycles)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocautproof
+          POSTGRES_PASSWORD: ocautproof_test_only
+          POSTGRES_DB: oc_autproof
+        ports:
+          # Off the default port, so nothing can silently reach a placeholder.
+          - 55493:5432
+        options: >-
+          --health-cmd "pg_isready -U ocautproof -d oc_autproof"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      NO_API_MODE: "true"
+      PROVIDER_LAUNCH_AUTHORIZED: "false"
+      TEST_DATABASE_URL: postgresql://ocautproof:ocautproof_test_only@localhost:55493/oc_autproof
+      # tests/conftest.py already fails, rather than skips, when CI=true.
+      # This makes the same rule explicit for this job.
+      OC_REQUIRE_POSTGRES: "1"
+      OC_AUTPROOF_EVIDENCE: artifacts/program-autonomy-timer-proof.json
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+      - name: Require a usable PostgreSQL
+        run: |
+          python - <<'PY'
+          import os
+          import sys
+
+          import psycopg2
+
+          try:
+              with psycopg2.connect(os.environ["TEST_DATABASE_URL"], connect_timeout=5) as conn:
+                  with conn.cursor() as cur:
+                      cur.execute("SHOW server_version")
+                      print("PostgreSQL", cur.fetchone()[0])
+          except Exception as exc:
+              print(f"::error::PostgreSQL is unusable: {type(exc).__name__}: {exc}")
+              sys.exit(1)
+          PY
+      - name: Run the timer proof
+        run: |
+          mkdir -p artifacts
+          python -m pytest -p no:cacheprovider -q -rs tests/test_program_autonomy_timer_proof.py
+      - name: Verify the evidence exists and passed
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+
+          path = os.environ["OC_AUTPROOF_EVIDENCE"]
+          if not os.path.exists(path):
+              print(f"::error::{path} missing: the PostgreSQL proof did not run")
+              sys.exit(1)
+          report = json.load(open(path, encoding="utf-8"))
+          cycles = {s["name"]: s["consecutive_cycles"] for s in report["supervisors"]}
+          print(json.dumps({
+              "status": report["status"],
+              "cycles": cycles,
+              "duration_seconds": report["duration_seconds"],
+              "postgres": report["postgres"]["server_version"],
+              "defects_observed": [d["id"] for d in report["defects_observed"]],
+          }, sort_keys=True))
+          if report["status"] != "PASS" or len(cycles) < 2 or min(cycles.values()) < 10:
+              sys.exit(1)
+          PY
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: program-autonomy-timer-proof
+          path: artifacts/program-autonomy-timer-proof.json
+          if-no-files-found: error
