@@ -1,19 +1,24 @@
-from typing import List
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.models import Show
-from app.schemas import ShowCreate, ShowUpdate, ShowOut
+from app.schemas import ShowCreate, ShowOut, ShowUpdate
 from app.security import verify_api_key
 from app.show_lock import ensure_show_unlocked
 
-router = APIRouter(prefix="/api", tags=["shows"], dependencies=[Depends(verify_api_key)])
+DbSession = Annotated[Session, Depends(get_db)]
+
+router = APIRouter(
+    prefix="/api", tags=["shows"], dependencies=[Depends(verify_api_key)]
+)
 
 
 @router.post("/shows", response_model=ShowOut)
-def create_show(payload: ShowCreate, db: Session = Depends(get_db)):
+def create_show(payload: ShowCreate, db: DbSession):
     show = Show(**payload.model_dump())
     db.add(show)
     db.commit()
@@ -21,13 +26,13 @@ def create_show(payload: ShowCreate, db: Session = Depends(get_db)):
     return show
 
 
-@router.get("/shows", response_model=List[ShowOut])
-def list_shows(db: Session = Depends(get_db)):
+@router.get("/shows", response_model=list[ShowOut])
+def list_shows(db: DbSession):
     return db.execute(select(Show)).scalars().all()
 
 
 @router.get("/shows/{show_id}", response_model=ShowOut)
-def get_show(show_id: str, db: Session = Depends(get_db)):
+def get_show(show_id: str, db: DbSession):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
@@ -35,7 +40,7 @@ def get_show(show_id: str, db: Session = Depends(get_db)):
 
 
 @router.patch("/shows/{show_id}", response_model=ShowOut)
-def update_show(show_id: str, payload: ShowUpdate, db: Session = Depends(get_db)):
+def update_show(show_id: str, payload: ShowUpdate, db: DbSession):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
@@ -47,7 +52,7 @@ def update_show(show_id: str, payload: ShowUpdate, db: Session = Depends(get_db)
 
 
 @router.delete("/shows/{show_id}")
-def delete_show(show_id: str, db: Session = Depends(get_db)):
+def delete_show(show_id: str, db: DbSession):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")

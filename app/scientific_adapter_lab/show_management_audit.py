@@ -558,7 +558,9 @@ def get_audit() -> dict:
         "audit_date": AUDIT_DATE,
         "capability_count": len(CAPABILITY_INVENTORY),
         "status_counts": status_counts,
-        "accessible_count": sum(1 for c in CAPABILITY_INVENTORY if c.get("accessible", True)),
+        "accessible_count": sum(
+            1 for c in CAPABILITY_INVENTORY if c.get("accessible", True)
+        ),
         "inaccessible_count": sum(
             1 for c in CAPABILITY_INVENTORY if not c.get("accessible", True)
         ),
