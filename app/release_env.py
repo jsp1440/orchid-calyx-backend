@@ -209,6 +209,41 @@ RELEASE1_ENV: tuple[EnvVariable, ...] = (
         "Frontend scan-page URL encoded into entry-tag QR codes (app/routers/show_day.py).",
         "QR codes encode the bare tag token instead of a scan link.",
     ),
+    EnvVariable(
+        "CALYX_JUDGE_TOKEN_SECRET",
+        OPTIONAL,
+        "unset",
+        "HMAC key for per-judge credentials and judge-facing opaque handles (app/judge_auth.py); at least 32 characters and different from every other secret the app reads.",
+        "Judge access fails closed: credential issuance and every /api/judge-portal route return 503 `Judge authentication is not configured`. Rotating it invalidates every judge credential.",
+    ),
+    EnvVariable(
+        "JUDGE_AUTH_TRUSTED_PROXY_HOPS",
+        OPTIONAL,
+        "`0`",
+        "Number of trusted proxies that append to X-Forwarded-For; judge sign-in failures are counted against that hop's address (app/judge_auth.py).",
+        "Failures are counted against the direct peer address, so behind a proxy every judge device shares one per-client failure budget (a correct credential is never refused).",
+    ),
+    EnvVariable(
+        "JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT",
+        OPTIONAL,
+        "`50`",
+        "Failed judge sign-ins allowed per client address per window before failures answer 429 (app/judge_auth.py).",
+        "Default limit.",
+    ),
+    EnvVariable(
+        "JUDGE_AUTH_FAILURE_LIMIT_GLOBAL",
+        OPTIONAL,
+        "`500`",
+        "Failed judge sign-ins allowed across all clients per window before failures answer 429 (app/judge_auth.py).",
+        "Default limit.",
+    ),
+    EnvVariable(
+        "JUDGE_AUTH_FAILURE_WINDOW_SECONDS",
+        OPTIONAL,
+        "`300`",
+        "Window for the judge sign-in failure limits (minimum 1).",
+        "Default window.",
+    ),
     # --- production markers, test fallbacks ----------------------------------
     EnvVariable(
         "APP_ENV",
