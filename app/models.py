@@ -2,6 +2,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    DDL,
     Boolean,
     Column,
     Date,
@@ -14,6 +15,7 @@ from sqlalchemy import (
     UniqueConstraint,
     event,
 )
+from sqlalchemy.orm import Session
 
 from app.database import Base
 
@@ -292,6 +294,8 @@ class JudgingEvent(Base):
     name = Column(Text, nullable=True)
     judging_type = Column(String, default="standard")
     is_blind = Column(Boolean, default=False)
+    # Re-drawn each time the event enters blind mode; keys judge-facing handles.
+    blind_handle_salt = Column(String(32), nullable=True)
     status = Column(String, default="draft")
     published_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
@@ -365,6 +369,8 @@ class Plant(Base):
     name = Column(Text, nullable=True)
     qr_code = Column(String, nullable=True)
     notes = Column(Text, nullable=True)
+    # The only plant name a judge sees in a blind event; set by the owner.
+    blind_display_name = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
@@ -490,6 +496,61 @@ class JudgeActionAudit(Base):
 @event.listens_for(JudgeActionAudit, "before_delete")
 def _judge_action_audit_is_append_only(_mapper, _connection, _target):
     raise ValueError("judge_action_audit is append-only")
+
+
+@event.listens_for(Session, "do_orm_execute")
+def _judge_action_audit_rejects_bulk_writes(state):
+    """Refuse ``update(...)`` / ``delete(...)`` statements aimed at the audit.
+
+    The mapper events above only see unit-of-work flushes; bulk statements
+    executed through a session bypass them.
+    """
+    if not (state.is_update or state.is_delete):
+        return
+    table = getattr(state.statement, "table", None)
+    if getattr(table, "name", None) == JudgeActionAudit.__tablename__:
+        raise ValueError("judge_action_audit is append-only")
+
+
+# Database-level guards for tables made by ``create_all`` (the show profile's
+# rehearsal path and the tests); ``migrations/20260930_show_judge_credentials.sql``
+# installs the same PostgreSQL triggers on a migrated database.
+_AUDIT_TABLE = JudgeActionAudit.__table__
+for _op in ("UPDATE", "DELETE"):
+    event.listen(
+        _AUDIT_TABLE,
+        "after_create",
+        DDL(
+            f"CREATE TRIGGER judge_action_audit_no_{_op.lower()} BEFORE {_op} "
+            "ON judge_action_audit BEGIN "
+            "SELECT RAISE(ABORT, 'judge_action_audit is append-only'); END"
+        ).execute_if(dialect="sqlite"),
+    )
+event.listen(
+    _AUDIT_TABLE,
+    "after_create",
+    DDL(
+        "CREATE OR REPLACE FUNCTION judge_action_audit_append_only() RETURNS trigger "
+        "AS $$ BEGIN RAISE EXCEPTION 'judge_action_audit is append-only'; END; $$ "
+        "LANGUAGE plpgsql"
+    ).execute_if(dialect="postgresql"),
+)
+event.listen(
+    _AUDIT_TABLE,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER judge_action_audit_no_update_delete BEFORE UPDATE OR DELETE "
+        "ON judge_action_audit FOR EACH ROW EXECUTE FUNCTION judge_action_audit_append_only()"
+    ).execute_if(dialect="postgresql"),
+)
+event.listen(
+    _AUDIT_TABLE,
+    "after_create",
+    DDL(
+        "CREATE TRIGGER judge_action_audit_no_truncate BEFORE TRUNCATE "
+        "ON judge_action_audit FOR EACH STATEMENT EXECUTE FUNCTION judge_action_audit_append_only()"
+    ).execute_if(dialect="postgresql"),
+)
 
 
 class ScoreSubmission(Base):

@@ -8,17 +8,23 @@ judge's scorecard is 404 (its existence is not confirmed), and every action,
 refused or not, is written to the append-only judge audit.
 """
 
-from typing import Annotated
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.exceptions import RequestValidationError
+from fastapi.routing import APIRoute
+from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.judge_auth import (
+    AuditRef,
     JudgeContext,
     authenticate_judge_token,
     bearer_judge_token,
+    blind_safe_text,
     credential_scope,
     judge_action,
     judge_event_view,
@@ -28,6 +34,7 @@ from app.judge_auth import (
     plant_in_scope,
     require_judge_secret,
     scorecard_handle,
+    write_judge_audit,
 )
 from app.models import (
     JudgeCredential,
@@ -38,6 +45,7 @@ from app.models import (
     PlantCategory,
     Scorecard,
 )
+from app.rate_limit import client_key
 from app.routers.judging import apply_scorecard_autosave, apply_scorecard_submit
 from app.routers.show_day import is_legacy_qr_token
 from app.schemas import ScorecardSaveRequest, ScorecardSubmitRequest
@@ -54,12 +62,81 @@ def require_judge_context(request: Request, db: DbSession) -> JudgeContext:
             detail="A judge credential (Authorization: Bearer ocj_...) is required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return authenticate_judge_token(db, token)
+    ctx = authenticate_judge_token(db, token, client_key(request))
+    request.state.judge_context = ctx
+    return ctx
 
 
 Judge = Annotated[JudgeContext, Depends(require_judge_context)]
 
-router = APIRouter(prefix="/api/judge-portal", tags=["Judge Portal"])
+
+def _audit_rejected_request(request: Request, action: str) -> None:
+    """Audit a request FastAPI rejected before the route ran (422).
+
+    Only for a caller whose judge credential verifies: the context the
+    dependency stored, or, when the body was unreadable and dependencies never
+    ran, the bearer token verified here. The rejected input is never recorded.
+    """
+    provider = request.app.dependency_overrides.get(get_db, get_db)
+    sessions = provider()
+    db = next(sessions)
+    try:
+        ctx = getattr(request.state, "judge_context", None)
+        if ctx is None:
+            token = bearer_judge_token(request.headers.get("authorization"))
+            if token is None:
+                return
+            try:
+                ctx = authenticate_judge_token(db, token, client_key(request))
+            except HTTPException:
+                return
+        write_judge_audit(
+            db,
+            ctx,
+            action=action,
+            outcome="invalid",
+            http_status=422,
+            ref=AuditRef(),
+            detail="request validation failed",
+        )
+    finally:
+        sessions.close()
+
+
+class JudgeAuditedRoute(APIRoute):
+    """Also audits requests refused by request validation (422)."""
+
+    def get_route_handler(self):
+        handler = super().get_route_handler()
+        action = self.name.removeprefix("judge_")
+
+        async def audited(request: Request):
+            try:
+                return await handler(request)
+            except RequestValidationError:
+                await run_in_threadpool(_audit_rejected_request, request, action)
+                raise
+
+        return audited
+
+
+router = APIRouter(
+    prefix="/api/judge-portal", tags=["Judge Portal"], route_class=JudgeAuditedRoute
+)
+
+
+def _validated(model: type[BaseModel], body: Any) -> BaseModel:
+    """Validate a judge's body inside the audited action, so a 422 is recorded."""
+    try:
+        return model.model_validate(body if body is not None else {})
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=exc.errors(
+                include_url=False, include_input=False, include_context=False
+            ),
+        ) from None
+
 
 _NOT_FOUND = "Not found in your judging assignments"
 
@@ -97,13 +174,16 @@ def _own_scorecards(db: Session, ctx: JudgeContext, scope: dict[str, set[str]]):
         ):
             continue
         rows.append((card, db.get(JudgingEvent, card.judging_event_id), plant))
-    return sorted(rows, key=lambda row: scorecard_handle(ctx.secret, row[0].id))
+    return sorted(
+        rows,
+        key=lambda row: scorecard_handle(ctx.secret, ctx.judge_id, row[1], row[0].id),
+    )
 
 
 def _resolve_scorecard(db: Session, ctx: JudgeContext, handle: str):
     scope = judge_scope(db, ctx)
     for card, event, plant in _own_scorecards(db, ctx, scope):
-        if scorecard_handle(ctx.secret, card.id) == handle:
+        if scorecard_handle(ctx.secret, ctx.judge_id, event, card.id) == handle:
             return card, event, plant
     raise HTTPException(status_code=404, detail=_NOT_FOUND)
 
@@ -137,7 +217,7 @@ def judge_events(ctx: Judge, db: DbSession):
 def judge_event_categories(event_id: str, ctx: Judge, db: DbSession):
     with judge_action(db, ctx, "list_categories", judging_event_id=event_id):
         scope = judge_scope(db, ctx)
-        _event_in_scope(db, scope, event_id)
+        event = _event_in_scope(db, scope, event_id)
         categories = [
             db.get(PlantCategory, category_id) for category_id in scope[event_id]
         ]
@@ -146,7 +226,9 @@ def judge_event_categories(event_id: str, ctx: Judge, db: DbSession):
             {
                 "id": c.id,
                 "name": c.name,
-                "description": c.description,
+                # Class text is schedule-level, not per plant; in a blind
+                # event it is still withheld if it mentions an exhibitor.
+                "description": blind_safe_text(db, event, c.description),
                 "sort_order": c.sort_order,
             }
             for c in categories
@@ -182,7 +264,9 @@ def judge_event_plants(
             view = judge_plant_view(db, ctx, event, plant)
             card = own.get(plant.id)
             view["scorecard_handle"] = (
-                scorecard_handle(ctx.secret, card.id) if card else None
+                scorecard_handle(ctx.secret, ctx.judge_id, event, card.id)
+                if card
+                else None
             )
             views.append(view)
         return sorted(views, key=lambda v: v["plant_handle"])
@@ -204,31 +288,33 @@ def judge_event_scorecards(event_id: str, ctx: Judge, db: DbSession):
 def judge_get_scorecard(handle: str, ctx: Judge, db: DbSession):
     with judge_action(db, ctx, "get_scorecard") as ref:
         card, event, plant = _resolve_scorecard(db, ctx, handle)
-        ref.plant(ctx, plant)
+        ref.plant(ctx, event, plant)
         ref.scorecard_id = card.id
         return judge_scorecard_view(db, ctx, card, event, plant, include_scores=True)
 
 
 @router.put("/scorecards/{handle}")
 def judge_autosave_scorecard(
-    handle: str, data: ScorecardSaveRequest, ctx: Judge, db: DbSession
+    handle: str, ctx: Judge, db: DbSession, body: Annotated[Any, Body()] = None
 ):
     with judge_action(db, ctx, "autosave_scorecard") as ref:
         card, event, plant = _resolve_scorecard(db, ctx, handle)
-        ref.plant(ctx, plant)
+        ref.plant(ctx, event, plant)
         ref.scorecard_id = card.id
+        data = _validated(ScorecardSaveRequest, body)
         card = apply_scorecard_autosave(db, card, ctx.judge_id, data)
         return judge_scorecard_view(db, ctx, card, event, plant, include_scores=True)
 
 
 @router.post("/scorecards/{handle}/submit")
 def judge_submit_scorecard(
-    handle: str, data: ScorecardSubmitRequest, ctx: Judge, db: DbSession
+    handle: str, ctx: Judge, db: DbSession, body: Annotated[Any, Body()] = None
 ):
     with judge_action(db, ctx, "submit_scorecard") as ref:
         card, event, plant = _resolve_scorecard(db, ctx, handle)
-        ref.plant(ctx, plant)
+        ref.plant(ctx, event, plant)
         ref.scorecard_id = card.id
+        data = _validated(ScorecardSubmitRequest, body)
         card = apply_scorecard_submit(db, card, ctx.judge_id, data)
         return judge_scorecard_view(db, ctx, card, event, plant, include_scores=True)
 
@@ -248,8 +334,8 @@ def judge_scan(qr_token: str, ctx: Judge, db: DbSession):
         )
         if plant is None or not plant_in_scope(scope, plant):
             raise HTTPException(status_code=404, detail=_NOT_FOUND)
-        ref.plant(ctx, plant)
         event = db.get(JudgingEvent, plant.judging_event_id)
+        ref.plant(ctx, event, plant)
         if event.is_blind and is_legacy_qr_token(plant):
             raise HTTPException(
                 status_code=409,

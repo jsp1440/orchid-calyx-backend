@@ -1,13 +1,17 @@
 -- SHOW-GATE8-JUDGE-AUTH: per-judge credentials and the append-only judge audit.
 --
--- Additive and idempotent: creates two tables, their indexes and an
--- append-only trigger if they do not already exist. It alters and drops no
--- existing table or column and touches no existing row. Requires the show
--- judging tables (shows, judges) to exist. Applying it to production remains
--- a separately governed owner action.
+-- Additive and idempotent: creates two tables, their indexes and append-only
+-- triggers if they do not already exist, and adds two nullable columns
+-- (judging_events.blind_handle_salt, plants.blind_display_name) if missing.
+-- It drops nothing, changes no existing column and touches no existing row.
+-- Requires the show judging tables (shows, judges, judging_events, plants).
+-- Applying it to production remains a separately governed owner action.
 --
 -- Mirrors app/models.py JudgeCredential and JudgeActionAudit. Timestamps are
 -- naive UTC, like the other show tables.
+
+ALTER TABLE judging_events ADD COLUMN IF NOT EXISTS blind_handle_salt VARCHAR(32);
+ALTER TABLE plants ADD COLUMN IF NOT EXISTS blind_display_name TEXT;
 
 CREATE TABLE IF NOT EXISTS judge_credentials (
     id VARCHAR(32) PRIMARY KEY,
@@ -56,11 +60,22 @@ $$ LANGUAGE plpgsql;
 DO $$
 BEGIN
     IF NOT EXISTS (
-        SELECT 1 FROM pg_trigger WHERE tgname = 'judge_action_audit_no_update_delete'
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'judge_action_audit_no_update_delete'
+          AND tgrelid = 'judge_action_audit'::regclass
     ) THEN
         CREATE TRIGGER judge_action_audit_no_update_delete
             BEFORE UPDATE OR DELETE ON judge_action_audit
             FOR EACH ROW EXECUTE FUNCTION judge_action_audit_append_only();
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_trigger
+        WHERE tgname = 'judge_action_audit_no_truncate'
+          AND tgrelid = 'judge_action_audit'::regclass
+    ) THEN
+        CREATE TRIGGER judge_action_audit_no_truncate
+            BEFORE TRUNCATE ON judge_action_audit
+            FOR EACH STATEMENT EXECUTE FUNCTION judge_action_audit_append_only();
     END IF;
 END;
 $$;

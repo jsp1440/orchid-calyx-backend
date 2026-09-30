@@ -100,6 +100,23 @@ class SlidingWindowLimiter:
             events.append(now)
             return True, 0
 
+    def is_limited(
+        self, key: str, *, limit: int, window_seconds: int
+    ) -> tuple[bool, int]:
+        """Whether ``key`` has spent its allowance, without recording an event."""
+        if limit <= 0:
+            return False, 0
+        now = self.clock()
+        with self._lock:
+            events = self._events.get(key)
+            if not events:
+                return False, 0
+            while events and events[0] <= now - window_seconds:
+                events.popleft()
+            if len(events) >= limit:
+                return True, max(1, int(events[0] + window_seconds - now) + 1)
+            return False, 0
+
     def _evict(self, cutoff: float) -> None:
         stale = [key for key, events in self._events.items() if not events or events[-1] <= cutoff]
         for key in stale:

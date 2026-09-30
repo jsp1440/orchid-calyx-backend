@@ -16,6 +16,7 @@ events; the SQL migration is additive, idempotent and matches the models.
 
 import json
 import re
+import unicodedata
 from datetime import timedelta
 from pathlib import Path
 from typing import Annotated
@@ -25,10 +26,16 @@ import test_show_day_phase1 as phase1
 from fastapi import Depends, FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 
 from app import judge_auth
-from app.judge_auth import JUDGE_SECRET_ENV, mentions_exhibitor, utcnow
+from app.judge_auth import (
+    AUTH_FAILURE_LIMITER,
+    JUDGE_SECRET_ENV,
+    exhibitor_mention_reasons,
+    utcnow,
+)
 from app.models import (
     Exhibitor,
     JudgeActionAudit,
@@ -65,6 +72,11 @@ EXHIBITORS = (
         "email": "bquince@exhibitor-two.test",
         "phone": "555-010-9921",
     },
+    {
+        "name": "José Álvarez",
+        "email": "jalvarez@alvarez-orchids.test",
+        "phone": "555-010-3388",
+    },
 )
 
 
@@ -77,6 +89,9 @@ def judge_secret(monkeypatch):
     monkeypatch.setenv(JUDGE_SECRET_ENV, SECRET)
     monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET", raising=False)
     monkeypatch.delenv("CALYX_OWNER_ACCESS_CODE", raising=False)
+    AUTH_FAILURE_LIMITER.reset()
+    yield
+    AUTH_FAILURE_LIMITER.reset()
 
 
 @pytest.fixture
@@ -84,7 +99,7 @@ def show(client, session_factory):
     """One show, one event with three classes, two exhibitors and three judges.
 
     Judges A and B cover the whole event; judge C covers only Paphiopedilum.
-    One plant name embeds its exhibitor's surname.
+    Two plant names embed their exhibitor's name, one without its accents.
     """
     show = _post(
         client, "/api/shows", {"name": "Spring Show", "start_date": "2027-03-13"}
@@ -106,6 +121,7 @@ def show(client, session_factory):
         (1, "Cattleya", "Cattleya labiata"),
         (0, "Phalaenopsis", "Phal. Featherstonehaugh's Delight"),
         (1, "Paphiopedilum", "Paphiopedilum rothschildianum"),
+        (2, "Cattleya", "Cattleya Jose Alvarez Gold"),
     )
     plants = [
         _post(
@@ -378,8 +394,7 @@ def test_comparison_is_constant_time_for_known_and_unknown_ids(
     # Wrong secret, unknown id and the right token each cost exactly one
     # constant-time comparison of two 64-hex digests (the other calls are the
     # secret-versus-owner-credential check, which compares the configured secret).
-    digest_calls = [c for c in calls if c != (len(SECRET), len(phase1.API_KEY))]
-    assert digest_calls == [(64, 64)] * 3
+    assert calls.count((64, 64)) == 3
 
 
 # ── Fail closed on the server secret ──────────────────────────────
@@ -640,6 +655,11 @@ def _walk(value, path="$"):
         yield path, "value", value
 
 
+def _fold(text):
+    decomposed = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in decomposed if not unicodedata.combining(c)).casefold()
+
+
 def _exhibitor_needles(show):
     needles = set()
     for exhibitor in show["exhibitors"]:
@@ -657,11 +677,13 @@ def _exhibitor_needles(show):
             if len(w) >= 3
         }
         needles.add(re.sub(r"\D", "", exhibitor["phone"]))
-    return {n.casefold() for n in needles}
+    return {_fold(n) for n in needles}
 
 
 def _assert_no_exhibitor_data(payload, show, route):
+    """No exhibitor field, and in a blind event no entered plant name at all."""
     needles = _exhibitor_needles(show)
+    entry_names = {_fold(p["name"]) for p in show["plants"]}
     raw_ids = {p["id"] for p in show["plants"]} | {c["id"] for c in show["cards"]}
     qr_codes = {p["qr_code"] for p in show["plants"]}
     for where, kind, item in _walk(payload):
@@ -676,8 +698,9 @@ def _assert_no_exhibitor_data(payload, show, route):
             }, (route, where)
             continue
         text = "" if item is None else str(item)
-        folded = text.casefold()
+        folded = _fold(text)
         assert not any(n in folded for n in needles), (route, where, text)
+        assert not any(n in folded for n in entry_names), (route, where, text)
         digits = re.sub(r"\D", "", text)
         assert not any(
             len(n) >= 7 and n.isdigit() and n[-7:] in digits for n in needles
@@ -753,12 +776,9 @@ def test_blind_event_leaks_no_exhibitor_data_on_any_judge_route(client, show):
         assert response.status_code == 200, (key, response.text)
         _assert_no_exhibitor_data(response.json(), show, key)
     plants = _get(client, f"{PORTAL}/events/{show['event']['id']}/plants", token).json()
-    by_name = {p["plant_name"]: p for p in plants}
-    assert None in by_name and by_name[None]["plant_name_withheld"] is True
-    assert (
-        "Cattleya trianae" in by_name
-        and by_name["Cattleya trianae"]["plant_name_withheld"] is False
-    )
+    assert len(plants) == len(show["plants"])
+    assert all(p["plant_name"] is None and p["plant_name_withheld"] for p in plants)
+    assert {p["plant_name_source"] for p in plants} == {"withheld"}
 
 
 def test_blind_negative_control_the_sweep_detects_a_leak(show):
@@ -767,6 +787,8 @@ def test_blind_negative_control_the_sweep_detects_a_leak(show):
         {"exhibitor_id": exhibitor["id"]},
         {"owner": exhibitor["email"].upper()},
         {"name": "Featherstonehaugh's best"},
+        {"name": "Cattleya JOSE alvarez"},
+        {"name": "Cattleya trianae"},
         {"contact": "call 555 010 4477"},
         {"plant_id": show["plants"][0]["id"]},
         {"tag": show["plants"][0]["qr_code"]},
@@ -811,19 +833,139 @@ def test_toggling_blind_takes_effect_on_the_next_request(client, show):
     assert all("exhibitor_name" not in p for p in _get(client, url, token).json())
 
 
-def test_mentions_exhibitor_is_conservative():
-    exhibitor = Exhibitor(
-        id="ex-1",
-        name="Rosalind Featherstonehaugh",
-        email="rfeather@x.test",
-        phone="555-010-4477",
+@pytest.mark.parametrize(
+    ("name", "email", "text"),
+    [
+        ("José Álvarez", "j@x.test", "Cattleya Jose Alvarez Gold"),
+        ("Rosalind Featherstonehaugh", "r@x.test", "Featherstone Delight"),
+        ("Bo Li", "b@x.test", "Li's champion"),
+        ("José Álvarez", "j@x.test", "Grex J.A. 2027"),
+        ("Rosalind Featherstonehaugh", "r@x.test", "Rosie's pick"),
+        ("A Grower", "sales@smithorchids.test", "Smithorchids select"),
+        ("A Grower", "a@x.test", "tag 5550104477"),
+    ],
+)
+def test_mention_warning_catches_the_checker_reproductions(name, email, text):
+    exhibitor = Exhibitor(id="ex-1", name=name, email=email, phone="555-010-4477")
+    assert exhibitor_mention_reasons(text, exhibitor), text
+
+
+def test_mention_warning_ignores_unrelated_text_and_generic_mail():
+    exhibitor = Exhibitor(id="ex-1", name="Bo Li", email="bo@gmail.test", phone=None)
+    assert exhibitor_mention_reasons("Cattleya trianae", exhibitor) == []
+    assert exhibitor_mention_reasons("Gmail special", exhibitor) == []
+    assert exhibitor_mention_reasons(None, exhibitor) == []
+
+
+def test_blind_event_withholds_every_entered_name_including_accent_folded(client, show):
+    _set_blind(client, show)
+    token = _token(client, show, "A")
+    body = _get(client, f"{PORTAL}/events/{show['event']['id']}/plants", token).text
+    for plant in show["plants"]:
+        assert _fold(plant["name"]) not in _fold(body)
+    assert "alvarez" not in _fold(body) and "bench 4" not in body
+
+
+def _set_display_name(client, plant, text, **extra):
+    return client.put(
+        f"/api/judging/plants/{plant['id']}/blind-display-name",
+        json={"blind_display_name": text, **extra},
+        headers=HEADERS,
     )
-    assert mentions_exhibitor("Phal. Featherstonehaugh's Delight", exhibitor)
-    assert mentions_exhibitor("ROSALIND's pick", exhibitor)
-    assert mentions_exhibitor("from rfeather", exhibitor)
-    assert mentions_exhibitor("tag 0104477", exhibitor)
-    assert not mentions_exhibitor("Cattleya trianae", exhibitor)
-    assert not mentions_exhibitor(None, exhibitor)
+
+
+def test_owner_approved_blind_display_name_is_the_only_name_judges_see(client, show):
+    trianae, _, _, _, jose = show["plants"]
+    assert _set_display_name(client, trianae, "Cattleya trianae").status_code == 200
+    _set_blind(client, show)
+    token = _token(client, show, "A")
+    plants = _get(client, f"{PORTAL}/events/{show['event']['id']}/plants", token).json()
+    shown = [p for p in plants if p["plant_name"]]
+    assert [(p["plant_name"], p["plant_name_source"]) for p in shown] == [
+        ("Cattleya trianae", "owner_approved")
+    ]
+
+    refused = _set_display_name(client, jose, "Cattleya Jose Alvarez Gold")
+    assert refused.status_code == 409
+    assert refused.json()["detail"]["warnings"]
+    confirmed = _set_display_name(
+        client, jose, "Cattleya Jose Alvarez Gold", confirm_despite_warnings=True
+    )
+    assert confirmed.status_code == 200 and confirmed.json()["warnings"]
+    cleared = _set_display_name(client, trianae, None)
+    assert cleared.status_code == 200 and cleared.json()["blind_display_name"] is None
+    assert (
+        _get(client, f"/api/judging/plants/{trianae['id']}", token).status_code == 401
+    )
+    route = f"/api/judging/plants/{trianae['id']}/blind-display-name"
+    judge_put = client.put(
+        route, json={"blind_display_name": "x"}, headers=_bearer(token)
+    )
+    assert judge_put.status_code == 401
+
+
+def test_blind_class_description_that_names_an_exhibitor_is_withheld(
+    client, show, session_factory
+):
+    from app.models import PlantCategory
+
+    with session_factory() as db:
+        db.get(
+            PlantCategory, show["classes"]["Cattleya"]["id"]
+        ).description = "Sponsored by the Alvarez family"
+        db.get(
+            PlantCategory, show["classes"]["Phalaenopsis"]["id"]
+        ).description = "Standard and novelty types"
+        db.commit()
+    token = _token(client, show, "A")
+    url = f"{PORTAL}/events/{show['event']['id']}/categories"
+    open_view = {c["name"]: c["description"] for c in _get(client, url, token).json()}
+    assert open_view["Cattleya"] == "Sponsored by the Alvarez family"
+    _set_blind(client, show)
+    blind = {c["name"]: c["description"] for c in _get(client, url, token).json()}
+    assert blind["Cattleya"] is None
+    assert blind["Phalaenopsis"] == "Standard and novelty types"
+
+
+def test_handles_are_rekeyed_when_the_event_turns_blind(client, show):
+    token_a, token_b = (
+        _token(client, show, "A"),
+        _token(client, show, "B", rotate=False),
+    )
+    url = f"{PORTAL}/events/{show['event']['id']}/plants"
+
+    def handles(token):
+        return {p["plant_handle"] for p in _get(client, url, token).json()}
+
+    open_a = handles(token_a)
+    assert open_a == handles(token_a)  # stable within a period
+    assert open_a.isdisjoint(handles(token_b))  # judge-scoped
+    _set_blind(client, show)
+    blind_a = handles(token_a)
+    assert blind_a.isdisjoint(open_a)
+    assert set(_handles(client, show, token_a)).isdisjoint(blind_a)
+    _set_blind(client, show, False)
+    assert handles(token_a) == open_a
+    _set_blind(client, show)
+    assert handles(token_a).isdisjoint(blind_a | open_a)  # a fresh blind period
+
+
+def test_blind_salt_cannot_be_set_by_the_owner_patch(client, show, session_factory):
+    from app.models import JudgingEvent
+
+    path = f"/api/judging/events/{show['event']['id']}"
+    client.patch(path, json={"blind_handle_salt": "chosen"}, headers=HEADERS)
+    with session_factory() as db:
+        assert db.get(JudgingEvent, show["event"]["id"]).blind_handle_salt is None
+    created = _post(
+        client,
+        f"/api/shows/{show['show']['id']}/judging/events",
+        {"name": "Blind trophy", "is_blind": True},
+    )
+    with session_factory() as db:
+        assert re.fullmatch(
+            r"[0-9a-f]{32}", db.get(JudgingEvent, created["id"]).blind_handle_salt
+        )
 
 
 # ── Scoring, lock, closed event ───────────────────────────────────
@@ -1031,20 +1173,213 @@ def _sql_columns(sql, table):
 def test_migration_is_additive_idempotent_and_matches_the_models():
     sql = MIGRATION.read_text(encoding="utf-8")
     statements = re.sub(r"--[^\n]*", "", sql).upper()
-    for forbidden in ("DROP ", "DELETE ", "TRUNCATE", "ALTER ", "UPDATE ", "INSERT "):
-        assert forbidden not in statements.replace("BEFORE UPDATE OR DELETE", ""), (
-            forbidden
-        )
+    allowed = statements.replace("BEFORE UPDATE OR DELETE", "").replace(
+        "BEFORE TRUNCATE", ""
+    )
+    alters = re.findall(r"ALTER TABLE [^;]*;", allowed)
+    assert alters == [
+        "ALTER TABLE JUDGING_EVENTS ADD COLUMN IF NOT EXISTS BLIND_HANDLE_SALT VARCHAR(32);",
+        "ALTER TABLE PLANTS ADD COLUMN IF NOT EXISTS BLIND_DISPLAY_NAME TEXT;",
+    ]
+    for alter in alters:
+        allowed = allowed.replace(alter, "")
+    for forbidden in (
+        r"\bDROP\s",
+        r"\bDELETE\s+FROM\b",
+        r"\bTRUNCATE\s",
+        r"\bALTER\s",
+        r"\bUPDATE\s+\w+\s+SET\b",
+        r"\bINSERT\s+INTO\b",
+    ):
+        assert not re.search(forbidden, allowed), forbidden
     assert statements.count("CREATE TABLE ") == statements.count(
         "CREATE TABLE IF NOT EXISTS"
     )
     assert statements.count("CREATE INDEX ") == statements.count(
         "CREATE INDEX IF NOT EXISTS"
     )
-    assert (
-        "IF NOT EXISTS" in statements.split("CREATE TRIGGER")[0].rsplit("DO $$", 1)[1]
-    )
+    assert statements.count("CREATE TRIGGER") == 2
+    assert statements.count("IF NOT EXISTS (") == 2
+    assert "BEFORE TRUNCATE ON JUDGE_ACTION_AUDIT" in statements
     for model in (JudgeCredential, JudgeActionAudit):
         assert _sql_columns(sql, model.__tablename__) == {
             c.name for c in model.__table__.columns
         }
+
+
+# ── Append-only, beyond the unit of work ──────────────────────────
+
+
+def test_bulk_update_and_delete_on_the_audit_are_refused(client, show, session_factory):
+    token = _token(client, show, "A")
+    assert _get(client, f"{PORTAL}/me", token).status_code == 200
+    with session_factory() as db:
+        with pytest.raises(ValueError, match="append-only"):
+            db.execute(update(JudgeActionAudit).values(outcome="rewritten"))
+        db.rollback()
+        with pytest.raises(ValueError, match="append-only"):
+            db.execute(delete(JudgeActionAudit))
+        db.rollback()
+        for raw in (
+            "UPDATE judge_action_audit SET outcome = 'x'",
+            "DELETE FROM judge_action_audit",
+        ):
+            with pytest.raises(IntegrityError, match="append-only"):
+                db.connection().exec_driver_sql(raw)
+            db.rollback()
+        assert db.execute(select(JudgeActionAudit)).scalars().first().outcome == "ok"
+
+
+# ── Audit gaps and rate limits ────────────────────────────────────
+
+
+def _audit_rows(session_factory, **where):
+    with session_factory() as db:
+        rows = db.execute(select(JudgeActionAudit)).scalars().all()
+    return [r for r in rows if all(getattr(r, k) == v for k, v in where.items())]
+
+
+def test_request_validation_failures_are_audited_without_the_input(
+    client, show, session_factory
+):
+    token = _token(client, show, "A")
+    handle = _handles(client, show, token)[0]
+    secret_marker = "do-not-record-this-input"
+    bad_shape = client.put(
+        f"{PORTAL}/scorecards/{handle}",
+        json={"scores": [{"criterion_id": 7, "value": secret_marker}]},
+        headers=_bearer(token),
+    )
+    assert bad_shape.status_code == 422
+    malformed = client.put(
+        f"{PORTAL}/scorecards/{handle}",
+        content=b"{not json " + secret_marker.encode(),
+        headers={**_bearer(token), "Content-Type": "application/json"},
+    )
+    assert malformed.status_code == 422
+    rows = _audit_rows(session_factory, outcome="invalid")
+    assert [(r.action, r.http_status) for r in rows] == [
+        ("autosave_scorecard", 422),
+        ("autosave_scorecard", 422),
+    ]
+    assert rows[0].scorecard_id  # the in-route validation knows the card
+    for row in rows:
+        values = " ".join(
+            str(getattr(row, c.name)) for c in JudgeActionAudit.__table__.columns
+        )
+        assert secret_marker not in values and token not in values
+
+
+def test_wrong_secret_for_a_known_credential_is_audited_unknown_id_is_not(
+    client, show, session_factory
+):
+    issued = _issue(client, show["judges"]["A"])
+    wrong = issued["token"][:-4] + "abcd"
+    assert _get(client, f"{PORTAL}/me", wrong).status_code == 401
+    assert (
+        _get(client, f"{PORTAL}/me", "ocj_" + "b" * 32 + "_" + "q" * 43).status_code
+        == 401
+    )
+    rows = _audit_rows(session_factory, action="authenticate")
+    assert [(r.outcome, r.credential_id, r.judge_id) for r in rows] == [
+        ("credential_mismatch", issued["credential_id"], show["judges"]["A"]["id"])
+    ]
+    stored = " ".join(
+        str(getattr(rows[0], c.name)) for c in JudgeActionAudit.__table__.columns
+    )
+    assert wrong not in stored and wrong.split("_")[-1] not in stored
+
+
+def test_failures_are_rate_limited_per_credential(client, show, monkeypatch):
+    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_PER_CREDENTIAL", "3")
+    issued = _issue(client, show["judges"]["A"])
+    wrong = issued["token"][:-4] + "abcd"
+    assert [_get(client, f"{PORTAL}/me", wrong).status_code for _ in range(3)] == [
+        401
+    ] * 3
+    limited = _get(client, f"{PORTAL}/me", issued["token"])
+    assert limited.status_code == 429 and int(limited.headers["Retry-After"]) >= 1
+    other = _token(client, show, "B")  # another credential is unaffected
+    assert _get(client, f"{PORTAL}/me", other).status_code == 200
+
+
+def test_failures_are_rate_limited_per_client(client, show, monkeypatch):
+    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT", "4")
+    good = _token(client, show, "A")
+    for n in range(4):
+        assert (
+            _get(client, f"{PORTAL}/me", f"ocj_{n:032x}_" + "q" * 43).status_code == 401
+        )
+    assert (
+        _get(client, f"{PORTAL}/me", "ocj_" + "c" * 32 + "_" + "q" * 43).status_code
+        == 429
+    )
+    assert _get(client, f"{PORTAL}/me", good).status_code == 429
+    elsewhere = {"X-Forwarded-For": "203.0.113.9"}
+    assert _get(client, f"{PORTAL}/me", good, headers=elsewhere).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "other_env",
+    ["ORCHID_JUDGE_ADMIN_KEY", "ADMIN_API_KEY", "CONSTITUENT_MANAGE_SECRET"],
+)
+def test_secret_equal_to_an_admin_secret_fails_closed(
+    client, show, monkeypatch, other_env
+):
+    token = _token(client, show, "A")
+    monkeypatch.setenv(other_env, SECRET)
+    assert _get(client, f"{PORTAL}/me", token).status_code == 503
+
+
+# ── Scope edges (assignment state and show boundary) ──────────────
+
+
+def test_inactive_assignment_grants_nothing(client, show):
+    judge = _post(
+        client, "/api/judges", {"show_id": show["show"]["id"], "name": "Judge E"}
+    )
+    _post(
+        client,
+        f"/api/judging/events/{show['event']['id']}/assignments",
+        {"judge_id": judge["id"], "active": False},
+    )
+    token = _issue(client, judge)["token"]
+    assert _get(client, f"{PORTAL}/events", token).json() == []
+    url = f"{PORTAL}/events/{show['event']['id']}/plants"
+    assert _get(client, url, token).status_code == 404
+
+
+def test_assignment_to_another_shows_event_grants_nothing(
+    client, show, session_factory
+):
+    from app.models import JudgeAssignment
+
+    other = _post(
+        client, "/api/shows", {"name": "Autumn Show", "start_date": "2027-10-02"}
+    )
+    other_event = _post(
+        client, f"/api/shows/{other['id']}/judging/events", {"name": "Other"}
+    )
+    _post(
+        client, f"/api/judging/events/{other_event['id']}/categories", {"name": "Vanda"}
+    )
+    # The owner API refuses this (422); a row written around it must still grant nothing.
+    with session_factory() as db:
+        db.add(
+            JudgeAssignment(
+                judging_event_id=other_event["id"],
+                judge_id=show["judges"]["C"]["id"],
+                active=True,
+            )
+        )
+        db.commit()
+    token = _token(client, show, "C")
+    assert [e["id"] for e in _get(client, f"{PORTAL}/events", token).json()] == [
+        show["event"]["id"]
+    ]
+    assert (
+        _get(
+            client, f"{PORTAL}/events/{other_event['id']}/categories", token
+        ).status_code
+        == 404
+    )

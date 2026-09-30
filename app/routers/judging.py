@@ -1,4 +1,5 @@
 import json
+import secrets
 import uuid
 from datetime import UTC, datetime
 from typing import Any
@@ -170,6 +171,7 @@ def create_judging_event(
         name=data.name,
         judging_type=data.judging_type,
         is_blind=data.is_blind,
+        blind_handle_salt=secrets.token_hex(16) if data.is_blind else None,
     )
     db.add(event)
     db.commit()
@@ -212,6 +214,9 @@ def update_judging_event(
             event.published_at = now
         elif changes["status"] == "closed":
             event.closed_at = now
+    if changes.get("is_blind") and not event.is_blind:
+        # Entering blind mode re-keys every judge-facing handle for this event.
+        event.blind_handle_salt = secrets.token_hex(16)
     for field, val in changes.items():
         setattr(event, field, val)
 
@@ -1038,6 +1043,37 @@ def judge_get_scorecard(
     return scorecard
 
 
+def _lock_scoring_rows(db: Session, scorecard: Scorecard) -> Scorecard:
+    """Lock the rows a score write depends on, then re-read them.
+
+    ``FOR UPDATE`` on the scorecard serialises two writes to one card (a
+    double submit waits, then sees ``submitted``). ``FOR SHARE`` on its event
+    and show makes a concurrent close or judging lock wait for this write, or
+    this write wait for it and then see it. Lock order is always scorecard,
+    event, show. SQLite ignores the clauses and serialises writers itself.
+    """
+    locked = db.execute(
+        select(Scorecard)
+        .where(Scorecard.id == scorecard.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    ).scalar_one()
+    event = db.execute(
+        select(JudgingEvent)
+        .where(JudgingEvent.id == locked.judging_event_id)
+        .with_for_update(read=True)
+        .execution_options(populate_existing=True)
+    ).scalar_one_or_none()
+    if event is not None:
+        db.execute(
+            select(Show)
+            .where(Show.id == event.show_id)
+            .with_for_update(read=True)
+            .execution_options(populate_existing=True)
+        ).scalar_one_or_none()
+    return locked
+
+
 def apply_scorecard_autosave(
     db: Session, scorecard: Scorecard, judge_id: str, data: ScorecardSaveRequest
 ) -> Scorecard:
@@ -1047,6 +1083,7 @@ def apply_scorecard_autosave(
     credential routes in ``app/routers/judge_portal.py`` so the two cannot
     drift: submitted cards, closed events and locked shows refuse (409).
     """
+    scorecard = _lock_scoring_rows(db, scorecard)
     if scorecard.status == "submitted":
         raise HTTPException(
             status_code=409, detail="Scorecard already submitted. Cannot edit."
@@ -1151,6 +1188,7 @@ def apply_scorecard_submit(
     db: Session, scorecard: Scorecard, judge_id: str, data: ScorecardSubmitRequest
 ) -> Scorecard:
     """Submit ``scorecard`` with its weighted total; the caller checked ownership."""
+    scorecard = _lock_scoring_rows(db, scorecard)
     if scorecard.status == "submitted":
         raise HTTPException(status_code=409, detail="Scorecard already submitted.")
 

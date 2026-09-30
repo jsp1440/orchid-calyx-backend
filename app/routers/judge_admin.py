@@ -19,12 +19,14 @@ from app.judge_auth import (
     MAX_TTL_MINUTES,
     MIN_TTL_MINUTES,
     credential_scope,
+    exhibitor_mention_reasons,
     hash_judge_token,
     mint_judge_token,
     require_judge_secret,
     utcnow,
 )
 from app.models import (
+    Exhibitor,
     Judge,
     JudgeActionAudit,
     JudgeCredential,
@@ -41,6 +43,11 @@ DbSession = Annotated[Session, Depends(get_db)]
 router = APIRouter(
     prefix="/api", tags=["Judge Credentials"], dependencies=[Depends(verify_api_key)]
 )
+
+
+class BlindDisplayNameUpdate(BaseModel):
+    blind_display_name: str | None = Field(None, max_length=200)
+    confirm_despite_warnings: bool = False
 
 
 class JudgeCredentialCreate(BaseModel):
@@ -260,3 +267,35 @@ def reissue_qr_tokens(
             reissued += 1
     db.commit()
     return {"judging_event_id": event_id, "plants": len(plants), "reissued": reissued}
+
+
+@router.put("/judging/plants/{plant_id}/blind-display-name")
+def set_blind_display_name(plant_id: str, data: BlindDisplayNameUpdate, db: DbSession):
+    """Set the only plant name a judge sees while the plant's event is blind.
+
+    Blind events withhold every free-text name entered for a plant; this is
+    the owner's explicit, reviewed replacement (for example the taxon alone).
+    If the text looks exhibitor-derived (accent-folded name words, prefixes,
+    initials, email, domain, phone digits), it is refused with 409 and the
+    reasons, unless the owner resends it with ``confirm_despite_warnings``.
+    ``null`` clears it, so judges see no name.
+    """
+    plant = db.get(Plant, plant_id)
+    if plant is None:
+        raise HTTPException(status_code=404, detail="Plant not found")
+    event = db.get(JudgingEvent, plant.judging_event_id)
+    ensure_show_unlocked(db, event.show_id if event else None)
+    text = (data.blind_display_name or "").strip() or None
+    warnings = exhibitor_mention_reasons(text, db.get(Exhibitor, plant.exhibitor_id))
+    if warnings and not data.confirm_despite_warnings:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "This display name may identify the exhibitor. "
+                "Resend with confirm_despite_warnings to keep it.",
+                "warnings": warnings,
+            },
+        )
+    plant.blind_display_name = text
+    db.commit()
+    return {"plant_id": plant.id, "blind_display_name": text, "warnings": warnings}
