@@ -70,6 +70,8 @@ from app.routers import (
     feedback,
     harvesters,
     health,
+    judge_admin,
+    judge_portal,
     judging,
     reference_docs,
     show_day,
@@ -612,6 +614,8 @@ app.include_router(feedback.router)
 app.include_router(harvesters.router, dependencies=[Depends(add_mission_control_cors_headers)])
 app.include_router(judging.router)
 app.include_router(show_day.router)
+app.include_router(judge_admin.router)
+app.include_router(judge_portal.router)
 app.include_router(tiles.router)
 app.include_router(reference_docs.router)
 app.include_router(intake_router)

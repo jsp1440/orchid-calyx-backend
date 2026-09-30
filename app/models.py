@@ -1,17 +1,18 @@
 import uuid
 from datetime import datetime
+
 from sqlalchemy import (
-    Column,
-    String,
-    Date,
-    Time,
-    DateTime,
-    ForeignKey,
-    Text,
     Boolean,
-    Integer,
+    Column,
+    Date,
+    DateTime,
     Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
     UniqueConstraint,
+    event,
 )
 
 from app.database import Base
@@ -436,6 +437,59 @@ class ScorecardAuditLog(Base):
     action = Column(String, nullable=False)
     diff_json = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class JudgeCredential(Base):
+    """A per-judge bearer credential, scoped to one show (and optionally to
+    events and categories). Only an HMAC of the token is stored; the token
+    itself is shown to the owner once, at issuance. See ``app/judge_auth.py``.
+    """
+
+    __tablename__ = "judge_credentials"
+
+    id = Column(String(32), primary_key=True)
+    judge_id = Column(String, ForeignKey("judges.id"), nullable=False, index=True)
+    show_id = Column(String, ForeignKey("shows.id"), nullable=False, index=True)
+    token_hash = Column(String(64), nullable=False)
+    event_ids_json = Column(Text, nullable=True)
+    category_ids_json = Column(Text, nullable=True)
+    label = Column(String, nullable=True)
+    issued_by = Column(String, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    expires_at = Column(DateTime, nullable=False)
+    revoked_at = Column(DateTime, nullable=True)
+
+
+class JudgeActionAudit(Base):
+    """Append-only record of what a judge credential did, and with what outcome.
+
+    It names the judge, the credential, the event, category, scorecard and
+    plant, and never any exhibitor field. The owner reads it; no judge route
+    does. Rows are never updated or deleted (ORM guard below, trigger in the
+    SQL migration).
+    """
+
+    __tablename__ = "judge_action_audit"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    judge_id = Column(String, nullable=False, index=True)
+    credential_id = Column(String(32), nullable=True, index=True)
+    action = Column(String, nullable=False)
+    judging_event_id = Column(String, nullable=True, index=True)
+    category_id = Column(String, nullable=True)
+    scorecard_id = Column(String, nullable=True)
+    plant_id = Column(String, nullable=True)
+    plant_handle = Column(String, nullable=True)
+    outcome = Column(String, nullable=False)
+    http_status = Column(Integer, nullable=False)
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+@event.listens_for(JudgeActionAudit, "before_update")
+@event.listens_for(JudgeActionAudit, "before_delete")
+def _judge_action_audit_is_append_only(_mapper, _connection, _target):
+    raise ValueError("judge_action_audit is append-only")
 
 
 class ScoreSubmission(Base):

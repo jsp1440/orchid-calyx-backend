@@ -6,8 +6,10 @@ recorded by the show-management audit (``judging_qr_scan_resolution`` and
 submitted scorecards, so a draft a judge is still editing never ranks a plant.
 """
 
+import hashlib
 import html
 import os
+import secrets
 from io import BytesIO
 from typing import Annotated
 
@@ -36,6 +38,25 @@ def tag_payload(qr_token: str) -> str:
     """
     base = os.getenv("CALYX_TAG_BASE_URL", "").strip().rstrip("/")
     return f"{base}/{qr_token}" if base else qr_token
+
+
+def new_qr_token() -> str:
+    """A fresh tag token: random, so it says nothing about the plant it names.
+
+    Tokens used to be ``QR-`` plus the first 12 hex digits of sha256(plant id),
+    which anyone holding a plant id could recompute. A random token can only be
+    resolved by looking it up, and every lookup route is authenticated.
+    """
+    return f"QR-{secrets.token_hex(10).upper()}"
+
+
+def legacy_qr_token(plant_id: str) -> str:
+    """The id-derived token earlier plants were given; kept only to detect them."""
+    return f"QR-{hashlib.sha256(plant_id.encode()).hexdigest()[:12].upper()}"
+
+
+def is_legacy_qr_token(plant: Plant) -> bool:
+    return bool(plant.qr_code) and plant.qr_code == legacy_qr_token(plant.id)
 
 
 def _qr_svg(payload: str) -> str:

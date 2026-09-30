@@ -1,4 +1,3 @@
-import hashlib
 import json
 import uuid
 from datetime import UTC, datetime
@@ -26,7 +25,7 @@ from app.models import (
     ScoreSubmission,
     Show,
 )
-from app.routers.show_day import _exhibitor_name
+from app.routers.show_day import _exhibitor_name, new_qr_token
 from app.schemas import (
     ExhibitorCreate,
     ExhibitorOut,
@@ -96,7 +95,8 @@ def _score_to_out(s: ScoreSubmission) -> dict:
 
 
 def _generate_qr_code(plant_id: str) -> str:
-    return f"QR-{hashlib.sha256(plant_id.encode()).hexdigest()[:12].upper()}"
+    """A new plant's tag token. Random, never derived from ``plant_id``."""
+    return new_qr_token()
 
 
 # A judging event only moves forward: draft -> published -> closed (the publish
@@ -952,7 +952,14 @@ def generate_scorecards(event_id: str, db: Session = DB_DEPENDENCY):
     return created
 
 
-# ── Judge-facing endpoints ────────────────────────────────────────
+# ── Owner judge tooling (X-Judge-Id) ──────────────────────────────
+#
+# These ``/api/judge/*`` routes sit behind the router-level ``verify_api_key``,
+# so only a holder of the owner key reaches them, and ``X-Judge-Id`` names the
+# judge the OWNER is acting for (admin correction, rehearsal tooling). They are
+# not a judge credential and are never served to a judge device: judges use
+# ``/api/judge-portal/*`` with their own bearer token (app/judge_auth.py),
+# where the judge is taken from the verified token and X-Judge-Id is ignored.
 
 
 def _verify_judge_exists(judge_id: str, db: Session) -> Judge:
@@ -1031,22 +1038,15 @@ def judge_get_scorecard(
     return scorecard
 
 
-@router.put("/judge/scorecards/{scorecard_id}", response_model=ScorecardOut)
-def judge_autosave_scorecard(
-    scorecard_id: str,
-    data: ScorecardSaveRequest,
-    judge_id: str = JUDGE_DEPENDENCY,
-    db: Session = DB_DEPENDENCY,
-):
-    _verify_judge_exists(judge_id, db)
+def apply_scorecard_autosave(
+    db: Session, scorecard: Scorecard, judge_id: str, data: ScorecardSaveRequest
+) -> Scorecard:
+    """Save a judge's draft scores on ``scorecard``; the caller checked ownership.
 
-    scorecard = db.get(Scorecard, scorecard_id)
-    if not scorecard:
-        raise HTTPException(status_code=404, detail="Scorecard not found")
-    if scorecard.judge_id != judge_id:
-        raise HTTPException(
-            status_code=403, detail="Access denied: scorecard belongs to another judge."
-        )
+    Shared by the owner's ``/api/judge/*`` tooling and the per-judge
+    credential routes in ``app/routers/judge_portal.py`` so the two cannot
+    drift: submitted cards, closed events and locked shows refuse (409).
+    """
     if scorecard.status == "submitted":
         raise HTTPException(
             status_code=409, detail="Scorecard already submitted. Cannot edit."
@@ -1114,7 +1114,7 @@ def judge_autosave_scorecard(
     scorecard.updated_at = _utcnow()
 
     audit = ScorecardAuditLog(
-        scorecard_id=scorecard_id,
+        scorecard_id=scorecard.id,
         actor_judge_id=judge_id,
         action="autosave",
         diff_json=json.dumps({"scores": changed_scores, "notes": data.notes})
@@ -1128,10 +1128,10 @@ def judge_autosave_scorecard(
     return scorecard
 
 
-@router.post("/judge/scorecards/{scorecard_id}/submit", response_model=ScorecardOut)
-def judge_submit_scorecard(
+@router.put("/judge/scorecards/{scorecard_id}", response_model=ScorecardOut)
+def judge_autosave_scorecard(
     scorecard_id: str,
-    data: ScorecardSubmitRequest,
+    data: ScorecardSaveRequest,
     judge_id: str = JUDGE_DEPENDENCY,
     db: Session = DB_DEPENDENCY,
 ):
@@ -1144,6 +1144,13 @@ def judge_submit_scorecard(
         raise HTTPException(
             status_code=403, detail="Access denied: scorecard belongs to another judge."
         )
+    return apply_scorecard_autosave(db, scorecard, judge_id, data)
+
+
+def apply_scorecard_submit(
+    db: Session, scorecard: Scorecard, judge_id: str, data: ScorecardSubmitRequest
+) -> Scorecard:
+    """Submit ``scorecard`` with its weighted total; the caller checked ownership."""
     if scorecard.status == "submitted":
         raise HTTPException(status_code=409, detail="Scorecard already submitted.")
 
@@ -1182,7 +1189,7 @@ def judge_submit_scorecard(
     scorecard.updated_at = now
 
     audit = ScorecardAuditLog(
-        scorecard_id=scorecard_id,
+        scorecard_id=scorecard.id,
         actor_judge_id=judge_id,
         action="submit",
         diff_json=json.dumps(
@@ -1196,6 +1203,25 @@ def judge_submit_scorecard(
     db.commit()
     db.refresh(scorecard)
     return scorecard
+
+
+@router.post("/judge/scorecards/{scorecard_id}/submit", response_model=ScorecardOut)
+def judge_submit_scorecard(
+    scorecard_id: str,
+    data: ScorecardSubmitRequest,
+    judge_id: str = JUDGE_DEPENDENCY,
+    db: Session = DB_DEPENDENCY,
+):
+    _verify_judge_exists(judge_id, db)
+
+    scorecard = db.get(Scorecard, scorecard_id)
+    if not scorecard:
+        raise HTTPException(status_code=404, detail="Scorecard not found")
+    if scorecard.judge_id != judge_id:
+        raise HTTPException(
+            status_code=403, detail="Access denied: scorecard belongs to another judge."
+        )
+    return apply_scorecard_submit(db, scorecard, judge_id, data)
 
 
 @router.get(
