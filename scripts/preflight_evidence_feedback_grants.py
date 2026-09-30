@@ -46,11 +46,27 @@ INDEXES = (
 # cannot be used for a role without USAGE on the schema: PostgreSQL raises
 # InsufficientPrivilege instead of answering, which is exactly the role this
 # preflight exists to diagnose.
-RELATION_OID_SQL = (
-    "SELECT c.oid FROM pg_catalog.pg_class c "
+RELATION_SQL = (
+    "SELECT c.oid, c.relkind::text FROM pg_catalog.pg_class c "
     "JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace "
     "WHERE n.nspname = %s AND c.relname = %s"
 )
+# An object of the right name but the wrong kind (a view named ``cases``) is
+# not the store's table and must not report OK.
+TABLE_KINDS = frozenset({"r", "p"})
+INDEX_KINDS = frozenset({"i", "I"})
+KIND_NAMES = {
+    "r": "table",
+    "p": "partitioned table",
+    "v": "view",
+    "m": "materialized view",
+    "f": "foreign table",
+    "i": "index",
+    "I": "partitioned index",
+    "S": "sequence",
+    "c": "composite type",
+    "t": "TOAST table",
+}
 # The sequence owned by a serial column (what pg_get_serial_sequence resolves,
 # without its name lookup).
 SERIAL_SEQUENCE_SQL = (
@@ -66,14 +82,30 @@ SERIAL_SEQUENCE_SQL = (
 )
 
 
+def _text(value):
+    """Server text as ``str``: a SQL_ASCII database hands psycopg ``bytes``."""
+    if isinstance(value, bytes | bytearray | memoryview):
+        return bytes(value).decode("utf-8", "backslashreplace")
+    return value
+
+
 def _one(cur, sql: str, params: tuple = ()):
     cur.execute(sql, params)
     row = cur.fetchone()
-    return row[0] if row else None
+    return _text(row[0]) if row else None
 
 
-def _relation_oid(cur, name: str):
-    return _one(cur, RELATION_OID_SQL, (SCHEMA, name))
+def _relation(cur, name: str, kinds: frozenset[str]) -> tuple[object, str | None]:
+    """``(oid, None)`` for an object of an expected kind, ``(None, found)`` for
+    the wrong kind (``found`` names it), ``(None, None)`` when absent."""
+    cur.execute(RELATION_SQL, (SCHEMA, name))
+    row = cur.fetchone()
+    if row is None:
+        return None, None
+    oid, kind = row[0], _text(row[1])
+    if kind in kinds:
+        return oid, None
+    return None, KIND_NAMES.get(kind, f"relkind {kind}")
 
 
 def inspect(conn) -> dict[str, object]:
@@ -105,7 +137,7 @@ def inspect(conn) -> dict[str, object]:
         table_oids = {}
         for table in TABLES:
             qualified = f"{SCHEMA}.{table}"
-            oid = _relation_oid(cur, table)
+            oid, wrong_kind = _relation(cur, table, TABLE_KINDS)
             table_oids[table] = oid
             privileges = {}
             for privilege in TABLE_PRIVILEGES:
@@ -120,15 +152,18 @@ def inspect(conn) -> dict[str, object]:
                 privileges[privilege] = granted
                 if oid is not None and not granted:
                     missing.append(f"{privilege} ON TABLE {qualified}")
-            if oid is None:
+            if wrong_kind:
+                missing.append(f"TABLE {qualified} (found a {wrong_kind})")
+            elif oid is None:
                 missing.append(f"TABLE {qualified}")
-            tables.append(
-                {
-                    "name": qualified,
-                    "present": oid is not None,
-                    "privileges": privileges,
-                }
-            )
+            entry = {
+                "name": qualified,
+                "present": oid is not None,
+                "privileges": privileges,
+            }
+            if wrong_kind:
+                entry["found_kind"] = wrong_kind
+            tables.append(entry)
 
         sequences = []
         for table, column in SERIAL_COLUMNS:
@@ -138,7 +173,7 @@ def inspect(conn) -> dict[str, object]:
                 cur.execute(SERIAL_SEQUENCE_SQL, (table_oids[table], column))
                 row = cur.fetchone()
                 if row:
-                    sequence_oid, sequence = row
+                    sequence_oid, sequence = row[0], _text(row[1])
             usage = bool(
                 sequence_oid is not None
                 and _one(
@@ -161,10 +196,16 @@ def inspect(conn) -> dict[str, object]:
 
         indexes = []
         for name in INDEXES:
-            present = _relation_oid(cur, name) is not None
-            if not present:
+            oid, wrong_kind = _relation(cur, name, INDEX_KINDS)
+            present = oid is not None
+            if wrong_kind:
+                missing.append(f"INDEX {SCHEMA}.{name} (found a {wrong_kind})")
+            elif not present:
                 missing.append(f"INDEX {SCHEMA}.{name}")
-            indexes.append({"name": f"{SCHEMA}.{name}", "present": present})
+            entry = {"name": f"{SCHEMA}.{name}", "present": present}
+            if wrong_kind:
+                entry["found_kind"] = wrong_kind
+            indexes.append(entry)
 
         # Informational only: whether this role could bootstrap absent objects itself.
         can_create_schema = bool(
