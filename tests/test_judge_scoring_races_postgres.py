@@ -165,6 +165,29 @@ def test_score_write_waits_for_a_concurrent_lock_and_then_honours_it(pg, card, a
         assert db.get(Scorecard, card["card_id"]).status == "draft"
 
 
+@pytest.mark.parametrize("action", ["submit", "autosave"])
+def test_score_write_waits_for_a_concurrent_event_close_and_then_honours_it(
+    pg, card, action
+):
+    _engine, factory = pg
+    with factory() as holder:
+        holder.execute(
+            text(
+                "UPDATE judging_events SET status = 'closed' "
+                "WHERE id = (SELECT judging_event_id FROM scorecards WHERE id = :id)"
+            ),
+            {"id": card["card_id"]},
+        )
+        thread, outcome = _run(factory, card, action)
+        thread.join(BLOCK_SECONDS)
+        assert thread.is_alive(), f"{action} did not wait for the event row"
+        holder.commit()
+    thread.join(10)
+    assert outcome["status"] == 409 and "closed" in outcome["detail"].lower()
+    with factory() as db:
+        assert db.get(Scorecard, card["card_id"]).status == "draft"
+
+
 def test_concurrent_submits_yield_exactly_one_success(pg, card):
     _engine, factory = pg
     runs = [_run(factory, card, "submit") for _ in range(2)]
