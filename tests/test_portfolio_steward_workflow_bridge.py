@@ -397,3 +397,47 @@ def test_reconcile_step_shell_fails_when_the_reconciler_exits_2(tmp_path):
     # Control: GitHub's default for a bare `run:` is `bash -e {0}`, under which
     # the same pipeline reports tee's success. This is the defect being fixed.
     assert _run_step_shell("bash -e {0}", script, tmp_path) == 0
+
+
+def test_steward_fails_when_every_queued_issue_is_a_conflict(tmp_path, capsys):
+    # Five contradictory issues and nothing prepared: previously
+    # queue_empty_healthy and exit 0. It must fail the step (exit 2), and each
+    # conflict must carry its exact, repo-qualified fix.
+    import json as _json
+
+    from scripts.oc_portfolio_steward_reconcile import main
+
+    conflicted = [
+        {
+            "number": 400 + n,
+            "title": f"P2 conflicted lane {n} — queued and parked at once",
+            "labels": [{"name": "oc-queued"}, {"name": "oc-runtime-backoff"}],
+            "createdAt": "2026-07-01T00:00:00Z",
+        }
+        for n in range(5)
+    ]
+    prepared = tmp_path / "prepared.json"
+    everything = tmp_path / "all.json"
+    output = tmp_path / "github_output"
+    prepared.write_text("[]")
+    everything.write_text(_json.dumps(conflicted))
+    code = main(
+        [
+            "--prepared-issues", str(prepared),
+            "--all-issues", str(everything),
+            "--frontend-repo", "jsp1440/orchid-continuum-frontend",
+            "--github-output", str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    report = _json.loads(captured.out)
+    assert code == 2
+    assert "queue_blocked_by_conflicts" in captured.err
+    assert report["bridge_status"] == "queue_blocked_by_conflicts"
+    assert report["conflict_count"] == 5
+    assert "conflict_count=5" in output.read_text()
+    assert [f["issue"] for f in report["conflict_follow_ups"]] == [400, 401, 402, 403, 404]
+    assert report["conflict_follow_ups"][0]["relabel_command"] == [
+        "gh", "issue", "edit", "400", "--remove-label", "oc-queued",
+        "--repo", "jsp1440/orchid-continuum-frontend",
+    ]

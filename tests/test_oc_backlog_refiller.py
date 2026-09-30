@@ -155,17 +155,28 @@ def test_one_executable_parked_conflict_is_skipped_and_others_are_proposed():
     assert {"source_ref": "#238", "reason": "executable_parked_conflict"} in result[
         "rejections"
     ]
-    assert result["conflicts"] == [
-        {
-            "type": "executable_parked_conflict",
-            "issue": 238,
-            "executable": ["oc-queued"],
-            "parked": ["oc-runtime-backoff"],
-            "anomaly": "queue_backoff_contradiction",
-            "action": "issue_skipped",
-            "counted_as_reserve": False,
-        }
+    [finding] = result["conflicts"]
+    assert {
+        key: finding[key]
+        for key in ("type", "issue", "executable", "parked", "action", "counted_as_reserve")
+    } == {
+        "type": "executable_parked_conflict",
+        "issue": 238,
+        "executable": ["oc-queued"],
+        "parked": ["oc-runtime-backoff"],
+        "action": "issue_skipped",
+        "counted_as_reserve": False,
+    }
+    # The actionable fix: drop the executable label, keep the parked one.
+    assert finding["relabel"] == {"remove": ["oc-queued"], "add": []}
+    assert finding["relabel_command"] == [
+        "gh", "issue", "edit", "238", "--remove-label", "oc-queued",
     ]
+    [follow_up] = result["conflict_follow_ups"]
+    assert follow_up["issue"] == 238
+    assert follow_up["kind"] == "issue_comment"
+    assert follow_up["marker"] in follow_up["body"]
+    assert "gh issue edit 238 --remove-label oc-queued" in follow_up["body"]
 
 
 def test_conflict_does_not_mask_a_planner_blocking_violation():
@@ -312,3 +323,47 @@ def test_preserves_valid_queue_source_identity_and_rejects_unknown_identity():
     assert result["rejections"] == [
         {"source_ref": "#invented", "reason": "unauthorized_queue_source"}
     ]
+
+
+def test_a_queue_made_only_of_conflicts_is_blocked_not_healthy():
+    # Five contradictory issues and nothing to propose used to report
+    # queue_empty_healthy, a green run with no runnable work at all.
+    parked = ["oc-runtime-backoff", "oc-repair-backoff", "oc-blocked"]
+    state = snapshot(
+        *[issue(300 + n, "oc-queued", parked[n % 3]) for n in range(5)]
+    )
+    result = plan_refill(state, [], reserve_depth=3)
+    assert result["status"] == "queue_blocked_by_conflicts"
+    assert result["queued_count"] == 0
+    assert result["proposals"] == []
+    assert [c["issue"] for c in result["conflicts"]] == [300, 301, 302, 303, 304]
+    follow_ups = result["conflict_follow_ups"]
+    assert [f["issue"] for f in follow_ups] == [300, 301, 302, 303, 304]
+    assert len({f["idempotency_key"] for f in follow_ups}) == 5
+    for finding in result["conflicts"]:
+        assert finding["relabel"]["remove"] == ["oc-queued"]
+        assert finding["parked"] and finding["parked"][0] in parked
+
+
+def test_conflict_follow_ups_are_one_per_issue_and_idempotent():
+    duplicate = issue(238, "oc-queued", "oc-runtime-backoff")
+    state = snapshot(duplicate, dict(duplicate))
+    first = plan_refill(state, [], reserve_depth=1)
+    second = plan_refill(state, [], reserve_depth=1)
+    assert [f["issue"] for f in first["conflict_follow_ups"]] == [238]
+    assert first["conflict_follow_ups"] == second["conflict_follow_ups"]
+    # A different conflict on the same issue is a different follow-up.
+    changed = plan_refill(
+        snapshot(issue(238, "oc-queued", "oc-blocked")), [], reserve_depth=1
+    )
+    assert (
+        changed["conflict_follow_ups"][0]["idempotency_key"]
+        != first["conflict_follow_ups"][0]["idempotency_key"]
+    )
+
+
+def test_conflicts_alongside_real_reserve_are_reported_without_blocking():
+    state = snapshot(issue(1, "oc-queued"), issue(238, "oc-queued", "oc-blocked"))
+    result = plan_refill(state, [], reserve_depth=2)
+    assert result["status"] == "reserve_below_target_no_eligible_candidates"
+    assert [c["issue"] for c in result["conflicts"]] == [238]
