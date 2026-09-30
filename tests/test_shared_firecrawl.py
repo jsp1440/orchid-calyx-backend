@@ -7,14 +7,19 @@ from app.database import Base
 from app.federation.firecrawl_mapper import build_source_profile
 from app.federation.shared_firecrawl import SharedFirecrawlFederationService
 from app.source_federation.acquisition_models import AcquisitionLedgerRow
+from tests.acquisition_ledger_backends import (
+    LEDGER_BACKENDS,
+    ledger_engine_fixture,  # noqa: F401 - the ``ledger_engine`` fixture
+)
 
 
-def _service():
-    engine = create_engine("sqlite:///:memory:")
-    # Only the ledger table: the shared Base also carries schema-qualified
-    # tables (e.g. research_station.*) that SQLite cannot create, so a
-    # full-suite run that has imported those models fails here otherwise.
-    Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
+def _service(engine=None):
+    if engine is None:
+        engine = create_engine("sqlite:///:memory:")
+        # Only the ledger table: the shared Base also carries schema-qualified
+        # tables (e.g. research_station.*) that SQLite cannot create, so a
+        # full-suite run that has imported those models fails here otherwise.
+        Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
     session = sessionmaker(bind=engine)()
     mapper = Mock()
     mapper.map_source.return_value = build_source_profile(
@@ -25,8 +30,9 @@ def _service():
     return SharedFirecrawlFederationService(session, mapper=mapper), mapper
 
 
-def test_two_modules_trigger_one_firecrawl_call():
-    service, mapper = _service()
+@LEDGER_BACKENDS
+def test_two_modules_trigger_one_firecrawl_call(ledger_engine):
+    service, mapper = _service(ledger_engine)
     first, profile = service.map_source(
         consumer_module="lexicon",
         source_id="powo",
@@ -50,8 +56,9 @@ def test_two_modules_trigger_one_firecrawl_call():
     assert service.ledger.metrics()["credits_spent"] == 1
 
 
-def test_different_searches_are_distinct_acquisitions():
-    service, mapper = _service()
+@LEDGER_BACKENDS
+def test_different_searches_are_distinct_acquisitions(ledger_engine):
+    service, mapper = _service(ledger_engine)
     service.map_source(
         consumer_module="lexicon",
         source_id="powo",
@@ -69,8 +76,9 @@ def test_different_searches_are_distinct_acquisitions():
     assert mapper.map_source.call_count == 2
 
 
-def test_equivalent_root_urls_share_one_firecrawl_call():
-    service, mapper = _service()
+@LEDGER_BACKENDS
+def test_equivalent_root_urls_share_one_firecrawl_call(ledger_engine):
+    service, mapper = _service(ledger_engine)
     service.map_source(
         consumer_module="lexicon",
         source_id="powo",
