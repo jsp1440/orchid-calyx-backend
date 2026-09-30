@@ -101,6 +101,12 @@ class EvidenceObjectVersion:
     payload: dict[str, Any]
     created_at: str
     previous_version_hash: str | None = None
+    # Who FIRST registered this snapshot: "owner", "api_key" or "member". A
+    # member-registered snapshot is what the member says they saw, not verified
+    # content. ``None`` means unrecorded (versions stored before this field, and
+    # versions written by the trivial-correction path). Not part of the version
+    # identity: re-registration returns the original record unchanged.
+    registered_by_role: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -110,6 +116,7 @@ class EvidenceObjectVersion:
             "payload": self.payload,
             "created_at": self.created_at,
             "previous_version_hash": self.previous_version_hash,
+            "registered_by_role": self.registered_by_role,
         }
 
     @classmethod
@@ -121,6 +128,7 @@ class EvidenceObjectVersion:
             payload=dict(value["payload"]),
             created_at=str(value["created_at"]),
             previous_version_hash=value.get("previous_version_hash"),
+            registered_by_role=value.get("registered_by_role"),
         )
 
 

@@ -43,12 +43,20 @@ OWNER_REVIEW_ROUTES = {
     ("GET", f"{FRONTEND_BASE}/review/cases/{{case_id}}"),
     ("POST", f"{FRONTEND_BASE}/review/cases/{{case_id}}/decision"),
 }
-# Whole-application member-readable surface (see test_member_read_access.py).
+# Whole-application member-readable surface (see test_member_read_access.py),
+# plus the member's own case status (owner decision "Members submit, owner
+# reviews"; governed by OC_MEMBER_FEEDBACK_ENABLED as well).
 MEMBER_READABLE_ROUTES = {
     ("GET", "/api/research/traits"),
     ("GET", "/api/literature-extraction/papers"),
     ("GET", "/api/evidence-aggregation/health"),
     ("GET", "/api/evidence-aggregation/registry"),
+    ("GET", f"{FRONTEND_BASE}/cases/{{case_id}}"),
+}
+# Whole-application member-writable surface: member feedback submission only.
+MEMBER_WRITABLE_ROUTES = {
+    ("POST", f"{FRONTEND_BASE}/objects"),
+    ("POST", f"{FRONTEND_BASE}/cases"),
 }
 
 # Field sets required by the frontend TypeScript interfaces.
@@ -159,7 +167,16 @@ def _frontend_case_body(version_hash: str, statement: str) -> dict:
     }
 
 
-def test_route_surface_matches_frontend_paths_and_stays_owner_or_api_key_only():
+def _marked(attr: str) -> set[tuple[str, str]]:
+    return {
+        (method, route.path)
+        for route in app.routes
+        if isinstance(route, APIRoute) and getattr(route.endpoint, attr, False)
+        for method in route.methods
+    }
+
+
+def test_route_surface_matches_frontend_paths_and_member_surface_is_explicit():
     routes = _feedback_routes()
     assert set(routes) == FRONTEND_ROUTES | REVIEWER_ROUTES | OWNER_REVIEW_ROUTES
     assert not any(path.startswith("/evidence-feedback") for _, path in routes)
@@ -167,18 +184,19 @@ def test_route_surface_matches_frontend_paths_and_stays_owner_or_api_key_only():
         calls = _dependency_calls(route)
         if key in OWNER_REVIEW_ROUTES:
             assert member_auth.owner_session_only in calls, key
+            assert member_auth.owner_or_member_write not in calls, key
             assert verify_owner_or_api_key not in calls, key
+            assert not getattr(route.endpoint, member_auth.MEMBER_READABLE_ATTR, False), key
+            assert not getattr(route.endpoint, member_auth.MEMBER_WRITABLE_ATTR, False), key
         else:
-            assert verify_owner_or_api_key in calls, key
-        assert not getattr(route.endpoint, member_auth.MEMBER_READABLE_ATTR, False), key
-    member_readable = {
-        (method, route.path)
-        for route in app.routes
-        if isinstance(route, APIRoute)
-        and getattr(route.endpoint, member_auth.MEMBER_READABLE_ATTR, False)
-        for method in route.methods
-    }
-    assert member_readable == MEMBER_READABLE_ROUTES
+            assert member_auth.owner_or_member_write in calls, key
+    # accept-trivial stays owner/API-key only: it carries neither marker.
+    for key in REVIEWER_ROUTES:
+        endpoint = routes[key].endpoint
+        assert not getattr(endpoint, member_auth.MEMBER_READABLE_ATTR, False), key
+        assert not getattr(endpoint, member_auth.MEMBER_WRITABLE_ATTR, False), key
+    assert _marked(member_auth.MEMBER_READABLE_ATTR) == MEMBER_READABLE_ROUTES
+    assert _marked(member_auth.MEMBER_WRITABLE_ATTR) == MEMBER_WRITABLE_ROUTES
 
 
 def test_owner_session_submits_frontend_request_shape_end_to_end(client):

@@ -58,6 +58,7 @@ class EvidenceFeedbackService:
         object_type: ObjectType,
         payload: dict[str, Any],
         previous_version_hash: str | None = None,
+        registered_by_role: str | None = None,
     ) -> EvidenceObjectVersion:
         now = self.clock()
         version = EvidenceObjectVersion(
@@ -67,6 +68,7 @@ class EvidenceFeedbackService:
             payload=payload,
             created_at=now,
             previous_version_hash=previous_version_hash,
+            registered_by_role=registered_by_role,
         )
         return self.repository.save_object_version(version)
 

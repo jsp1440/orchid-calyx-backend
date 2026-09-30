@@ -77,6 +77,7 @@ def _env(monkeypatch):
     monkeypatch.setenv("OC_SUPABASE_URL", "https://project.supabase.co")
     monkeypatch.setenv("OC_SUPABASE_ANON_KEY", "anon-key")
     monkeypatch.delenv("OC_MEMBER_READS_ENABLED", raising=False)
+    monkeypatch.delenv(member_auth.MEMBER_FEEDBACK_ENV, raising=False)
     monkeypatch.delenv(ACTOR_REF_SECRET_ENV, raising=False)
     member_auth.clear_member_token_cache()
     yield
@@ -594,6 +595,28 @@ def test_member_403_is_identical_for_existing_and_missing_cases(file_store, cloc
         for method, url, body in _review_calls(case)
     }
     assert len(bodies) == 1
+
+
+def test_member_submission_enabled_still_cannot_review(file_store, clock, client, supabase, monkeypatch):
+    """Owner decision "Members submit, owner reviews": enabling member feedback
+    opens submission only; every review route and accept-trivial stay owner-only."""
+    monkeypatch.setenv(member_auth.MEMBER_FEEDBACK_ENV, "true")
+    member_case = submit(client, headers=bearer(member_jwt()))
+    assert set(member_case) == {"created", "case_id", "status"}
+    member_body = {"detail": {"code": "OWNER_ACCESS_REQUIRED", "message": "This view is limited to owner access"}}
+    for case_id in (member_case["case_id"], submit(client, statement="Owner case.")["case"]["case_id"]):
+        calls = [
+            *_review_calls(case_id),
+            ("POST", f"{BASE}/cases/{case_id}/accept-trivial", {"corrected_payload": {"d": "x"}}),
+        ]
+        for method, url, body in calls:
+            member = client.request(method, url, json=body, headers=bearer(member_jwt()))
+            assert member.status_code == 403, (method, url)
+            assert member.json() == member_body
+    assert file_store.repository().get_case(member_case["case_id"]).status.value == "pending_review"
+    detail = client.get(f"{REVIEW}/{member_case['case_id']}", headers=reviewer_headers())
+    assert detail.status_code == 200
+    assert detail.json()["object_version"]["registered_by_role"] == "member"
 
 
 def test_member_rejected_when_member_reads_disabled(file_store, client, supabase, monkeypatch):
