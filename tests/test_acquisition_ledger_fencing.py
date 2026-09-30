@@ -39,6 +39,7 @@ from app.source_federation.acquisition_ledger import (
     AcquisitionLedger,
     ClaimResult,
     LedgerContentionError,
+    PaidResultUnrecordedError,
     StaleLeaseError,
 )
 from app.source_federation.acquisition_models import AcquisitionLedgerRow
@@ -111,6 +112,10 @@ def _a_expired_then_b_claims(ledger, *, a_worker, b_worker):
         worker_id=b_worker,
         lease_seconds=60,
         now=T0 + timedelta(seconds=61),
+        # Fencing is about what a stale holder can do AFTER another worker
+        # took its lease over, so these tests opt into takeover explicitly
+        # (the default for an expired lease is operator review).
+        on_expired_lease="takeover",
     )
     assert a.action == b.action == "acquired_lease"
     assert a.lease_token != b.lease_token
@@ -407,19 +412,13 @@ def _supersede_during_call(session):
         row.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
         session.commit()
         lease_b = ledger.claim(
-            AcquisitionRequest(
-                url="https://powo.science.kew.org/",
-                provider="firecrawl_map",
+            SharedFirecrawlFederationService.acquisition_request(
                 consumer_module="matrix",
-                stable_identifier=SharedFirecrawlFederationService._request_identity(
-                    root_url="https://powo.science.kew.org/",
-                    search="Phragmipedium",
-                    limit=25,
-                    sitemap="include",
-                    include_subdomains=False,
-                ),
+                root_url="https://powo.science.kew.org/",
+                search="Phragmipedium",
             ),
             worker_id=SHARED_WORKER,
+            on_expired_lease="takeover",
         )
         assert lease_b.action == "acquired_lease"
         return lease_b
@@ -617,16 +616,31 @@ def test_service_never_fails_a_paid_success_on_ledger_error(caplog, ledger_engin
             resource_key="k", operation="complete", attempts=3
         )
     )
-    with pytest.raises(LedgerContentionError):
+    with pytest.raises(PaidResultUnrecordedError) as excinfo:
         service.map_source(**_map_kwargs("lexicon"))
+    assert isinstance(excinfo.value.__cause__, LedgerContentionError)
+    assert excinfo.value.held_for_review is True
 
     service.ledger.fail.assert_not_called()
     session.expire_all()
     row = session.query(AcquisitionLedgerRow).one()
-    assert row.status == "leased"  # left to expire, not marked failed
+    # Held for operator review, not marked failed (no retry window to wait
+    # out) and not left to a lease expiry another worker could take over.
+    assert row.status == "review_required"
     assert row.failure_count == 0 and row.next_retry_at is None
+    assert row.credits_spent == 1 and row.lease_holder is None
     errors = [r.getMessage() for r in caplog.records if "not recorded" in r.msg]
     assert len(errors) == 1 and "unrecorded_credits=1" in errors[0]
+    # No worker re-pays: not a later caller, not a forced refresh.
+    again = _service(_session(ledger_engine), mapper)
+    assert again.map_source(**_map_kwargs("matrix"))[0] == "review_required"
+    assert (
+        again.map_source(
+            **_map_kwargs("atlas"), force_refresh=True, operator_override="op"
+        )[0]
+        == "review_required"
+    )
+    mapper.map_source.assert_called_once()
 
 
 # --- Concurrency -------------------------------------------------------------
@@ -675,6 +689,7 @@ def _race_suite(make_session, *, rounds):
                         _request(f"m{index}"),
                         worker_id=SHARED_WORKER,
                         now=T0 + timedelta(seconds=10),
+                        on_expired_lease="takeover",
                     )
                     .action
                 )
@@ -720,6 +735,7 @@ def _race_suite(make_session, *, rounds):
                             _request("c"),
                             worker_id=SHARED_WORKER,
                             now=T0 + timedelta(seconds=10),
+                            on_expired_lease="takeover",
                         ),
                     )
                 finally:

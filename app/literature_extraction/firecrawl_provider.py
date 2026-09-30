@@ -4,6 +4,17 @@ The caller owns the canonical lease and supplies the existing Swarm governor.
 Live calls additionally require a durable reservation callback: an in-memory
 budget alone cannot enforce a daily cap across worker restarts. No credentials,
 response bodies, or source excerpts are included in errors or receipts.
+
+:func:`live_gate` and :func:`reserve_live_attempt` are the ONE admission gate
+and pre-transport reservation for a paid Firecrawl call. ``FirecrawlProvider``
+and the federation Map pilot (``app.federation.federation_pilot``) both call
+them, so the two paths cannot drift apart.
+
+Every live attempt runs under a wall-clock deadline
+(``FirecrawlConfig.request_timeout_seconds``; httpx timeouts are per phase and
+do not bound a slow-drip response), and a live search is routed through the
+acquisition ledger (``search_cache``): a repeat of the same normalized query
+within ``FirecrawlConfig.search_cache_seconds`` pays nothing.
 """
 
 from __future__ import annotations
@@ -19,6 +30,11 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from app.source_federation.deadline import (
+    PaidCallDeadlineExceeded,
+    call_with_deadline,
+    lease_seconds_for,
+)
 from runtime.swarm.models import ExecutionRequest
 
 from .extractors.morphology import MORPHOLOGY_PREDICATES
@@ -71,6 +87,8 @@ class FirecrawlConfig:
     max_call_cost: Decimal = Decimal(0)
     daily_budget: Decimal = Decimal(0)
     daily_credit_cap: int = 25
+    request_timeout_seconds: float = 45.0
+    search_cache_seconds: int = 7 * 24 * 3600
 
     def __post_init__(self):
         if not (
@@ -90,6 +108,26 @@ class FirecrawlConfig:
             not n.is_finite() or n < 0 for n in (self.max_call_cost, self.daily_budget)
         ):
             raise AcquisitionBlocked("INVALID_BUDGET")
+        timeout = self.request_timeout_seconds
+        if (
+            isinstance(timeout, bool)
+            or not isinstance(timeout, (int, float))
+            or not 1 <= timeout <= 120
+        ):
+            raise AcquisitionBlocked("INVALID_REQUEST_TIMEOUT")
+        if (
+            type(self.search_cache_seconds) is not int
+            or not 1 <= self.search_cache_seconds <= 30 * 24 * 3600
+        ):
+            raise AcquisitionBlocked("INVALID_SEARCH_CACHE_WINDOW")
+
+    def max_request_wall_seconds(self) -> float:
+        """Upper bound on one ``_request``: every attempt's deadline plus backoff."""
+        backoff = sum(
+            min(10, self.backoff_seconds * (2**attempt))
+            for attempt in range(self.retry_cap)
+        )
+        return (self.retry_cap + 1) * float(self.request_timeout_seconds) + backoff
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None):
@@ -117,7 +155,99 @@ class FirecrawlConfig:
             max_call_cost=Decimal(e.get("FIRECRAWL_MAX_CALL_COST_USD", "0")),
             daily_budget=Decimal(e.get("FIRECRAWL_DAILY_BUDGET_USD", "0")),
             daily_credit_cap=int(e.get("FIRECRAWL_DAILY_CREDIT_CAP", "25")),
+            request_timeout_seconds=float(
+                e.get("FIRECRAWL_REQUEST_TIMEOUT_SECONDS", "45")
+            ),
+            search_cache_seconds=int(
+                e.get("FIRECRAWL_SEARCH_CACHE_SECONDS", str(7 * 24 * 3600))
+            ),
         )
+
+
+def live_gate(
+    config: FirecrawlConfig,
+    env: Mapping[str, str],
+    *,
+    fixture_transport=None,
+    governor=None,
+    reserve: Callable | None = None,
+    reserve_credits: Callable | None = None,
+    observe_credits: Callable | None = None,
+    lease_check: Callable | None = None,
+) -> None:
+    """Raise :class:`AcquisitionBlocked` unless a Firecrawl call is admitted.
+
+    A dry run is admitted only with a fixture transport (no network). A live
+    call requires ``FIRECRAWL_ENABLED=true``, the kill switch exactly
+    ``false``, ``PROVIDER_AUTHORIZED=true``, ``NO_API_MODE`` exactly ``false``
+    (absent means on), ``FIRECRAWL_API_KEY``, and the complete durable budget
+    authority (governor, USD and credit reservation, usage observation, a
+    lease check, and positive per-call and daily USD budgets).
+    """
+    if (
+        not config.enabled
+        or env.get("FIRECRAWL_KILL_SWITCH", "false").lower() != "false"
+    ):
+        raise AcquisitionBlocked("FIRECRAWL_DISABLED")
+    if config.dry_run:
+        if fixture_transport is None:
+            raise AcquisitionBlocked("DRY_RUN_NO_FIXTURE")
+        return
+    if fixture_transport is not None:
+        raise AcquisitionBlocked("LIVE_FIXTURE_FORBIDDEN")
+    if (
+        env.get("PROVIDER_AUTHORIZED", "false").lower() != "true"
+        or env.get("NO_API_MODE", "true").lower() != "false"
+    ):
+        raise AcquisitionBlocked("PROVIDER_NOT_AUTHORIZED")
+    if not env.get("FIRECRAWL_API_KEY"):
+        raise AcquisitionBlocked("FIRECRAWL_KEY_UNAVAILABLE")
+    if (
+        governor is None
+        or reserve is None
+        or reserve_credits is None
+        or observe_credits is None
+        or lease_check is None
+        or config.max_call_cost <= 0
+        or config.daily_budget <= 0
+    ):
+        raise AcquisitionBlocked("DURABLE_BUDGET_AUTHORITY_REQUIRED")
+
+
+def reserve_live_attempt(
+    config: FirecrawlConfig,
+    *,
+    governor,
+    reserve: Callable,
+    reserve_credits: Callable,
+    task_id: str,
+    credit_cost: int,
+    attempt: int = 0,
+):
+    """Admit one live attempt and durably reserve its worst-case cost.
+
+    Returns ``(governor_entry, credit_reservation)``; the caller must end the
+    governor entry after the attempt. On any reservation failure the entry
+    is ended and ``DURABLE_RESERVATION_FAILED`` is raised: no transport.
+    """
+    entry = governor.begin(
+        ExecutionRequest(
+            issue_task_id=task_id,
+            provider="firecrawl",
+            worker_lane="literature",
+            retry_count=attempt,
+            estimated_cost_usd=config.max_call_cost,
+        )
+    )
+    try:
+        credit_reservation = reserve_credits(
+            task_id, credit_cost, config.daily_credit_cap
+        )
+        reserve(task_id, config.max_call_cost, config.daily_budget)
+    except Exception:  # noqa: BLE001 - reservation failure must release slot without exposing DB details
+        governor.end(entry, succeeded=False, termination_reason="reservation_failed")
+        raise AcquisitionBlocked("DURABLE_RESERVATION_FAILED") from None
+    return entry, credit_reservation
 
 
 @dataclass(frozen=True)
@@ -151,6 +281,7 @@ class FirecrawlProvider:
         fixture_transport=None,
         env=None,
         sleep=time.sleep,
+        search_cache=None,
     ):
         self.config = config
         self.governor = governor
@@ -169,36 +300,22 @@ class FirecrawlProvider:
         self.lease_check = None
         self._seen: dict[str, AcquiredSource] = {}
         self.search_results: dict[str, dict] = {}
+        # Cross-run search reuse (``LedgerSearchCache``); required for a live
+        # search, optional for a fixture dry run.
+        self.search_cache = search_cache
+        self.search_cache_hits = 0
 
     def _gate(self):
-        if (
-            not self.config.enabled
-            or self.env.get("FIRECRAWL_KILL_SWITCH", "false").lower() != "false"
-        ):
-            raise AcquisitionBlocked("FIRECRAWL_DISABLED")
-        if self.config.dry_run:
-            if self.fixture_transport is None:
-                raise AcquisitionBlocked("DRY_RUN_NO_FIXTURE")
-            return
-        if self.fixture_transport is not None:
-            raise AcquisitionBlocked("LIVE_FIXTURE_FORBIDDEN")
-        if (
-            self.env.get("PROVIDER_AUTHORIZED", "false").lower() != "true"
-            or self.env.get("NO_API_MODE", "true").lower() != "false"
-        ):
-            raise AcquisitionBlocked("PROVIDER_NOT_AUTHORIZED")
-        if not self.env.get("FIRECRAWL_API_KEY"):
-            raise AcquisitionBlocked("FIRECRAWL_KEY_UNAVAILABLE")
-        if (
-            self.governor is None
-            or self.reserve is None
-            or self.reserve_credits is None
-            or self.observe_credits is None
-            or self.lease_check is None
-            or self.config.max_call_cost <= 0
-            or self.config.daily_budget <= 0
-        ):
-            raise AcquisitionBlocked("DURABLE_BUDGET_AUTHORITY_REQUIRED")
+        live_gate(
+            self.config,
+            self.env,
+            fixture_transport=self.fixture_transport,
+            governor=self.governor,
+            reserve=self.reserve,
+            reserve_credits=self.reserve_credits,
+            observe_credits=self.observe_credits,
+            lease_check=self.lease_check,
+        )
 
     @staticmethod
     def credit_cost(endpoint, payload):
@@ -241,56 +358,32 @@ class FirecrawlProvider:
             entry = None
             credit_reservation = None
             if not self.config.dry_run:
-                entry = self.governor.begin(
-                    ExecutionRequest(
-                        issue_task_id=task_id,
-                        provider="firecrawl",
-                        worker_lane="literature",
-                        retry_count=attempt,
-                        estimated_cost_usd=self.config.max_call_cost,
-                    )
+                entry, credit_reservation = reserve_live_attempt(
+                    self.config,
+                    governor=self.governor,
+                    reserve=self.reserve,
+                    reserve_credits=self.reserve_credits,
+                    task_id=task_id,
+                    credit_cost=credit_cost,
+                    attempt=attempt,
                 )
-                try:
-                    credit_reservation = self.reserve_credits(
-                        task_id, credit_cost, self.config.daily_credit_cap
-                    )
-                    self.credits_reserved += credit_cost
-                    self.reserve(
-                        task_id, self.config.max_call_cost, self.config.daily_budget
-                    )
-                except Exception:  # noqa: BLE001 - reservation failure must release slot without exposing DB details
-                    self.governor.end(
-                        entry, succeeded=False, termination_reason="reservation_failed"
-                    )
-                    raise AcquisitionBlocked("DURABLE_RESERVATION_FAILED") from None
+                self.credits_reserved += credit_cost
             succeeded = False
             try:
                 self.calls += 1
                 if self.config.dry_run:
                     status, result = self.fixture_transport(endpoint, payload)
                 else:
-                    with (
-                        httpx.Client(timeout=45, follow_redirects=False) as client,
-                        client.stream(
-                            "POST",
-                            "https://api.firecrawl.dev/v2/" + endpoint,
-                            headers={
-                                "Authorization": "Bearer "
-                                + self.env["FIRECRAWL_API_KEY"]
-                            },
-                            json=payload,
-                        ) as response,
-                    ):
-                        raw = bytearray()
-                        for chunk in response.iter_bytes():
-                            raw.extend(chunk)
-                            if len(raw) > self.config.max_bytes:
-                                raise AcquisitionBlocked("RESPONSE_TOO_LARGE")
-                        import json
-
-                        status = response.status_code
-                        # A transient HTTP response need not contain valid JSON.
-                        result = {} if status != 200 else json.loads(raw)
+                    try:
+                        status, result = call_with_deadline(
+                            lambda: self._transport(endpoint, payload),
+                            self.config.request_timeout_seconds,
+                        )
+                    except PaidCallDeadlineExceeded:
+                        # Outcome unknown (the reservation stands, no refund);
+                        # never retried inside this lease: the attempt may
+                        # have been billed.
+                        raise AcquisitionBlocked("PROVIDER_DEADLINE_EXCEEDED") from None
                 if not self.config.dry_run:
                     used = (
                         result.get("creditsUsed") if isinstance(result, dict) else None
@@ -339,6 +432,34 @@ class FirecrawlProvider:
                     )
         raise AcquisitionBlocked("RETRIES_EXHAUSTED")
 
+    def _transport(self, endpoint, payload):
+        """One live HTTP exchange; the caller bounds its wall-clock."""
+        import json
+
+        timeout = float(self.config.request_timeout_seconds)
+        with (
+            httpx.Client(timeout=timeout, follow_redirects=False) as client,
+            client.stream(
+                "POST",
+                "https://api.firecrawl.dev/v2/" + endpoint,
+                headers={"Authorization": "Bearer " + self.env["FIRECRAWL_API_KEY"]},
+                json=payload,
+            ) as response,
+        ):
+            raw = bytearray()
+            for chunk in response.iter_bytes():
+                raw.extend(chunk)
+                if len(raw) > self.config.max_bytes:
+                    raise AcquisitionBlocked("RESPONSE_TOO_LARGE")
+            status = response.status_code
+            # A transient HTTP response need not contain valid JSON.
+            return status, ({} if status != 200 else json.loads(raw))
+
+    def _paid_search(self, payload, task_id):
+        before = self.credits_reserved
+        data = self._request("search", payload, task_id)
+        return data, self.credits_reserved - before
+
     def search(
         self, genus: str, *, task_id: str, target_names=(), required_predicates=()
     ) -> list[str]:
@@ -363,7 +484,9 @@ class FirecrawlProvider:
         if self.searches >= self.config.max_searches or not self.config.domains:
             raise AcquisitionBlocked("SEARCH_LIMIT_OR_DOMAINS_MISSING")
         self.searches += 1
-        sites = " OR ".join("site:" + d for d in self.config.domains)
+        # Sorted and de-duplicated, so the query (and its ledger key) does not
+        # depend on the order the domains were configured in.
+        sites = " OR ".join("site:" + d for d in sorted(set(self.config.domains)))
         characters = (
             ""
             if not required_predicates
@@ -374,16 +497,26 @@ class FirecrawlProvider:
             )
             + ")"
         )
-        data = self._request(
-            "search",
-            {
-                "query": f"{subject}{characters} (monograph OR revision OR flora OR key) ({sites})",
-                "limit": min(self.config.max_documents, 2)
-                if self.config.pilot_mode
-                else self.config.max_documents,
-            },
-            task_id,
-        )
+        payload = {
+            "query": f"{subject}{characters} (monograph OR revision OR flora OR key) ({sites})",
+            "limit": min(self.config.max_documents, 2)
+            if self.config.pilot_mode
+            else self.config.max_documents,
+        }
+        if self.search_cache is not None:
+            status, data = self.search_cache.fetch(
+                payload,
+                lambda: self._paid_search(payload, task_id),
+                lease_seconds=lease_seconds_for(self.config.max_request_wall_seconds()),
+            )
+            if status == "cache_hit":
+                self.search_cache_hits += 1
+        elif not self.config.dry_run:
+            # A live search is only admitted through the acquisition ledger:
+            # without it a repeat of the same gap would pay again.
+            raise AcquisitionBlocked("SEARCH_LEDGER_REQUIRED")
+        else:
+            data = self._request("search", payload, task_id)
         urls = []
         for item in data.get("web", []):
             try:
