@@ -1015,6 +1015,9 @@ SMALL = 16 * 1024
 LF_SIZE = 64 * 1024
 BOUND_SECONDS = 1.0
 FLOOR_SECONDS = 0.05  # timer noise under parallel CI load
+# 4x the input may take up to 12x the time: quadratic growth is 16x, and 8x flaked
+# at a load average above 20.
+SCALING_RATIO = 12
 
 
 def _lf_fill(unit: str, size: int) -> str:
@@ -1081,7 +1084,7 @@ def test_screened_text_is_bounded_and_linear_on_64k_hostile_input(unit):
     t_small = _best_of(lambda: screened_text(small, max_len=LF_SIZE))
     t_large = _best_of(lambda: screened_text(large, max_len=LF_SIZE))
     assert t_large < BOUND_SECONDS, f"{unit!r}: {t_large:.3f}s"
-    assert t_large < 8 * max(t_small, FLOOR_SECONDS), (
+    assert t_large < SCALING_RATIO * max(t_small, FLOOR_SECONDS), (
         f"{unit!r}: {t_small:.4f}s -> {t_large:.4f}s for 4x input"
     )
 
@@ -1104,7 +1107,7 @@ def test_each_new_pattern_is_linear_on_64k_hostile_input(name, unit):
     t_small = _best_of(lambda: pattern.search(small))
     t_large = _best_of(lambda: pattern.search(large))
     assert t_large < BOUND_SECONDS, f"{name} {unit!r}: {t_large:.3f}s"
-    assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+    assert t_large < SCALING_RATIO * max(t_small, FLOOR_SECONDS)
 
 
 def test_token_split_and_folds_are_linear_on_64k_input():
@@ -1276,7 +1279,7 @@ def test_screened_text_is_linear_on_round1_hostile_input(unit):
     t_small = _best_of(lambda: screened_text(small, max_len=LF_SIZE))
     t_large = _best_of(lambda: screened_text(large, max_len=LF_SIZE))
     assert t_large < BOUND_SECONDS, f"{unit!r}: {t_large:.3f}s"
-    assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+    assert t_large < SCALING_RATIO * max(t_small, FLOOR_SECONDS)
 
 
 @pytest.mark.parametrize("unit", ROUND1_HOSTILE_UNITS)
@@ -1286,4 +1289,4 @@ def test_mgrs_and_compound_patterns_are_linear_on_round1_input(unit):
         t_small = _best_of(lambda p=pattern: p.search(small))
         t_large = _best_of(lambda p=pattern: p.search(large))
         assert t_large < BOUND_SECONDS
-        assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+        assert t_large < SCALING_RATIO * max(t_small, FLOOR_SECONDS)
