@@ -1778,44 +1778,6 @@
     {
       "category": "Runtime",
       "dependencies": [
-        "__future__",
-        "runtime.evidence_coverage_gaps",
-        "runtime.knowledge_gap_discovery",
-        "runtime.knowledge_gap_queue_bridge",
-        "scripts.oc_backlog_refiller",
-        "typing"
-      ],
-      "description": "EvidenceGapReserveAdapter provides: Plan runtime work",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Plan runtime work",
-      "outputs": [
-        "Plan runtime work"
-      ],
-      "provider": "EvidenceGapReserveAdapter"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "re",
-        "runtime.evidence_coverage_gaps",
-        "runtime.evidence_gap_reserve_adapter",
-        "runtime.knowledge_gap_queue_bridge",
-        "typing"
-      ],
-      "description": "EvidenceGapReservePlan provides: Plan runtime work",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Plan runtime work",
-      "outputs": [
-        "Plan runtime work"
-      ],
-      "provider": "EvidenceGapReservePlan"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
         "__future__"
       ],
       "description": "Dependencies provides: Analyze dependencies",
@@ -2330,8 +2292,6 @@
         "collections.abc",
         "hashlib",
         "json",
-        "re",
-        "runtime.evidence_coverage_gaps",
         "scripts.oc_backlog_refiller",
         "typing"
       ],
@@ -2742,7 +2702,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_conversation.provider",
-        "collections.abc",
         "hashlib",
         "json",
         "runtime.matrix_identification_session",
@@ -3070,15 +3029,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Analyze dependencies",
       "health": "healthy",
@@ -3104,15 +3060,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Discover runtime capabilities",
       "health": "healthy",
@@ -3138,15 +3091,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Execute runtime work",
       "health": "healthy",
@@ -3172,15 +3122,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Expose API endpoints",
       "health": "healthy",
@@ -3206,15 +3153,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Harvest engineering memory",
       "health": "healthy",
@@ -3240,15 +3184,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Inspect Brain state",
       "health": "healthy",
@@ -3275,15 +3216,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "description": "PlannerRouter provides: Plan runtime work",
       "health": "healthy",
@@ -6480,7 +6418,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_orchestrator.models",
-        "app.security",
         "completion_loop",
         "datetime",
         "github",
@@ -7140,7 +7077,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "app.security",
         "assignment_factory",
         "dataclasses",
         "datetime",
@@ -7243,7 +7179,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "app.security",
         "dataclasses",
         "executor",
         "json",
@@ -8708,7 +8643,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "app.security",
         "datetime",
         "json",
         "models",
@@ -8878,21 +8812,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "typing"
-      ],
-      "description": "CandidateStoreUnavailable provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "CandidateStoreUnavailable"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
         "dataclasses",
         "enum",
         "typing"
@@ -8942,8 +8861,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.security",
         "dependencies",
         "fastapi",
@@ -8966,8 +8883,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.security",
         "dependencies",
         "fastapi",
@@ -10041,26 +9956,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "collections.abc",
-        "dataclasses",
-        "hashlib",
-        "json",
-        "pathlib",
-        "typing"
-      ],
-      "description": "DecisionEngine provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "DecisionEngine"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
         "dataclasses",
         "datetime",
         "docx",
@@ -10700,21 +10595,6 @@
       "provider": "DocumentClass"
     },
     {
-      "category": "Runtime",
-      "dependencies": [
-        "dataclasses",
-        "psycopg.types.json"
-      ],
-      "description": "PostgresExtractionRepository provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "PostgresExtractionRepository"
-    },
-    {
       "category": "API",
       "dependencies": [
         "app.security",
@@ -11005,21 +10885,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "typing"
-      ],
-      "description": "AggregateStoreUnavailable provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "AggregateStoreUnavailable"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
         "dataclasses",
         "enum",
         "typing"
@@ -11053,7 +10918,8 @@
       "dependencies": [
         "__future__",
         "copy",
-        "datetime"
+        "datetime",
+        "typing"
       ],
       "description": "MemoryAggregateRepository provides: Harvest engineering memory",
       "health": "healthy",
@@ -11068,8 +10934,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.persistence.state_repository",
         "app.security",
         "fastapi",
@@ -11095,8 +10959,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.persistence.state_repository",
         "app.security",
         "fastapi",
@@ -11123,11 +10985,14 @@
       "dependencies": [
         "__future__",
         "collections",
+        "dataclasses",
         "hashlib",
         "json",
+        "math",
         "models",
         "repository",
-        "time"
+        "time",
+        "typing"
       ],
       "description": "EvidenceAggregationService provides: Execute runtime work",
       "health": "healthy",
@@ -11161,40 +11026,12 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "collections.abc",
-        "contextlib",
-        "json",
-        "logging",
-        "models",
-        "psycopg",
-        "psycopg.rows",
-        "repository",
-        "threading",
-        "typing"
-      ],
-      "description": "PostgresEvidenceFeedbackRepository provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "PostgresEvidenceFeedbackRepository"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "collections.abc",
         "hashlib",
         "json",
         "models",
-        "os",
         "pathlib",
-        "tempfile",
         "threading",
-        "typing",
-        "unicodedata"
+        "typing"
       ],
       "description": "EvidenceFeedbackRepositoryError provides: Provide runtime component",
       "health": "healthy",
@@ -11204,63 +11041,6 @@
         "Provide runtime component"
       ],
       "provider": "EvidenceFeedbackRepositoryError"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.security",
-        "base64",
-        "binascii",
-        "dataclasses",
-        "enum",
-        "hashlib",
-        "hmac",
-        "json",
-        "models",
-        "os",
-        "repository",
-        "service",
-        "typing"
-      ],
-      "description": "EvidenceFeedbackReviewService provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "EvidenceFeedbackReviewService"
-    },
-    {
-      "category": "API",
-      "dependencies": [
-        "__future__",
-        "app.member_auth",
-        "app.persistence.state_repository",
-        "app.security",
-        "fastapi",
-        "logging",
-        "models",
-        "os",
-        "postgres_repository",
-        "pydantic",
-        "repository",
-        "review",
-        "service",
-        "threading",
-        "typing"
-      ],
-      "description": "EvidenceObjectIn provides: Expose API endpoints",
-      "health": "healthy",
-      "inputs": [
-        "HTTP request"
-      ],
-      "name": "Expose API endpoints",
-      "outputs": [
-        "Expose API endpoints"
-      ],
-      "provider": "EvidenceObjectIn"
     },
     {
       "category": "Runtime",
@@ -11437,47 +11217,6 @@
       "dependencies": [
         "__future__",
         "dataclasses",
-        "datetime",
-        "httpx",
-        "os",
-        "re",
-        "typing",
-        "urllib.parse"
-      ],
-      "description": "FederationSourceProfile provides: Discover runtime capabilities",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Discover runtime capabilities",
-      "outputs": [
-        "Discover runtime capabilities"
-      ],
-      "provider": "FederationSourceProfile"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.source_federation.acquisition",
-        "app.source_federation.acquisition_ledger",
-        "firecrawl_mapper",
-        "json",
-        "sqlalchemy.orm",
-        "typing"
-      ],
-      "description": "SharedFirecrawlFederationService provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "SharedFirecrawlFederationService"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "dataclasses",
         "schemas"
       ],
       "description": "FollowUp provides: Provide runtime component",
@@ -11493,7 +11232,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.rate_limit",
         "app.security",
         "fastapi",
         "schemas",
@@ -12314,26 +12052,9 @@
       "provider": "Init"
     },
     {
-      "category": "Planning",
-      "dependencies": [
-        "__future__",
-        "pydantic",
-        "typing"
-      ],
-      "description": "InteractionDiscoveryRecord provides: Discover runtime capabilities",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Discover runtime capabilities",
-      "outputs": [
-        "Discover runtime capabilities"
-      ],
-      "provider": "InteractionDiscoveryRecord"
-    },
-    {
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.interaction_discovery.models",
         "app.interaction_discovery.service",
         "fastapi",
         "typing"
@@ -12353,7 +12074,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.interaction_discovery.models",
         "app.interaction_discovery.service",
         "fastapi",
         "typing"
@@ -12373,10 +12093,7 @@
       "category": "Planning",
       "dependencies": [
         "__future__",
-        "app.interaction_discovery.models",
-        "app.semantic_index.repository_runtime",
         "app.semantic_index.routes",
-        "pydantic",
         "typing"
       ],
       "description": "Service provides: Discover runtime capabilities",
@@ -13044,9 +12761,7 @@
         "__future__",
         "app.readiness.relationship_measurement",
         "dataclasses",
-        "datetime",
         "models",
-        "re",
         "repository",
         "typing"
       ],
@@ -13162,25 +12877,6 @@
       "dependencies": [
         "__future__",
         "base",
-        "ingest",
-        "models",
-        "re",
-        "typing"
-      ],
-      "description": "CanonicalMorphologyExtractor provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "CanonicalMorphologyExtractor"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "base",
         "context",
         "dataclasses",
         "ingest",
@@ -13196,97 +12892,6 @@
         "Provide runtime component"
       ],
       "provider": "HeadingMatch"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "dataclasses",
-        "datetime",
-        "decimal",
-        "extractors.morphology",
-        "hashlib",
-        "httpx",
-        "ipaddress",
-        "json",
-        "os",
-        "psycopg.types.json",
-        "re",
-        "runtime.research_station_store",
-        "runtime.swarm.models",
-        "time",
-        "urllib.parse"
-      ],
-      "description": "AcquisitionBlocked provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "AcquisitionBlocked"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "app.document_import.models",
-        "app.document_import.repository",
-        "app.document_import.service",
-        "app.document_intelligence.lifecycle",
-        "app.document_intelligence.postgres_repository",
-        "app.source_registry.models",
-        "app.source_registry.repository",
-        "canonical_binding_resolver",
-        "psycopg.rows",
-        "source_binding",
-        "urllib.parse"
-      ],
-      "description": "_AcquiredDocumentGateway provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "_AcquiredDocumentGateway"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.calyx_engineering.github",
-        "app.candidate_knowledge.postgres_repository",
-        "app.candidate_knowledge.service",
-        "app.evidence_aggregation.postgres_repository",
-        "app.evidence_aggregation.service",
-        "candidate_handoff",
-        "canonical_binding_resolver",
-        "corpus_audit",
-        "firecrawl_acquisition",
-        "firecrawl_provider",
-        "firecrawl_registration",
-        "hashlib",
-        "json",
-        "os",
-        "psycopg",
-        "psycopg.rows",
-        "psycopg.types.json",
-        "pydantic",
-        "re",
-        "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
-        "runtime.research_station_store",
-        "runtime.swarm"
-      ],
-      "description": "AcquisitionRequest provides: Execute runtime work",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Execute runtime work",
-      "outputs": [
-        "Execute runtime work"
-      ],
-      "provider": "AcquisitionRequest"
     },
     {
       "category": "Runtime",
@@ -13438,21 +13043,15 @@
       "dependencies": [
         "__future__",
         "app.candidate_knowledge.dependencies",
-        "app.evidence_aggregation.postgres_repository",
-        "app.member_auth",
         "app.security",
         "candidate_handoff",
         "canonical_binding_resolver",
-        "corpus_audit",
         "coverage_audit",
         "fastapi",
-        "firecrawl_provider",
-        "firecrawl_runtime",
         "os",
         "psycopg",
         "pydantic",
         "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
         "source_binding",
         "typing"
       ],
@@ -13472,21 +13071,15 @@
       "dependencies": [
         "__future__",
         "app.candidate_knowledge.dependencies",
-        "app.evidence_aggregation.postgres_repository",
-        "app.member_auth",
         "app.security",
         "candidate_handoff",
         "canonical_binding_resolver",
-        "corpus_audit",
         "coverage_audit",
         "fastapi",
-        "firecrawl_provider",
-        "firecrawl_runtime",
         "os",
         "psycopg",
         "pydantic",
         "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
         "source_binding",
         "typing"
       ],
@@ -13506,21 +13099,15 @@
       "dependencies": [
         "__future__",
         "app.candidate_knowledge.dependencies",
-        "app.evidence_aggregation.postgres_repository",
-        "app.member_auth",
         "app.security",
         "candidate_handoff",
         "canonical_binding_resolver",
-        "corpus_audit",
         "coverage_audit",
         "fastapi",
-        "firecrawl_provider",
-        "firecrawl_runtime",
         "os",
         "psycopg",
         "pydantic",
         "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
         "source_binding",
         "typing"
       ],
@@ -13598,7 +13185,6 @@
         "app.document_intelligence.routes",
         "app.engineering_memory.routes",
         "app.evidence_aggregation.routes",
-        "app.evidence_feedback.routes",
         "app.evidence_retrieval.routes",
         "app.executive_telemetry.routes",
         "app.field_hypotheses.routes",
@@ -13608,7 +13194,8 @@
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
         "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_release.routes",
+        "app.missions.routers"
       ],
       "description": "VerificationRequest provides: Execute runtime work",
       "health": "healthy",
@@ -13638,7 +13225,6 @@
         "app.document_intelligence.routes",
         "app.engineering_memory.routes",
         "app.evidence_aggregation.routes",
-        "app.evidence_feedback.routes",
         "app.evidence_retrieval.routes",
         "app.executive_telemetry.routes",
         "app.field_hypotheses.routes",
@@ -13648,7 +13234,8 @@
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
         "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_release.routes",
+        "app.missions.routers"
       ],
       "description": "VerificationRequest provides: Expose API endpoints",
       "health": "healthy",
@@ -13678,7 +13265,6 @@
         "app.document_intelligence.routes",
         "app.engineering_memory.routes",
         "app.evidence_aggregation.routes",
-        "app.evidence_feedback.routes",
         "app.evidence_retrieval.routes",
         "app.executive_telemetry.routes",
         "app.field_hypotheses.routes",
@@ -13688,7 +13274,8 @@
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
         "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_release.routes",
+        "app.missions.routers"
       ],
       "description": "VerificationRequest provides: Inspect Brain state",
       "health": "healthy",
@@ -13701,76 +13288,6 @@
         "Inspect Brain state"
       ],
       "provider": "VerificationRequest"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.member_auth",
-        "app.security",
-        "collections",
-        "collections.abc",
-        "fastapi",
-        "hashlib",
-        "os",
-        "threading",
-        "time",
-        "typing"
-      ],
-      "description": "_SlidingWindowLimiter provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "_SlidingWindowLimiter"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "math",
-        "re",
-        "typing",
-        "unicodedata",
-        "uuid"
-      ],
-      "description": "MatrixMemberViews provides: Plan runtime work",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Plan runtime work",
-      "outputs": [
-        "Plan runtime work"
-      ],
-      "provider": "MatrixMemberViews"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.candidate_knowledge.models",
-        "app.evidence_aggregation.models",
-        "ast",
-        "builtins",
-        "collections.abc",
-        "fastapi",
-        "fastapi.responses",
-        "fastapi.routing",
-        "json",
-        "pathlib",
-        "re",
-        "typing"
-      ],
-      "description": "MemberRedactingRoute provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "MemberRedactingRoute"
     },
     {
       "category": "Runtime",
@@ -15168,7 +14685,6 @@
       "dependencies": [
         "__future__",
         "app.database",
-        "app.member_auth",
         "app.security",
         "epistemic_memory",
         "fastapi",
@@ -15199,7 +14715,6 @@
       "dependencies": [
         "__future__",
         "app.database",
-        "app.member_auth",
         "app.security",
         "epistemic_memory",
         "fastapi",
@@ -15409,7 +14924,7 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.member_auth",
+        "app.security",
         "fastapi",
         "functools",
         "re",
@@ -15475,7 +14990,6 @@
       "dependencies": [
         "__future__",
         "app.database",
-        "app.member_auth",
         "app.routers.health",
         "app.scientific_memory.routes",
         "app.security",
@@ -15501,7 +15015,6 @@
     {
       "category": "Runtime",
       "dependencies": [
-        "app.validation_errors",
         "json",
         "pydantic",
         "typing"
@@ -15519,12 +15032,8 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "app.candidate_knowledge.lookup",
-        "app.evidence_aggregation.lookup",
-        "collections.abc",
         "dataclasses",
         "models",
-        "re",
         "schemas",
         "sqlalchemy",
         "sqlalchemy.exc",
@@ -15550,13 +15059,13 @@
         "app.review_tasks.postgres_repository",
         "app.review_tasks.service",
         "app.security",
-        "collections.abc",
         "fastapi",
         "fastapi.security",
         "functools",
         "os",
         "psycopg",
-        "psycopg.rows"
+        "psycopg.rows",
+        "typing"
       ],
       "description": "Dependencies provides: Analyze dependencies",
       "health": "healthy",
@@ -15576,13 +15085,13 @@
         "app.review_tasks.postgres_repository",
         "app.review_tasks.service",
         "app.security",
-        "collections.abc",
         "fastapi",
         "fastapi.security",
         "functools",
         "os",
         "psycopg",
-        "psycopg.rows"
+        "psycopg.rows",
+        "typing"
       ],
       "description": "Dependencies provides: Inspect Brain state",
       "health": "healthy",
@@ -15794,16 +15303,12 @@
         "app.calyx_conversation.speak_routes",
         "app.deps",
         "app.lexicon.routes",
-        "app.member_auth",
         "app.models",
         "app.routers.calyx_operator_workflow",
         "app.schemas",
-        "app.show_output_safety",
         "app.university.routes",
-        "datetime",
         "fastapi",
         "fastapi.responses",
-        "logging",
         "runtime.calyx_core_certification",
         "sqlalchemy",
         "sqlalchemy.orm"
@@ -16145,16 +15650,14 @@
       "category": "API",
       "dependencies": [
         "app.deps",
-        "app.member_auth",
         "app.models",
         "app.schemas",
         "fastapi",
-        "pydantic",
         "sqlalchemy",
         "sqlalchemy.orm",
         "typing"
       ],
-      "description": "BoundedFeedbackCreate provides: Expose API endpoints",
+      "description": "Feedback provides: Expose API endpoints",
       "health": "healthy",
       "inputs": [
         "HTTP request"
@@ -16163,7 +15666,7 @@
       "outputs": [
         "Expose API endpoints"
       ],
-      "provider": "BoundedFeedbackCreate"
+      "provider": "Feedback"
     },
     {
       "category": "API",
@@ -16336,7 +15839,6 @@
       "dependencies": [
         "app.deps",
         "app.models",
-        "app.routers.show_day",
         "app.schemas",
         "app.security",
         "datetime",
@@ -16365,7 +15867,6 @@
       "dependencies": [
         "app.deps",
         "app.models",
-        "app.routers.show_day",
         "app.schemas",
         "app.security",
         "datetime",
@@ -16462,7 +15963,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_conversation.workspace_outputs",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -16484,7 +15984,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "runtime.matrix_identification_durability_readiness",
@@ -16505,14 +16004,11 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.calyx_conversation.provider",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
+        "app.security",
         "fastapi",
         "pydantic",
         "runtime.matrix_identification_explanation",
-        "typing",
-        "uuid"
+        "typing"
       ],
       "description": "ExplanationRequest provides: Expose API endpoints",
       "health": "healthy",
@@ -16529,14 +16025,11 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.calyx_conversation.provider",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
+        "app.security",
         "fastapi",
         "pydantic",
         "runtime.matrix_identification_explanation",
-        "typing",
-        "uuid"
+        "typing"
       ],
       "description": "ExplanationRequest provides: Plan runtime work",
       "health": "healthy",
@@ -16554,8 +16047,6 @@
       "dependencies": [
         "__future__",
         "app.lexicon.routes",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
         "app.security",
         "fastapi",
         "pydantic",
@@ -16579,7 +16070,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "runtime.matrix_identification_registry",
@@ -16601,7 +16091,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -16623,15 +16112,12 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
         "app.security",
         "fastapi",
         "pydantic",
         "runtime.matrix_identification_persistence_preflight",
         "runtime.matrix_identification_session",
-        "typing",
-        "uuid"
+        "typing"
       ],
       "description": "SessionCreateRequest provides: Expose API endpoints",
       "health": "healthy",
@@ -16648,7 +16134,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -16671,7 +16156,6 @@
       "category": "API",
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -16744,10 +16228,8 @@
         "app.readiness.live_graph_audit",
         "datetime",
         "fastapi",
-        "logging",
         "re",
         "sqlalchemy",
-        "sqlalchemy.exc",
         "typing"
       ],
       "description": "OrchidWidgets provides: Expose API endpoints",
@@ -16758,32 +16240,6 @@
       "name": "Expose API endpoints",
       "outputs": [
         "Expose API endpoints"
-      ],
-      "provider": "OrchidWidgets"
-    },
-    {
-      "category": "API",
-      "dependencies": [
-        "__future__",
-        "app.database",
-        "app.readiness.live_graph_audit",
-        "datetime",
-        "fastapi",
-        "logging",
-        "re",
-        "sqlalchemy",
-        "sqlalchemy.exc",
-        "typing"
-      ],
-      "description": "OrchidWidgets provides: Inspect Brain state",
-      "health": "healthy",
-      "inputs": [
-        "DATABASE_URL",
-        "HTTP request"
-      ],
-      "name": "Inspect Brain state",
-      "outputs": [
-        "Inspect Brain state"
       ],
       "provider": "OrchidWidgets"
     },
@@ -16943,15 +16399,13 @@
         "app.routers.matrix_identification_vision",
         "app.routers.vision_activation_preflight",
         "app.schemas",
-        "app.security",
         "app.species_exhibit.routes",
         "app.storage",
         "fastapi",
         "fastapi.responses",
         "os",
         "sqlalchemy",
-        "sqlalchemy.orm",
-        "typing"
+        "sqlalchemy.orm"
       ],
       "description": "ReferenceDocs provides: Expose API endpoints",
       "health": "healthy",
@@ -17119,62 +16573,6 @@
         "Expose API endpoints"
       ],
       "provider": "ScientificObservability"
-    },
-    {
-      "category": "API",
-      "dependencies": [
-        "app.deps",
-        "app.models",
-        "app.security",
-        "fastapi",
-        "fastapi.responses",
-        "html",
-        "io",
-        "os",
-        "qrcode",
-        "qrcode.image.svg",
-        "sqlalchemy",
-        "sqlalchemy.orm",
-        "typing"
-      ],
-      "description": "ShowDay provides: Expose API endpoints",
-      "health": "healthy",
-      "inputs": [
-        "HTTP request"
-      ],
-      "name": "Expose API endpoints",
-      "outputs": [
-        "Expose API endpoints"
-      ],
-      "provider": "ShowDay"
-    },
-    {
-      "category": "API",
-      "dependencies": [
-        "app.deps",
-        "app.models",
-        "app.security",
-        "fastapi",
-        "fastapi.responses",
-        "html",
-        "io",
-        "os",
-        "qrcode",
-        "qrcode.image.svg",
-        "sqlalchemy",
-        "sqlalchemy.orm",
-        "typing"
-      ],
-      "description": "ShowDay provides: Plan runtime work",
-      "health": "healthy",
-      "inputs": [
-        "HTTP request"
-      ],
-      "name": "Plan runtime work",
-      "outputs": [
-        "Plan runtime work"
-      ],
-      "provider": "ShowDay"
     },
     {
       "category": "API",
@@ -17777,7 +17175,6 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "app.validation_errors",
         "json",
         "pydantic",
         "typing"
@@ -18679,87 +18076,6 @@
         "Execute runtime work"
       ],
       "provider": "SemanticIndexService"
-    },
-    {
-      "category": "API",
-      "dependencies": [
-        "app",
-        "app.database",
-        "app.routers",
-        "contextlib",
-        "fastapi",
-        "fastapi.middleware.cors",
-        "os"
-      ],
-      "description": "ShowApp provides: Expose API endpoints",
-      "health": "healthy",
-      "inputs": [
-        "HTTP request"
-      ],
-      "name": "Expose API endpoints",
-      "outputs": [
-        "Expose API endpoints"
-      ],
-      "provider": "ShowApp"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "dataclasses",
-        "datetime",
-        "hashlib",
-        "types",
-        "typing",
-        "urllib.parse"
-      ],
-      "description": "AcquisitionRequest provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "AcquisitionRequest"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "acquisition",
-        "acquisition_models",
-        "dataclasses",
-        "datetime",
-        "json",
-        "sqlalchemy.exc",
-        "sqlalchemy.orm"
-      ],
-      "description": "ClaimResult provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "ClaimResult"
-    },
-    {
-      "category": "Runtime",
-      "dependencies": [
-        "__future__",
-        "app.database",
-        "datetime",
-        "sqlalchemy",
-        "sqlalchemy.orm"
-      ],
-      "description": "AcquisitionLedgerRow provides: Provide runtime component",
-      "health": "healthy",
-      "inputs": [],
-      "name": "Provide runtime component",
-      "outputs": [
-        "Provide runtime component"
-      ],
-      "provider": "AcquisitionLedgerRow"
     },
     {
       "category": "Runtime",
@@ -19816,7 +19132,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 2642,
+    "edge_count": 2468,
     "edges": [
       {
         "from": "GovernanceError",
@@ -20014,6 +19330,11 @@
         "type": "import"
       },
       {
+        "from": "Feedback",
+        "to": "CalyxClosedLoop",
+        "type": "import"
+      },
+      {
         "from": "Policy",
         "to": "CalyxCoreCertification",
         "type": "import"
@@ -20065,11 +19386,6 @@
       },
       {
         "from": "AnalysisRuns",
-        "to": "CampaignError",
-        "type": "import"
-      },
-      {
-        "from": "CandidateStoreUnavailable",
         "to": "CampaignError",
         "type": "import"
       },
@@ -20149,11 +19465,6 @@
         "type": "import"
       },
       {
-        "from": "CandidateStoreUnavailable",
-        "to": "Defaults",
-        "type": "import"
-      },
-      {
         "from": "CognitionError",
         "to": "Defaults",
         "type": "import"
@@ -20229,11 +19540,6 @@
         "type": "import"
       },
       {
-        "from": "CandidateStoreUnavailable",
-        "to": "Resolution",
-        "type": "import"
-      },
-      {
         "from": "Fixtures",
         "to": "Resolution",
         "type": "import"
@@ -20254,11 +19560,6 @@
         "type": "import"
       },
       {
-        "from": "CandidateStoreUnavailable",
-        "to": "SafetyViolation",
-        "type": "import"
-      },
-      {
         "from": "RedactionViolation",
         "to": "SafetyViolation",
         "type": "import"
@@ -20270,11 +19571,6 @@
       },
       {
         "from": "AnalysisRuns",
-        "to": "Status",
-        "type": "import"
-      },
-      {
-        "from": "CandidateStoreUnavailable",
         "to": "Status",
         "type": "import"
       },
@@ -20639,41 +19935,6 @@
         "type": "import"
       },
       {
-        "from": "Evidence",
-        "to": "EvidenceGapReserveAdapter",
-        "type": "import"
-      },
-      {
-        "from": "KnowledgeGapDiscoveryEngine",
-        "to": "EvidenceGapReserveAdapter",
-        "type": "import"
-      },
-      {
-        "from": "KnowledgeGapQueueBridge",
-        "to": "EvidenceGapReserveAdapter",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "EvidenceGapReservePlan",
-        "type": "import"
-      },
-      {
-        "from": "Evidence",
-        "to": "EvidenceGapReservePlan",
-        "type": "import"
-      },
-      {
-        "from": "EvidenceGapReserveAdapter",
-        "to": "EvidenceGapReservePlan",
-        "type": "import"
-      },
-      {
-        "from": "KnowledgeGapQueueBridge",
-        "to": "EvidenceGapReservePlan",
-        "type": "import"
-      },
-      {
         "from": "Dependencies",
         "to": "Engine",
         "type": "import"
@@ -20939,16 +20200,6 @@
         "type": "import"
       },
       {
-        "from": "DeployedPreflight",
-        "to": "KnowledgeGapQueueBridge",
-        "type": "import"
-      },
-      {
-        "from": "Evidence",
-        "to": "KnowledgeGapQueueBridge",
-        "type": "import"
-      },
-      {
         "from": "Adapters",
         "to": "Init",
         "type": "import"
@@ -21081,16 +20332,6 @@
       {
         "from": "PostgresSourceRegistryRepository",
         "to": "ProjectionPlan",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "FirecrawlTaxonomy",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "FirecrawlTaxonomy",
         "type": "import"
       },
       {
@@ -21574,11 +20815,6 @@
         "type": "import"
       },
       {
-        "from": "EvidenceGapReservePlan",
-        "to": "PlannerRouter",
-        "type": "import"
-      },
-      {
         "from": "Api",
         "to": "PlannerRouter",
         "type": "import"
@@ -21590,11 +20826,6 @@
       },
       {
         "from": "KnowledgeGapDiscoveryEngine",
-        "to": "PlannerRouter",
-        "type": "import"
-      },
-      {
-        "from": "KnowledgeGapQueueBridge",
         "to": "PlannerRouter",
         "type": "import"
       },
@@ -23719,11 +22950,6 @@
         "type": "import"
       },
       {
-        "from": "Security",
-        "to": "EngineeringCompletionScheduler",
-        "type": "import"
-      },
-      {
         "from": "GitHubConnector",
         "to": "EngineeringCompletionScheduler",
         "type": "import"
@@ -24169,11 +23395,6 @@
         "type": "import"
       },
       {
-        "from": "Security",
-        "to": "DryRunExecutionResult",
-        "type": "import"
-      },
-      {
         "from": "AssignmentFactory",
         "to": "DryRunExecutionResult",
         "type": "import"
@@ -24221,11 +23442,6 @@
       {
         "from": "JsonActivationStateStore",
         "to": "CompletionEventKind",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "CancellationReceipt",
         "type": "import"
       },
       {
@@ -25249,11 +24465,6 @@
         "type": "import"
       },
       {
-        "from": "Security",
-        "to": "SandboxSupervisorService",
-        "type": "import"
-      },
-      {
         "from": "JsonActivationStateStore",
         "to": "SandboxSupervisorService",
         "type": "import"
@@ -25456,11 +24667,6 @@
       {
         "from": "RepositoryContext",
         "to": "PostgresCandidateRepository",
-        "type": "import"
-      },
-      {
-        "from": "MemberAuth",
-        "to": "AnchorIn",
         "type": "import"
       },
       {
@@ -25959,16 +25165,6 @@
         "type": "import"
       },
       {
-        "from": "AutonomousDiscoveryEngine",
-        "to": "Init",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "DecisionEngine",
-        "type": "import"
-      },
-      {
         "from": "Database",
         "to": "Deps",
         "type": "import"
@@ -26334,11 +25530,6 @@
         "type": "import"
       },
       {
-        "from": "JsonActivationStateStore",
-        "to": "PostgresExtractionRepository",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "Start",
         "type": "import"
@@ -26524,11 +25715,6 @@
         "type": "import"
       },
       {
-        "from": "MemberAuth",
-        "to": "CandidateIn",
-        "type": "import"
-      },
-      {
         "from": "Repository",
         "to": "CandidateIn",
         "type": "import"
@@ -26590,92 +25776,7 @@
       },
       {
         "from": "JsonActivationStateStore",
-        "to": "PostgresEvidenceFeedbackRepository",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "PostgresEvidenceFeedbackRepository",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
         "to": "EvidenceFeedbackRepositoryError",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "EvidenceFeedbackRepositoryError",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "EvidenceFeedbackReviewService",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "EvidenceFeedbackReviewService",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "EvidenceFeedbackReviewService",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "EvidenceFeedbackReviewService",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "EvidenceFeedbackReviewService",
-        "type": "import"
-      },
-      {
-        "from": "MemberAuth",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "Repository",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "Repository",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "ConservatoryCollectionReview",
-        "to": "EvidenceObjectIn",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "EvidenceObjectIn",
         "type": "import"
       },
       {
@@ -26831,41 +25932,6 @@
       {
         "from": "Telemetry",
         "to": "Service",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "FederationSourceProfile",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "FederationSourceProfile",
-        "type": "import"
-      },
-      {
-        "from": "Parser",
-        "to": "FederationSourceProfile",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureAcquisitionService",
-        "to": "SharedFirecrawlFederationService",
-        "type": "import"
-      },
-      {
-        "from": "AcquisitionLedgerRow",
-        "to": "SharedFirecrawlFederationService",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "SharedFirecrawlFederationService",
-        "type": "import"
-      },
-      {
-        "from": "OperatorMessage",
-        "to": "SharedFirecrawlFederationService",
         "type": "import"
       },
       {
@@ -27419,11 +26485,6 @@
         "type": "import"
       },
       {
-        "from": "Repository",
-        "to": "Service",
-        "type": "import"
-      },
-      {
         "from": "ConnectorRoutes",
         "to": "Service",
         "type": "import"
@@ -27734,27 +26795,7 @@
         "type": "import"
       },
       {
-        "from": "Repository",
-        "to": "CorpusAudit",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "CorpusAudit",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "CorpusAudit",
-        "type": "import"
-      },
-      {
         "from": "RelationshipMeasurement",
-        "to": "PaperCoverage",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
         "to": "PaperCoverage",
         "type": "import"
       },
@@ -27855,21 +26896,6 @@
       },
       {
         "from": "Database",
-        "to": "CanonicalMorphologyExtractor",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureIngestion",
-        "to": "CanonicalMorphologyExtractor",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "CanonicalMorphologyExtractor",
-        "type": "import"
-      },
-      {
-        "from": "Database",
         "to": "HeadingMatch",
         "type": "import"
       },
@@ -27886,226 +26912,6 @@
       {
         "from": "DeployedPreflight",
         "to": "HeadingMatch",
-        "type": "import"
-      },
-      {
-        "from": "Provider",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "Adapters",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "TaskRouting",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureCandidateHandoffService",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "ConservatoryCalyxContext",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "ScholarlyMetadataIngest",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "CanonicalMorphologyExtractor",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "Provider",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureIngestion",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "CDSRegistryError",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "Parser",
-        "to": "FirecrawlAcquisition",
-        "type": "import"
-      },
-      {
-        "from": "CanonicalMorphologyExtractor",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "RuntimeMemoryWriter",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "Parser",
-        "to": "AcquisitionBlocked",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "OwnerDecisionLifecycle",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "Repository",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "SourceBinding",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "Parser",
-        "to": "_AcquiredDocumentGateway",
-        "type": "import"
-      },
-      {
-        "from": "GitHubConnector",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "Repository",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "Repository",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "BottleneckService",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureCandidateHandoffService",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "CorpusAudit",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "FirecrawlAcquisition",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "Provider",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "RepositoryContext",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "FirecrawlTaxonomy",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "SwarmExecutionGovernor",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "CanonicalMorphologyExtractor",
-        "to": "Normalization",
         "type": "import"
       },
       {
@@ -28219,27 +27025,12 @@
         "type": "import"
       },
       {
-        "from": "Repository",
-        "to": "SourceBindingIn",
-        "type": "import"
-      },
-      {
-        "from": "MemberAuth",
-        "to": "SourceBindingIn",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "SourceBindingIn",
         "type": "import"
       },
       {
         "from": "LiteratureCandidateHandoffService",
-        "to": "SourceBindingIn",
-        "type": "import"
-      },
-      {
-        "from": "CorpusAudit",
         "to": "SourceBindingIn",
         "type": "import"
       },
@@ -28254,22 +27045,12 @@
         "type": "import"
       },
       {
-        "from": "Provider",
-        "to": "SourceBindingIn",
-        "type": "import"
-      },
-      {
         "from": "InvalidDispositionError",
         "to": "SourceBindingIn",
         "type": "import"
       },
       {
         "from": "RepositoryContext",
-        "to": "SourceBindingIn",
-        "type": "import"
-      },
-      {
-        "from": "FirecrawlTaxonomy",
         "to": "SourceBindingIn",
         "type": "import"
       },
@@ -28444,103 +27225,8 @@
         "type": "import"
       },
       {
-        "from": "ConnectorRoutes",
+        "from": "Routers",
         "to": "VerificationRequest",
-        "type": "import"
-      },
-      {
-        "from": "MemberAuth",
-        "to": "_SlidingWindowLimiter",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "_SlidingWindowLimiter",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "_SlidingWindowLimiter",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "_SlidingWindowLimiter",
-        "type": "import"
-      },
-      {
-        "from": "RuntimeMemoryWriter",
-        "to": "_SlidingWindowLimiter",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "MatrixMemberViews",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "LearnerAuth",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "RuntimeMemoryWriter",
-        "to": "MemberAuth",
-        "type": "import"
-      },
-      {
-        "from": "InfrastructureRegistryService",
-        "to": "MemberRedactingRoute",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "MemberRedactingRoute",
-        "type": "import"
-      },
-      {
-        "from": "OpenAIRuntimeResponsesProvider",
-        "to": "MemberRedactingRoute",
-        "type": "import"
-      },
-      {
-        "from": "TaskRouting",
-        "to": "MemberRedactingRoute",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "MemberRedactingRoute",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "MemberRedactingRoute",
         "type": "import"
       },
       {
@@ -29289,11 +27975,6 @@
         "type": "import"
       },
       {
-        "from": "MemberAuth",
-        "to": "Routes",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "Routes",
         "type": "import"
@@ -29479,7 +28160,7 @@
         "type": "import"
       },
       {
-        "from": "MemberAuth",
+        "from": "Security",
         "to": "Routes",
         "type": "import"
       },
@@ -29524,11 +28205,6 @@
         "type": "import"
       },
       {
-        "from": "MemberAuth",
-        "to": "Routes",
-        "type": "import"
-      },
-      {
         "from": "HealthConnector",
         "to": "Routes",
         "type": "import"
@@ -29564,18 +28240,8 @@
         "type": "import"
       },
       {
-        "from": "Validation",
-        "to": "StrictModel",
-        "type": "import"
-      },
-      {
         "from": "JsonActivationStateStore",
         "to": "StrictModel",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "ResearchWorkspaceService",
         "type": "import"
       },
       {
@@ -29814,17 +28480,7 @@
         "type": "import"
       },
       {
-        "from": "MemberAuth",
-        "to": "CalyxCore",
-        "type": "import"
-      },
-      {
         "from": "Schema",
-        "to": "CalyxCore",
-        "type": "import"
-      },
-      {
-        "from": "ShowOutputSafety",
         "to": "CalyxCore",
         "type": "import"
       },
@@ -30130,27 +28786,22 @@
       },
       {
         "from": "Deps",
-        "to": "BoundedFeedbackCreate",
-        "type": "import"
-      },
-      {
-        "from": "MemberAuth",
-        "to": "BoundedFeedbackCreate",
+        "to": "Feedback",
         "type": "import"
       },
       {
         "from": "Schema",
-        "to": "BoundedFeedbackCreate",
+        "to": "Feedback",
         "type": "import"
       },
       {
         "from": "Api",
-        "to": "BoundedFeedbackCreate",
+        "to": "Feedback",
         "type": "import"
       },
       {
         "from": "OperatorMessage",
-        "to": "BoundedFeedbackCreate",
+        "to": "Feedback",
         "type": "import"
       },
       {
@@ -30205,6 +28856,11 @@
       },
       {
         "from": "GitHubConnector",
+        "to": "BridgeConfig",
+        "type": "import"
+      },
+      {
+        "from": "Feedback",
         "to": "BridgeConfig",
         "type": "import"
       },
@@ -30399,11 +29055,6 @@
         "type": "import"
       },
       {
-        "from": "ShowDay",
-        "to": "Judging",
-        "type": "import"
-      },
-      {
         "from": "Schema",
         "to": "Judging",
         "type": "import"
@@ -30519,11 +29170,6 @@
         "type": "import"
       },
       {
-        "from": "Access",
-        "to": "ObservationInput",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "ObservationInput",
         "type": "import"
@@ -30539,11 +29185,6 @@
         "type": "import"
       },
       {
-        "from": "Access",
-        "to": "MatrixIdentificationDurabilityReadiness",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "MatrixIdentificationDurabilityReadiness",
         "type": "import"
@@ -30554,17 +29195,7 @@
         "type": "import"
       },
       {
-        "from": "SourceProvider",
-        "to": "ExplanationRequest",
-        "type": "import"
-      },
-      {
-        "from": "Access",
-        "to": "ExplanationRequest",
-        "type": "import"
-      },
-      {
-        "from": "MatrixMemberViews",
+        "from": "Security",
         "to": "ExplanationRequest",
         "type": "import"
       },
@@ -30584,16 +29215,6 @@
         "type": "import"
       },
       {
-        "from": "Access",
-        "to": "RegistryCharacterInput",
-        "type": "import"
-      },
-      {
-        "from": "MatrixMemberViews",
-        "to": "RegistryCharacterInput",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "RegistryCharacterInput",
         "type": "import"
@@ -30614,11 +29235,6 @@
         "type": "import"
       },
       {
-        "from": "Access",
-        "to": "MatrixIdentificationRegistryPersistence",
-        "type": "import"
-      },
-      {
         "from": "Security",
         "to": "MatrixIdentificationRegistryPersistence",
         "type": "import"
@@ -30636,11 +29252,6 @@
       {
         "from": "MatrixIdentificationRegistryPreflight",
         "to": "MatrixIdentificationRegistryPersistence",
-        "type": "import"
-      },
-      {
-        "from": "Access",
-        "to": "FinalizeReportRequest",
         "type": "import"
       },
       {
@@ -30656,16 +29267,6 @@
       {
         "from": "MatrixIdentificationReport",
         "to": "FinalizeReportRequest",
-        "type": "import"
-      },
-      {
-        "from": "Access",
-        "to": "SessionCreateRequest",
-        "type": "import"
-      },
-      {
-        "from": "MatrixMemberViews",
-        "to": "SessionCreateRequest",
         "type": "import"
       },
       {
@@ -30686,11 +29287,6 @@
       {
         "from": "MatrixIdentificationSession",
         "to": "SessionCreateRequest",
-        "type": "import"
-      },
-      {
-        "from": "Access",
-        "to": "VisionSuggestionReviewRequest",
         "type": "import"
       },
       {
@@ -30770,11 +29366,6 @@
       },
       {
         "from": "DeployedPreflight",
-        "to": "OrchidWidgets",
-        "type": "import"
-      },
-      {
-        "from": "ExceptionDecision",
         "to": "OrchidWidgets",
         "type": "import"
       },
@@ -30905,11 +29496,6 @@
       },
       {
         "from": "Schema",
-        "to": "ReferenceDocs",
-        "type": "import"
-      },
-      {
-        "from": "Security",
         "to": "ReferenceDocs",
         "type": "import"
       },
@@ -31051,41 +29637,6 @@
       {
         "from": "OperatorMessage",
         "to": "ScientificObservability",
-        "type": "import"
-      },
-      {
-        "from": "Deps",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "Security",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "OpenAIRuntimeResponsesProvider",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "ShowDay",
-        "type": "import"
-      },
-      {
-        "from": "OperatorMessage",
-        "to": "ShowDay",
         "type": "import"
       },
       {
@@ -31476,11 +30027,6 @@
       {
         "from": "OperatorMessage",
         "to": "Routes",
-        "type": "import"
-      },
-      {
-        "from": "Validation",
-        "to": "StrictModel",
         "type": "import"
       },
       {
@@ -32139,46 +30685,6 @@
         "type": "import"
       },
       {
-        "from": "ApprovedTask",
-        "to": "ShowApp",
-        "type": "import"
-      },
-      {
-        "from": "Database",
-        "to": "ShowApp",
-        "type": "import"
-      },
-      {
-        "from": "Routers",
-        "to": "ShowApp",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "ShowApp",
-        "type": "import"
-      },
-      {
-        "from": "InvalidDispositionError",
-        "to": "ShowApp",
-        "type": "import"
-      },
-      {
-        "from": "Api",
-        "to": "ShowOutputSafety",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "ShowOutputSafety",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "ShowOutputSafety",
-        "type": "import"
-      },
-      {
         "from": "VisionMatrixGlossaryInventory",
         "to": "Init",
         "type": "import"
@@ -32186,41 +30692,6 @@
       {
         "from": "DeepOrchestrateQueueBridge",
         "to": "Init",
-        "type": "import"
-      },
-      {
-        "from": "Parser",
-        "to": "AcquisitionRequest",
-        "type": "import"
-      },
-      {
-        "from": "LiteratureAcquisitionService",
-        "to": "ClaimResult",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "ClaimResult",
-        "type": "import"
-      },
-      {
-        "from": "ExceptionDecision",
-        "to": "ClaimResult",
-        "type": "import"
-      },
-      {
-        "from": "OperatorMessage",
-        "to": "ClaimResult",
-        "type": "import"
-      },
-      {
-        "from": "Database",
-        "to": "AcquisitionLedgerRow",
-        "type": "import"
-      },
-      {
-        "from": "OperatorMessage",
-        "to": "AcquisitionLedgerRow",
         "type": "import"
       },
       {
@@ -32889,31 +31360,6 @@
         "type": "import"
       },
       {
-        "from": "Api",
-        "to": "ValidationErrors",
-        "type": "import"
-      },
-      {
-        "from": "OpenAIRuntimeResponsesProvider",
-        "to": "ValidationErrors",
-        "type": "import"
-      },
-      {
-        "from": "JsonActivationStateStore",
-        "to": "ValidationErrors",
-        "type": "import"
-      },
-      {
-        "from": "DeployedPreflight",
-        "to": "ValidationErrors",
-        "type": "import"
-      },
-      {
-        "from": "Status",
-        "to": "ValidationErrors",
-        "type": "import"
-      },
-      {
         "from": "Database",
         "to": "HardenedPostgresVisionLexiconRepository",
         "type": "import"
@@ -33043,10 +31489,6 @@
         "module": "Executor"
       },
       {
-        "dependency": "runtime.calyx_execution_feedback",
-        "module": "CalyxClosedLoop"
-      },
-      {
         "dependency": "runtime.calyx_queue_director",
         "module": "CalyxClosedLoop"
       },
@@ -33055,12 +31497,32 @@
         "module": "CampaignError"
       },
       {
-        "dependency": "runtime.calyx_evolve.reconciler",
+        "dependency": "runtime.calyx_evolve.candidates",
         "module": "CampaignError"
       },
       {
         "dependency": "runtime.calyx_evolve.reconciler",
+        "module": "CampaignError"
+      },
+      {
+        "dependency": "runtime.calyx_evolve.candidates",
+        "module": "Defaults"
+      },
+      {
+        "dependency": "runtime.calyx_evolve.reconciler",
         "module": "MetricUnavailable"
+      },
+      {
+        "dependency": "runtime.calyx_evolve.candidates",
+        "module": "Resolution"
+      },
+      {
+        "dependency": "runtime.calyx_evolve.candidates",
+        "module": "SafetyViolation"
+      },
+      {
+        "dependency": "runtime.calyx_evolve.candidates",
+        "module": "Status"
       },
       {
         "dependency": "app.calyx_orchestrator.artifact_registry",
@@ -33413,25 +31875,9 @@
       {
         "dependency": "app.calyx_engineering.event_dispatcher",
         "module": "CompletionEventKind"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.event_continuation",
-        "module": "FactoryBridgeAction"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.head_bound_integration",
-        "module": "RiskTier"
-      },
-      {
-        "dependency": "app.calyx_orchestrator.artifact_registry",
-        "module": "GovervedResearchExecutor"
-      },
-      {
-        "dependency": "app.member_redaction",
-        "module": "AnchorIn"
       }
     ],
-    "node_count": 1119,
+    "node_count": 1087,
     "nodes": [
       {
         "category": "Runtime",
@@ -34261,20 +32707,6 @@
       },
       {
         "category": "Runtime",
-        "health": "healthy",
-        "name": "EvidenceGapReserveAdapter",
-        "path": "runtime/evidence_gap_reserve_adapter.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "EvidenceGapReservePlan",
-        "path": "runtime/evidence_gap_reserve_plan.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
         "health": "available",
         "name": "Init",
         "path": "runtime/executive/__init__.py",
@@ -34614,13 +33046,6 @@
         "health": "healthy",
         "name": "ProjectionPlan",
         "path": "runtime/knowledge_graph/dynamic_source_projection.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "FirecrawlTaxonomy",
-        "path": "runtime/knowledge_graph/firecrawl_taxonomy.py",
         "type": "python_module"
       },
       {
@@ -36999,13 +35424,6 @@
       {
         "category": "Runtime",
         "health": "healthy",
-        "name": "CandidateStoreUnavailable",
-        "path": "app/candidate_knowledge/lookup.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
         "name": "CandidateKind",
         "path": "app/candidate_knowledge/models.py",
         "type": "python_module"
@@ -37419,20 +35837,6 @@
       {
         "category": "Runtime",
         "health": "available",
-        "name": "Init",
-        "path": "app/decision_fabric/__init__.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "DecisionEngine",
-        "path": "app/decision_fabric/engine.py",
-        "type": "engine"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
         "name": "Deps",
         "path": "app/deps.py",
         "type": "python_module"
@@ -37683,13 +36087,6 @@
         "type": "python_module"
       },
       {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "PostgresExtractionRepository",
-        "path": "app/document_intelligence/postgres_repository.py",
-        "type": "python_module"
-      },
-      {
         "category": "API",
         "health": "healthy",
         "name": "Start",
@@ -37811,13 +36208,6 @@
       {
         "category": "Runtime",
         "health": "healthy",
-        "name": "AggregateStoreUnavailable",
-        "path": "app/evidence_aggregation/lookup.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
         "name": "AggregateType",
         "path": "app/evidence_aggregation/models.py",
         "type": "python_module"
@@ -37867,30 +36257,9 @@
       {
         "category": "Runtime",
         "health": "healthy",
-        "name": "PostgresEvidenceFeedbackRepository",
-        "path": "app/evidence_feedback/postgres_repository.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
         "name": "EvidenceFeedbackRepositoryError",
         "path": "app/evidence_feedback/repository.py",
         "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "EvidenceFeedbackReviewService",
-        "path": "app/evidence_feedback/review.py",
-        "type": "service"
-      },
-      {
-        "category": "API",
-        "health": "healthy",
-        "name": "EvidenceObjectIn",
-        "path": "app/evidence_feedback/routes.py",
-        "type": "api_router"
       },
       {
         "category": "Runtime",
@@ -38031,27 +36400,6 @@
         "name": "SourceMetrics",
         "path": "app/executive_telemetry/source_metrics.py",
         "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "Init",
-        "path": "app/federation/__init__.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "FederationSourceProfile",
-        "path": "app/federation/firecrawl_mapper.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "SharedFirecrawlFederationService",
-        "path": "app/federation/shared_firecrawl.py",
-        "type": "service"
       },
       {
         "category": "Runtime",
@@ -38439,13 +36787,6 @@
         "type": "python_module"
       },
       {
-        "category": "Planning",
-        "health": "healthy",
-        "name": "InteractionDiscoveryRecord",
-        "path": "app/interaction_discovery/models.py",
-        "type": "python_module"
-      },
-      {
         "category": "API",
         "health": "healthy",
         "name": "Routes",
@@ -38769,13 +37110,6 @@
       },
       {
         "category": "Runtime",
-        "health": "available",
-        "name": "CorpusAudit",
-        "path": "app/literature_extraction/corpus_audit.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
         "health": "healthy",
         "name": "PaperCoverage",
         "path": "app/literature_extraction/coverage_audit.py",
@@ -38826,43 +37160,8 @@
       {
         "category": "Runtime",
         "health": "healthy",
-        "name": "CanonicalMorphologyExtractor",
-        "path": "app/literature_extraction/extractors/morphology.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
         "name": "HeadingMatch",
         "path": "app/literature_extraction/extractors/sections.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "FirecrawlAcquisition",
-        "path": "app/literature_extraction/firecrawl_acquisition.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "AcquisitionBlocked",
-        "path": "app/literature_extraction/firecrawl_provider.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "_AcquiredDocumentGateway",
-        "path": "app/literature_extraction/firecrawl_registration.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "AcquisitionRequest",
-        "path": "app/literature_extraction/firecrawl_runtime.py",
         "type": "python_module"
       },
       {
@@ -38955,34 +37254,6 @@
         "name": "VerificationRequest",
         "path": "app/main.py",
         "type": "api_router"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "_SlidingWindowLimiter",
-        "path": "app/matrix_member_access.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "MatrixMemberViews",
-        "path": "app/matrix_member_views.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "MemberAuth",
-        "path": "app/member_auth.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "MemberRedactingRoute",
-        "path": "app/member_redaction.py",
-        "type": "python_module"
       },
       {
         "category": "Runtime",
@@ -39911,7 +38182,7 @@
       {
         "category": "API",
         "health": "healthy",
-        "name": "BoundedFeedbackCreate",
+        "name": "Feedback",
         "path": "app/routers/feedback.py",
         "type": "api_router"
       },
@@ -40109,13 +38380,6 @@
         "health": "healthy",
         "name": "ScientificObservability",
         "path": "app/routers/scientific_observability.py",
-        "type": "api_router"
-      },
-      {
-        "category": "API",
-        "health": "healthy",
-        "name": "ShowDay",
-        "path": "app/routers/show_day.py",
         "type": "api_router"
       },
       {
@@ -40770,45 +39034,10 @@
         "type": "service"
       },
       {
-        "category": "API",
-        "health": "healthy",
-        "name": "ShowApp",
-        "path": "app/show_app.py",
-        "type": "api_router"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "ShowOutputSafety",
-        "path": "app/show_output_safety.py",
-        "type": "python_module"
-      },
-      {
         "category": "Runtime",
         "health": "available",
         "name": "Init",
         "path": "app/source_federation/__init__.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "AcquisitionRequest",
-        "path": "app/source_federation/acquisition.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "ClaimResult",
-        "path": "app/source_federation/acquisition_ledger.py",
-        "type": "python_module"
-      },
-      {
-        "category": "Runtime",
-        "health": "healthy",
-        "name": "AcquisitionLedgerRow",
-        "path": "app/source_federation/acquisition_models.py",
         "type": "python_module"
       },
       {
@@ -41160,13 +39389,6 @@
         "name": "SessionDiscoveryRoutes",
         "path": "app/university/session_discovery_routes.py",
         "type": "api_router"
-      },
-      {
-        "category": "Runtime",
-        "health": "available",
-        "name": "ValidationErrors",
-        "path": "app/validation_errors.py",
-        "type": "python_module"
       },
       {
         "category": "Runtime",
@@ -44653,67 +42875,12 @@
         "research_mission",
         "__init__",
         "collect",
-        "taxon_labels",
-        "domain_lacking_taxa",
         "_work",
-        "_gaps_for",
-        "_work",
-        "_work"
+        "_gaps_for"
       ],
       "module_type": "python_module",
       "name": "EvidenceDomain",
       "path": "runtime/evidence_coverage_gaps.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Plan runtime work"
-      ],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "runtime.evidence_coverage_gaps",
-        "runtime.knowledge_gap_discovery",
-        "runtime.knowledge_gap_queue_bridge",
-        "scripts.oc_backlog_refiller",
-        "typing"
-      ],
-      "functions": [
-        "_admit",
-        "_page_past_held_examples",
-        "evidence_gap_candidates",
-        "plan_evidence_gap_refill"
-      ],
-      "module_type": "python_module",
-      "name": "EvidenceGapReserveAdapter",
-      "path": "runtime/evidence_gap_reserve_adapter.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Plan runtime work"
-      ],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "re",
-        "runtime.evidence_coverage_gaps",
-        "runtime.evidence_gap_reserve_adapter",
-        "runtime.knowledge_gap_queue_bridge",
-        "typing"
-      ],
-      "functions": [
-        "valid_fingerprints",
-        "valid_domains",
-        "evidence_gap_reserve_plan"
-      ],
-      "module_type": "python_module",
-      "name": "EvidenceGapReservePlan",
-      "path": "runtime/evidence_gap_reserve_plan.py",
       "routers": [],
       "status": "healthy"
     },
@@ -45791,19 +43958,13 @@
         "collections.abc",
         "hashlib",
         "json",
-        "re",
-        "runtime.evidence_coverage_gaps",
         "scripts.oc_backlog_refiller",
         "typing"
       ],
       "functions": [
-        "safe_taxon_name",
         "_normalize",
         "_fingerprint",
         "knowledge_gap_candidate",
-        "evidence_coverage_research_question",
-        "evidence_gap_candidate",
-        "_reserve_candidate",
         "plan_knowledge_gap_refill"
       ],
       "module_type": "python_module",
@@ -46143,27 +44304,6 @@
       "path": "runtime/knowledge_graph/dynamic_source_projection.py",
       "routers": [],
       "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "canonical_taxonomy",
-        "collections",
-        "datetime",
-        "os",
-        "re"
-      ],
-      "functions": [
-        "load_persistent_canonical_registry"
-      ],
-      "module_type": "python_module",
-      "name": "FirecrawlTaxonomy",
-      "path": "runtime/knowledge_graph/firecrawl_taxonomy.py",
-      "routers": [],
-      "status": "available"
     },
     {
       "capabilities": [],
@@ -46948,7 +45088,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_conversation.provider",
-        "collections.abc",
         "hashlib",
         "json",
         "runtime.matrix_identification_session",
@@ -47687,15 +45826,12 @@
         "connector_runtime",
         "discovery_memory",
         "evidence_coverage_gaps",
-        "evidence_gap_reserve_plan",
         "fastapi",
         "knowledge_gap_diagnostics",
         "knowledge_gap_discovery",
-        "knowledge_gap_queue_bridge",
         "os",
         "runtime_executor",
-        "runtime_planner",
-        "typing"
+        "runtime_planner"
       ],
       "functions": [
         "planner",
@@ -47767,7 +45903,6 @@
         "GET /knowledge-gaps/domains",
         "GET /knowledge-gaps/priorities",
         "GET /knowledge-gaps/queue",
-        "GET /knowledge-gaps/reserve-plan",
         "GET /knowledge-gaps/dashboard",
         "POST /knowledge-diagnostics/discover",
         "GET /knowledge-diagnostics/latest",
@@ -53232,7 +51367,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_orchestrator.models",
-        "app.security",
         "completion_loop",
         "datetime",
         "github",
@@ -54523,7 +52657,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.security",
         "assignment_factory",
         "dataclasses",
         "datetime",
@@ -54706,7 +52839,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.security",
         "dataclasses",
         "executor",
         "json",
@@ -57169,7 +55301,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.security",
         "datetime",
         "json",
         "models",
@@ -57580,27 +55711,6 @@
       ],
       "category": "Runtime",
       "classes": [
-        "CandidateStoreUnavailable"
-      ],
-      "dependencies": [
-        "__future__",
-        "typing"
-      ],
-      "functions": [
-        "serving_repository"
-      ],
-      "module_type": "python_module",
-      "name": "CandidateStoreUnavailable",
-      "path": "app/candidate_knowledge/lookup.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
         "CandidateKind",
         "SourceAnchor",
         "EvidenceInput",
@@ -57670,7 +55780,6 @@
         "request_cancel",
         "clear_cancel",
         "candidate_for_fingerprint",
-        "candidate_by_id",
         "candidates_for_run",
         "active_identity",
         "open_review",
@@ -57696,8 +55805,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.security",
         "dependencies",
         "fastapi",
@@ -59460,67 +57567,6 @@
       "category": "Runtime",
       "classes": [],
       "dependencies": [
-        "engine"
-      ],
-      "functions": [],
-      "module_type": "python_module",
-      "name": "Init",
-      "path": "app/decision_fabric/__init__.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "DecisionQuestion",
-        "DecisionSpec",
-        "DecisionAnswer",
-        "DecisionResult",
-        "RouteOutcome",
-        "DecisionAdapter",
-        "DecisionContractError",
-        "StaticDecisionAdapter",
-        "DecisionEngine"
-      ],
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "dataclasses",
-        "hashlib",
-        "json",
-        "pathlib",
-        "typing"
-      ],
-      "functions": [
-        "load_contract",
-        "spec_from_contract",
-        "load_reference_specs",
-        "literature_triage_spec",
-        "autonomy_gate_spec",
-        "with_thresholds",
-        "classify",
-        "__init__",
-        "classify",
-        "validate_spec",
-        "validate_result",
-        "stronger_providers",
-        "route",
-        "run"
-      ],
-      "module_type": "engine",
-      "name": "DecisionEngine",
-      "path": "app/decision_fabric/engine.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
         "app.database"
       ],
       "functions": [],
@@ -60364,7 +58410,7 @@
       ],
       "functions": [
         "database_url",
-        "__init__",
+        "_connect",
         "get_registry_document",
         "actor_owns_source",
         "create_session",
@@ -60644,41 +58690,6 @@
       "module_type": "python_module",
       "name": "DocumentClass",
       "path": "app/document_intelligence/models.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "PostgresExtractionRepository"
-      ],
-      "dependencies": [
-        "dataclasses",
-        "psycopg.types.json"
-      ],
-      "functions": [
-        "__init__",
-        "_one",
-        "source_revision",
-        "ensure_record",
-        "ensure_run",
-        "run",
-        "source_revision_for_run",
-        "transition",
-        "classify",
-        "persist_intermediate",
-        "create_chunks",
-        "warning",
-        "has_structures",
-        "cancel_requested",
-        "cancel"
-      ],
-      "module_type": "python_module",
-      "name": "PostgresExtractionRepository",
-      "path": "app/document_intelligence/postgres_repository.py",
       "routers": [],
       "status": "healthy"
     },
@@ -61211,27 +59222,6 @@
       ],
       "category": "Runtime",
       "classes": [
-        "AggregateStoreUnavailable"
-      ],
-      "dependencies": [
-        "__future__",
-        "typing"
-      ],
-      "functions": [
-        "serving_repository"
-      ],
-      "module_type": "python_module",
-      "name": "AggregateStoreUnavailable",
-      "path": "app/evidence_aggregation/lookup.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
         "AggregateType",
         "EvidenceRelationship",
         "ConsensusStatus",
@@ -61284,7 +59274,8 @@
       "dependencies": [
         "__future__",
         "copy",
-        "datetime"
+        "datetime",
+        "typing"
       ],
       "functions": [
         "now",
@@ -61296,9 +59287,7 @@
         "review",
         "resolve_review",
         "request_cancel",
-        "clear_cancel",
-        "current_aggregate",
-        "aggregate_version"
+        "clear_cancel"
       ],
       "module_type": "python_module",
       "name": "MemoryAggregateRepository",
@@ -61322,8 +59311,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.member_auth",
-        "app.member_redaction",
         "app.persistence.state_repository",
         "app.security",
         "fastapi",
@@ -61409,11 +59396,14 @@
       "dependencies": [
         "__future__",
         "collections",
+        "dataclasses",
         "hashlib",
         "json",
+        "math",
         "models",
         "repository",
-        "time"
+        "time",
+        "typing"
       ],
       "functions": [
         "digest",
@@ -61505,220 +59495,38 @@
       ],
       "category": "Runtime",
       "classes": [
-        "PostgresEvidenceFeedbackRepository"
+        "EvidenceFeedbackRepositoryError",
+        "FileEvidenceFeedbackRepository"
       ],
       "dependencies": [
         "__future__",
-        "collections.abc",
-        "contextlib",
+        "hashlib",
         "json",
-        "logging",
         "models",
-        "psycopg",
-        "psycopg.rows",
-        "repository",
+        "pathlib",
         "threading",
         "typing"
       ],
       "functions": [
         "__init__",
-        "_connect",
-        "_lock",
-        "_cursor",
-        "atomic",
-        "ensure_schema",
-        "_ensure_additive_indexes",
-        "_tables_present",
-        "save_case",
-        "_case_by_key",
-        "get_case",
-        "find_by_fingerprint",
-        "append_event",
-        "list_events",
-        "list_cases",
-        "count_case_events",
-        "save_object_version",
-        "_find_version",
-        "get_object_version",
-        "list_object_versions",
-        "operation",
-        "operation"
-      ],
-      "module_type": "python_module",
-      "name": "PostgresEvidenceFeedbackRepository",
-      "path": "app/evidence_feedback/postgres_repository.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "EvidenceFeedbackRepositoryError",
-        "EvidenceFeedbackStoreUnavailable",
-        "EvidenceFeedbackRepository",
-        "FileEvidenceFeedbackRepository"
-      ],
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "hashlib",
-        "json",
-        "models",
-        "os",
-        "pathlib",
-        "tempfile",
-        "threading",
-        "typing",
-        "unicodedata"
-      ],
-      "functions": [
-        "review_order_key",
-        "normalized_key",
-        "has_disallowed_text_characters",
-        "validate_free_text",
-        "validate_label",
-        "normalized_version_hash",
-        "payload_version_hash",
-        "is_same_version",
-        "_root_lock",
-        "__init__",
-        "atomic",
-        "save_case",
-        "get_case",
-        "find_by_fingerprint",
-        "append_event",
-        "list_events",
-        "list_cases",
-        "count_case_events",
-        "save_object_version",
-        "get_object_version",
-        "list_object_versions",
-        "__init__",
-        "atomic",
         "_key",
-        "_case_path"
+        "_case_path",
+        "_fingerprint_path",
+        "_object_dir",
+        "save_case",
+        "get_case",
+        "find_by_fingerprint",
+        "append_event",
+        "list_events",
+        "save_object_version",
+        "get_object_version",
+        "list_object_versions",
+        "_write_json"
       ],
       "module_type": "python_module",
       "name": "EvidenceFeedbackRepositoryError",
       "path": "app/evidence_feedback/repository.py",
       "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "ReviewDecision",
-        "InvalidCaseTransition",
-        "EvidenceFeedbackReviewService"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.security",
-        "base64",
-        "binascii",
-        "dataclasses",
-        "enum",
-        "hashlib",
-        "hmac",
-        "json",
-        "models",
-        "os",
-        "repository",
-        "service",
-        "typing"
-      ],
-      "functions": [
-        "_actor_ref_key",
-        "actor_ref",
-        "encode_cursor",
-        "decode_cursor",
-        "review_case_dict",
-        "_queue_item",
-        "_review_event",
-        "__init__",
-        "detail",
-        "__init__",
-        "list_cases",
-        "allowed_decisions",
-        "_version_or_none",
-        "case_detail",
-        "decide",
-        "_decide",
-        "_is_repeat",
-        "_decision_result"
-      ],
-      "module_type": "service",
-      "name": "EvidenceFeedbackReviewService",
-      "path": "app/evidence_feedback/review.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Expose API endpoints"
-      ],
-      "category": "API",
-      "classes": [
-        "EvidenceObjectIn",
-        "EvidenceFeedbackIn",
-        "TrivialCorrectionIn",
-        "ReviewDecisionIn"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.member_auth",
-        "app.persistence.state_repository",
-        "app.security",
-        "fastapi",
-        "logging",
-        "models",
-        "os",
-        "postgres_repository",
-        "pydantic",
-        "repository",
-        "review",
-        "service",
-        "threading",
-        "typing"
-      ],
-      "functions": [
-        "_subject",
-        "_production_like",
-        "non_durable_store_warning",
-        "warn_if_non_durable",
-        "reset_repository_cache",
-        "_postgres_repository",
-        "_repository",
-        "_service",
-        "_translate",
-        "register_object",
-        "submit_case",
-        "get_case_status",
-        "accept_trivial_correction",
-        "_review_service",
-        "list_review_cases",
-        "get_review_case",
-        "decide_review_case",
-        "_fields_match_decision"
-      ],
-      "module_type": "api_router",
-      "name": "EvidenceObjectIn",
-      "path": "app/evidence_feedback/routes.py",
-      "routers": [
-        "POST /objects",
-        "POST /cases",
-        "GET /cases/{case_id}",
-        "POST /cases/{case_id}/accept-trivial",
-        "GET /cases",
-        "GET /cases/{case_id}",
-        "POST /cases/{case_id}/decision"
-      ],
       "status": "healthy"
     },
     {
@@ -61744,10 +59552,7 @@
         "__init__",
         "register_object",
         "submit",
-        "_submit_new_or_duplicate",
         "accept_trivial_correction",
-        "_accept_trivial_correction",
-        "trivial_correction_blocker",
         "status_for_submitter",
         "_triage"
       ],
@@ -62253,81 +60058,6 @@
       "functions": [],
       "module_type": "python_module",
       "name": "Init",
-      "path": "app/federation/__init__.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
-      "capabilities": [
-        "Discover runtime capabilities"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "FederationSourceProfile",
-        "FirecrawlFederationMapper"
-      ],
-      "dependencies": [
-        "__future__",
-        "dataclasses",
-        "datetime",
-        "httpx",
-        "os",
-        "re",
-        "typing",
-        "urllib.parse"
-      ],
-      "functions": [
-        "_extract_links",
-        "_classify_urls",
-        "_discover_identifiers",
-        "_preferred_ingestion",
-        "build_source_profile",
-        "to_dict",
-        "__init__",
-        "map_source"
-      ],
-      "module_type": "python_module",
-      "name": "FederationSourceProfile",
-      "path": "app/federation/firecrawl_mapper.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "SharedFirecrawlFederationService"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.source_federation.acquisition",
-        "app.source_federation.acquisition_ledger",
-        "firecrawl_mapper",
-        "json",
-        "sqlalchemy.orm",
-        "typing"
-      ],
-      "functions": [
-        "__init__",
-        "map_source",
-        "_request_identity"
-      ],
-      "module_type": "service",
-      "name": "SharedFirecrawlFederationService",
-      "path": "app/federation/shared_firecrawl.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [],
-      "functions": [],
-      "module_type": "python_module",
-      "name": "Init",
       "path": "app/field_hypotheses/__init__.py",
       "routers": [],
       "status": "available"
@@ -62375,7 +60105,6 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.rate_limit",
         "app.security",
         "fastapi",
         "schemas",
@@ -64023,27 +61752,6 @@
     },
     {
       "capabilities": [
-        "Discover runtime capabilities"
-      ],
-      "category": "Planning",
-      "classes": [
-        "InteractionDiscoveryRecord",
-        "InteractionDiscoveryResponse"
-      ],
-      "dependencies": [
-        "__future__",
-        "pydantic",
-        "typing"
-      ],
-      "functions": [],
-      "module_type": "python_module",
-      "name": "InteractionDiscoveryRecord",
-      "path": "app/interaction_discovery/models.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
         "Discover runtime capabilities",
         "Expose API endpoints"
       ],
@@ -64051,7 +61759,6 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.interaction_discovery.models",
         "app.interaction_discovery.service",
         "fastapi",
         "typing"
@@ -64075,19 +61782,14 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.interaction_discovery.models",
-        "app.semantic_index.repository_runtime",
         "app.semantic_index.routes",
-        "pydantic",
         "typing"
       ],
       "functions": [
         "_matches_category",
         "_classify",
         "_record_from_document",
-        "_readable_record",
         "_taxon_matches",
-        "_index_state",
         "discover_interactions"
       ],
       "module_type": "python_module",
@@ -65401,35 +63103,6 @@
       "status": "healthy"
     },
     {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "app.persistence.state_repository",
-        "hashlib",
-        "json",
-        "psycopg",
-        "re",
-        "typing"
-      ],
-      "functions": [
-        "_relation",
-        "_identity",
-        "_relevance",
-        "_relevance_assessable",
-        "_genre",
-        "audit_existing_corpus",
-        "load_corpus_document",
-        "field"
-      ],
-      "module_type": "python_module",
-      "name": "CorpusAudit",
-      "path": "app/literature_extraction/corpus_audit.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
       "capabilities": [
         "Discover runtime capabilities"
       ],
@@ -65441,9 +63114,7 @@
         "__future__",
         "app.readiness.relationship_measurement",
         "dataclasses",
-        "datetime",
         "models",
-        "re",
         "repository",
         "typing"
       ],
@@ -65451,9 +63122,7 @@
         "discovered_corpus_measurement",
         "_kg_literature_doi_index",
         "_paper_coverage",
-        "audit_literature_extraction_coverage",
-        "matrix_acquisition_gaps",
-        "export_matrix_acquisition_coverage"
+        "audit_literature_extraction_coverage"
       ],
       "module_type": "python_module",
       "name": "PaperCoverage",
@@ -65614,33 +63283,6 @@
       ],
       "category": "Runtime",
       "classes": [
-        "CanonicalMorphologyExtractor"
-      ],
-      "dependencies": [
-        "__future__",
-        "base",
-        "ingest",
-        "models",
-        "re",
-        "typing"
-      ],
-      "functions": [
-        "_matches",
-        "__init__",
-        "output_count"
-      ],
-      "module_type": "python_module",
-      "name": "CanonicalMorphologyExtractor",
-      "path": "app/literature_extraction/extractors/morphology.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
         "HeadingMatch",
         "SectionExtractor"
       ],
@@ -65660,195 +63302,6 @@
       "module_type": "python_module",
       "name": "HeadingMatch",
       "path": "app/literature_extraction/extractors/sections.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "app.evidence_aggregation.models",
-        "app.literature_extraction.firecrawl_provider",
-        "app.parallel_platform.matrix_adapters",
-        "app.provider_reservoir.routing",
-        "candidate_handoff",
-        "context",
-        "copy",
-        "dataclasses",
-        "extractors.metadata",
-        "extractors.morphology",
-        "firecrawl_provider",
-        "ingest",
-        "pathlib",
-        "re",
-        "registry",
-        "scripts.oc_swarm_claim",
-        "service",
-        "tempfile",
-        "urllib.parse"
-      ],
-      "functions": [
-        "verify_swarm_acquisition_lease",
-        "missing_morphology_requirements",
-        "held_source_match",
-        "anchored_characters",
-        "verify",
-        "url",
-        "doi",
-        "bibliography",
-        "handoff_operation",
-        "aggregate_operation"
-      ],
-      "module_type": "python_module",
-      "name": "FirecrawlAcquisition",
-      "path": "app/literature_extraction/firecrawl_acquisition.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "AcquisitionBlocked",
-        "FirecrawlConfig",
-        "AcquiredSource",
-        "FirecrawlProvider",
-        "PostgresFirecrawlReservation"
-      ],
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "dataclasses",
-        "datetime",
-        "decimal",
-        "extractors.morphology",
-        "hashlib",
-        "httpx",
-        "ipaddress",
-        "json",
-        "os",
-        "psycopg.types.json",
-        "re",
-        "runtime.research_station_store",
-        "runtime.swarm.models",
-        "time",
-        "urllib.parse"
-      ],
-      "functions": [
-        "canonical_url",
-        "__post_init__",
-        "from_env",
-        "content_hash",
-        "__init__",
-        "_gate",
-        "credit_cost",
-        "credit_receipt",
-        "_request",
-        "search",
-        "scrape",
-        "__init__",
-        "__call__",
-        "reserve_credits",
-        "observe_credits",
-        "_update_credit_ledger",
-        "flag",
-        "update",
-        "update"
-      ],
-      "module_type": "python_module",
-      "name": "AcquisitionBlocked",
-      "path": "app/literature_extraction/firecrawl_provider.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "_AcquiredDocumentGateway",
-        "PostgresFirecrawlRegistration"
-      ],
-      "dependencies": [
-        "app.document_import.models",
-        "app.document_import.repository",
-        "app.document_import.service",
-        "app.document_intelligence.lifecycle",
-        "app.document_intelligence.postgres_repository",
-        "app.source_registry.models",
-        "app.source_registry.repository",
-        "canonical_binding_resolver",
-        "psycopg.rows",
-        "source_binding",
-        "urllib.parse"
-      ],
-      "functions": [
-        "__init__",
-        "retrieve",
-        "__init__",
-        "_dict_connect",
-        "__call__"
-      ],
-      "module_type": "python_module",
-      "name": "_AcquiredDocumentGateway",
-      "path": "app/literature_extraction/firecrawl_registration.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Execute runtime work"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "AcquisitionRequest"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.calyx_engineering.github",
-        "app.candidate_knowledge.postgres_repository",
-        "app.candidate_knowledge.service",
-        "app.evidence_aggregation.postgres_repository",
-        "app.evidence_aggregation.service",
-        "candidate_handoff",
-        "canonical_binding_resolver",
-        "corpus_audit",
-        "firecrawl_acquisition",
-        "firecrawl_provider",
-        "firecrawl_registration",
-        "hashlib",
-        "json",
-        "os",
-        "psycopg",
-        "psycopg.rows",
-        "psycopg.types.json",
-        "pydantic",
-        "re",
-        "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
-        "runtime.research_station_store",
-        "runtime.swarm"
-      ],
-      "functions": [
-        "connection",
-        "_record_store",
-        "reserve_live_pilot_attempt",
-        "_governor",
-        "validate_persisted_acquisition",
-        "authorize_external_acquisition",
-        "execute",
-        "before_acquire",
-        "corpus_audit",
-        "load_held_source"
-      ],
-      "module_type": "python_module",
-      "name": "AcquisitionRequest",
-      "path": "app/literature_extraction/firecrawl_runtime.py",
       "routers": [],
       "status": "healthy"
     },
@@ -65931,7 +63384,6 @@
       "dependencies": [
         "__future__",
         "collections",
-        "extractors.morphology",
         "hashlib",
         "models",
         "re"
@@ -66169,21 +63621,15 @@
       "dependencies": [
         "__future__",
         "app.candidate_knowledge.dependencies",
-        "app.evidence_aggregation.postgres_repository",
-        "app.member_auth",
         "app.security",
         "candidate_handoff",
         "canonical_binding_resolver",
-        "corpus_audit",
         "coverage_audit",
         "fastapi",
-        "firecrawl_provider",
-        "firecrawl_runtime",
         "os",
         "psycopg",
         "pydantic",
         "repository",
-        "runtime.knowledge_graph.firecrawl_taxonomy",
         "source_binding",
         "typing"
       ],
@@ -66205,8 +63651,7 @@
         "get_source_binding",
         "resolve_canonical_source_binding",
         "handoff_candidates",
-        "handoff_candidates_from_canonical_document_intelligence",
-        "canonical_acquisition_coverage"
+        "handoff_candidates_from_canonical_document_intelligence"
       ],
       "module_type": "api_router",
       "name": "SourceBindingIn",
@@ -66219,8 +63664,7 @@
         "GET /papers/{paper_id}/source-binding",
         "POST /papers/{paper_id}/source-binding/resolve",
         "POST /papers/{paper_id}/candidate-handoff",
-        "POST /papers/{paper_id}/candidate-handoff/canonical",
-        "GET /acquisition/coverage"
+        "POST /papers/{paper_id}/candidate-handoff/canonical"
       ],
       "status": "healthy"
     },
@@ -66322,7 +63766,6 @@
         "app.document_intelligence.routes",
         "app.engineering_memory.routes",
         "app.evidence_aggregation.routes",
-        "app.evidence_feedback.routes",
         "app.evidence_retrieval.routes",
         "app.executive_telemetry.routes",
         "app.field_hypotheses.routes",
@@ -66332,7 +63775,8 @@
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
         "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_release.routes",
+        "app.missions.routers"
       ],
       "functions": [
         "require_database_url",
@@ -66374,186 +63818,6 @@
         "POST /api/runner/stop",
         "POST /api/runner/restart"
       ],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "_SlidingWindowLimiter"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.member_auth",
-        "app.security",
-        "collections",
-        "collections.abc",
-        "fastapi",
-        "hashlib",
-        "os",
-        "threading",
-        "time",
-        "typing"
-      ],
-      "functions": [
-        "matrix_members_enabled",
-        "matrix_member_route",
-        "is_member",
-        "clear_member_matrix_limits",
-        "_positive_int_env",
-        "_enforce_rate_limit",
-        "mark",
-        "__init__",
-        "hit",
-        "clear"
-      ],
-      "module_type": "python_module",
-      "name": "_SlidingWindowLimiter",
-      "path": "app/matrix_member_access.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Plan runtime work"
-      ],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "collections.abc",
-        "math",
-        "re",
-        "typing",
-        "unicodedata",
-        "uuid"
-      ],
-      "functions": [
-        "_screen_form",
-        "_screen_hit",
-        "screened_text",
-        "_uuid",
-        "_identifier",
-        "_label",
-        "_prose",
-        "_number",
-        "_enum",
-        "_hex64",
-        "_timestamp",
-        "_state_scalar",
-        "member_state",
-        "_shape",
-        "_text_map",
-        "member_scope",
-        "member_provenance",
-        "member_registry_ref",
-        "member_registry_summary",
-        "member_registry_listing",
-        "member_registry_detail",
-        "member_next_observation",
-        "member_observation",
-        "member_session",
-        "member_explanation"
-      ],
-      "module_type": "python_module",
-      "name": "MatrixMemberViews",
-      "path": "app/matrix_member_views.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "app.security",
-        "app.university.learner_auth",
-        "base64",
-        "collections",
-        "collections.abc",
-        "fastapi",
-        "hashlib",
-        "json",
-        "os",
-        "re",
-        "starlette.concurrency",
-        "threading",
-        "time",
-        "typing"
-      ],
-      "functions": [
-        "member_reads_enabled",
-        "_env_first",
-        "member_supabase_url",
-        "member_supabase_anon_key",
-        "member_readable",
-        "_cache_key",
-        "_unverified_jwt_exp",
-        "_cache_get",
-        "_cache_put",
-        "clear_member_token_cache",
-        "verify_member_access_token",
-        "_bearer",
-        "_owner_principal",
-        "_record"
-      ],
-      "module_type": "python_module",
-      "name": "MemberAuth",
-      "path": "app/member_auth.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "MemberRedactingRoute"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.candidate_knowledge.models",
-        "app.evidence_aggregation.models",
-        "ast",
-        "builtins",
-        "collections.abc",
-        "fastapi",
-        "fastapi.responses",
-        "fastapi.routing",
-        "json",
-        "pathlib",
-        "re",
-        "typing"
-      ],
-      "functions": [
-        "_source_literals",
-        "_require_vocabulary",
-        "_safe_string",
-        "_safe_key",
-        "_normalized_kind",
-        "_measurement_ok",
-        "_conservation_ok",
-        "_measurement_value_ok",
-        "_record_value_kind",
-        "_is_distribution_map",
-        "_is_number",
-        "_collapse_distribution",
-        "_is_geographic_summary",
-        "_is_temporal_summary",
-        "_redact_field",
-        "_strings_safe",
-        "redact_member_locality",
-        "_is_member",
-        "get_route_handler"
-      ],
-      "module_type": "python_module",
-      "name": "MemberRedactingRoute",
-      "path": "app/member_redaction.py",
-      "routers": [],
       "status": "healthy"
     },
     {
@@ -69346,7 +66610,6 @@
       "dependencies": [
         "__future__",
         "app.database",
-        "app.member_auth",
         "app.security",
         "epistemic_memory",
         "fastapi",
@@ -69759,7 +67022,7 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.member_auth",
+        "app.security",
         "fastapi",
         "functools",
         "re",
@@ -69768,7 +67031,6 @@
       "functions": [
         "get_service",
         "_subject",
-        "_member_safe_response",
         "research_traits"
       ],
       "module_type": "api_router",
@@ -69883,7 +67145,6 @@
       "dependencies": [
         "__future__",
         "app.database",
-        "app.member_auth",
         "app.routers.health",
         "app.scientific_memory.routes",
         "app.security",
@@ -69962,7 +67223,6 @@
         "EvidenceLinkCreate"
       ],
       "dependencies": [
-        "app.validation_errors",
         "json",
         "pydantic",
         "typing"
@@ -69988,12 +67248,8 @@
       ],
       "dependencies": [
         "__future__",
-        "app.candidate_knowledge.lookup",
-        "app.evidence_aggregation.lookup",
-        "collections.abc",
         "dataclasses",
         "models",
-        "re",
         "schemas",
         "sqlalchemy",
         "sqlalchemy.exc",
@@ -70002,15 +67258,8 @@
         "uuid"
       ],
       "functions": [
-        "_runtime_identifier",
-        "_serving_aggregate_repository",
-        "_serving_candidate_repository",
         "__init__",
         "require",
-        "_relational_exists",
-        "_runtime_repository",
-        "_aggregate_exists",
-        "_candidate_exists",
         "__init__",
         "_valid_uuid",
         "_project",
@@ -70026,7 +67275,14 @@
         "list_saved_searches",
         "saved_search_dict",
         "create_saved_search",
-        "list_notes"
+        "list_notes",
+        "note_dict",
+        "create_note",
+        "_links",
+        "_link_dict",
+        "list_links",
+        "add_taxon",
+        "add_document"
       ],
       "module_type": "service",
       "name": "ResearchWorkspaceService",
@@ -70062,13 +67318,13 @@
         "app.review_tasks.postgres_repository",
         "app.review_tasks.service",
         "app.security",
-        "collections.abc",
         "fastapi",
         "fastapi.security",
         "functools",
         "os",
         "psycopg",
-        "psycopg.rows"
+        "psycopg.rows",
+        "typing"
       ],
       "functions": [
         "_database_url",
@@ -70456,16 +67712,12 @@
         "app.calyx_conversation.speak_routes",
         "app.deps",
         "app.lexicon.routes",
-        "app.member_auth",
         "app.models",
         "app.routers.calyx_operator_workflow",
         "app.schemas",
-        "app.show_output_safety",
         "app.university.routes",
-        "datetime",
         "fastapi",
         "fastapi.responses",
-        "logging",
         "runtime.calyx_core_certification",
         "sqlalchemy",
         "sqlalchemy.orm"
@@ -70484,9 +67736,7 @@
         "create_show_event",
         "export_events_ics",
         "list_show_files",
-        "_authenticated_uploader",
         "create_show_file",
-        "_integration_out",
         "list_show_integrations",
         "create_show_integration"
       ],
@@ -70934,16 +68184,12 @@
         "Expose API endpoints"
       ],
       "category": "API",
-      "classes": [
-        "BoundedFeedbackCreate"
-      ],
+      "classes": [],
       "dependencies": [
         "app.deps",
-        "app.member_auth",
         "app.models",
         "app.schemas",
         "fastapi",
-        "pydantic",
         "sqlalchemy",
         "sqlalchemy.orm",
         "typing"
@@ -70953,7 +68199,7 @@
         "list_feedback"
       ],
       "module_type": "api_router",
-      "name": "BoundedFeedbackCreate",
+      "name": "Feedback",
       "path": "app/routers/feedback.py",
       "routers": [
         "POST /feedback",
@@ -71273,7 +68519,6 @@
       "dependencies": [
         "app.deps",
         "app.models",
-        "app.routers.show_day",
         "app.schemas",
         "app.security",
         "datetime",
@@ -71287,13 +68532,9 @@
         "uuid"
       ],
       "functions": [
-        "_utcnow",
         "_parse_points_breakdown",
         "_score_to_out",
         "_generate_qr_code",
-        "_ensure_show_unlocked",
-        "_check_event_status_change",
-        "_get_scorable_criterion",
         "create_judging_event",
         "list_judging_events",
         "get_judging_event",
@@ -71311,7 +68552,11 @@
         "get_exhibitor",
         "create_plant",
         "list_plants",
-        "get_plant"
+        "get_plant",
+        "submit_scores",
+        "get_plant_scores",
+        "get_event_results",
+        "create_judge"
       ],
       "module_type": "api_router",
       "name": "Judging",
@@ -71472,7 +68717,6 @@
       "dependencies": [
         "__future__",
         "app.calyx_conversation.workspace_outputs",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -71500,7 +68744,6 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "runtime.matrix_identification_durability_readiness",
@@ -71528,14 +68771,11 @@
       ],
       "dependencies": [
         "__future__",
-        "app.calyx_conversation.provider",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
+        "app.security",
         "fastapi",
         "pydantic",
         "runtime.matrix_identification_explanation",
-        "typing",
-        "uuid"
+        "typing"
       ],
       "functions": [
         "_access_actor",
@@ -71566,8 +68806,6 @@
       "dependencies": [
         "__future__",
         "app.lexicon.routes",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
         "app.security",
         "fastapi",
         "pydantic",
@@ -71607,7 +68845,6 @@
       "classes": [],
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "runtime.matrix_identification_registry",
@@ -71637,7 +68874,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -71673,20 +68909,16 @@
       ],
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
-        "app.matrix_member_views",
         "app.security",
         "fastapi",
         "pydantic",
         "runtime.matrix_identification_persistence_preflight",
         "runtime.matrix_identification_session",
-        "typing",
-        "uuid"
+        "typing"
       ],
       "functions": [
         "_authenticated_actor",
         "_access_actor",
-        "_member_session_id",
         "_service_unavailable",
         "get_persistence_status",
         "get_persistence_preflight",
@@ -71719,7 +68951,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.matrix_member_access",
         "app.security",
         "fastapi",
         "pydantic",
@@ -71855,8 +69086,7 @@
     },
     {
       "capabilities": [
-        "Expose API endpoints",
-        "Inspect Brain state"
+        "Expose API endpoints"
       ],
       "category": "API",
       "classes": [],
@@ -71866,14 +69096,11 @@
         "app.readiness.live_graph_audit",
         "datetime",
         "fastapi",
-        "logging",
         "re",
         "sqlalchemy",
-        "sqlalchemy.exc",
         "typing"
       ],
       "functions": [
-        "_database_unavailable",
         "_allow_frontend_origin",
         "_normalize_genus",
         "_safe_url",
@@ -72045,18 +69272,15 @@
         "app.routers.matrix_identification_vision",
         "app.routers.vision_activation_preflight",
         "app.schemas",
-        "app.security",
         "app.species_exhibit.routes",
         "app.storage",
         "fastapi",
         "fastapi.responses",
         "os",
         "sqlalchemy",
-        "sqlalchemy.orm",
-        "typing"
+        "sqlalchemy.orm"
       ],
       "functions": [
-        "_effective_admin_key",
         "require_admin",
         "list_reference_docs",
         "get_reference_doc",
@@ -72258,51 +69482,6 @@
       "path": "app/routers/scientific_observability.py",
       "routers": [
         "GET /api/scientific-observability/workflow-intelligence"
-      ],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Expose API endpoints",
-        "Plan runtime work"
-      ],
-      "category": "API",
-      "classes": [],
-      "dependencies": [
-        "app.deps",
-        "app.models",
-        "app.security",
-        "fastapi",
-        "fastapi.responses",
-        "html",
-        "io",
-        "os",
-        "qrcode",
-        "qrcode.image.svg",
-        "sqlalchemy",
-        "sqlalchemy.orm",
-        "typing"
-      ],
-      "functions": [
-        "tag_payload",
-        "_qr_svg",
-        "_get_plant",
-        "_get_event",
-        "_exhibitor_name",
-        "plant_qr_svg",
-        "scan_plant",
-        "printable_tags",
-        "_competition_ranks",
-        "class_results"
-      ],
-      "module_type": "api_router",
-      "name": "ShowDay",
-      "path": "app/routers/show_day.py",
-      "routers": [
-        "GET /judging/plants/{plant_id}/qr.svg",
-        "GET /judging/scan/{qr_token}",
-        "GET /judging/events/{event_id}/tags",
-        "GET /judging/events/{event_id}/class-results"
       ],
       "status": "healthy"
     },
@@ -73558,7 +70737,6 @@
       ],
       "dependencies": [
         "__future__",
-        "app.validation_errors",
         "json",
         "pydantic",
         "typing"
@@ -74869,7 +72047,6 @@
         "owner_session_ttl_seconds",
         "owner_cookie_secure",
         "owner_cookie_samesite",
-        "credentials_match",
         "_b64",
         "_unb64",
         "create_owner_session_token",
@@ -75372,83 +72549,6 @@
       "status": "healthy"
     },
     {
-      "capabilities": [
-        "Expose API endpoints"
-      ],
-      "category": "API",
-      "classes": [],
-      "dependencies": [
-        "app",
-        "app.database",
-        "app.routers",
-        "contextlib",
-        "fastapi",
-        "fastapi.middleware.cors",
-        "os"
-      ],
-      "functions": [
-        "_cors_origins",
-        "create_show_app",
-        "health"
-      ],
-      "module_type": "api_router",
-      "name": "ShowApp",
-      "path": "app/show_app.py",
-      "routers": [
-        "GET /health"
-      ],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "collections",
-        "datetime",
-        "fastapi",
-        "functools",
-        "json",
-        "math",
-        "re",
-        "typing",
-        "unicodedata"
-      ],
-      "functions": [
-        "_key_words",
-        "_is_secret_key",
-        "_is_secret_key_name",
-        "_looks_random",
-        "_looks_like_credential",
-        "_mask_if_secret_name",
-        "_mask_spaced_values",
-        "_mask_keeping_quotes",
-        "_mask_header_value",
-        "_mask_cli_user",
-        "_mask_cli_users",
-        "_mask_digest_params",
-        "_redact_string",
-        "_redact_dict",
-        "_is_list_header_name",
-        "_redact_list",
-        "_redact_value",
-        "redact_config_json",
-        "json_nesting_depth",
-        "validate_config_json",
-        "_ics_allowed",
-        "ics_escape_text",
-        "ics_utc_timestamp",
-        "ics_fold",
-        "ics_text_line"
-      ],
-      "module_type": "python_module",
-      "name": "ShowOutputSafety",
-      "path": "app/show_output_safety.py",
-      "routers": [],
-      "status": "available"
-    },
-    {
       "capabilities": [],
       "category": "Runtime",
       "classes": [],
@@ -75462,94 +72562,6 @@
       "path": "app/source_federation/__init__.py",
       "routers": [],
       "status": "available"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "AcquisitionRequest",
-        "AcquisitionRecord"
-      ],
-      "dependencies": [
-        "__future__",
-        "dataclasses",
-        "datetime",
-        "hashlib",
-        "types",
-        "typing",
-        "urllib.parse"
-      ],
-      "functions": [
-        "canonicalize_url",
-        "resource_key",
-        "canonical_url",
-        "key",
-        "completed"
-      ],
-      "module_type": "python_module",
-      "name": "AcquisitionRequest",
-      "path": "app/source_federation/acquisition.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "ClaimResult",
-        "AcquisitionLedger"
-      ],
-      "dependencies": [
-        "__future__",
-        "acquisition",
-        "acquisition_models",
-        "dataclasses",
-        "datetime",
-        "json",
-        "sqlalchemy.exc",
-        "sqlalchemy.orm"
-      ],
-      "functions": [
-        "__init__",
-        "claim",
-        "cached_payload",
-        "complete",
-        "fail",
-        "metrics"
-      ],
-      "module_type": "python_module",
-      "name": "ClaimResult",
-      "path": "app/source_federation/acquisition_ledger.py",
-      "routers": [],
-      "status": "healthy"
-    },
-    {
-      "capabilities": [
-        "Provide runtime component"
-      ],
-      "category": "Runtime",
-      "classes": [
-        "AcquisitionLedgerRow"
-      ],
-      "dependencies": [
-        "__future__",
-        "app.database",
-        "datetime",
-        "sqlalchemy",
-        "sqlalchemy.orm"
-      ],
-      "functions": [
-        "_utcnow"
-      ],
-      "module_type": "python_module",
-      "name": "AcquisitionLedgerRow",
-      "path": "app/source_federation/acquisition_models.py",
-      "routers": [],
-      "status": "healthy"
     },
     {
       "capabilities": [
@@ -75724,9 +72736,6 @@
       ],
       "functions": [
         "database_url",
-        "__init__",
-        "register_web_source",
-        "inventory_id",
         "register_google_drive",
         "list_sources",
         "get_source",
@@ -75888,7 +72897,6 @@
         "_taxon",
         "_identity",
         "_media",
-        "_graph_taxon_key",
         "_graph",
         "_federated_sections",
         "_related",
@@ -76041,7 +73049,6 @@
         "_contradictions",
         "_provenance_anchors",
         "_evidence_receipt",
-        "graph_taxon_keys",
         "_graph_rows",
         "_build_card",
         "build_species_exhibit"
@@ -76888,7 +73895,6 @@
       "functions": [
         "_bearer_token",
         "_stable_actor",
-        "resolve_supabase_actor",
         "verify_supabase_access_token"
       ],
       "module_type": "python_module",
@@ -77154,35 +74160,6 @@
         "GET /sessions"
       ],
       "status": "healthy"
-    },
-    {
-      "capabilities": [],
-      "category": "Runtime",
-      "classes": [],
-      "dependencies": [
-        "__future__",
-        "fastapi",
-        "fastapi.encoders",
-        "fastapi.exceptions",
-        "fastapi.responses",
-        "json",
-        "math",
-        "re",
-        "starlette.status",
-        "typing"
-      ],
-      "functions": [
-        "_renderable",
-        "_decoded_bytes",
-        "require_strict_json",
-        "_too_large",
-        "renderable_validation_errors"
-      ],
-      "module_type": "python_module",
-      "name": "ValidationErrors",
-      "path": "app/validation_errors.py",
-      "routers": [],
-      "status": "available"
     },
     {
       "capabilities": [],
@@ -77701,12 +74678,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 933,
+    "capabilities": 907,
     "degraded": 1,
-    "graph_edges": 2642,
-    "graph_nodes": 1119,
-    "healthy": 826,
-    "modules": 1119,
+    "graph_edges": 2468,
+    "graph_nodes": 1087,
+    "healthy": 802,
+    "modules": 1087,
     "recommendations": 3
   }
 }
