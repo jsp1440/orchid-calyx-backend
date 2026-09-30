@@ -60,3 +60,27 @@ def test_completed_record_is_provenance_bearing():
     assert record.consumers == ("lexicon",)
     assert record.credits_spent == 1
     assert record.provenance["source"] == "fixture"
+
+
+def test_default_ports_deduplicate():
+    assert canonicalize_url("https://example.com:443/data") == canonicalize_url("https://example.com/data")
+    assert canonicalize_url("http://example.com:80/data") == canonicalize_url("http://example.com/data")
+
+
+def test_whitespace_identifier_falls_back_to_url():
+    assert resource_key(url="https://example.com/a", provider="powo", stable_identifier="   ") != resource_key(url="https://example.com/b", provider="powo", stable_identifier="   ")
+
+
+def test_completed_record_requires_provenance():
+    import pytest
+    request = AcquisitionRequest(url="https://example.com/a", provider="test", consumer_module="matrix")
+    with pytest.raises(ValueError, match="provenance"):
+        AcquisitionRecord.completed(request=request, content=b"x", provenance={})
+
+
+def test_completed_provenance_is_immutable():
+    import pytest
+    request = AcquisitionRequest(url="https://example.com/a", provider="test", consumer_module="matrix")
+    record = AcquisitionRecord.completed(request=request, content=b"x", provenance={"source": "fixture"})
+    with pytest.raises(TypeError):
+        record.provenance["source"] = "rewritten"
