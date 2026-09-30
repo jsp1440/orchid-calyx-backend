@@ -7,6 +7,7 @@ from app.deps import get_db
 from app.models import Show
 from app.schemas import ShowCreate, ShowUpdate, ShowOut
 from app.security import verify_api_key
+from app.show_lock import ensure_show_unlocked
 
 router = APIRouter(prefix="/api", tags=["shows"], dependencies=[Depends(verify_api_key)])
 
@@ -50,6 +51,8 @@ def delete_show(show_id: str, db: Session = Depends(get_db)):
     show = db.execute(select(Show).where(Show.id == show_id)).scalar_one_or_none()
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    # A locked show is unlocked by the owner (PATCH /api/shows) before deletion.
+    ensure_show_unlocked(db, show_id)
     db.delete(show)
     db.commit()
     return {"status": "deleted"}

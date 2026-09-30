@@ -7,12 +7,14 @@ from app.deps import get_db
 from app.models import Entry
 from app.schemas import EntryCreate, EntryUpdate, EntryOut
 from app.security import verify_api_key
+from app.show_lock import ensure_show_unlocked
 
 router = APIRouter(prefix="/api", tags=["entries"], dependencies=[Depends(verify_api_key)])
 
 
 @router.post("/entries", response_model=EntryOut)
 def create_entry(payload: EntryCreate, db: Session = Depends(get_db)):
+    ensure_show_unlocked(db, payload.show_id)
     entry = Entry(**payload.model_dump())
     db.add(entry)
     db.commit()
@@ -41,6 +43,7 @@ def update_entry(entry_id: str, payload: EntryUpdate, db: Session = Depends(get_
     entry = db.execute(select(Entry).where(Entry.id == entry_id)).scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    ensure_show_unlocked(db, entry.show_id)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(entry, k, v)
     db.commit()
@@ -53,6 +56,7 @@ def delete_entry(entry_id: str, db: Session = Depends(get_db)):
     entry = db.execute(select(Entry).where(Entry.id == entry_id)).scalar_one_or_none()
     if not entry:
         raise HTTPException(status_code=404, detail="Entry not found")
+    ensure_show_unlocked(db, entry.show_id)
     db.delete(entry)
     db.commit()
     return {"status": "deleted"}

@@ -54,6 +54,7 @@ from app.schemas import (
     ScoreSubmissionOut,
 )
 from app.security import require_judge, verify_api_key
+from app.show_lock import ensure_show_unlocked as _ensure_show_unlocked
 
 router = APIRouter(
     prefix="/api",
@@ -96,14 +97,6 @@ def _score_to_out(s: ScoreSubmission) -> dict:
 
 def _generate_qr_code(plant_id: str) -> str:
     return f"QR-{hashlib.sha256(plant_id.encode()).hexdigest()[:12].upper()}"
-
-
-def _ensure_show_unlocked(db: Session, show_id: str | None) -> None:
-    show = db.get(Show, show_id) if show_id else None
-    if show and show.judging_locked:
-        raise HTTPException(
-            status_code=409, detail="Judging is locked for this show. Edits are frozen."
-        )
 
 
 # A judging event only moves forward: draft -> published -> closed (the publish
@@ -237,6 +230,8 @@ def publish_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
         raise HTTPException(
             status_code=409, detail="Closed events cannot be re-published"
         )
+    if event.status == "published":
+        return event
 
     event.status = "published"
     event.published_at = _utcnow()
@@ -251,6 +246,8 @@ def close_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
     _ensure_show_unlocked(db, event.show_id)
+    if event.status == "closed":
+        return event
 
     event.status = "closed"
     event.closed_at = _utcnow()
@@ -831,11 +828,20 @@ def create_judge_assignment(
     judge = db.get(Judge, data.judge_id)
     if not judge:
         raise HTTPException(status_code=404, detail="Judge not found")
+    if judge.show_id != event.show_id:
+        raise HTTPException(
+            status_code=422, detail="Judge is not registered for this event's show."
+        )
 
     if data.category_id:
         cat = db.get(PlantCategory, data.category_id)
         if not cat:
             raise HTTPException(status_code=404, detail="Category not found")
+        if cat.judging_event_id != event_id:
+            raise HTTPException(
+                status_code=422,
+                detail="Category does not belong to this judging event.",
+            )
 
     assignment = JudgeAssignment(
         judging_event_id=event_id,

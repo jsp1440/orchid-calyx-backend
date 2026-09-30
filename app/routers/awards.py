@@ -4,15 +4,23 @@ from sqlalchemy.orm import Session
 from sqlalchemy import select
 
 from app.deps import get_db
-from app.models import Award
+from app.models import Award, Entry
 from app.schemas import AwardCreate, AwardUpdate, AwardOut
 from app.security import verify_api_key
+from app.show_lock import ensure_show_unlocked
 
 router = APIRouter(prefix="/api", tags=["awards"], dependencies=[Depends(verify_api_key)])
 
 
+def _ensure_entry_show_unlocked(db: Session, entry_id: str) -> None:
+    """An award belongs to an entry, and the entry to a show."""
+    entry = db.get(Entry, entry_id)
+    ensure_show_unlocked(db, entry.show_id if entry else None)
+
+
 @router.post("/awards", response_model=AwardOut)
 def create_award(payload: AwardCreate, db: Session = Depends(get_db)):
+    _ensure_entry_show_unlocked(db, payload.entry_id)
     award = Award(**payload.model_dump())
     db.add(award)
     db.commit()
@@ -41,6 +49,7 @@ def update_award(award_id: str, payload: AwardUpdate, db: Session = Depends(get_
     award = db.execute(select(Award).where(Award.id == award_id)).scalar_one_or_none()
     if not award:
         raise HTTPException(status_code=404, detail="Award not found")
+    _ensure_entry_show_unlocked(db, award.entry_id)
     for k, v in payload.model_dump(exclude_unset=True).items():
         setattr(award, k, v)
     db.commit()
@@ -53,6 +62,7 @@ def delete_award(award_id: str, db: Session = Depends(get_db)):
     award = db.execute(select(Award).where(Award.id == award_id)).scalar_one_or_none()
     if not award:
         raise HTTPException(status_code=404, detail="Award not found")
+    _ensure_entry_show_unlocked(db, award.entry_id)
     db.delete(award)
     db.commit()
     return {"status": "deleted"}

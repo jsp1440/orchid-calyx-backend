@@ -1,7 +1,7 @@
 """Show judging lock, event status order and blind legacy results.
 
 Reuses the Show Day Phase 1 fixtures (lean show app on in-memory SQLite). Each
-route in ``MUTATING_ROUTES`` is called once before the show's judging lock (200)
+route in ``MUTATING_ROUTES`` (judging, entry and award writes) is called once before the show's judging lock (200)
 and once after it (409); the lock is set and cleared through the owner's
 ``PATCH /api/shows`` route, which stays allowed.
 """
@@ -46,7 +46,25 @@ def lock_ctx(client, show_day):
         "/api/entries",
         {"show_id": show_id, "exhibitor_name": "A. Grower", "plant_name": "Entry"},
     )
-    return {**show_day, "extra_judges": extra_judges, "entry": entry}
+    entries = [
+        _post(
+            client,
+            "/api/entries",
+            {"show_id": show_id, "exhibitor_name": "B. Grower", "plant_name": name},
+        )
+        for name in ("Entry one", "Entry two")
+    ]
+    awards = [
+        _post(client, "/api/awards", {"entry_id": e["id"], "award_name": "Blue"})
+        for e in entries
+    ]
+    return {
+        **show_day,
+        "extra_judges": extra_judges,
+        "entry": entry,
+        "entries": entries,
+        "awards": awards,
+    }
 
 
 def _event_path(ctx, suffix=""):
@@ -101,6 +119,40 @@ MUTATING_ROUTES = {
         f"/api/judging/plants/{ctx['plants'][0]['id']}/scores/{ctx['judges'][0]['id']}",
         {"scores": [{"criterion_id": ctx["criteria"][0]["criteria_id"], "value": 10}]},
     ),
+    "create_entry": lambda ctx, n: (
+        "POST",
+        "/api/entries",
+        {
+            "show_id": ctx["show"]["id"],
+            "exhibitor_name": "Late grower",
+            "plant_name": f"Late entry {n}",
+        },
+    ),
+    "patch_entry": lambda ctx, n: (
+        "PATCH",
+        f"/api/entries/{ctx['entries'][0]['id']}",
+        {"exhibitor_name": f"Renamed grower {n}"},
+    ),
+    "delete_entry": lambda ctx, n: (
+        "DELETE",
+        f"/api/entries/{ctx['entries'][n]['id']}",
+        None,
+    ),
+    "create_award": lambda ctx, n: (
+        "POST",
+        "/api/awards",
+        {"entry_id": ctx["entry"]["id"], "award_name": f"Ribbon {n}"},
+    ),
+    "patch_award": lambda ctx, n: (
+        "PATCH",
+        f"/api/awards/{ctx['awards'][0]['id']}",
+        {"level": f"level {n}"},
+    ),
+    "delete_award": lambda ctx, n: (
+        "DELETE",
+        f"/api/awards/{ctx['awards'][n]['id']}",
+        None,
+    ),
     "score_submission": lambda ctx, n: (
         "POST",
         "/api/score-submissions",
@@ -133,6 +185,94 @@ def test_owner_unlock_through_show_patch_restores_edits(client, lock_ctx):
     assert _send(client, method, path, body).status_code == 409
     _set_lock(client, lock_ctx, False)
     assert _send(client, method, path, body).status_code == 200
+
+
+def test_locked_entry_patch_leaves_leaderboard_names_unchanged(client, lock_ctx):
+    entry = lock_ctx["entry"]
+    _post(
+        client,
+        "/api/score-submissions",
+        {
+            "show_id": lock_ctx["show"]["id"],
+            "entry_id": entry["id"],
+            "judge_id": lock_ctx["judges"][0]["id"],
+            "total_points": 80,
+        },
+    )
+    _set_lock(client, lock_ctx, True)
+    renamed = _send(
+        client, "PATCH", f"/api/entries/{entry['id']}", {"exhibitor_name": "Someone"}
+    )
+    assert renamed.status_code == 409
+    board = client.get(
+        f"/api/shows/{lock_ctx['show']['id']}/leaderboard", headers=HEADERS
+    ).json()["leaderboard"]
+    assert [row["exhibitor_name"] for row in board] == ["A. Grower"]
+
+
+def test_locked_show_cannot_be_deleted_until_owner_unlocks(client, show_day):
+    show_path = f"/api/shows/{show_day['show']['id']}"
+    _set_lock(client, show_day, True)
+    assert _send(client, "DELETE", show_path).status_code == 409
+    assert client.get(show_path, headers=HEADERS).status_code == 200
+    _set_lock(client, show_day, False)
+    assert _send(client, "DELETE", show_path).status_code == 200
+    assert client.get(show_path, headers=HEADERS).status_code == 404
+
+
+def test_assignment_rejects_judge_from_another_show(client, show_day):
+    other = _post(
+        client, "/api/shows", {"name": "Autumn Show", "start_date": "2027-10-02"}
+    )
+    outsider = _post(client, "/api/judges", {"show_id": other["id"], "name": "Judge X"})
+    response = _send(
+        client,
+        "POST",
+        _event_path(show_day, "/assignments"),
+        {"judge_id": outsider["id"]},
+    )
+    assert response.status_code == 422, response.text
+
+
+def test_assignment_rejects_category_from_another_event(client, show_day):
+    other_event = _post(
+        client,
+        f"/api/shows/{show_day['show']['id']}/judging/events",
+        {"name": "Trophy judging"},
+    )
+    foreign_class = _post(
+        client, f"/api/judging/events/{other_event['id']}/categories", {"name": "Vanda"}
+    )
+    judge = _post(
+        client, "/api/judges", {"show_id": show_day["show"]["id"], "name": "Judge E"}
+    )
+    response = _send(
+        client,
+        "POST",
+        _event_path(show_day, "/assignments"),
+        {"judge_id": judge["id"], "category_id": foreign_class["id"]},
+    )
+    assert response.status_code == 422, response.text
+    own_class = _send(
+        client,
+        "POST",
+        _event_path(show_day, "/assignments"),
+        {"judge_id": judge["id"], "category_id": show_day["cattleya"]["id"]},
+    )
+    assert own_class.status_code == 200, own_class.text
+
+
+@pytest.mark.parametrize(
+    ("action", "stamp"), [("publish", "published_at"), ("close", "closed_at")]
+)
+def test_repeated_publish_or_close_keeps_first_timestamp(
+    client, show_day, action, stamp
+):
+    first = _send(client, "POST", _event_path(show_day, f"/{action}"))
+    assert first.status_code == 200 and first.json()[stamp] is not None
+    again = _send(client, "POST", _event_path(show_day, f"/{action}"))
+    assert again.status_code == 200
+    assert again.json()[stamp] == first.json()[stamp]
 
 
 def test_locked_show_rejects_event_status_change(client, show_day):
