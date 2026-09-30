@@ -2,15 +2,52 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-import json
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .acquisition import AcquisitionRecord, AcquisitionRequest
 from .acquisition_models import AcquisitionLedgerRow
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    """Return ``value`` as a timezone-aware UTC datetime.
+
+    The ledger columns are ``DateTime(timezone=True)``. PostgreSQL returns
+    aware values, but SQLite (and any backend without a timezone-aware
+    column type) returns NAIVE values with the offset discarded. This ledger
+    only ever writes UTC (see :func:`_utc_now`), so a naive value read back
+    from the store is interpreted as UTC. A naive caller-supplied ``now`` is
+    likewise treated as UTC.
+
+    Normalising every operand before a comparison matters for fail-closed
+    behaviour, not just for avoiding ``TypeError``: a naive/aware mismatch
+    must never make an expired lease look valid, or an active lease or retry
+    window look expired and admit a second credit-burning fetch.
+    """
+    if value is None:
+        return None
+    return _to_utc(value)
+
+
+def _to_utc(value: datetime) -> datetime:
+    if value.tzinfo is None or value.tzinfo.utcoffset(value) is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
+def _utc_now(now: datetime | None) -> datetime:
+    """Resolve the comparison instant as aware UTC.
+
+    Values written to the store are derived from this, so they are always
+    UTC. That keeps a naive read-back correct on SQLite, which drops the
+    offset without converting: a ``+05:00`` instant stored as-is would read
+    back five hours off.
+    """
+    return _to_utc(now) if now is not None else datetime.now(timezone.utc)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,7 +69,7 @@ class AcquisitionLedger:
         lease_seconds: int = 120,
         now: datetime | None = None,
     ) -> ClaimResult:
-        now = now or datetime.now(timezone.utc)
+        now = _utc_now(now)
         row = (
             self.session.query(AcquisitionLedgerRow)
             .filter(AcquisitionLedgerRow.resource_key == request.key)
@@ -69,10 +106,16 @@ class AcquisitionLedger:
         if row.status == "complete" and not request.force_refresh:
             self.session.commit()
             return ClaimResult("cache_hit", row.id, request.key)
-        if row.next_retry_at and row.next_retry_at > now:
+        next_retry_at = _as_utc(row.next_retry_at)
+        if next_retry_at is not None and next_retry_at > now:
             self.session.commit()
             return ClaimResult("retry_blocked", row.id, request.key)
-        if row.status == "leased" and row.lease_expires_at and row.lease_expires_at > now:
+        lease_expires_at = _as_utc(row.lease_expires_at)
+        if (
+            row.status == "leased"
+            and lease_expires_at is not None
+            and lease_expires_at > now
+        ):
             self.session.commit()
             return ClaimResult("in_flight", row.id, request.key)
 
@@ -113,7 +156,7 @@ class AcquisitionLedger:
         row.provenance_json = json.dumps(dict(record.provenance), sort_keys=True)
         row.consumers_json = json.dumps(sorted(consumers))
         row.credits_spent += record.credits_spent
-        row.retrieved_at = record.retrieved_at
+        row.retrieved_at = _as_utc(record.retrieved_at)
         row.lease_holder = None
         row.lease_expires_at = None
         row.next_retry_at = None
@@ -126,7 +169,7 @@ class AcquisitionLedger:
         retry_after_seconds: int = 300,
         now: datetime | None = None,
     ) -> None:
-        now = now or datetime.now(timezone.utc)
+        now = _utc_now(now)
         row = (
             self.session.query(AcquisitionLedgerRow)
             .filter(AcquisitionLedgerRow.resource_key == resource_key)
