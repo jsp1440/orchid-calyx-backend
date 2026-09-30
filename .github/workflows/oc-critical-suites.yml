@@ -44,6 +44,7 @@ env:
     tests/test_acquisition_ledger.py
     tests/test_acquisition_ledger_fencing.py
     tests/test_shared_firecrawl.py
+    tests/test_firecrawl_federation_pilot_ledger.py
     tests/test_source_federation_acquisition.py
     tests/test_canonical_brain_leases.py
     tests/test_oc_swarm_lease_reconcile.py
