@@ -24,6 +24,26 @@ from .firecrawl_mapper import FederationSourceProfile, FirecrawlFederationMapper
 logger = logging.getLogger(__name__)
 
 
+def profile_from_payload(payload_json: str) -> FederationSourceProfile:
+    """Rebuild a profile from the ledger's cached ``payload_json``."""
+    data = json.loads(payload_json)
+    return FederationSourceProfile(
+        **{
+            **data,
+            "urls": tuple(data["urls"]),
+            "url_classes": {
+                key: tuple(value) for key, value in data["url_classes"].items()
+            },
+            "candidate_identifiers": {
+                key: tuple(value)
+                for key, value in data["candidate_identifiers"].items()
+            },
+            "api_download_hints": tuple(data["api_download_hints"]),
+            "terms_license_hints": tuple(data["terms_license_hints"]),
+        }
+    )
+
+
 class SharedFirecrawlFederationService:
     def __init__(
         self,
@@ -48,41 +68,20 @@ class SharedFirecrawlFederationService:
         include_subdomains: bool = False,
         force_refresh: bool = False,
     ) -> tuple[str, FederationSourceProfile | None]:
-        request = AcquisitionRequest(
-            url=root_url,
-            provider="firecrawl_map",
+        request = self.acquisition_request(
             consumer_module=consumer_module,
-            stable_identifier=self._request_identity(
-                root_url=root_url,
-                search=search,
-                limit=limit,
-                sitemap=sitemap,
-                include_subdomains=include_subdomains,
-            ),
+            root_url=root_url,
+            search=search,
+            limit=limit,
+            sitemap=sitemap,
+            include_subdomains=include_subdomains,
             force_refresh=force_refresh,
         )
         claim = self.ledger.claim(request, worker_id=self.worker_id)
         if claim.action == "cache_hit":
             cached = self.ledger.cached_payload(request.key)
             if cached:
-                data = json.loads(cached)
-                profile = FederationSourceProfile(
-                    **{
-                        **data,
-                        "urls": tuple(data["urls"]),
-                        "url_classes": {
-                            key: tuple(value)
-                            for key, value in data["url_classes"].items()
-                        },
-                        "candidate_identifiers": {
-                            key: tuple(value)
-                            for key, value in data["candidate_identifiers"].items()
-                        },
-                        "api_download_hints": tuple(data["api_download_hints"]),
-                        "terms_license_hints": tuple(data["terms_license_hints"]),
-                    }
-                )
-                return "cache_hit", profile
+                return "cache_hit", profile_from_payload(cached)
             raise RuntimeError("completed acquisition is missing its cached payload")
         if claim.action != "acquired_lease":
             return claim.action, None
@@ -154,6 +153,33 @@ class SharedFirecrawlFederationService:
             )
             raise
         return "fetched", profile
+
+    @classmethod
+    def acquisition_request(
+        cls,
+        *,
+        consumer_module: str,
+        root_url: str,
+        search: str | None = None,
+        limit: int = 100,
+        sitemap: str = "include",
+        include_subdomains: bool = False,
+        force_refresh: bool = False,
+    ) -> AcquisitionRequest:
+        """The ledger request (and so the ``resource_key``) ``map_source`` uses."""
+        return AcquisitionRequest(
+            url=root_url,
+            provider="firecrawl_map",
+            consumer_module=consumer_module,
+            stable_identifier=cls._request_identity(
+                root_url=root_url,
+                search=search,
+                limit=limit,
+                sitemap=sitemap,
+                include_subdomains=include_subdomains,
+            ),
+            force_refresh=force_refresh,
+        )
 
     @staticmethod
     def _request_identity(
