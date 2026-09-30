@@ -25,6 +25,7 @@ class AcquisitionLedgerRow(Base):
     status: Mapped[str] = mapped_column(String(24), nullable=False, default="pending")
     content_hash: Mapped[str | None] = mapped_column(String(64))
     durable_object_ref: Mapped[str | None] = mapped_column(Text)
+    payload_json: Mapped[str | None] = mapped_column(Text)
     etag: Mapped[str | None] = mapped_column(Text)
     last_modified: Mapped[str | None] = mapped_column(Text)
     provenance_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
