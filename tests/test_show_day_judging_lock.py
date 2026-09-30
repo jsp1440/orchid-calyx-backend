@@ -1,8 +1,8 @@
 """Show judging lock, event status order and blind legacy results.
 
 Reuses the Show Day Phase 1 fixtures (lean show app on in-memory SQLite). Each
-mutating judging route is called once before the show's judging lock (200) and
-once after it (409); the lock is set and cleared through the owner's
+route in ``MUTATING_ROUTES`` is called once before the show's judging lock (200)
+and once after it (409); the lock is set and cleared through the owner's
 ``PATCH /api/shows`` route, which stays allowed.
 """
 
