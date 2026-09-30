@@ -408,6 +408,7 @@ def test_a_result_reaches_every_task_that_was_waiting_on_it():
         "8°07'30\"S near the trail",
         "recorded at latitude: -4.89123",
     ],
+    ids=lambda _case: "case",
 )
 def test_protected_locality_is_redacted_from_a_persisted_intent(locality):
     record = intent(objective=f"Explain the sighting {locality}").to_record()

@@ -169,7 +169,7 @@ POSITIVE = {
 POSITIVE_CASES = [(group, text) for group, items in POSITIVE.items() for text in items]
 
 
-@pytest.mark.parametrize(("group", "text"), POSITIVE_CASES)
+@pytest.mark.parametrize(("group", "text"), POSITIVE_CASES, ids=lambda _case: "case")
 def test_screen_withholds_broadened_locality_shapes(group, text):
     assert screened_text(text) == WITHHELD, group
 
@@ -235,7 +235,7 @@ BENIGN = [
 ]
 
 
-@pytest.mark.parametrize("text", BENIGN)
+@pytest.mark.parametrize("text", BENIGN, ids=lambda _case: "case")
 def test_screen_keeps_ordinary_matrix_morphology(text):
     assert screened_text(text) == text
 
@@ -557,7 +557,7 @@ REPAIR_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("group", "text"), REPAIR_CASES)
+@pytest.mark.parametrize(("group", "text"), REPAIR_CASES, ids=lambda _case: "case")
 def test_screen_withholds_checker_repair_cases(group, text):
     assert screened_text(text) == WITHHELD, group
 

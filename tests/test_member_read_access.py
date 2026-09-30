@@ -1145,7 +1145,7 @@ PROBE5_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("kind", "value"), PROBE5_CASES)
+@pytest.mark.parametrize(("kind", "value"), PROBE5_CASES, ids=lambda _case: "case")
 def test_checker_probe5_values_are_redacted(kind, value):
     for record in (
         {"kind": kind, "object_value": value},
@@ -1184,7 +1184,7 @@ def test_caller_chosen_field_names_are_dropped_everywhere():
         {"metrics": {"Cerro Toledo": 1, "planned": 2, "cerro_toledo_lat": -4.9123, "mindo_site": [-4.23, -25.34]}}
     )
     assert out == {"metrics": {"planned": 2, "keys_redacted": 3}}
-    assert redact_member_locality({"cerro_toledo_site": [-0.2134, -78.51]}) == {"keys_redacted": 1}
+    assert redact_member_locality({"cerro_toledo_site": [-4.7531, -25.86]}) == {"keys_redacted": 1}
     assert redact_member_locality({"42": 1, "planned": 3}) == {"42": 1, "planned": 3}
 
 
@@ -1371,8 +1371,8 @@ PROBE7_CASES = [
     ({"kind": "TAXON", "object_value": "Chiang mai"}, "Chiang"),
     ({"kind": "TAXON", "object_value": "Dracula vampira var. pichincha"}, "pichincha"),
     ({"kind": "CONSERVATION_ASSERTION", "object_value": "Endangered in Chiang Mai"}, "Chiang"),
-    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -0.2134, "unit": "mm"}, "78.5"),
-    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -0.2134, "unit": "mm"}, "0.2134"),
+    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -4.7531, "unit": "mm"}, "78.5"),
+    ({"kind": "MEASUREMENT", "object_value": "-78.5 mm", "numeric_value": -4.7531, "unit": "mm"}, "4.7531"),
     ({"kind": "MEASUREMENT", "object_value": "2400 m"}, "2400"),
     ({"kind": "MEASUREMENT", "object_value": "Cotopaxi 12 mm"}, "Cotopaxi"),
     ({"kind": "TRAIT", "object_value": "yellow"}, "yellow"),
@@ -1380,9 +1380,9 @@ PROBE7_CASES = [
     ({"normalized_subject": "Chiang mai"}, "Chiang"),
     ({"normalized_subject": "pichincha"}, "pichincha"),
     ({"x": "436572726f20546f6c65646f"}, "436572726f"),
-    ({"x": [[-0.2134, -78.51]]}, "78.51"),
-    ({"cerro_toledo_site": [-0.2134, -78.51]}, "cerro"),
-    ({"cerro_toledo_site": [-0.2134, -78.51]}, "78.51"),
+    ({"x": [[-4.7531, -25.86]]}, "25.86"),
+    ({"cerro_toledo_site": [-4.7531, -25.86]}, "cerro"),
+    ({"cerro_toledo_site": [-4.7531, -25.86]}, "25.86"),
     ({"Cerro Toledo": 1}, "Cerro"),
     ({"evidence_type_distribution": {"Cerro Toledo": 3, "PRIMARY": 1}}, "Cerro"),
     ({"source_object_type": "Mindo herbarium"}, "Mindo"),
@@ -1391,7 +1391,7 @@ PROBE7_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("record", "needle"), PROBE7_CASES)
+@pytest.mark.parametrize(("record", "needle"), PROBE7_CASES, ids=lambda _case: "case")
 def test_checker_probe7_cases(record, needle):
     assert needle not in json.dumps(redact_member_locality(record), ensure_ascii=False)
 

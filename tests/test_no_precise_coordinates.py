@@ -12,8 +12,10 @@ only to exercise the detector, not observations of any organism.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import io
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -469,7 +471,8 @@ def test_notebook_sources_and_outputs_are_scanned(tmp_path):
         ]
     }
     finding = _scan(tmp_path, "analysis.ipynb", json.dumps(notebook))
-    assert finding.precise_values == 3, finding.fields
+    # A literal can be found by more than one detector; each source is covered.
+    assert {"leaflet.marker", "longitude", "lat"} <= finding.fields, finding.fields
 
 
 def test_kml_and_gpx_are_scanned(tmp_path):
@@ -563,3 +566,219 @@ def test_oversized_file_fails_closed(tmp_path, monkeypatch):
     monkeypatch.setattr(guard, "MAX_IN_MEMORY_BYTES", 16)
     finding = _scan(tmp_path, "big.json", json.dumps({"padding": "x" * 64}))
     assert finding.error is not None
+
+
+# --- repair round 2: arrays under coordinate keys, pandas orients, notebooks --
+
+_LAT_B = "12.4567"  # SYNTHETIC second Atlantic point
+_LON_B = "-45.7891"
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"lat": [float(PRECISE_LAT), float(_LAT_B)], "lon": [float(PRECISE_LON)]},
+        # pandas DataFrame.to_json() default orient="columns"
+        {"lat": {"0": float(PRECISE_LAT), "1": float(_LAT_B)}, "species": {"0": "x"}},
+        # orient="split"
+        {
+            "columns": ["species", "decimalLatitude", "decimalLongitude"],
+            "index": [0],
+            "data": [["x", float(PRECISE_LAT), float(PRECISE_LON)]],
+        },
+        {"points": [[float(PRECISE_LON), float(PRECISE_LAT)]]},
+        {"Latitud": "12,3456", "Longitud": "-45,6789"},
+    ],
+    ids=[
+        "key-to-list",
+        "pandas-columns",
+        "pandas-split",
+        "points-list",
+        "spanish-keys",
+    ],
+)
+def test_json_arrays_and_pandas_orients_are_found(tmp_path, document):
+    assert _scan(tmp_path, "frame.json", json.dumps(document)).precise_values >= 1
+
+
+def _rows(count: int) -> list[list[float]]:
+    # SYNTHETIC: consecutive open-Atlantic points.
+    return [[-45.6789 + index / 1000, 12.3456 + index / 1000] for index in range(count)]
+
+
+def test_anonymous_pair_arrays_need_the_documented_minimum(tmp_path):
+    minimum = guard.ANONYMOUS_PAIR_MIN_ROWS
+    many = _scan(tmp_path, "values.json", json.dumps(_rows(minimum)))
+    assert many.precise_values == minimum
+    assert many.fields == {"anonymous.pairs"}
+    few = _scan(tmp_path, "few.json", json.dumps(_rows(minimum - 1)))
+    assert few.precise_values == 0
+    # pandas orient="values": rows with a label column still align
+    labelled = [["x", *row] for row in _rows(minimum)]
+    assert _scan(tmp_path, "labelled.json", json.dumps(labelled)).precise_values
+    # ordinary numeric pairs (coarse, or out of coordinate range) pass
+    chart = [[index, round(index * 1.5, 2)] for index in range(40)]
+    assert _scan(tmp_path, "chart.json", json.dumps(chart)).precise_values == 0
+    big = [[index * 1000.123, index * 2000.456] for index in range(1, 40)]
+    assert _scan(tmp_path, "big.json", json.dumps(big)).precise_values == 0
+
+
+def test_yaml_coordinate_key_lists_are_found(tmp_path):
+    text = f"site:\n  lat: [{PRECISE_LAT}, {_LAT_B}]\n  lon:\n    - {PRECISE_LON}\n"
+    assert _scan(tmp_path, "sites.yml", text).precise_values == 3
+
+
+def _notebook(*cells: dict) -> str:
+    return json.dumps({"cells": list(cells), "metadata": {}, "nbformat": 4})
+
+
+def test_notebook_dataframe_outputs_are_scanned(tmp_path):
+    frame_text = (
+        "     species  decimalLatitude  decimalLongitude\n"
+        f"0  synthetic          {PRECISE_LAT}          {PRECISE_LON}\n"
+        f"1  synthetic          {_LAT_B}          {_LON_B}\n"
+    )
+    frame_html = (
+        '<table class="dataframe"><thead><tr><th></th><th>lat</th><th>lon</th>'
+        f"</tr></thead><tbody><tr><th>0</th><td>{PRECISE_LAT}</td><td>{PRECISE_LON}</td>"
+        "</tr></tbody></table>"
+    )
+    notebook = _notebook(
+        {
+            "cell_type": "code",
+            "source": ["df"],
+            "outputs": [
+                {
+                    "output_type": "execute_result",
+                    "data": {"text/plain": [frame_text], "text/html": [frame_html]},
+                }
+            ],
+        }
+    )
+    finding = _scan(tmp_path, "frame.ipynb", notebook)
+    assert finding.precise_values >= 6, finding.fields
+
+
+def test_notebook_printed_csv_and_python_literals_are_scanned(tmp_path):
+    printed = f"id;Latitud;Longitud\n1;{_comma(PRECISE_LAT)};{_comma(PRECISE_LON)}\n"
+    source = [
+        "import folium\n",
+        f'df = pd.DataFrame({{"lat": [{PRECISE_LAT}], "lng": [{PRECISE_LON}]}})\n',
+        f"folium.Marker([{_LAT_B}, {_LON_B}]).add_to(m)\n",
+    ]
+    notebook = _notebook(
+        {
+            "cell_type": "code",
+            "source": source,
+            "outputs": [{"output_type": "stream", "name": "stdout", "text": [printed]}],
+        }
+    )
+    finding = _scan(tmp_path, "analysis.ipynb", notebook)
+    assert {"latitud", "longitud", "lat", "lng", "folium.location"} <= finding.fields
+
+
+def test_new_leaflet_latlng_is_found(tmp_path):
+    html_text = f"<script>var p = new L.LatLng({PRECISE_LAT}, {PRECISE_LON});</script>"
+    assert _scan(tmp_path, "latlng.html", html_text).fields == {"leaflet.marker"}
+
+
+@pytest.mark.parametrize(
+    "header",
+    ["Latitud;Longitud", "lat.;long.", "LATITUD;LONGITUD"],
+    ids=["spanish", "abbreviated", "spanish-upper"],
+)
+def test_spanish_and_abbreviated_headers_are_found(tmp_path, header):
+    body = f"{header}\n{_comma(PRECISE_LAT)};{_comma(PRECISE_LON)}\n"
+    assert _scan(tmp_path, "export.csv", body).precise_values == 2
+
+
+def _corrupt_deflate(payload: bytes) -> bytes:
+    blob = bytearray(gzip.compress(payload * 50))
+    for index in range(12, min(len(blob) - 8, 60)):
+        blob[index] ^= 0xFF
+    return bytes(blob)
+
+
+def test_corrupt_compressed_members_fail_closed_without_crashing(tmp_path):
+    assert _scan(tmp_path, "bad.csv.gz", _corrupt_deflate(_LEAK_CSV)).error is not None
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("points.csv", _LEAK_CSV * 50)
+    blob = bytearray(buffer.getvalue())
+    start = blob.index(b"points.csv") + len("points.csv")
+    for index in range(start + 4, start + 40):
+        blob[index] ^= 0xFF
+    assert _scan(tmp_path, "bad.zip", bytes(blob)).error is not None
+
+    assert (
+        _scan(tmp_path, "bad.tar.gz", _corrupt_deflate(b"x" * 4096)).error is not None
+    )
+
+
+# --- retired canaries ------------------------------------------------------------
+
+# SHA-256 (truncated) of each real-looking coordinate literal that test and code
+# canaries used before they were replaced with synthetic open-ocean values. The
+# values themselves are deliberately not written here; they remain in git
+# history, which is an owner decision (docs/privacy/TRACKED-LOCALITY-REMEDIATION.md).
+RETIRED_CANARY_DIGESTS = frozenset(
+    [
+        "063cc6230e2600367406e35b",
+        "1cbb31b76c723a711cd0265c",
+        "3031d72484c4cc66527ea780",
+        "346d5e0d9ae9627ac1775b73",
+        "35e632ae2df0125c1f3e1f81",
+        "3648a4b2bf2c6f4b1bbeb9c9",
+        "45ff757d6286fe94cfeb72ea",
+        "474dd8c62667495b5d2b62ab",
+        "47586cbd7db5fce67ef1320f",
+        "56814bf10606611c1dadd338",
+        "62dad444a814e182ca7566e9",
+        "65d8e1c81d7a2b3c0cfb7aac",
+        "83e622d6623d8e0d12ef38f2",
+        "87d1b2791836181442cc7b2c",
+        "886928fd2a566d875b0c2337",
+        "8f1c19bd155d0683d827356c",
+        "a38ae1c20f639ccda4b52ffc",
+        "aa2bc555246bdd80e1b63159",
+        "ab39bdc849570534a8e83b83",
+        "b081308952086339a5be1c80",
+        "b0be54ecab025c959401886b",
+        "b1594d4011ed4c0fe8604ea6",
+        "b2fd6dbb749f51b6e1431484",
+        "b71b091e5f2592350283ead7",
+        "bab30c07cc52e228991d3545",
+        "be0acf63fe9723ad6fd14e34",
+        "c376e74c3379e7aa6312747e",
+        "d3bbdc6f92ed41cce4594ed5",
+        "d405e16487cb7933675ee6ff",
+        "d72f8bc0998d1eaf568248d1",
+        "df4c87e137735350234e668e",
+        "df8fca2d8b45609e37e96614",
+        "e3be155501db51cff2cb35b4",
+        "ebba6b3711db367581eab603",
+        "f7959d61ef8f48d898b810fb",
+        "fe11464133afbb46f9d792a2",
+    ]
+)
+_LITERAL = re.compile(r"(?<!\d)(\d{1,3}\.\d{3,})(?!\d)|(\d{1,3}°\d{2}'[NSEW])")
+
+
+def _digest(literal: str) -> str:
+    return hashlib.sha256(f"oc-retired-canary:{literal}".encode()).hexdigest()[:24]
+
+
+def test_retired_real_looking_canaries_do_not_return():
+    assert len(RETIRED_CANARY_DIGESTS) >= 30
+    offenders = []
+    for relative in guard.tracked_files(REPO_ROOT):
+        path = REPO_ROOT / relative
+        if path.is_symlink() or not path.is_file() or path.stat().st_size > 20_000_000:
+            continue
+        text = path.read_bytes().decode("utf-8", errors="ignore")
+        for match in _LITERAL.finditer(text):
+            if _digest(match.group(1) or match.group(2)) in RETIRED_CANARY_DIGESTS:
+                offenders.append(relative)
+                break
+    assert offenders == [], "a retired real-looking coordinate canary is back"

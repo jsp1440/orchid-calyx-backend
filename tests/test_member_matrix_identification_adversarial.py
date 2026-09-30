@@ -105,6 +105,7 @@ def test_member_state_schema_is_explicit_and_fails_closed():
         "lat 18",
         "herbarium sheet",
     ],
+    ids=lambda _case: "case",
 )
 def test_screen_withholds_locality_and_submitter_text(text):
     assert screened_text(text) == WITHHELD

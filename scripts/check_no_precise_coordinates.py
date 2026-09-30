@@ -15,14 +15,23 @@ latitude/longitude-like value finer than two decimal places:
   only on the first row), comma decimals (``12,3456``), exponent notation,
   and WKT geometries in any cell;
 * ``.xlsx``/``.xlsm`` with the same header search on every sheet;
-* JSON, GeoJSON, JSON Lines, YAML and notebooks (``.ipynb`` sources and
-  outputs): coordinate-like keys, ``[lon, lat]`` arrays under
-  coordinate-like keys, ``x``/``y`` pairs in a geometry context, and every
-  GeoJSON geometry type;
+* JSON, GeoJSON, JSON Lines and YAML: coordinate-like keys holding a value,
+  a list or a dict of values (pandas ``orient="columns"``), pandas
+  ``orient="split"`` tables, ``[lon, lat]`` arrays under coordinate-like or
+  position-list keys (``points``, ``path``, ...), aligned anonymous numeric
+  pairs (see :data:`ANONYMOUS_PAIR_MIN_ROWS`), ``x``/``y`` pairs in a
+  geometry context, and every GeoJSON geometry type;
+* notebooks (``.ipynb``): each cell source and each output (``text/plain``,
+  ``text/html``, stream text, JSON) through the same detectors: printed and
+  delimited tables, DataFrame reprs and HTML tables, JSON, Python literals
+  (``pd.DataFrame({"lat": [...]})``, ``folium.Marker([lat, lon])``);
 * SQL dumps: ``INSERT ... (cols) VALUES`` and ``COPY ... FROM stdin`` rows,
   WKT literals and ``ST_MakePoint``/``ST_Point`` calls;
-* KML/KMZ and GPX; HTML (Leaflet markers, ``L.latLng``, polylines and
-  polygons, embedded GeoJSON).
+* KML/KMZ and GPX; HTML (Leaflet markers, ``L.latLng``/``new L.LatLng``,
+  polylines and polygons, embedded GeoJSON, folium ``location=``, tables).
+
+Field names include Spanish/Portuguese/Italian spellings (``Latitud``,
+``Longitud``) and abbreviations (``lat.``, ``long.``).
 
 Anything that cannot be verified fails closed: an unreadable or oversized
 file, a Parquet file without ``pyarrow``, a corrupt archive, or a tracked
@@ -33,8 +42,11 @@ are exempt. The report names files, fields and counts only. It never prints
 a coordinate value, so its output is safe to paste into a public pull
 request.
 
-Not scanned (documented follow-ups): source code (``.py``, ``.js``, ``.ts``)
-and Markdown.
+Not scanned (documented follow-ups in
+``docs/privacy/TRACKED-LOCALITY-REMEDIATION.md``): source code (``.py``,
+``.js``, ``.ts``), Markdown, UTF-16 text, degree-minute-second notation,
+unlabelled ``x``/``y`` outside a geometry context, and ``INSERT`` statements
+without a column list.
 
 Exit codes: 0 clean, 1 precise coordinates (or an unverifiable file) found,
 2 usage error.
@@ -43,8 +55,10 @@ Exit codes: 0 clean, 1 precise coordinates (or an unverifiable file) found,
 from __future__ import annotations
 
 import argparse
+import ast
 import csv
 import gzip
+import html
 import io
 import json
 import re
@@ -52,6 +66,7 @@ import subprocess
 import sys
 import tarfile
 import zipfile
+import zlib
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
@@ -101,8 +116,22 @@ ALLOWLIST_MAX_BYTES = 64 * 1024
 # Field names
 # --------------------------------------------------------------------------
 
-_LAT_TOKENS = frozenset({"lat", "latitude", "lati", "decimallatitude"})
-_LON_TOKENS = frozenset({"lon", "lng", "longitude", "long", "decimallongitude"})
+# English, plus the Spanish/Portuguese/Italian spellings that Latin American
+# herbarium and Excel exports use ("Latitud", "Longitud", "lat.", "long.").
+_LAT_TOKENS = frozenset(
+    {"lat", "latitude", "lati", "decimallatitude", "latitud", "latitudine"}
+)
+_LON_TOKENS = frozenset(
+    {
+        "lon",
+        "lng",
+        "longitude",
+        "long",
+        "decimallongitude",
+        "longitud",
+        "longitudine",
+    }
+)
 # A field that measures something about a coordinate rather than holding one.
 _NOT_A_COORDINATE_TOKENS = frozenset(
     {"uncertainty", "error", "err", "precision", "accuracy", "resolution", "delta"}
@@ -130,6 +159,40 @@ PAIR_KEYS = frozenset(
         "geo",
     }
 )
+# Keys whose value is a sequence of positions: every position is checked.
+POSITION_LIST_KEYS = frozenset(
+    {
+        "points",
+        "positions",
+        "path",
+        "paths",
+        "route",
+        "track",
+        "trace",
+        "vertices",
+        "locations",
+        "sites",
+        "markers",
+        "polyline",
+        "polygon",
+        "line",
+        "ring",
+        "rings",
+        "shape",
+        "geometry",
+        "geometries",
+    }
+)
+# Anonymous numeric pairs (a bare ``[[a, b], ...]`` array under no telling
+# key, or pandas ``orient="values"`` rows) are only counted when at least
+# ANONYMOUS_PAIR_MIN_ROWS rows, and ANONYMOUS_PAIR_MIN_SHARE of all rows,
+# hold a coordinate-plausible pair finer than the floor in the same two
+# adjacent columns. One or two such pairs are common in ordinary numeric data
+# (chart points, ratios); five aligned rows of in-range values with three or
+# more decimals is the shape of a point list. A short anonymous list escapes
+# this rule; one under a coordinate or position key does not.
+ANONYMOUS_PAIR_MIN_ROWS = 5
+ANONYMOUS_PAIR_MIN_SHARE = 0.8
 # Parent keys that put an ``{"x": ..., "y": ...}`` object in geographic context.
 _XY_CONTEXT_KEYS = frozenset(
     {"geometry", "geom", "location", "loc", "point", "geo", "geopoint", "coords"}
@@ -187,7 +250,7 @@ def is_pair_key(key: object) -> bool:
     if compact in PAIR_KEYS:
         return True
     return bool(_LAT_TOKENS.intersection(tokens)) and bool(
-        {"lon", "lng", "long", "longitude"}.intersection(tokens)
+        {"lon", "lng", "long", "longitude", "longitud"}.intersection(tokens)
     )
 
 
@@ -301,7 +364,13 @@ _WKT = re.compile(
 )
 _WKT_POSITION = re.compile(rf"({_NUM})\s+({_NUM})")
 _LEAFLET_POINT = re.compile(
-    rf"L\.(?:circleMarker|marker|circle|latLng|latlng)\(\s*\[?\s*({_NUM})\s*,\s*({_NUM})"
+    rf"L\.(?:circleMarker|marker|circle|latLng|LatLng|latlng)\(\s*\[?\s*({_NUM})\s*,"
+    rf"\s*({_NUM})"
+)
+# folium.Marker([lat, lon]), CircleMarker(location=(lat, lon)), location=[...]
+_FOLIUM_POINT = re.compile(
+    rf"(?:\b(?:Marker|CircleMarker|Circle|Map)\(\s*(?:location\s*=\s*)?|"
+    rf"\blocation\s*=\s*)[\[(]\s*({_NUM})\s*,\s*({_NUM})"
 )
 _LEAFLET_SHAPE = re.compile(
     r"L\.(?:polyline|polygon|rectangle)\(\s*(\[[-+\d\s.,\[\]eE]*\])"
@@ -341,6 +410,9 @@ def scan_text(text: str, finding: FileFinding, *, key_values: bool) -> None:
     for match in _LEAFLET_POINT.finditer(text):
         if pair_is_precise(match.group(1), match.group(2)):
             finding.hit("leaflet.marker")
+    for match in _FOLIUM_POINT.finditer(text):
+        if pair_is_precise(match.group(1), match.group(2)):
+            finding.hit("folium.location")
     for match in _LEAFLET_SHAPE.finditer(text):
         _positions_in_array_text(match.group(1), finding, "leaflet.shape")
     for match in _TEXT_GEOJSON_COORDINATES.finditer(text):
@@ -415,6 +487,66 @@ def _scan_positions(node: object, finding: FileFinding, label: str) -> None:
         stack.extend(current)
 
 
+def _scalars(value: object, limit: int = 1_000_000) -> Iterator[object]:
+    """Every scalar nested in a list/dict value (pandas ``orient="columns"``)."""
+
+    stack = [value]
+    seen = 0
+    while stack and seen < limit:
+        current = stack.pop()
+        if isinstance(current, dict):
+            stack.extend(current.values())
+        elif isinstance(current, (list, tuple)):
+            stack.extend(current)
+        else:
+            seen += 1
+            yield current
+
+
+def _is_row(item: object) -> bool:
+    return (
+        isinstance(item, (list, tuple))
+        and 2 <= len(item) <= 64
+        and not any(isinstance(cell, (list, tuple, dict)) for cell in item)
+    )
+
+
+def scan_anonymous_rows(rows: list[object], finding: FileFinding) -> None:
+    """Aligned numeric pairs in an unlabelled array; see ANONYMOUS_PAIR_MIN_ROWS."""
+
+    if len(rows) < ANONYMOUS_PAIR_MIN_ROWS or not all(_is_row(row) for row in rows):
+        return
+    width = min(len(row) for row in rows)  # type: ignore[arg-type]
+    best = 0
+    for column in range(width - 1):
+        count = sum(
+            1
+            for row in rows
+            if pair_is_precise(row[column], row[column + 1])  # type: ignore[index]
+        )
+        best = max(best, count)
+    if best >= ANONYMOUS_PAIR_MIN_ROWS and best >= ANONYMOUS_PAIR_MIN_SHARE * len(rows):
+        finding.hit("anonymous.pairs", best)
+
+
+def _scan_split_table(document: dict, finding: FileFinding) -> bool:
+    """pandas ``orient="split"``: ``{"columns": [...], "data": [[...], ...]}``."""
+
+    columns, data = document.get("columns"), document.get("data")
+    if not (
+        isinstance(columns, list)
+        and isinstance(data, list)
+        and all(isinstance(column, str) for column in columns)
+    ):
+        return False
+    table = TableScanner(finding)
+    table.row(columns)
+    for row in data:
+        if isinstance(row, (list, tuple)):
+            table.row(row)
+    return True
+
+
 def walk_document(node: object, finding: FileFinding) -> None:
     stack: list[tuple[str, object]] = [("", node)]
     seen: set[int] = set()
@@ -426,6 +558,7 @@ def walk_document(node: object, finding: FileFinding) -> None:
                 continue
             seen.add(id(current))
         if isinstance(current, (list, tuple)):
+            scan_anonymous_rows(list(current), finding)
             stack.extend((parent_key, item) for item in current)
             continue
         if isinstance(current, str):
@@ -433,6 +566,7 @@ def walk_document(node: object, finding: FileFinding) -> None:
             continue
         if not isinstance(current, dict):
             continue
+        _scan_split_table(current, finding)
         geometry_type = current.get("type")
         if (
             isinstance(geometry_type, str)
@@ -462,6 +596,17 @@ def walk_document(node: object, finding: FileFinding) -> None:
             if axis and not isinstance(value, (dict, list, tuple)):
                 if is_precise(value, axis) or pair_text_is_precise(value):
                     finding.hit(_compact(key) or axis)
+                continue
+            if axis:
+                # {"lat": [...]} and pandas {"lat": {"0": v, ...}}.
+                label = _compact(key) or axis
+                for scalar in _scalars(value):
+                    if is_precise(scalar, axis) or pair_text_is_precise(scalar):
+                        finding.hit(label)
+                continue
+            if _compact(key) in POSITION_LIST_KEYS and isinstance(value, (list, tuple)):
+                _scan_positions(value, finding, _compact(key))
+                stack.append((str(key), value))
                 continue
             if is_pair_key(key) and isinstance(value, (list, tuple, str)):
                 _scan_positions(value, finding, _compact(key))
@@ -514,6 +659,8 @@ def _joined(value: object) -> str:
 
 
 def scan_notebook_text(text: str, finding: FileFinding) -> None:
+    """Every cell source and output, through the same detectors as files."""
+
     try:
         notebook = _load_json(text)
     except (json.JSONDecodeError, RecursionError):
@@ -523,18 +670,118 @@ def scan_notebook_text(text: str, finding: FileFinding) -> None:
     for cell in cells if isinstance(cells, list) else []:
         if not isinstance(cell, dict):
             continue
-        scan_text(_joined(cell.get("source")), finding, key_values=True)
+        scan_text_document(_joined(cell.get("source")), finding, python=True)
         outputs = cell.get("outputs")
         for output in outputs if isinstance(outputs, list) else []:
             if not isinstance(output, dict):
                 continue
-            scan_text(_joined(output.get("text")), finding, key_values=True)
+            # stream output (print(df), print(df.to_csv())) and error text
+            scan_text_document(_joined(output.get("text")), finding, python=False)
             data = output.get("data")
             for mime, payload in (data if isinstance(data, dict) else {}).items():
-                if "json" in str(mime):
+                if "json" in str(mime) and not isinstance(payload, (str, list)):
                     walk_document(payload, finding)
                 else:
-                    scan_text(_joined(payload), finding, key_values=True)
+                    scan_text_document(_joined(payload), finding, python=False)
+
+
+def scan_text_document(text: str, finding: FileFinding, *, python: bool) -> None:
+    """Free text that may hold a table, JSON, HTML or (for sources) Python."""
+
+    if not text.strip():
+        return
+    scan_text(text, finding, key_values=True)
+    stripped = text.strip()
+    if stripped[:1] in "[{":
+        try:
+            walk_document(_load_json(stripped), finding)
+        except (json.JSONDecodeError, RecursionError):
+            pass
+    if "<t" in text.lower():
+        scan_html_tables(text, finding)
+    scan_text_tables(text, finding)
+    if python:
+        scan_python_literals(text, finding)
+
+
+_HTML_ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr\s*>", re.IGNORECASE | re.DOTALL)
+_HTML_CELL = re.compile(r"<t([hd])\b[^>]*>(.*?)</t[hd]\s*>", re.IGNORECASE | re.DOTALL)
+_HTML_TAG_TEXT = re.compile(r"<[^>]+>")
+
+
+def scan_html_tables(text: str, finding: FileFinding) -> None:
+    """``<table>`` rows, such as a notebook's DataFrame HTML output."""
+
+    table = TableScanner(finding)
+    for row in _HTML_ROW.finditer(text):
+        cells = [
+            html.unescape(_HTML_TAG_TEXT.sub("", cell)).strip()
+            for _kind, cell in _HTML_CELL.findall(row.group(1))
+        ]
+        if cells:
+            table.row(cells)
+
+
+def scan_text_tables(text: str, finding: FileFinding) -> None:
+    """Printed tables: delimited text (to_csv) or whitespace-aligned reprs."""
+
+    lines = [line for line in text.splitlines() if line.strip()]
+    if len(lines) < 2:
+        return
+    sample = "\n".join(lines[:50])
+    delimiter = _sniff_delimiter(sample, "")
+    if delimiter:
+        table = TableScanner(finding)
+        for row in csv.reader(lines, delimiter=delimiter):
+            table.row(row)
+    # A DataFrame repr: the header has one cell fewer than the rows, because
+    # the index column is unnamed.
+    table = TableScanner(finding)
+    header_width = 0
+    for line in lines:
+        cells = line.split()
+        if table._header_columns(cells):
+            header_width = len(cells)
+            table.row(cells)
+            continue
+        if header_width and len(cells) == header_width + 1:
+            cells = cells[1:]
+        table.row(cells)
+
+
+def scan_python_literals(source: str, finding: FileFinding) -> None:
+    """Literal dicts/lists and ``name = number`` in (notebook) Python source."""
+
+    code = "\n".join(
+        "" if line.lstrip().startswith(("%", "!")) else line
+        for line in source.splitlines()
+    )
+    try:
+        tree = ast.parse(code)
+    except (SyntaxError, ValueError, RecursionError):
+        return
+    stack: list[ast.AST] = [tree]
+    while stack:
+        node = stack.pop()
+        if isinstance(node, (ast.Dict, ast.List, ast.Tuple, ast.Set)):
+            try:
+                walk_document(ast.literal_eval(node), finding)
+                continue
+            except (ValueError, TypeError, SyntaxError, RecursionError):
+                pass
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    walk_document({target.id: node.value.value}, finding)
+        if isinstance(node, ast.Call):
+            for keyword in node.keywords:
+                if keyword.arg:
+                    try:
+                        value = ast.literal_eval(keyword.value)
+                    except (ValueError, TypeError, SyntaxError, RecursionError):
+                        continue
+                    walk_document({keyword.arg: value}, finding)
+        stack.extend(ast.iter_child_nodes(node))
 
 
 # --------------------------------------------------------------------------
@@ -758,7 +1005,12 @@ def _scan_zip(data: bytes, name: str, finding: FileFinding, depth: int) -> None:
                 def opener(info: zipfile.ZipInfo = info) -> BinaryIO:
                     return archive.open(info)
 
-                scan_source(opener, f"{name}!{info.filename}", finding, depth + 1)
+                try:
+                    scan_source(opener, f"{name}!{info.filename}", finding, depth + 1)
+                except (zipfile.BadZipFile, zlib.error, EOFError, OSError) as exc:
+                    finding.fail_closed(
+                        f"member {info.filename} did not read: {type(exc).__name__}"
+                    )
     except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError) as exc:
         finding.fail_closed(f"archive did not open: {type(exc).__name__}")
 
@@ -782,7 +1034,7 @@ def _scan_tar(
                     finding,
                     depth + 1,
                 )
-    except (tarfile.TarError, EOFError, OSError) as exc:
+    except (tarfile.TarError, EOFError, OSError, zlib.error) as exc:
         finding.fail_closed(f"archive did not open: {type(exc).__name__}")
 
 
@@ -809,7 +1061,7 @@ def scan_source(
 
         try:
             scan_source(gunzip, inner, finding, depth + 1)
-        except (gzip.BadGzipFile, EOFError) as exc:
+        except (gzip.BadGzipFile, EOFError, OSError, zlib.error) as exc:
             finding.fail_closed(f"gzip did not read: {type(exc).__name__}")
         return
     if suffix in DELIMITED_SUFFIXES:
@@ -841,6 +1093,7 @@ def scan_source(
             scan_text(text, finding, key_values=False)
         elif suffix in HTML_SUFFIXES:
             scan_text(text, finding, key_values=True)
+            scan_html_tables(text, finding)
 
 
 def scan_file(path: Path, display: str | None = None) -> FileFinding:
@@ -849,7 +1102,7 @@ def scan_file(path: Path, display: str | None = None) -> FileFinding:
     finding = FileFinding(path=display or str(path))
     try:
         scan_source(lambda: path.open("rb"), path.name, finding)
-    except OSError as exc:
+    except (OSError, zlib.error, EOFError) as exc:
         finding.fail_closed(f"unreadable: {type(exc).__name__}")
     except (RecursionError, MemoryError) as exc:
         finding.fail_closed(f"not scannable: {type(exc).__name__}")

@@ -33,20 +33,31 @@ A committed data file bypasses every one of those runtime safeguards.
 ## Guard against recurrence
 
 - `scripts/check_no_precise_coordinates.py` fails on any tracked file that carries latitude/longitude-like values finer than 2 decimal places. It reports paths and counts, never values. It reads:
-  - CSV/TSV files, which are streamed. The delimiter is sniffed, UTF-8 BOMs are handled, the header row can be anywhere, comma decimals and exponent notation are parsed, and WKT in cells is found.
+  - CSV/TSV files, which are streamed. The delimiter is sniffed, UTF-8 BOMs are handled, the header row can be anywhere, comma decimals and exponent notation are parsed, and WKT in cells is found. Header names include Spanish `Latitud`/`Longitud` and the abbreviations `lat.`/`long.`.
   - XLSX workbooks, with the same header search.
-  - JSON, GeoJSON (every geometry type), JSON Lines, YAML and notebooks (sources and outputs).
-  - SQL `INSERT`/`COPY` dumps, KML/KMZ, GPX and HTML: Leaflet markers, `L.latLng`, polylines and polygons, and embedded GeoJSON.
+  - JSON, GeoJSON (every geometry type), JSON Lines and YAML, including:
+    - coordinate-named keys holding a list or dict of values (`{"lat": [...]}`, pandas `orient="columns"`);
+    - pandas `orient="split"` tables;
+    - position lists under keys such as `points` or `path`.
+  - Anonymous numeric pair arrays (a top-level `[[lon, lat], ...]` or pandas `orient="values"`). These count only when at least 5 rows, and at least 80% of rows, hold an in-range pair finer than 2 dp in the same two adjacent columns. One or two such pairs are common in ordinary numeric data; five aligned rows is the shape of a point list. A shorter anonymous list is not flagged. One under a coordinate or position key always is.
+  - Notebooks: every cell source and every output (`text/plain`, `text/html`, stream text, JSON) goes through the same table, header, JSON and pattern detectors as files. That includes DataFrame reprs and HTML tables, printed CSV, Python literals such as `pd.DataFrame({"lat": [...]})`, and `folium.Marker([lat, lon])`.
+  - SQL `INSERT`/`COPY` dumps, KML/KMZ, GPX and HTML: Leaflet markers, `L.latLng`/`new L.LatLng`, polylines and polygons, embedded GeoJSON, folium `location=`, and tables.
   - Members of zip, gzip and tar archives.
 
-  Anything it cannot verify fails closed. That covers an unreadable, corrupt or oversized file, a Parquet file it cannot read, and a tracked path missing from the working tree (a sparse checkout).
+  Anything it cannot verify fails closed. That covers an unreadable, corrupt (including a bad deflate stream in a gzip, zip or tar member) or oversized file, a Parquet file it cannot read, and a tracked path missing from the working tree (a sparse checkout).
 
   The 2 dp threshold is a floor for tracked files. It is not a statement of compliance with the per-taxon rules above: sensitive taxa need coarser generalisation, and occurrence data should not be committed at all.
 
   The only exemption is an explicit allowlist of small synthetic fixtures under `tests/`. That allowlist is currently empty.
 
-  Source code (`.py`, `.js`, `.ts`) and Markdown are not scanned; extending the guard to them is a follow-up.
-- `tests/test_no_precise_coordinates.py` runs the guard over `git ls-files`. The guard runs in CI only when a workflow runs that test, and Orchid Autonomous Backend Validation runs only the test files a pull request changes. `.github/workflows/oc-critical-suites.yml` runs on every pull request and push to `main` and `oc-autonomous-integration`. It lists this test, and `tests/test_legacy_occurrence_api_fail_closed.py`, in `OC_PENDING_CRITICAL_SUITES`: each is run, and required to pass, as soon as it exists in the tree. Once this change merges, move both entries into a required list (`OC_CRITICAL_PRIVACY_SUITES`).
+  Documented follow-ups, not implemented:
+  - scanning source code (`.py`, `.js`, `.ts`) and Markdown;
+  - UTF-16 text;
+  - degree-minute-second notation;
+  - `x`/`y` pairs outside a geometry or CRS context;
+  - mysqldump `INSERT` statements without a column list;
+  - further suffixes (for example `.geopkg`, `.shp`, `.dbf`, `.ods`).
+- `tests/test_no_precise_coordinates.py` runs the guard over `git ls-files`. The guard runs in CI only when a workflow runs that test, and Orchid Autonomous Backend Validation runs only the test files a pull request changes. `.github/workflows/oc-critical-suites.yml` runs on every pull request and push to `main` and `oc-autonomous-integration`. This change lists this test and `tests/test_legacy_occurrence_api_fail_closed.py` in that workflow's required `OC_CRITICAL_PRIVACY_SUITES`.
 - `tests/test_legacy_occurrence_api_fail_closed.py` parses every standalone FastAPI route handler outside `app/`. It fails when a handler that touches coordinate names does not actually depend on `verify_owner_or_api_key`, whether through the decorator, a parameter dependency, the app's dependencies, or a wrapper that calls the check.
 - `.gitignore` now lists the generated exact-coordinate outputs.
 
@@ -54,7 +65,9 @@ A committed data file bypasses every one of those runtime safeguards.
 
 The redaction tests use planted coordinate literals to prove that locality is stripped. Several of those literals were real-looking pairs: some were labelled with named real sites next to real taxa and provinces, and some sat within a few kilometres of removed occurrence records.
 
-Every such pair in `app/`, `runtime/`, `scripts/` and `tests/` has been replaced with a synthetic open-ocean position of the same sign, digit shape and precision. Decimal pairs and degree-minute pairs were both replaced. Each replacement is consistent everywhere the literal appears, including the "must not leak" assertions. The redaction tests still exercise the same paths: with each module's locality redaction disabled in a scratch copy, the affected test files fail.
+Each of those real-looking literals in tracked files has been replaced with a synthetic open-ocean value of the same sign, digit shape and precision. That covers decimal pairs, degree-minute pairs, hemisphere-prefixed forms such as `N..`/`W..`, and one value that reappeared as a "measurement". The two-decimal half of a pair was replaced along with it. Each replacement is consistent everywhere the literal appears, including the "must not leak" assertions. The redaction tests still exercise the same paths: with each module's locality redaction disabled in a scratch copy, the affected test files fail.
+
+`tests/test_no_precise_coordinates.py::test_retired_real_looking_canaries_do_not_return` holds truncated SHA-256 digests of the 36 retired literals, never the values. It fails if any of them appears in a tracked file again. The pre-change files still hold them, and the test finds 23 in the old `tests/test_member_read_access.py` alone. The values remain in git history, as everything else here does. Parametrized test IDs in the affected files use neutral labels, so no literal appears in CI logs.
 
 ## What this change does not do
 

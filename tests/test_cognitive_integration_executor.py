@@ -330,6 +330,7 @@ def test_no_map_claims_agreement_while_serving_a_standing_contradiction():
         "Recorded at 43\u00b0 17\u2019 N",
         "50.1234, -9.2345",
     ],
+    ids=lambda _case: "case",
 )
 def test_every_coordinate_shape_a_checker_found_is_now_caught(leak):
     """Each of these was served verbatim by the first version of the redactor.
@@ -580,7 +581,7 @@ _SECOND_ROUND_LEAKS = [
 ]
 
 
-@pytest.mark.parametrize("leak,fragments", _SECOND_ROUND_LEAKS)
+@pytest.mark.parametrize("leak,fragments", _SECOND_ROUND_LEAKS, ids=lambda _case: "case")
 def test_a_position_written_without_a_decimal_pair_is_still_withheld(leak, fragments):
     """The first is the same ~10 m Oxford position as the original reproduction.
 
@@ -630,8 +631,8 @@ def test_the_fail_closed_net_is_strictly_broader_than_the_redactor():
             )
 
     # And it is genuinely wider: this one the redactor misses and the net holds.
-    assert not _COORDINATE.search("N51.7520 W1.2577")
-    assert _COORDINATE_SUSPICION.search("N51.7520 W1.2577")
+    assert not _COORDINATE.search("N50.6284 W9.3917")
+    assert _COORDINATE_SUSPICION.search("N50.6284 W9.3917")
 
 
 @pytest.mark.parametrize(
@@ -769,7 +770,7 @@ _THIRD_ROUND_LEAKS = [
 ]
 
 
-@pytest.mark.parametrize("label,leak", _THIRD_ROUND_LEAKS)
+@pytest.mark.parametrize("label,leak", _THIRD_ROUND_LEAKS, ids=lambda _case: "case")
 def test_the_national_grid_and_its_relatives_are_withheld(label, leak):
     """Ordnance Survey is the one that matters most here.
 
