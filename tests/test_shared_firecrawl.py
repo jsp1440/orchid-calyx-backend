@@ -40,7 +40,7 @@ def test_two_modules_trigger_one_firecrawl_call():
     assert first == "fetched"
     assert profile is not None
     assert second == "cache_hit"
-    assert cached is None
+    assert cached is not None\n    assert cached.urls == profile.urls
     mapper.map_source.assert_called_once()
     assert service.ledger.metrics()["credits_spent"] == 1
 
@@ -56,3 +56,20 @@ def test_different_searches_are_distinct_acquisitions():
         root_url="https://powo.science.kew.org/", search="Masdevallia", limit=25,
     )
     assert mapper.map_source.call_count == 2
+
+
+def test_equivalent_root_urls_share_one_firecrawl_call():
+    service, mapper = _service()
+    service.map_source(
+        consumer_module="lexicon", source_id="powo",
+        root_url="https://POWO.science.kew.org:443/?utm_source=x#top",
+        search="Phragmipedium", limit=25,
+    )
+    status, cached = service.map_source(
+        consumer_module="atlas", source_id="powo",
+        root_url="https://powo.science.kew.org/",
+        search="Phragmipedium", limit=25,
+    )
+    assert status == "cache_hit"
+    assert cached is not None
+    mapper.map_source.assert_called_once()
