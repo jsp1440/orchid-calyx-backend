@@ -107,12 +107,30 @@ _SENSITIVE_WORDS = re.compile(
     # elevation / altitude, including abbreviations and "metres above sea level"
     r"|elevation|elevaci|elevaç|elevacao|altitud|\belev\.|\belevs?\b"
     r"|\balt\.?\s{0,2}\(\s{0,2}(?:m|ft|metres?|meters?)\s{0,2}\)"
+    # alt m / Alt [m] / alt<TAB>m / alt. ft: a unit, never a following word
+    r"|\balt\.?\s{0,2}\[\s{0,2}(?:m|ft|metres?|meters?|feet)\s{0,2}\]"
+    r"|\balt\.?\s{1,2}(?:m|ft|metres?|meters?|feet)\b(?![-'])"
     r"|\balt\.?\s{0,2}[:=]?\s{0,2}(?:ca?\.\s{0,2})?\d"
     r"|\bm\.?\s?s\.?\s?n\.?\s?m\b|\bs\.\s?n\.\s?m\b"
     r"|\bm\.?\s?a\.?\s?s\.?\s?l\b|\ba\.\s?s\.\s?l\b|\basl\b"
     r"|sea\s{1,3}level|nivel\s{1,3}del\s{1,3}mar|n[ií]vel\s{1,3}do\s{1,3}mar"
+    r"|niveau\s{1,3}de\s{1,3}la\s{1,3}mer|au-dessus\s{1,3}du\s{1,3}niveau"
+    r"|livello\s{1,3}del\s{1,3}mare|meeresspiegel"
+    # German Höhe (altitude; also height -- withheld either way, fail closed)
+    r"|(?<![a-zäöüß])h(?:ö|oe)he(?![a-zäöüß])"
+    r"|h(?:ö|oe)henlage|(?:meeres|see)h(?:ö|oe)he"
+    # Spanish altura means plant height too: withheld only with an elevation unit
+    # (a three-digit-or-more metre value, s.n.m., "sobre el nivel") -- "altura de
+    # la planta 30 cm" and "altura 1,5 m" stay readable.
+    r"|\baltura\s{0,3}[:=]?\s{0,3}(?:(?:ca?\.|aprox\.?|de|entre)\s{0,3})?"
+    r"(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3}"
+    r"(?:[-–a]\s{0,3}(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3})?"
+    r"(?:m\b|mts?\b|metros\b|msnm|s\.?\s?n\.?\s?m)"
+    r"|\baltura\s{0,3}(?:s\.\s?n\.\s?m|sobre\s{1,3}el\s{1,3}nivel)"
+    r"|\b(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3}(?:m|mts?|metros)\.?\s{0,3}de\s{1,3}altura\b"
     # specimen / collector / collecting-event vocabulary
-    r"|specimen|voucher|collector|herbari|\bleg\.|\bcoll\.|\bcollected\b"
+    r"|specimen|voucher|collector|herbari|herbier|exsiccat|\bejemplar"
+    r"|sp[eé]cimen|esp[eé]cime|\bleg\.|\bcoll\.|\bcollected\b"
     r"|\bcollecting\b|\bcollection\s{1,3}(?:site|number|no\.|data|place|point)"
     r"|colect|coletad|coletor|recolet"
     # site / station only in labelled or collecting-event shapes
@@ -131,12 +149,19 @@ _COORDINATE_SHAPES = re.compile(
     r"|(?<![\d.,])[-−–]\d{1,3}[.,]\d{2,6}[\s,;/]{1,16}[-−–]?\d{1,3}[.,]\d{2,6}"
     r"|[°º˚′″]"  # degree / minute / second marks
     r"|\b\d{1,3}\s*deg(?:rees?)?\b"
+    # degrees written out: 18 grados / 18 graus / 18 degrés (degres after folding)
+    r"|\b\d{1,3}(?:[.,]\d{1,6})?\s{0,2}(?:grados?|graus?|degr[eé]s?)\b"
+    # minutes written out then a hemisphere: 55 minutos S / 55 minutes sud
+    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:minutos?|minutes?)\b\s{0,3}"
+    r"(?:\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:segundos?|secondes?|seconds?)\b\s{0,3})?"
+    r"(?:[NSEW]|norte|sur|sul|nord|sud|este|leste|est|oeste|ouest|north|south|east|west)\b"
     # degrees-minutes with an ASCII minute mark: 12 34' / 12 34.5'
     r"|\b\d{1,3}\s{1,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'"
     # minutes-seconds with ASCII marks: 34' 56" / 34'56'' / 34' 56.7"
     r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'\s{0,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:\"|'')"
-    # 12d34m / 12d 34m 56s
-    r"|\b\d{1,3}\s?d\s?\d{1,2}(?:[.,]\d{1,4})?\s?m(?![a-z])"
+    # 12d34m / 12d 34m 56s / 18d55mS / 18d55m12sS
+    r"|\b\d{1,3}\s?d\s?\d{1,2}(?:[.,]\d{1,4})?\s?m"
+    r"(?:\s?\d{1,2}(?:[.,]\d{1,4})?\s?s)?\s?[NSEW]?(?![a-z])"
     # Paired hemisphere coordinates are unambiguous even in lower case.
     r"|\b\d{1,3}(?:[.,]\d{2,6})?\s?[NS][\s,;/]{1,3}\d{1,3}(?:[.,]\d{2,6})?\s?[EW]\b"
     r"|\b[NS]\s?\d{1,3}(?:[.,]\d{2,6})?[\s,;/]{1,3}[EW]\s?\d{1,3}(?:[.,]\d{2,6})?\b"
@@ -144,6 +169,15 @@ _COORDINATE_SHAPES = re.compile(
     rf"|\b[2-9C][2-9CFGHJMPQRV][{_OLC}0]{{6}}\+"
     rf"|\b[{_OLC}]{{4,6}}\+[{_OLC}]{{2,3}}\b",
     re.IGNORECASE,
+)
+# Lower-case forms kept apart from _COORDINATE_CASED: a lower-case hemisphere letter
+# counts only after a decimal or a spaced degrees-minutes value (18.9s, 18 55 s), so
+# "2n = 40" and "S 12.5 mm" stay readable; e/w need two decimals ("47.52e").
+_COORDINATE_LOWER = re.compile(
+    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,2}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s?[ns]\b"
+    r"|\b\d{1,3}[.,]\d{2,6}\s?[ew]\b"
+    # lower-case MGRS: 33twn1234567890 / 33t wn 12345 67890
+    r"|\b\d{1,2}[c-hj-np-x]\s?[a-hj-np-z][a-hj-np-v]\s?\d{2,5}\s?\d{2,5}\b"
 )
 # Case-sensitive shapes: single hemisphere letters and UTM/MGRS grid references
 # are upper case; matching them case-insensitively would catch "2n", "5 s", etc.
@@ -172,6 +206,13 @@ _TOKEN_SPLIT = re.compile(
     r"[_\-./:]|(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])"
 )
 _ELEVATION_TOKENS = re.compile(r"\b(?:elevs?|m?asl|msnm|snm)\b", re.IGNORECASE)
+# Run-together ids: elevm, altm, aslm, elevft, ELEVmax, ALTmin, ASLrange. A known
+# unit/qualifier suffix is required, so "Altensteinia" and "Altmann" stay readable.
+_ELEVATION_COMPOUND = re.compile(
+    r"\b(?:elevs?|alts?|m?asl|msnm|snm)"
+    r"(?:m|ft|feet|meters?|metres?|min|max|range|band|low|high|lo|hi|mean|avg|top)\b",
+    re.IGNORECASE,
+)
 _ALT_TOKEN = re.compile(r"\balts?\b", re.IGNORECASE)
 _WHITESPACE = re.compile(r"\s")
 _IDENTIFIER = re.compile(r"[\w.:/+()'&× -]{1,200}")
@@ -182,14 +223,40 @@ _TIMESTAMP = re.compile(
 _DOI = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]{1,200}")
 
 
+# A small confusables fold, screening only: Cyrillic and Greek letters that render
+# like the Latin letters of the locality vocabulary, and apostrophe/quote look-alikes
+# that stand in for the ASCII minute/second marks (the modifier apostrophe U+02BC).
+_CONFUSABLES = str.maketrans(
+    # Cyrillic lower case, Cyrillic upper case, Greek, then quote look-alikes ...
+    "авеһіјкӏмнорԛгѕтухсԁԝёїАВЕНІЈКМОРСЅТХУԀԚԜαεικνορτυχΑΒΕΗΙΚΜΝΟΡΤΧΥΖʼʹ’‘ʻˈ`´ʺ“”˝",
+    # ... and the ASCII each one is screened as.
+    "abehijklmhopqrstyxcdwei"
+    "ABEHIJKMOPCSTXYDQW"
+    "aeikvoptuxABEHIKMNOPTXYZ" + "'" * 8 + '"' * 4,
+)
+
+
 def _screen_form(value: str) -> str:
-    """NFKC with Unicode format (Cf) characters removed: zero-width, bidi, soft hyphen.
+    """NFKC with Unicode format (Cf) characters removed: zero-width, bidi, soft hyphen,
+    then the confusables fold above.
 
     Used for screening only; the returned text is never altered. Full-width digits
-    and letters fold to ASCII and a zero-width space can no longer split a pattern.
+    and letters fold to ASCII, a zero-width space can no longer split a pattern, and a
+    Cyrillic ``а`` inside ``locаlity`` is screened as ``a``.
     """
     folded = unicodedata.normalize("NFKC", value)
-    return "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    stripped = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
+    return stripped.translate(_CONFUSABLES)
+
+
+def _strip_marks(value: str) -> str:
+    """The screen form with combining marks removed (``élev_m`` -> ``elev_m``).
+
+    Needed because ``\\b`` does not fall between ``é`` and ``l``: an accented id is
+    otherwise one word that no ASCII elevation token can match.
+    """
+    decomposed = unicodedata.normalize("NFD", value)
+    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
 
 
 def _screen_hit(text: str) -> bool:
@@ -197,10 +264,11 @@ def _screen_hit(text: str) -> bool:
         _SENSITIVE_WORDS.search(text)
         or _COORDINATE_SHAPES.search(text)
         or _COORDINATE_CASED.search(text)
+        or _COORDINATE_LOWER.search(text)
     ):
         return True
     tokens = _TOKEN_SPLIT.sub(" ", text)
-    if _ELEVATION_TOKENS.search(tokens):
+    if _ELEVATION_TOKENS.search(tokens) or _ELEVATION_COMPOUND.search(tokens):
         return True
     return _WHITESPACE.search(text) is None and _ALT_TOKEN.search(tokens) is not None
 
@@ -208,14 +276,24 @@ def _screen_hit(text: str) -> bool:
 def screened_text(value: Any, max_len: int = MAX_LABEL) -> str | None:
     """A bounded string with no locality/specimen/submitter material, else WITHHELD.
 
-    Both the text as given and its normalised screen form are screened, so NFKC can
-    only add hits: a mark NFKC rewrites (``º`` becomes ``o``) is still seen raw.
+    The text as given, its normalised screen form and that form without combining
+    marks are all screened, so normalising can only add hits: a mark NFKC rewrites
+    (``º`` becomes ``o``) is still seen raw, and ``höhe`` is still seen with its
+    umlaut.
     """
     if value is None:
         return None
     if not isinstance(value, str):
         return WITHHELD
-    if len(value) > max_len or _screen_hit(value) or _screen_hit(_screen_form(value)):
+    if len(value) > max_len or _screen_hit(value):
+        return WITHHELD
+    # A form identical to one already screened cannot add a hit; skipping it keeps
+    # plain ASCII text at one pass.
+    form = _screen_form(value)
+    if form != value and _screen_hit(form):
+        return WITHHELD
+    bare = _strip_marks(form)
+    if bare != form and _screen_hit(bare):
         return WITHHELD
     return value
 

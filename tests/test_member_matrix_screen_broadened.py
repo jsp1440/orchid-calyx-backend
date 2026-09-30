@@ -232,6 +232,34 @@ BENIGN = [
     "leaf_arrangement",
     "flower_color",
     "Ｌｉｐ ３-lobed",
+    # Release 1 locality-forms slice: botanical character names and states that sit
+    # next to the newly withheld forms (plant height vs. altura/Höhe, "S." as South
+    # vs. an author initial, minutes as a duration) stay readable.
+    "Plant height",
+    "plant_height_cm",
+    "Plant height 30–60 cm",
+    "Stems 1.5 m tall",
+    "Altura de la planta",
+    "altura de la planta 30 cm",
+    "altura 30 cm",
+    "altura 1,5 m",
+    "planta de 1,5 m de altura",
+    "30 cm de altura",
+    "Wuchshöhe 30 cm",
+    "S. America",
+    "Rchb. f.",
+    "Kraenzl.",
+    "Cogn.",
+    "Ames & C.Schweinf.",
+    "Oncidium altissimum",
+    "Sobralia altissima",
+    "Lip saccate, 3-lobed",
+    "Darwin’s orchid",
+    "Petals 12.5 × 3.5 mm",
+    "Leaf 25 × 3,5 cm",
+    "2n = 38",
+    "Column 5 mm, winged",
+    "Flowers last 30 minutes",
 ]
 
 
