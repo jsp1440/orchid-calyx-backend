@@ -46,6 +46,13 @@ EXCLUDED = {
         "schema, so listing it would only add skips; its own workflow "
         "calyx-intelligence-ledger-validation.yml provisions that database"
     ),
+    "tests/test_judge_scoring_races_postgres.py": (
+        "PostgreSQL row-lock race proofs for judge scoring (#1704); every test "
+        "skips unless SHOW_JUDGING_TEST_POSTGRES_URL names a disposable database, "
+        "so listing it here would only add skips; running it in the "
+        "postgres-ledger job needs that variable added to the workflow, which "
+        "is an owner-reviewed workflow change"
+    ),
 }
 
 
