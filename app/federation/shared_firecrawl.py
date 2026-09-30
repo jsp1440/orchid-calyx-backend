@@ -4,17 +4,24 @@ All module consumers should use this service instead of invoking
 FirecrawlFederationMapper directly. The ledger coalesces duplicate requests,
 blocks retry storms, and records Firecrawl credit usage/provenance.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any
+import logging
 
 from sqlalchemy.orm import Session
 
-from app.source_federation.acquisition import AcquisitionRecord, AcquisitionRequest, canonicalize_url
-from app.source_federation.acquisition_ledger import AcquisitionLedger
+from app.source_federation.acquisition import (
+    AcquisitionRecord,
+    AcquisitionRequest,
+    canonicalize_url,
+)
+from app.source_federation.acquisition_ledger import AcquisitionLedger, StaleLeaseError
 
-from .firecrawl_mapper import FirecrawlFederationMapper, FederationSourceProfile
+from .firecrawl_mapper import FederationSourceProfile, FirecrawlFederationMapper
+
+logger = logging.getLogger(__name__)
 
 
 class SharedFirecrawlFederationService:
@@ -89,6 +96,22 @@ class SharedFirecrawlFederationService:
                 sitemap=sitemap,
                 include_subdomains=include_subdomains,
             )
+        except Exception:
+            # Only a failed provider call is a failure. Nothing after a
+            # successful (paid) call may reach ``fail()``: it would discard
+            # the result and its credit and invite a second paid call.
+            try:
+                self.ledger.fail(claim)
+            except StaleLeaseError:
+                # Superseded while the call ran: the row belongs to the live
+                # holder and must not be touched. The original error is still
+                # what the caller sees.
+                pass
+            raise
+        # Firecrawl Map is one credit per successful call under the current
+        # operational contract. Keep accounting explicit here.
+        credits_spent = 1
+        try:
             payload = json.dumps(profile.to_dict(), sort_keys=True).encode("utf-8")
             record = AcquisitionRecord.completed(
                 request=request,
@@ -99,15 +122,38 @@ class SharedFirecrawlFederationService:
                     "root_url": root_url,
                     "scientific_status": "reconnaissance_only",
                 },
-                # Firecrawl Map is one credit per successful call under the
-                # current operational contract. Keep accounting explicit here.
-                credits_spent=1,
+                credits_spent=credits_spent,
             )
-            self.ledger.complete(record, payload_json=payload.decode("utf-8"))
-            return "fetched", profile
+            self.ledger.complete(
+                record, lease=claim, payload_json=payload.decode("utf-8")
+            )
+        except StaleLeaseError as exc:
+            # Fail closed: our lease was superseded while the call ran, so the
+            # live holder's result owns the cache. This late result is not
+            # persisted and is not handed on without ledger provenance, but
+            # the credit it cost is reported rather than lost silently.
+            logger.warning(
+                "firecrawl acquisition superseded: resource_key=%s worker=%s "
+                "consumer=%s unrecorded_credits=%d",
+                exc.resource_key,
+                exc.lease_holder,
+                consumer_module,
+                exc.unrecorded_credits,
+            )
+            return "stale_lease", None
         except Exception:
-            self.ledger.fail(request.key)
+            # The paid call succeeded but the ledger write did not. Do NOT
+            # call fail(): leave the lease to expire and report the credit.
+            logger.error(
+                "firecrawl acquisition result not recorded: resource_key=%s "
+                "worker=%s consumer=%s unrecorded_credits=%d",
+                request.key,
+                self.worker_id,
+                consumer_module,
+                credits_spent,
+            )
             raise
+        return "fetched", profile
 
     @staticmethod
     def _request_identity(
