@@ -66,10 +66,10 @@ async def test_labeled_treatments_preserve_exact_independent_spans(tmp_path):
 async def test_sensitive_or_unsupported_labeled_prose_withheld_with_count_only_warning(tmp_path):
     text = "\n".join([  # noqa: FLY002 - one fixture line per rejected case
         "Paphiopedilum delenatii habitat: Secret Valley near station 123.",
-        "Paphiopedilum delenatii habitat: 12.345 N, 67.890 E.",
-        "Paphiopedilum delenatii description: GPS 12.345,67.890; glabrous.",
+        "Paphiopedilum delenatii habitat: 30.912 N, 60.456 E.",
+        "Paphiopedilum delenatii description: GPS 30.912,60.456; glabrous.",
         "Paphiopedilum delenatii substrate: https://private.example/location.",
-        "Paphiopedilum delenatii habitat: 12.345, 67.890 forest.",
+        "Paphiopedilum delenatii habitat: 30.912, 60.456 forest.",
         "Paphiopedilum delenatii habitat: Green Forest.",
         "Paphiopedilum unknown leaf: Elliptic.",
         "Leaves elliptic; inferred taxon from heading is forbidden.",

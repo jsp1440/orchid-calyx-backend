@@ -69,6 +69,7 @@ jobs:
             tests/test_privacy_owner_only_contacts_and_chat.py \
             tests/test_legacy_feedback_privacy.py \
             tests/test_exact_occurrence_api_security.py \
+            tests/test_no_precise_coordinates.py \
             tests/test_show_output_safety_redaction.py \
             tests/test_show_output_safety_timing.py \
             tests/test_show_day_judging_lock.py \

@@ -6,17 +6,35 @@ collection-sensitive taxa, unresolved taxa fail closed to a coarse cell, and
 CITES Appendix I taxa are generalised to at least 0.1 degree. A committed
 data file bypasses every one of those runtime safeguards.
 
-The check scans every tracked ``.csv``, ``.tsv``, ``.geojson``, ``.json``,
-``.parquet`` and ``.xlsx`` file for latitude/longitude-like columns or keys
-(``decimal_latitude``, ``latitude``, ``lat``, ``lon``, ``lng``,
-``longitude``, ... and GeoJSON ``Point``/``MultiPoint`` geometries) whose
-values are finer than two decimal places. Tracked ``.html`` files are
-checked for Leaflet markers (``L.circleMarker([lat, lon])`` and friends),
-which is how a generated folium map embeds its points. Any hit fails, unless the file is
-on the explicit :data:`ALLOWLIST` of small, synthetic test fixtures.
+Every tracked file with a scanned suffix (:data:`SCANNED_SUFFIXES`) is read,
+including members of zip, gzip and tar archives, and fails when it carries a
+latitude/longitude-like value finer than two decimal places:
 
-The report names files, columns and counts only. It never prints a
-coordinate value, so its output is safe to paste into a public pull request.
+* delimited text (``.csv``/``.tsv``): UTF-8 with or without a BOM, the
+  delimiter sniffed from ``, ; <tab> |``, a header row found anywhere (not
+  only on the first row), comma decimals (``12,3456``), exponent notation,
+  and WKT geometries in any cell;
+* ``.xlsx``/``.xlsm`` with the same header search on every sheet;
+* JSON, GeoJSON, JSON Lines, YAML and notebooks (``.ipynb`` sources and
+  outputs): coordinate-like keys, ``[lon, lat]`` arrays under
+  coordinate-like keys, ``x``/``y`` pairs in a geometry context, and every
+  GeoJSON geometry type;
+* SQL dumps: ``INSERT ... (cols) VALUES`` and ``COPY ... FROM stdin`` rows,
+  WKT literals and ``ST_MakePoint``/``ST_Point`` calls;
+* KML/KMZ and GPX; HTML (Leaflet markers, ``L.latLng``, polylines and
+  polygons, embedded GeoJSON).
+
+Anything that cannot be verified fails closed: an unreadable or oversized
+file, a Parquet file without ``pyarrow``, a corrupt archive, or a tracked
+path that is missing from the working tree (a sparse checkout).
+
+Only files on the explicit :data:`ALLOWLIST` of small synthetic test fixtures
+are exempt. The report names files, fields and counts only. It never prints
+a coordinate value, so its output is safe to paste into a public pull
+request.
+
+Not scanned (documented follow-ups): source code (``.py``, ``.js``, ``.ts``)
+and Markdown.
 
 Exit codes: 0 clean, 1 precise coordinates (or an unverifiable file) found,
 2 usage error.
@@ -26,31 +44,50 @@ from __future__ import annotations
 
 import argparse
 import csv
+import gzip
 import io
 import json
 import re
 import subprocess
 import sys
+import tarfile
 import zipfile
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
+from typing import BinaryIO
 
-SCANNED_SUFFIXES = frozenset(
-    {".csv", ".tsv", ".geojson", ".json", ".parquet", ".xlsx", ".html", ".htm"}
+DELIMITED_SUFFIXES = frozenset({".csv", ".tsv"})
+JSON_SUFFIXES = frozenset({".json", ".geojson", ".topojson"})
+JSON_LINES_SUFFIXES = frozenset({".jsonl", ".ndjson", ".geojsonl"})
+YAML_SUFFIXES = frozenset({".yaml", ".yml"})
+WORKBOOK_SUFFIXES = frozenset({".xlsx", ".xlsm"})
+HTML_SUFFIXES = frozenset({".html", ".htm"})
+XML_SUFFIXES = frozenset({".kml", ".gpx"})
+ZIP_SUFFIXES = frozenset({".zip", ".kmz"})
+TAR_SUFFIXES = frozenset({".tar", ".tgz"})
+SCANNED_SUFFIXES = (
+    DELIMITED_SUFFIXES
+    | JSON_SUFFIXES
+    | JSON_LINES_SUFFIXES
+    | YAML_SUFFIXES
+    | WORKBOOK_SUFFIXES
+    | HTML_SUFFIXES
+    | XML_SUFFIXES
+    | ZIP_SUFFIXES
+    | TAR_SUFFIXES
+    | {".parquet", ".sql", ".ipynb", ".gz"}
 )
 
 # Values at or coarser than this many decimal places are generalised enough
 # for a public repository (0.01 degree is roughly 1 km).
 MAX_PUBLIC_DECIMALS = 2
 
-LATITUDE_KEYS = frozenset({"decimal_latitude", "decimallatitude", "latitude", "lat"})
-LONGITUDE_KEYS = frozenset(
-    {"decimal_longitude", "decimallongitude", "longitude", "lon", "lng"}
-)
-COORDINATE_KEYS = LATITUDE_KEYS | LONGITUDE_KEYS
-POINT_GEOMETRY_TYPES = frozenset({"point", "multipoint"})
+# A file (or archive member) larger than this is not loaded into memory; it
+# fails closed as unverifiable. Delimited text is streamed and has no limit.
+MAX_IN_MEMORY_BYTES = 64 * 1024 * 1024
+MAX_ARCHIVE_DEPTH = 3
 
 # Explicit allowlist: repository path -> justification. Only small test
 # fixtures under ``tests/`` whose coordinates are synthetic may be listed.
@@ -60,24 +97,172 @@ ALLOWLIST: dict[str, str] = {}
 ALLOWLIST_PREFIX = "tests/"
 ALLOWLIST_MAX_BYTES = 64 * 1024
 
-# A JSON key is always a quoted string followed by a colon. If none of these
-# keys appears anywhere in a file's bytes, the file provably has no
-# coordinate key and does not need to be parsed.
-_JSON_KEY_PROBE = re.compile(
-    rb'"(?:decimal_?latitude|decimal_?longitude|latitude|longitude|lat|lon|lng|'
-    rb'coordinates)"\s*:',
-    re.IGNORECASE,
-)
-_PROBE_CHUNK = 1 << 20
-_PROBE_OVERLAP = 64
+# --------------------------------------------------------------------------
+# Field names
+# --------------------------------------------------------------------------
 
-# A generated folium/Leaflet map embeds each point as a marker call.
-_LEAFLET_MARKER = re.compile(
-    rb"L\.(?:circleMarker|marker|circle)\(\s*\[\s*([+-]?\d+(?:\.\d+)?)\s*,"
-    rb"\s*([+-]?\d+(?:\.\d+)?)\s*\]"
+_LAT_TOKENS = frozenset({"lat", "latitude", "lati", "decimallatitude"})
+_LON_TOKENS = frozenset({"lon", "lng", "longitude", "long", "decimallongitude"})
+# A field that measures something about a coordinate rather than holding one.
+_NOT_A_COORDINATE_TOKENS = frozenset(
+    {"uncertainty", "error", "err", "precision", "accuracy", "resolution", "delta"}
+)
+# Keys whose value is a coordinate pair, a position array or a geometry.
+PAIR_KEYS = frozenset(
+    {
+        "coordinates",
+        "coordinate",
+        "coords",
+        "coord",
+        "latlng",
+        "latlon",
+        "latlong",
+        "lnglat",
+        "lonlat",
+        "location",
+        "point",
+        "geopoint",
+        "geolocation",
+        "center",
+        "centre",
+        "centroid",
+        "bbox",
+        "geo",
+    }
+)
+# Parent keys that put an ``{"x": ..., "y": ...}`` object in geographic context.
+_XY_CONTEXT_KEYS = frozenset(
+    {"geometry", "geom", "location", "loc", "point", "geo", "geopoint", "coords"}
+    | {"coordinates", "coordinate", "coord", "centroid", "center", "centre"}
+)
+_XY_CRS_KEYS = frozenset({"spatialreference", "crs", "srid", "wkid"})
+GEOMETRY_TYPES = frozenset(
+    {
+        "point",
+        "multipoint",
+        "linestring",
+        "multilinestring",
+        "polygon",
+        "multipolygon",
+    }
 )
 
-_DECIMAL_TEXT = re.compile(r"^\s*[+-]?\d{1,3}\.(\d+)\s*$")
+
+def _tokens(key: object) -> list[str]:
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", str(key).strip())
+    return [token for token in re.split(r"[^a-z0-9]+", text.lower()) if token]
+
+
+def _compact(key: object) -> str:
+    return "".join(_tokens(key))
+
+
+def coordinate_axis(key: object) -> str | None:
+    """Return ``"lat"``/``"lon"`` for a latitude/longitude-like field name."""
+
+    tokens = _tokens(key)
+    if not tokens or _NOT_A_COORDINATE_TOKENS.intersection(tokens):
+        return None
+    compact = "".join(tokens)
+    if compact in PAIR_KEYS:
+        return None
+    has_lat = bool(_LAT_TOKENS.intersection(tokens)) or compact in _LAT_TOKENS
+    lon_tokens = set(_LON_TOKENS.intersection(tokens))
+    # "long" is an ordinary English word; only a bare "long" column counts.
+    if "long" in lon_tokens and tokens != ["long"]:
+        lon_tokens.discard("long")
+    has_lon = bool(lon_tokens) or compact in _LON_TOKENS
+    if has_lat and not has_lon:
+        return "lat"
+    if has_lon and not has_lat:
+        return "lon"
+    return None
+
+
+def is_pair_key(key: object) -> bool:
+    tokens = _tokens(key)
+    if not tokens:
+        return False
+    compact = "".join(tokens)
+    if compact in PAIR_KEYS:
+        return True
+    return bool(_LAT_TOKENS.intersection(tokens)) and bool(
+        {"lon", "lng", "long", "longitude"}.intersection(tokens)
+    )
+
+
+# --------------------------------------------------------------------------
+# Values
+# --------------------------------------------------------------------------
+
+_NUM = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_NUMBER_TEXT = re.compile(rf"^\s*({_NUM})\s*°?\s*[NSEWnsew]?\s*$")
+_COMMA_DECIMAL_TEXT = re.compile(r"^\s*([+-]?\d{1,3}),(\d+)\s*°?\s*[NSEWnsew]?\s*$")
+_PAIR_TEXT = re.compile(rf"^\s*\(?\s*({_NUM})\s*[,; ]\s*({_NUM})\s*\)?\s*$")
+
+
+def parse_number(value: object) -> Decimal | None:
+    """Parse a coordinate-like value; comma decimals and exponents are accepted."""
+
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value if value.is_finite() else None
+    if isinstance(value, int):
+        return Decimal(value)
+    if isinstance(value, float):
+        text = repr(value)
+    elif isinstance(value, str):
+        text = value
+    else:
+        return None
+    match = _NUMBER_TEXT.match(text)
+    if match:
+        text = match.group(1)
+    else:
+        comma = _COMMA_DECIMAL_TEXT.match(text)
+        if comma is None:
+            return None
+        text = f"{comma.group(1)}.{comma.group(2)}"
+    try:
+        number = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    return number if number.is_finite() else None
+
+
+def decimal_places(number: Decimal) -> int:
+    """Significant decimal places; trailing zeros are not precision."""
+
+    if number == 0:
+        return 0
+    exponent = number.normalize().as_tuple().exponent
+    return max(0, -exponent) if isinstance(exponent, int) else 0
+
+
+def is_precise(value: object, axis: str) -> bool:
+    number = parse_number(value)
+    if number is None or decimal_places(number) <= MAX_PUBLIC_DECIMALS:
+        return False
+    return abs(number) <= (90 if axis == "lat" else 180)
+
+
+def pair_is_precise(first: object, second: object) -> bool:
+    """A two-number position in either axis order, finer than the floor."""
+
+    a, b = parse_number(first), parse_number(second)
+    if a is None or b is None:
+        return False
+    if abs(a) > 180 or abs(b) > 180 or min(abs(a), abs(b)) > 90:
+        return False
+    return max(decimal_places(a), decimal_places(b)) > MAX_PUBLIC_DECIMALS
+
+
+def pair_text_is_precise(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    match = _PAIR_TEXT.match(value)
+    return bool(match) and pair_is_precise(match.group(1), match.group(2))
 
 
 @dataclass
@@ -86,6 +271,15 @@ class FileFinding:
     precise_values: int = 0
     fields: set[str] = field(default_factory=set)
     error: str | None = None
+
+    def hit(self, label: str, count: int = 1) -> None:
+        if count:
+            self.precise_values += count
+            self.fields.add(label)
+
+    def fail_closed(self, reason: str) -> None:
+        if self.error is None:
+            self.error = reason
 
     def describe(self) -> str:
         if self.error:
@@ -96,244 +290,569 @@ class FileFinding:
         )
 
 
-def _normalise_key(key: object) -> str:
-    return str(key).strip().lower().replace("-", "_").replace(" ", "_")
+# --------------------------------------------------------------------------
+# Free-text patterns (HTML, KML/GPX, SQL, notebooks, strings in documents)
+# --------------------------------------------------------------------------
+
+_POSITION_ARRAY = re.compile(rf"\[\s*({_NUM})\s*,\s*({_NUM})(?:\s*,\s*{_NUM})?\s*\]")
+_WKT = re.compile(
+    r"\b(?:MULTI)?(?:POINT|LINESTRING|POLYGON)\s*(?:ZM|Z|M)?\s*\(([-+\d\s.,()eE]*)\)",
+    re.IGNORECASE,
+)
+_WKT_POSITION = re.compile(rf"({_NUM})\s+({_NUM})")
+_LEAFLET_POINT = re.compile(
+    rf"L\.(?:circleMarker|marker|circle|latLng|latlng)\(\s*\[?\s*({_NUM})\s*,\s*({_NUM})"
+)
+_LEAFLET_SHAPE = re.compile(
+    r"L\.(?:polyline|polygon|rectangle)\(\s*(\[[-+\d\s.,\[\]eE]*\])"
+)
+_TEXT_GEOJSON_COORDINATES = re.compile(
+    r"[\"']?coordinates[\"']?\s*:\s*(\[[-+\d\s.,\[\]eE]*\])", re.IGNORECASE
+)
+_POSTGIS_POINT = re.compile(
+    rf"ST_(?:Make)?Point\s*\(\s*({_NUM})\s*,\s*({_NUM})", re.IGNORECASE
+)
+_KML_COORDINATES = re.compile(r"<(?:\w+:)?coordinates\s*>([^<]*)<", re.IGNORECASE)
+_KML_GX_COORD = re.compile(rf"<gx:coord\s*>\s*({_NUM})\s+({_NUM})", re.IGNORECASE)
+_XML_TAG = re.compile(r"<[A-Za-z][^<>]*>")
+_XML_ATTRIBUTE = re.compile(r"([\w:.-]+)\s*=\s*[\"']([^\"']*)[\"']")
+_XML_ELEMENT = re.compile(r"<(?:\w+:)?([A-Za-z_][\w.-]*)\s*>\s*([^<]{1,64}?)\s*</")
+_KEY_VALUE = re.compile(
+    rf"[\"']?([A-Za-z_][\w.-]{{0,63}})[\"']?\s*(?::|=|=>)\s*[\"']?({_NUM})(?![\w.])"
+)
 
 
-def _decimal_places(value: object) -> int | None:
-    """Return the significant decimal places of a numeric coordinate value.
-
-    ``None`` means the value is not a number. Trailing zeros are not
-    precision (``1.500`` has one significant decimal place).
-    """
-
-    if isinstance(value, bool) or value is None:
-        return None
-    if isinstance(value, int):
-        return 0
-    if isinstance(value, float):
-        text = repr(value)
-    elif isinstance(value, Decimal):
-        text = format(value, "f")
-    elif isinstance(value, str):
-        text = value
-    else:
-        return None
-    match = _DECIMAL_TEXT.match(text)
-    if match is None:
-        try:
-            Decimal(text.strip())
-        except (InvalidOperation, ValueError):
-            return None
-        return 0
-    return len(match.group(1).rstrip("0"))
+def _positions_in_array_text(text: str, finding: FileFinding, label: str) -> None:
+    for match in _POSITION_ARRAY.finditer(text):
+        if pair_is_precise(match.group(1), match.group(2)):
+            finding.hit(label)
 
 
-def _is_precise(value: object, *, latitude: bool) -> bool:
-    places = _decimal_places(value)
-    if places is None or places <= MAX_PUBLIC_DECIMALS:
-        return False
-    try:
-        number = abs(Decimal(str(value).strip()))
-    except (InvalidOperation, ValueError):
-        return False
-    return number <= (90 if latitude else 180)
+def scan_text(text: str, finding: FileFinding, *, key_values: bool) -> None:
+    """Scan free text for coordinate literals in the notations above."""
+
+    for match in _WKT.finditer(text):
+        for position in _WKT_POSITION.finditer(match.group(1)):
+            if pair_is_precise(position.group(1), position.group(2)):
+                finding.hit("wkt")
+    for match in _POSTGIS_POINT.finditer(text):
+        if pair_is_precise(match.group(1), match.group(2)):
+            finding.hit("st_point")
+    for match in _LEAFLET_POINT.finditer(text):
+        if pair_is_precise(match.group(1), match.group(2)):
+            finding.hit("leaflet.marker")
+    for match in _LEAFLET_SHAPE.finditer(text):
+        _positions_in_array_text(match.group(1), finding, "leaflet.shape")
+    for match in _TEXT_GEOJSON_COORDINATES.finditer(text):
+        _positions_in_array_text(match.group(1), finding, "geojson.coordinates")
+    if key_values:
+        for match in _KEY_VALUE.finditer(text):
+            axis = coordinate_axis(match.group(1))
+            if axis and is_precise(match.group(2), axis):
+                finding.hit(f"text.{axis}")
 
 
-def _scan_rows(
-    header: list[str], rows: Iterable[Iterable[object]], finding: FileFinding
-) -> None:
-    columns = [
-        (index, name, name in LATITUDE_KEYS)
-        for index, name in enumerate(_normalise_key(column) for column in header)
-        if name in COORDINATE_KEYS
-    ]
-    if not columns:
-        return
-    for row in rows:
-        cells = list(row)
-        for index, name, latitude in columns:
-            if index < len(cells) and _is_precise(cells[index], latitude=latitude):
-                finding.precise_values += 1
-                finding.fields.add(name)
+def scan_xml_text(text: str, finding: FileFinding) -> None:
+    """KML/GPX: ``<coordinates>``, ``<gx:coord>``, ``lat=``/``lon=`` attributes."""
+
+    for match in _KML_COORDINATES.finditer(text):
+        for position in match.group(1).split():
+            parts = position.split(",")
+            if len(parts) >= 2 and pair_is_precise(parts[0], parts[1]):
+                finding.hit("kml.coordinates")
+    for match in _KML_GX_COORD.finditer(text):
+        if pair_is_precise(match.group(1), match.group(2)):
+            finding.hit("kml.gx_coord")
+    for tag in _XML_TAG.finditer(text):
+        for name, value in _XML_ATTRIBUTE.findall(tag.group(0)):
+            axis = coordinate_axis(name.split(":")[-1])
+            if axis and is_precise(value, axis):
+                finding.hit(f"xml.@{axis}")
+    for name, value in _XML_ELEMENT.findall(text):
+        axis = coordinate_axis(name)
+        if axis and is_precise(value, axis):
+            finding.hit(f"xml.{axis}")
 
 
-def _scan_delimited(path: Path, finding: FileFinding, delimiter: str) -> None:
-    with path.open(newline="", encoding="utf-8", errors="replace") as handle:
-        reader = csv.reader(handle, delimiter=delimiter)
-        header = next(reader, None)
-        if header is None:
-            return
-        _scan_rows(header, reader, finding)
+# --------------------------------------------------------------------------
+# Structured documents (JSON, YAML, notebooks)
+# --------------------------------------------------------------------------
 
 
-def _json_may_hold_coordinates(path: Path) -> bool:
-    tail = b""
-    with path.open("rb") as handle:
-        while chunk := handle.read(_PROBE_CHUNK):
-            window = tail + chunk
-            if _JSON_KEY_PROBE.search(window):
-                return True
-            tail = window[-_PROBE_OVERLAP:]
-    return False
+def _scan_positions(node: object, finding: FileFinding, label: str) -> None:
+    """Every position nested anywhere in a coordinate array."""
 
-
-def _walk_json(node: object, finding: FileFinding) -> None:
     stack = [node]
+    seen: set[int] = set()
     while stack:
         current = stack.pop()
-        if isinstance(current, list):
-            stack.extend(current)
+        if isinstance(current, (dict, list, tuple)):
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+        if isinstance(current, dict):
+            stack.extend(current.values())
+            continue
+        if not isinstance(current, (list, tuple)):
+            if pair_text_is_precise(current):
+                finding.hit(label)
+            continue
+        if len(current) in (2, 3) and not any(
+            isinstance(item, (list, tuple, dict)) for item in current
+        ):
+            if pair_is_precise(current[0], current[1]):
+                finding.hit(label)
+            continue
+        if len(current) == 4 and not any(
+            isinstance(item, (list, tuple, dict)) for item in current
+        ):
+            # A bounding box: [west, south, east, north].
+            if pair_is_precise(current[0], current[1]) or pair_is_precise(
+                current[2], current[3]
+            ):
+                finding.hit(label)
+            continue
+        stack.extend(current)
+
+
+def walk_document(node: object, finding: FileFinding) -> None:
+    stack: list[tuple[str, object]] = [("", node)]
+    seen: set[int] = set()
+    while stack:
+        parent_key, current = stack.pop()
+        if isinstance(current, (dict, list, tuple)):
+            # YAML anchors can make a document reference itself.
+            if id(current) in seen:
+                continue
+            seen.add(id(current))
+        if isinstance(current, (list, tuple)):
+            stack.extend((parent_key, item) for item in current)
+            continue
+        if isinstance(current, str):
+            scan_text(current, finding, key_values=False)
             continue
         if not isinstance(current, dict):
             continue
         geometry_type = current.get("type")
         if (
             isinstance(geometry_type, str)
-            and geometry_type.lower() in POINT_GEOMETRY_TYPES
+            and geometry_type.lower() in GEOMETRY_TYPES
             and "coordinates" in current
         ):
-            _scan_geojson_positions(current["coordinates"], finding)
-        for key, value in current.items():
-            name = _normalise_key(key)
-            if name in COORDINATE_KEYS and not isinstance(value, (dict, list)):
-                if _is_precise(value, latitude=name in LATITUDE_KEYS):
-                    finding.precise_values += 1
-                    finding.fields.add(name)
-            elif isinstance(value, (dict, list)):
-                stack.append(value)
-
-
-def _scan_geojson_positions(coordinates: object, finding: FileFinding) -> None:
-    positions: list[object] = []
-    if (
-        isinstance(coordinates, list)
-        and coordinates
-        and not isinstance(coordinates[0], list)
-    ):
-        positions = [coordinates]
-    elif isinstance(coordinates, list):
-        positions = list(coordinates)
-    for position in positions:
-        if not isinstance(position, list) or len(position) < 2:
-            continue
-        longitude, latitude = position[0], position[1]
-        if _is_precise(longitude, latitude=False) or _is_precise(
-            latitude, latitude=True
-        ):
-            finding.precise_values += 1
-            finding.fields.add("geometry.Point")
-
-
-def _scan_json(path: Path, finding: FileFinding) -> None:
-    if not _json_may_hold_coordinates(path):
-        return
-    with path.open(encoding="utf-8", errors="replace") as handle:
-        try:
-            document = json.load(handle, parse_float=Decimal)
-        except json.JSONDecodeError as exc:
-            finding.error = (
-                f"coordinate-like keys present but JSON did not parse: {exc.msg}"
+            _scan_positions(
+                current["coordinates"], finding, f"geometry.{geometry_type}"
             )
+        lowered = {_compact(key): key for key in current}
+        if "x" in lowered and "y" in lowered:
+            has_context = _compact(parent_key) in _XY_CONTEXT_KEYS or bool(
+                _XY_CRS_KEYS.intersection(lowered)
+            )
+            if has_context and pair_is_precise(
+                current[lowered["x"]], current[lowered["y"]]
+            ):
+                finding.hit("x/y")
+        for key, value in current.items():
+            if (
+                key == "coordinates"
+                and isinstance(geometry_type, str)
+                and geometry_type.lower() in GEOMETRY_TYPES
+            ):
+                continue
+            axis = coordinate_axis(key)
+            if axis and not isinstance(value, (dict, list, tuple)):
+                if is_precise(value, axis) or pair_text_is_precise(value):
+                    finding.hit(_compact(key) or axis)
+                continue
+            if is_pair_key(key) and isinstance(value, (list, tuple, str)):
+                _scan_positions(value, finding, _compact(key))
+                if isinstance(value, str):
+                    scan_text(value, finding, key_values=False)
+                continue
+            if isinstance(value, (dict, list, tuple, str)):
+                stack.append((str(key), value))
+
+
+def _load_json(text: str) -> object:
+    return json.loads(text, parse_float=Decimal)
+
+
+def scan_json_text(text: str, finding: FileFinding) -> None:
+    try:
+        document = _load_json(text)
+    except (json.JSONDecodeError, RecursionError):
+        # Not strict JSON (comments, a template): scan it as text instead.
+        scan_text(text, finding, key_values=True)
+        return
+    walk_document(document, finding)
+
+
+def scan_json_lines_text(text: str, finding: FileFinding) -> None:
+    for line in text.splitlines():
+        if line.strip():
+            scan_json_text(line, finding)
+
+
+def scan_yaml_text(text: str, finding: FileFinding) -> None:
+    try:
+        import yaml
+    except ImportError:
+        scan_text(text, finding, key_values=True)
+        return
+    try:
+        documents = list(yaml.safe_load_all(text))
+    except yaml.YAMLError:
+        scan_text(text, finding, key_values=True)
+        return
+    for document in documents:
+        walk_document(document, finding)
+
+
+def _joined(value: object) -> str:
+    if isinstance(value, list):
+        return "".join(str(item) for item in value)
+    return value if isinstance(value, str) else ""
+
+
+def scan_notebook_text(text: str, finding: FileFinding) -> None:
+    try:
+        notebook = _load_json(text)
+    except (json.JSONDecodeError, RecursionError):
+        finding.fail_closed("notebook is not valid JSON")
+        return
+    cells = notebook.get("cells", []) if isinstance(notebook, dict) else []
+    for cell in cells if isinstance(cells, list) else []:
+        if not isinstance(cell, dict):
+            continue
+        scan_text(_joined(cell.get("source")), finding, key_values=True)
+        outputs = cell.get("outputs")
+        for output in outputs if isinstance(outputs, list) else []:
+            if not isinstance(output, dict):
+                continue
+            scan_text(_joined(output.get("text")), finding, key_values=True)
+            data = output.get("data")
+            for mime, payload in (data if isinstance(data, dict) else {}).items():
+                if "json" in str(mime):
+                    walk_document(payload, finding)
+                else:
+                    scan_text(_joined(payload), finding, key_values=True)
+
+
+# --------------------------------------------------------------------------
+# Tables (delimited text, workbooks, SQL rows)
+# --------------------------------------------------------------------------
+
+_WKT_HINT = re.compile(r"(?:POINT|LINESTRING|POLYGON)\s*[ZM]*\s*\(", re.IGNORECASE)
+
+
+class TableScanner:
+    """Rows of cells; any row naming a coordinate column becomes the header."""
+
+    def __init__(self, finding: FileFinding) -> None:
+        self.finding = finding
+        self.columns: list[tuple[int, str, str | None]] = []
+
+    def _header_columns(self, row: list[object]) -> list[tuple[int, str, str | None]]:
+        # A header row holds names, not numbers, and names are short. Free
+        # text that happens to mention "latitude" does not replace the header.
+        if any(parse_number(cell) is not None for cell in row):
+            return []
+        columns = []
+        for index, cell in enumerate(row):
+            if not isinstance(cell, str) or len(cell) > 64 or len(_tokens(cell)) > 6:
+                continue
+            axis = coordinate_axis(cell)
+            if axis:
+                columns.append((index, _compact(cell), axis))
+            elif is_pair_key(cell):
+                columns.append((index, _compact(cell), None))
+        return columns
+
+    def row(self, row: Iterable[object]) -> None:
+        cells = list(row)
+        header = self._header_columns(cells)
+        if header:
+            self.columns = header
             return
-    _walk_json(document, finding)
+        for index, name, axis in self.columns:
+            if index >= len(cells):
+                continue
+            value = cells[index]
+            if (axis and is_precise(value, axis)) or pair_text_is_precise(value):
+                self.finding.hit(name)
+        for cell in cells:
+            if isinstance(cell, str) and _WKT_HINT.search(cell):
+                scan_text(cell, self.finding, key_values=False)
 
 
-def _scan_html(path: Path, finding: FileFinding) -> None:
-    # Marker calls are short, so a chunk overlap longer than one call is enough
-    # to see every call once when streaming.
-    tail = b""
-    counted_until = 0
-    offset = 0
-    with path.open("rb") as handle:
-        while chunk := handle.read(_PROBE_CHUNK):
-            window = tail + chunk
-            window_start = offset - len(tail)
-            for match in _LEAFLET_MARKER.finditer(window):
-                if window_start + match.start() < counted_until:
-                    continue
-                latitude = match.group(1).decode("ascii")
-                longitude = match.group(2).decode("ascii")
-                if _is_precise(latitude, latitude=True) or _is_precise(
-                    longitude, latitude=False
-                ):
-                    finding.precise_values += 1
-                    finding.fields.add("leaflet.marker")
-                counted_until = window_start + match.end()
-            offset += len(chunk)
-            tail = window[-_PROBE_OVERLAP * 4 :]
+def _sniff_delimiter(sample: str, default: str) -> str:
+    candidates = ",;\t|"
+    try:
+        return csv.Sniffer().sniff(sample, delimiters=candidates).delimiter
+    except csv.Error:
+        pass
+    lines = [line for line in sample.splitlines()[:20] if line.strip()]
+    if not lines:
+        return default
+    counts = {
+        delimiter: min(line.count(delimiter) for line in lines)
+        for delimiter in candidates
+    }
+    best = max(counts, key=lambda delimiter: counts[delimiter])
+    return best if counts[best] else default
 
 
-def _xlsx_rows(
-    path: Path,
-) -> Iterator[tuple[str, list[object], Iterator[Iterable[object]]]]:
-    import openpyxl
+def scan_delimited(
+    opener: Callable[[], BinaryIO], name: str, finding: FileFinding
+) -> None:
+    default = "\t" if name.lower().endswith(".tsv") else ","
+    with opener() as raw:
+        sample = raw.read(64 * 1024).decode("utf-8-sig", errors="replace")
+    delimiter = _sniff_delimiter(sample, default)
+    table = TableScanner(finding)
+    with opener() as raw:
+        text = io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace", newline="")
+        csv.field_size_limit(MAX_IN_MEMORY_BYTES)
+        for row in csv.reader(text, delimiter=delimiter):
+            table.row(row)
 
-    workbook = openpyxl.load_workbook(path, read_only=True, data_only=True)
+
+def scan_workbook(data: bytes, finding: FileFinding) -> None:
+    try:
+        import openpyxl
+    except ImportError:
+        finding.fail_closed("openpyxl is not installed")
+        return
+    try:
+        workbook = openpyxl.load_workbook(
+            io.BytesIO(data), read_only=True, data_only=True
+        )
+    except Exception as exc:  # noqa: BLE001 - any failure is "cannot verify"
+        finding.fail_closed(f"workbook did not open: {type(exc).__name__}")
+        return
     try:
         for sheet in workbook.worksheets:
-            rows = sheet.iter_rows(values_only=True)
-            header = next(rows, None)
-            if header is not None:
-                yield (
-                    sheet.title,
-                    [str(cell) if cell is not None else "" for cell in header],
-                    rows,
-                )
+            table = TableScanner(finding)
+            for row in sheet.iter_rows(values_only=True):
+                table.row(row)
     finally:
         workbook.close()
 
 
-def _scan_xlsx(path: Path, finding: FileFinding) -> None:
-    try:
-        sheets = list(_xlsx_rows(path))
-    except ImportError:
-        finding.error = "openpyxl is not installed"
-        return
-    except (zipfile.BadZipFile, OSError, KeyError, ValueError) as exc:
-        finding.error = f"workbook did not open: {type(exc).__name__}"
-        return
-    for _title, header, rows in sheets:
-        _scan_rows(header, rows, finding)
-
-
-def _scan_parquet(path: Path, finding: FileFinding) -> None:
+def scan_parquet(data: bytes, finding: FileFinding) -> None:
     try:
         import pyarrow.parquet as pq
     except ImportError:
-        finding.error = "pyarrow is not installed, so the file cannot be verified"
+        finding.fail_closed("pyarrow is not installed, so the file cannot be verified")
         return
-    parquet = pq.ParquetFile(path)
-    header = list(parquet.schema_arrow.names)
-    if not any(_normalise_key(name) in COORDINATE_KEYS for name in header):
+    try:
+        parquet = pq.ParquetFile(io.BytesIO(data))
+        header = list(parquet.schema_arrow.names)
+        table = TableScanner(finding)
+        table.row(header)
+        for batch in parquet.iter_batches():
+            columns = [column.to_pylist() for column in batch.columns]
+            for values in zip(*columns, strict=True):
+                table.row(values)
+    except Exception as exc:  # noqa: BLE001 - ArrowInvalid, OSError, ...
+        finding.fail_closed(f"parquet did not read: {type(exc).__name__}")
+
+
+_SQL_INSERT = re.compile(
+    r"INSERT\s+INTO\s+[\w.\"`\[\]]+\s*\(([^)]*)\)\s*VALUES\s*", re.IGNORECASE
+)
+_SQL_COPY = re.compile(
+    r"^COPY\s+[\w.\"]+\s*\(([^)]*)\)\s+FROM\s+stdin[^\n]*\n(.*?)^\\\.$",
+    re.IGNORECASE | re.MULTILINE | re.DOTALL,
+)
+
+
+def _sql_tuples(text: str, start: int) -> Iterator[list[str]]:
+    """Yield the value tuples of one INSERT ... VALUES statement."""
+
+    index, length = start, len(text)
+    while index < length:
+        while index < length and text[index] in " \t\r\n,":
+            index += 1
+        if index >= length or text[index] != "(":
+            return
+        index += 1
+        values: list[str] = []
+        current: list[str] = []
+        depth = 0
+        while index < length:
+            char = text[index]
+            if char == "'":
+                end = index + 1
+                while end < length:
+                    if text[end] == "'" and text[end + 1 : end + 2] == "'":
+                        end += 2
+                        continue
+                    if text[end] == "'":
+                        break
+                    end += 1
+                current.append(text[index + 1 : end].replace("''", "'"))
+                index = end + 1
+                continue
+            if char == "(":
+                depth += 1
+            elif char == ")":
+                if depth == 0:
+                    values.append("".join(current).strip())
+                    index += 1
+                    break
+                depth -= 1
+            elif char == "," and depth == 0:
+                values.append("".join(current).strip())
+                current = []
+                index += 1
+                continue
+            current.append(char)
+            index += 1
+        yield values
+
+
+def scan_sql_text(text: str, finding: FileFinding) -> None:
+    for match in _SQL_INSERT.finditer(text):
+        columns = [column.strip().strip('"`[]') for column in match.group(1).split(",")]
+        table = TableScanner(finding)
+        table.row(columns)
+        for values in _sql_tuples(text, match.end()):
+            table.row(values)
+    for match in _SQL_COPY.finditer(text):
+        columns = [column.strip().strip('"') for column in match.group(1).split(",")]
+        table = TableScanner(finding)
+        table.row(columns)
+        for line in match.group(2).splitlines():
+            table.row(line.split("\t"))
+    scan_text(text, finding, key_values=False)
+
+
+# --------------------------------------------------------------------------
+# Dispatch, archives
+# --------------------------------------------------------------------------
+
+
+def _suffix(name: str) -> str:
+    return Path(name).suffix.lower()
+
+
+def _read_capped(opener: Callable[[], BinaryIO], finding: FileFinding) -> bytes | None:
+    with opener() as handle:
+        data = handle.read(MAX_IN_MEMORY_BYTES + 1)
+    if len(data) > MAX_IN_MEMORY_BYTES:
+        finding.fail_closed(f"larger than {MAX_IN_MEMORY_BYTES} bytes")
+        return None
+    return data
+
+
+def _scan_zip(data: bytes, name: str, finding: FileFinding, depth: int) -> None:
+    try:
+        with zipfile.ZipFile(io.BytesIO(data)) as archive:
+            for info in archive.infolist():
+                if info.is_dir() or _suffix(info.filename) not in SCANNED_SUFFIXES:
+                    continue
+                if info.flag_bits & 0x1:
+                    finding.fail_closed(f"encrypted member {info.filename}")
+                    continue
+
+                def opener(info: zipfile.ZipInfo = info) -> BinaryIO:
+                    return archive.open(info)
+
+                scan_source(opener, f"{name}!{info.filename}", finding, depth + 1)
+    except (zipfile.BadZipFile, zipfile.LargeZipFile, NotImplementedError) as exc:
+        finding.fail_closed(f"archive did not open: {type(exc).__name__}")
+
+
+def _scan_tar(
+    opener: Callable[[], BinaryIO], name: str, finding: FileFinding, depth: int
+) -> None:
+    try:
+        with opener() as raw, tarfile.open(fileobj=raw, mode="r|*") as archive:
+            for member in archive:
+                if not member.isfile() or _suffix(member.name) not in SCANNED_SUFFIXES:
+                    continue
+                if member.size > MAX_IN_MEMORY_BYTES:
+                    finding.fail_closed(f"member {member.name} is too large to verify")
+                    continue
+                extracted = archive.extractfile(member)
+                payload = extracted.read() if extracted else b""
+                scan_source(
+                    lambda payload=payload: io.BytesIO(payload),
+                    f"{name}!{member.name}",
+                    finding,
+                    depth + 1,
+                )
+    except (tarfile.TarError, EOFError, OSError) as exc:
+        finding.fail_closed(f"archive did not open: {type(exc).__name__}")
+
+
+def scan_source(
+    opener: Callable[[], BinaryIO], name: str, finding: FileFinding, depth: int = 0
+) -> None:
+    """Scan one file or archive member, dispatched on its name's suffix."""
+
+    if depth > MAX_ARCHIVE_DEPTH:
+        finding.fail_closed("archives nested too deeply")
         return
-    for batch in parquet.iter_batches():
-        columns = [
-            batch.column(index).to_pylist() for index in range(batch.num_columns)
-        ]
-        _scan_rows(header, (list(row) for row in zip(*columns, strict=True)), finding)
+    lowered = name.lower()
+    suffix = _suffix(name)
+    if lowered.endswith((".tar.gz", ".tgz")) or suffix == ".tar":
+        _scan_tar(opener, name, finding, depth)
+        return
+    if suffix == ".gz":
+        inner = name[: -len(".gz")]
+        if _suffix(inner) not in SCANNED_SUFFIXES:
+            return
+
+        def gunzip() -> BinaryIO:
+            return gzip.GzipFile(fileobj=opener())  # type: ignore[return-value]
+
+        try:
+            scan_source(gunzip, inner, finding, depth + 1)
+        except (gzip.BadGzipFile, EOFError) as exc:
+            finding.fail_closed(f"gzip did not read: {type(exc).__name__}")
+        return
+    if suffix in DELIMITED_SUFFIXES:
+        scan_delimited(opener, name, finding)
+        return
+    data = _read_capped(opener, finding)
+    if data is None:
+        return
+    if suffix in ZIP_SUFFIXES:
+        _scan_zip(data, name, finding, depth)
+    elif suffix in WORKBOOK_SUFFIXES:
+        scan_workbook(data, finding)
+    elif suffix == ".parquet":
+        scan_parquet(data, finding)
+    else:
+        text = data.decode("utf-8-sig", errors="replace")
+        if suffix in JSON_SUFFIXES:
+            scan_json_text(text, finding)
+        elif suffix in JSON_LINES_SUFFIXES:
+            scan_json_lines_text(text, finding)
+        elif suffix in YAML_SUFFIXES:
+            scan_yaml_text(text, finding)
+        elif suffix == ".ipynb":
+            scan_notebook_text(text, finding)
+        elif suffix == ".sql":
+            scan_sql_text(text, finding)
+        elif suffix in XML_SUFFIXES:
+            scan_xml_text(text, finding)
+            scan_text(text, finding, key_values=False)
+        elif suffix in HTML_SUFFIXES:
+            scan_text(text, finding, key_values=True)
 
 
 def scan_file(path: Path, display: str | None = None) -> FileFinding:
-    """Scan one data file; the finding counts precise values and never holds them."""
+    """Scan one file; the finding counts precise values and never holds them."""
 
     finding = FileFinding(path=display or str(path))
-    suffix = path.suffix.lower()
     try:
-        if suffix == ".csv":
-            _scan_delimited(path, finding, ",")
-        elif suffix == ".tsv":
-            _scan_delimited(path, finding, "\t")
-        elif suffix in {".json", ".geojson"}:
-            _scan_json(path, finding)
-        elif suffix in {".html", ".htm"}:
-            _scan_html(path, finding)
-        elif suffix == ".xlsx":
-            _scan_xlsx(path, finding)
-        elif suffix == ".parquet":
-            _scan_parquet(path, finding)
+        scan_source(lambda: path.open("rb"), path.name, finding)
     except OSError as exc:
-        finding.error = f"unreadable: {type(exc).__name__}"
+        finding.fail_closed(f"unreadable: {type(exc).__name__}")
+    except (RecursionError, MemoryError) as exc:
+        finding.fail_closed(f"not scannable: {type(exc).__name__}")
     return finding
 
 
@@ -350,6 +869,11 @@ def tracked_files(root: Path) -> list[str]:
     ]
 
 
+def is_scanned(relative: str) -> bool:
+    lowered = relative.lower()
+    return _suffix(relative) in SCANNED_SUFFIXES or lowered.endswith(".tar.gz")
+
+
 def check(
     root: Path,
     paths: Iterable[str],
@@ -362,10 +886,20 @@ def check(
     allowlist_problems: list[str] = []
     hits: set[str] = set()
     for relative in paths:
-        if Path(relative).suffix.lower() not in SCANNED_SUFFIXES:
+        if not is_scanned(relative):
             continue
         absolute = root / relative
+        if absolute.is_symlink():
+            # Git stores a symlink as its target path, which holds no data.
+            continue
         if not absolute.is_file():
+            # A tracked path that is absent (sparse checkout, deleted but not
+            # staged) cannot be verified, so it fails rather than being skipped.
+            violations.append(
+                FileFinding(
+                    path=relative, error="tracked but missing from the working tree"
+                )
+            )
             continue
         finding = scan_file(absolute, relative)
         if not finding.precise_values and not finding.error:

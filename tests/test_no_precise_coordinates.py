@@ -11,10 +11,14 @@ only to exercise the detector, not observations of any organism.
 
 from __future__ import annotations
 
+import gzip
+import io
 import json
 import shutil
 import subprocess
 import sys
+import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -24,7 +28,8 @@ from scripts import check_no_precise_coordinates as guard
 REPO_ROOT = Path(__file__).resolve().parent.parent
 SCRIPT = REPO_ROOT / "scripts" / "check_no_precise_coordinates.py"
 
-# SYNTHETIC values. PRECISE_* have more than two significant decimals.
+# SYNTHETIC values. PRECISE_* have more than two significant decimals; the
+# pair is a point in the open Atlantic Ocean, far from any orchid habitat.
 PRECISE_LAT = "12.3456"
 PRECISE_LON = "-45.6789"
 COARSE_LAT = "12.34"
@@ -143,26 +148,20 @@ def test_nested_json_keys_and_string_values_are_found(tmp_path):
     assert finding.fields == {"lat", "lng"}
 
 
-def test_json_without_coordinate_keys_is_not_parsed(tmp_path, monkeypatch):
-    def refuse(*_args, **_kwargs):
-        raise AssertionError("a file with no coordinate key must not be parsed")
-
-    monkeypatch.setattr(guard.json, "load", refuse)
+def test_json_without_coordinate_keys_passes(tmp_path):
     finding = _scan(
         tmp_path, "plain.json", json.dumps({"latency_ms": 12.3456, "notes": "lat"})
     )
     assert finding.precise_values == 0
 
 
-def test_unparseable_json_with_coordinate_keys_fails_closed(tmp_path):
+def test_unparseable_json_is_scanned_as_text(tmp_path):
     finding = _scan(tmp_path, "broken.json", '{"latitude": 12.3456, ')
-    assert finding.error is not None
+    assert finding.precise_values == 1
+    assert finding.fields == {"text.lat"}
 
 
-def test_leaflet_markers_in_html_are_found_across_chunk_boundaries(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setattr(guard, "_PROBE_CHUNK", 37)
+def test_every_leaflet_marker_in_html_is_counted(tmp_path):
     markers = "".join(
         f"var m{index} = L.circleMarker(\n  [{PRECISE_LAT}, {PRECISE_LON}],\n  {{}}).addTo(map);\n"
         for index in range(25)
@@ -261,3 +260,306 @@ def test_cli_report_never_prints_coordinate_values(tmp_path):
         PRECISE_LON.lstrip("-")[:5],
     ):
         assert value not in result.stdout + result.stderr
+
+
+# --- delimited text: dialects, locales, header position, BOM ---------------
+
+
+def _comma(value: str) -> str:
+    return value.replace(".", ",")
+
+
+@pytest.mark.parametrize(
+    ("name", "body"),
+    [
+        pytest.param(
+            "semicolon.csv",
+            f"latitude;longitude\n{PRECISE_LAT};{PRECISE_LON}\n",
+            id="semicolon-delimiter",
+        ),
+        pytest.param(
+            "pipe.csv",
+            f"lat|lon\n{PRECISE_LAT}|{PRECISE_LON}\n",
+            id="pipe-delimiter",
+        ),
+        pytest.param(
+            "spanish-excel.csv",
+            f"id;latitude;longitude\nA;{_comma(PRECISE_LAT)};{_comma(PRECISE_LON)}\n",
+            id="comma-decimals-semicolon",
+        ),
+        pytest.param(
+            "quoted-comma-decimals.csv",
+            f'latitude,longitude\n"{_comma(PRECISE_LAT)}","{_comma(PRECISE_LON)}"\n',
+            id="comma-decimals-quoted",
+        ),
+        pytest.param(
+            "exponent.csv",
+            "decimalLatitude,decimalLongitude\n1.23456e1,-4.56789E+01\n",
+            id="scientific-notation",
+        ),
+        pytest.param(
+            "late-header.csv",
+            "Export of synthetic records\nGenerated for a detector test\n\n"
+            f"id,latitude_deg,longitude_deg\n1,{PRECISE_LAT},{PRECISE_LON}\n",
+            id="header-not-on-first-row",
+        ),
+        pytest.param(
+            "bom.csv",
+            f"\ufefflatitude,longitude\n{PRECISE_LAT},{PRECISE_LON}\n",
+            id="utf8-bom",
+        ),
+        pytest.param(
+            "hemisphere.tsv",
+            f"lat\tlng\n{PRECISE_LAT} N\t{PRECISE_LON.lstrip('-')}°W\n",
+            id="degree-and-hemisphere-suffix",
+        ),
+    ],
+)
+def test_delimited_dialects_and_locales_are_found(tmp_path, name, body):
+    finding = _scan(tmp_path, name, body.encode("utf-8"))
+    assert finding.error is None
+    assert finding.precise_values == 2, finding.fields
+
+
+def test_bom_does_not_hide_the_first_column(tmp_path):
+    body = f"\ufefflatitude,species\n{PRECISE_LAT},Synthetic example\n"
+    finding = _scan(tmp_path, "bom-first-column.csv", body.encode("utf-8"))
+    assert finding.precise_values == 1
+    assert finding.fields == {"latitude"}
+
+
+def test_free_text_mentioning_latitude_does_not_replace_the_header(tmp_path):
+    body = (
+        f"lat,lon,notes\n{PRECISE_LAT},{PRECISE_LON},x\n"
+        "1.0,2.0,see latitude\n"
+        f"{PRECISE_LAT},{PRECISE_LON},y\n"
+    )
+    assert _scan(tmp_path, "notes.csv", body).precise_values == 4
+
+
+def test_wkt_and_pair_cells_are_found(tmp_path):
+    body = (
+        "id,geom,latlng\n"
+        f'1,"POINT ({PRECISE_LON} {PRECISE_LAT})",\n'
+        f'2,,"{PRECISE_LAT}, {PRECISE_LON}"\n'
+        f'3,"SRID=4326;POINT({COARSE_LON} {COARSE_LAT})",\n'
+    )
+    finding = _scan(tmp_path, "wkt.csv", body)
+    assert finding.precise_values == 2
+    assert finding.fields == {"wkt", "latlng"}
+
+
+def test_long_as_an_ordinary_word_is_not_a_longitude(tmp_path):
+    body = f"long_term_mean,latency\n{PRECISE_LAT},{PRECISE_LON}\n"
+    assert _scan(tmp_path, "climate.csv", body).precise_values == 0
+
+
+def test_xlsx_header_search_and_comma_decimals(tmp_path):
+    openpyxl = pytest.importorskip("openpyxl")
+    workbook = openpyxl.Workbook()
+    sheet = workbook.active
+    sheet.append(["Synthetic export"])
+    sheet.append([])
+    sheet.append(["specimen", "Latitud (lat)", "Longitud (lon)"])
+    sheet.append(["synthetic-1", _comma(PRECISE_LAT), _comma(PRECISE_LON)])
+    second = workbook.create_sheet("second")
+    second.append(["decimal_latitude"])
+    second.append([float(PRECISE_LAT)])
+    path = tmp_path / "late-header.xlsx"
+    workbook.save(path)
+    assert guard.scan_file(path, "late-header.xlsx").precise_values == 3
+
+
+# --- structured documents ---------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "geometry",
+    [
+        {"type": "LineString", "coordinates": [[-45.6789, 12.3456], [-45.0, 12.0]]},
+        {
+            "type": "Polygon",
+            "coordinates": [[[-45.6789, 12.3456], [-45.0, 12.0], [-45.6789, 12.3456]]],
+        },
+        {"type": "MultiPoint", "coordinates": [[-45.6789, 12.3456]]},
+        {
+            "type": "MultiPolygon",
+            "coordinates": [[[[-45.6789, 12.3456], [-45.0, 12.0]]]],
+        },
+        {
+            "type": "GeometryCollection",
+            "geometries": [{"type": "Point", "coordinates": [-45.6789, 12.3456]}],
+        },
+    ],
+    ids=["linestring", "polygon", "multipoint", "multipolygon", "collection"],
+)
+def test_every_geojson_geometry_type_is_found(tmp_path, geometry):
+    document = {"type": "Feature", "geometry": geometry, "properties": {}}
+    finding = _scan(tmp_path, "shape.geojson", json.dumps(document))
+    assert finding.precise_values >= 1
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        {"site": {"coords": [-45.6789, 12.3456]}},
+        {"site": {"latlng": "12.3456,-45.6789"}},
+        {"geometry": {"x": -45.6789, "y": 12.3456}},
+        {"pt": {"x": -45.6789, "y": 12.3456, "spatialReference": {"wkid": 4326}}},
+        {"records": [{"verbatimLatitude": "1.23456e1"}]},
+        {"shape": "POINT (-45.6789 12.3456)"},
+        {"site_lat": 12.3456},
+    ],
+    ids=[
+        "coords-array",
+        "pair-string",
+        "xy-geometry",
+        "xy-crs",
+        "exponent",
+        "wkt",
+        "prefixed",
+    ],
+)
+def test_json_coordinate_shapes_are_found(tmp_path, document):
+    assert _scan(tmp_path, "doc.json", json.dumps(document)).precise_values >= 1
+
+
+def test_ui_xy_positions_are_not_coordinates(tmp_path):
+    document = {"nodes": [{"position": {"x": 12.3456, "y": 45.6789}}]}
+    assert _scan(tmp_path, "layout.json", json.dumps(document)).precise_values == 0
+
+
+def test_json_lines_yaml_and_sql_are_scanned(tmp_path):
+    jsonl = f'{{"id": 1}}\n{{"decimal_latitude": {PRECISE_LAT}}}\n'
+    assert _scan(tmp_path, "rows.jsonl", jsonl).precise_values == 1
+    yaml_text = f"site:\n  name: synthetic\n  latitude: {PRECISE_LAT}\n"
+    assert _scan(tmp_path, "site.yaml", yaml_text).precise_values == 1
+    sql = (
+        "INSERT INTO oc_occurrences (id, decimal_latitude, decimal_longitude) VALUES\n"
+        f"  (1, {PRECISE_LAT}, {PRECISE_LON}),\n"
+        f"  (2, '{COARSE_LAT}', NULL);\n"
+        "COPY public.sites (id, lat, lon) FROM stdin;\n"
+        f"1\t{PRECISE_LAT}\t{PRECISE_LON}\n"
+        "\\.\n"
+        f"UPDATE t SET geom = ST_SetSRID(ST_MakePoint({PRECISE_LON}, {PRECISE_LAT}), 4326);\n"
+    )
+    finding = _scan(tmp_path, "dump.sql", sql)
+    assert finding.precise_values == 5, finding.fields
+
+
+def test_notebook_sources_and_outputs_are_scanned(tmp_path):
+    notebook = {
+        "cells": [
+            {"cell_type": "code", "source": [f"lat = {PRECISE_LAT}\n"], "outputs": []},
+            {
+                "cell_type": "code",
+                "source": ["m"],
+                "outputs": [
+                    {
+                        "output_type": "display_data",
+                        "data": {
+                            "text/html": [
+                                f"<script>L.marker([{PRECISE_LAT}, {PRECISE_LON}])</script>"
+                            ],
+                            "application/json": {"longitude": float(PRECISE_LON)},
+                        },
+                    }
+                ],
+            },
+        ]
+    }
+    finding = _scan(tmp_path, "analysis.ipynb", json.dumps(notebook))
+    assert finding.precise_values == 3, finding.fields
+
+
+def test_kml_and_gpx_are_scanned(tmp_path):
+    kml = (
+        "<kml><Placemark><Point><coordinates>"
+        f"{PRECISE_LON},{PRECISE_LAT},0 {COARSE_LON},{COARSE_LAT},0"
+        "</coordinates></Point></Placemark></kml>"
+    )
+    assert _scan(tmp_path, "sites.kml", kml).precise_values == 1
+    gpx = (
+        f'<gpx><wpt lat="{PRECISE_LAT}" lon="{PRECISE_LON}"><name>s</name></wpt>'
+        f'<trk><trkseg><trkpt lon="{COARSE_LON}" lat="{COARSE_LAT}"/></trkseg></trk></gpx>'
+    )
+    assert _scan(tmp_path, "track.gpx", gpx).precise_values == 2
+
+
+def test_html_latlng_polyline_and_embedded_geojson_are_found(tmp_path):
+    html = (
+        f"<script>var a = L.latLng({PRECISE_LAT}, {PRECISE_LON});"
+        f"L.polyline([[{PRECISE_LAT}, {PRECISE_LON}], [{COARSE_LAT}, {COARSE_LON}]]);"
+        'L.geoJson({"type": "Point", '
+        f'"coordinates": [{PRECISE_LON}, {PRECISE_LAT}]}});</script>'
+    )
+    finding = _scan(tmp_path, "map.html", html)
+    assert finding.fields == {"leaflet.marker", "leaflet.shape", "geojson.coordinates"}
+
+
+# --- archives ----------------------------------------------------------------
+
+_LEAK_CSV = f"lat,lon\n{PRECISE_LAT},{PRECISE_LON}\n".encode()
+
+
+def test_zip_gzip_and_tar_members_are_scanned(tmp_path):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("readme.txt", "no data here")
+        archive.writestr("data/points.csv", _LEAK_CSV)
+    assert _scan(tmp_path, "bundle.zip", buffer.getvalue()).precise_values == 2
+
+    assert (
+        _scan(tmp_path, "points.csv.gz", gzip.compress(_LEAK_CSV)).precise_values == 2
+    )
+
+    tar_buffer = io.BytesIO()
+    with tarfile.open(fileobj=tar_buffer, mode="w:gz") as archive:
+        info = tarfile.TarInfo("inner/points.csv")
+        info.size = len(_LEAK_CSV)
+        archive.addfile(info, io.BytesIO(_LEAK_CSV))
+    assert _scan(tmp_path, "bundle.tar.gz", tar_buffer.getvalue()).precise_values == 2
+
+    nested = io.BytesIO()
+    with zipfile.ZipFile(nested, "w") as archive:
+        archive.writestr("inner.zip", buffer.getvalue())
+    assert _scan(tmp_path, "nested.zip", nested.getvalue()).precise_values == 2
+
+
+def test_corrupt_archives_fail_closed(tmp_path):
+    assert _scan(tmp_path, "broken.zip", b"PK not really").error is not None
+    assert _scan(tmp_path, "broken.csv.gz", b"\x1f\x8b not gzip").error is not None
+
+
+# --- fail closed ---------------------------------------------------------------
+
+
+def test_parquet_read_errors_fail_closed_without_crashing(tmp_path, monkeypatch):
+    class ArrowInvalid(ValueError):
+        pass
+
+    class FakeParquet:
+        class ParquetFile:
+            def __init__(self, *_args, **_kwargs):
+                raise ArrowInvalid("synthetic failure")
+
+    fake_pyarrow = type(sys)("pyarrow")
+    fake_pyarrow.parquet = FakeParquet
+    monkeypatch.setitem(sys.modules, "pyarrow", fake_pyarrow)
+    monkeypatch.setitem(sys.modules, "pyarrow.parquet", FakeParquet)
+    finding = _scan(tmp_path, "points.parquet", b"PAR1 synthetic")
+    assert finding.error is not None
+    assert "ArrowInvalid" in finding.error
+
+
+def test_tracked_path_missing_from_the_working_tree_fails_closed(tmp_path):
+    violations, problems = guard.check(tmp_path, ["data/sparse.csv", "code.py"], {})
+    assert [finding.path for finding in violations] == ["data/sparse.csv"]
+    assert "missing" in (violations[0].error or "")
+    assert problems == []
+
+
+def test_oversized_file_fails_closed(tmp_path, monkeypatch):
+    monkeypatch.setattr(guard, "MAX_IN_MEMORY_BYTES", 16)
+    finding = _scan(tmp_path, "big.json", json.dumps({"padding": "x" * 64}))
+    assert finding.error is not None

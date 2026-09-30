@@ -567,7 +567,7 @@ def test_member_trait_read_withholds_all_free_form_scientific_fields(
                 "evidence_state": "VERIFIED",
                 "confidence": 1.0,
                 "sample_size": 1,
-                "buckets": [{"value": "-4.0123,-79.1234", "count": 1}],
+                "buckets": [{"value": "-4.9123,-25.1234", "count": 1}],
                 "receipts": [
                     {
                         "source_id": "private-observation",
@@ -596,7 +596,7 @@ def test_member_trait_read_withholds_all_free_form_scientific_fields(
         "distributions": [],
     }
     assert "Cerro Toledo" not in member_response.text
-    assert "-4.0123" not in member_response.text
+    assert "-4.9123" not in member_response.text
     assert "Collector notebook" not in member_response.text
 
 
@@ -1181,7 +1181,7 @@ def test_distribution_maps_fold_unknown_keys_into_other():
 
 def test_caller_chosen_field_names_are_dropped_everywhere():
     out = redact_member_locality(
-        {"metrics": {"Cerro Toledo": 1, "planned": 2, "cerro_toledo_lat": -4.0123, "mindo_site": [-0.05, -78.77]}}
+        {"metrics": {"Cerro Toledo": 1, "planned": 2, "cerro_toledo_lat": -4.9123, "mindo_site": [-4.23, -25.34]}}
     )
     assert out == {"metrics": {"planned": 2, "keys_redacted": 3}}
     assert redact_member_locality({"cerro_toledo_site": [-0.2134, -78.51]}) == {"keys_redacted": 1}
@@ -1336,13 +1336,13 @@ def test_schema_defined_member_routes_return_the_owner_payload(client, owner_tok
 
 def test_confidence_components_and_sample_size_schema():
     out = redact_member_locality(
-        {"confidence_components": {"extraction": 0.7, "source": {"yasuni_station_lat": -0.6741}, "anchor": 1.5}}
+        {"confidence_components": {"extraction": 0.7, "source": {"yasuni_station_lat": -4.4567}, "anchor": 1.5}}
     )
     components = out["confidence_components"]
     assert components["extraction"] == 0.7
     assert components["source"] is None and components["source_redacted"] is True
     assert components["anchor"] is None and components["anchor_redacted"] is True
-    for bad in ({"cerro_toledo_lat": -4.0123}, -3, 2.5, "12", True, 10**9):
+    for bad in ({"cerro_toledo_lat": -4.9123}, -3, 2.5, "12", True, 10**9):
         entry = redact_member_locality({"conversion_rule_version": "086b-units-1", "sample_size": bad})
         assert entry["sample_size"] is None and entry["sample_size_redacted"] is True, bad
     assert redact_member_locality({"sample_size": 12})["sample_size"] == 12
@@ -1445,7 +1445,7 @@ def test_checker_probe7_end_to_end(client, owner_token, supabase, monkeypatch):
             "candidate_id": ident, "candidate_version": 1, "candidate_type": kind,
             "normalized_subject": "Dracula vampira", "predicate": "width", "numeric_value": 4.0 + ident,
             "unit": unit, "source_revision_id": 10 + ident, "source_anchor_ids": [ident],
-            "measurement_context": {"sample_size": {"cerro_toledo_lat": -4.0123, "cerro_toledo_lon": -79.1234}},
+            "measurement_context": {"sample_size": {"cerro_toledo_lat": -4.9123, "cerro_toledo_lon": -25.1234}},
         }
 
     run = client.post("/api/evidence-aggregation/preview", headers=owner,
@@ -1454,13 +1454,13 @@ def test_checker_probe7_end_to_end(client, owner_token, supabase, monkeypatch):
     client.post(f"/api/evidence-aggregation/runs/{rid}/execute", headers=owner)
     ck = client.post("/api/candidate-knowledge/preview", headers=owner, json={"evidence": [{
         "source_object_type": "document", "source_object_id": 1, "revision_id": 1, "extraction_run_id": 1,
-        "text": "x", "source_anchors": [{"anchor_id": 1, "locator": {"confidence": {"mindo_site": [-0.0521, -78.7753]}}}],
-        "metadata": {"source_confidence": {"yasuni_station_lat": -0.6741, "yasuni_station_lon": -76.3973},
+        "text": "x", "source_anchors": [{"anchor_id": 1, "locator": {"confidence": {"mindo_site": [-4.5678, -25.6789]}}}],
+        "metadata": {"source_confidence": {"yasuni_station_lat": -4.4567, "yasuni_station_lon": -25.7891},
                      "candidate_facts": [{"kind": "TAXON", "subject": "Dracula vampira", "predicate": "taxon",
                                           "object_value": "Pichincha"}]},
     }]})
     client.post(f"/api/candidate-knowledge/runs/{ck.json()['candidate_run_id']}/execute", headers=owner)
-    needles = ("cerro_toledo", "-4.0123", "-79.1234", "yasuni", "-76.3973", "mindo", "-78.7753", "Pichincha")
+    needles = ("cerro_toledo", "-4.9123", "-25.1234", "yasuni", "-25.7891", "mindo", "-25.6789", "Pichincha")
     urls = ["/api/evidence-aggregation/aggregates", "/api/evidence-aggregation/export", "/api/candidate-knowledge/candidates"]
     aggregates = client.get("/api/evidence-aggregation/aggregates", headers=owner).json()["items"]
     if aggregates:

@@ -65,7 +65,7 @@ POSITIVE = {
     "dms_unicode_marks": ["12° 34′ 56″ N", "12°34'56\"", "12 34′ 56″"],
     "dms_letters": ["12d34m", "12d 34m 56s", "18d55.5m S"],
     "hemisphere_suffix": [
-        "12.345 N",
+        "30.912 N",
         "12.34S 45.67W",
         "12.34s 45.67w",
         "18.9S",
@@ -73,7 +73,7 @@ POSITIVE = {
         "18:55:30 S",
     ],
     "hemisphere_prefix": [
-        "N 12.345",
+        "N 30.912",
         "N 12.34",
         "S18.91",
         "N 18 E 47",
@@ -248,8 +248,8 @@ REGISTRY_CONSTRUCTORS = {"RegistryCharacter", "Candidate", "create_registry_vers
 KNOWN_SENSITIVE = {
     "Colour (collected at Andasibe, lat -18.91)",
     "Measured on specimen K0001 at 18°55′S",
-    "PLANTED at -18.9123, 48.4211",
-    "PLANTED list at -18.9123",
+    "PLANTED at -40.7891, 15.8912",
+    "PLANTED list at -40.7891",
     "PLANTED-COLLECTOR",
     "PLANTED-GPS",
     "PLANTED-LOCALITY",
@@ -264,7 +264,7 @@ KNOWN_SENSITIVE = {
     "gps",
     "latitude",
     "locality",
-    "near 18°55'S 48°25'E",
+    "near 40°12'S 15°34'E",
     "specimen",
 }
 

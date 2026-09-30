@@ -71,7 +71,7 @@ def test_member_state_schema_is_explicit_and_fails_closed():
     assert member_state("star-shaped") == "star-shaped"
     assert member_state("x" * 121) == WITHHELD
     assert member_state(["white", "green"]) == ["white", "green"]
-    assert member_state(["white", {"locality": "x"}, "near -18.9123"]) == [
+    assert member_state(["white", {"locality": "x"}, "near -40.7891"]) == [
         "white",
         WITHHELD,
         WITHHELD,
@@ -81,7 +81,7 @@ def test_member_state_schema_is_explicit_and_fails_closed():
         "min": 250,
         "max": 350,
         "specimen": "K1",
-        "decimalLatitude": -18.9123,
+        "decimalLatitude": -40.7891,
     }
     assert member_state(planted_range) == {"min": 250, "max": 350}
     assert member_state({"min": "250", "max": 350}) == WITHHELD
@@ -93,7 +93,7 @@ def test_member_state_schema_is_explicit_and_fails_closed():
 @pytest.mark.parametrize(
     "text",
     [
-        "-18.9123",
+        "-40.7891",
         "near -18.91, 48.42",
         "18°55′S",
         "18 degrees south",
@@ -131,7 +131,7 @@ def test_provenance_keeps_citation_scalars_only():
             "source": "Flora 2026",
             "doi": "10.1234/abc.5678",
             "citation": {"locality": "x"},
-            "reference": "near -18.9123",
+            "reference": "near -40.7891",
             "collector": "x",
         }
     )
@@ -165,7 +165,7 @@ def _planted_registry() -> None:
         title="Planted states",
         scope={
             "genus": "Angraecum",
-            "species": "PLANTED at -18.9123, 48.4211",
+            "species": "PLANTED at -40.7891, 15.8912",
             "site": "PLANTED-SITE",
         },
         characters=[
@@ -197,15 +197,15 @@ def _planted_registry() -> None:
                         "max": 350,
                         "specimen": "PLANTED-SPECIMEN K0001",
                         "locality": "PLANTED-LOCALITY Andasibe",
-                        "decimalLatitude": -18.9123,
-                        "decimalLongitude": 48.4211,
+                        "decimalLatitude": -40.7891,
+                        "decimalLongitude": 15.8912,
                     },
                     "flower_color": [
                         "white",
-                        "PLANTED list at -18.9123",
+                        "PLANTED list at -40.7891",
                         {"locality": "PLANTED-LISTDICT"},
                     ],
-                    "lip_shape": "near 18°55'S 48°25'E",
+                    "lip_shape": "near 40°12'S 15°34'E",
                     "column": {"value": "short", "collector": "PLANTED-COLLECTOR"},
                 },
                 provenance={
@@ -286,7 +286,7 @@ def test_planted_states_labels_descriptions_and_observations_never_reach_a_membe
     for character, value in (
         ("spur_length_mm", 300),
         ("flower_color", ["white"]),
-        ("lip_shape", "found at -18.9123, 48.4211"),
+        ("lip_shape", "found at -40.7891, 15.8912"),
         ("column", {"value": "short", "locality": "PLANTED-OBSDICT"}),
     ):
         record(
