@@ -32,6 +32,9 @@ class AutonomousCycleResult:
     stop_reason: str
     jobs: tuple[CycleJobResult, ...]
     error: dict[str, Any] | None = None
+    # Executor failures this cycle released (with retry backoff or to dead
+    # letter) and then continued past.
+    failures: tuple[dict[str, Any], ...] = ()
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -39,9 +42,11 @@ class AutonomousCycleResult:
             "worker_id": self.worker_id,
             "attempted_jobs": self.attempted_jobs,
             "completed_jobs": self.completed_jobs,
+            "failed_jobs": len(self.failures),
             "stop_reason": self.stop_reason,
             "jobs": [asdict(item) for item in self.jobs],
             "error": self.error,
+            "failures": [dict(item) for item in self.failures],
             "mode": "registered_authoritative_adapters_only",
             "workspace_mutation_performed": any(
                 item.workspace_mutation for item in self.jobs
@@ -111,6 +116,7 @@ def run_deterministic_program_cycle(
     executor_registry = registry or AuthoritativeExecutorRegistry()
     worker = PersistentProgramWorker(db)
     completed: list[CycleJobResult] = []
+    failures: list[dict[str, Any]] = []
     attempted = 0
     for _ in range(max_jobs):
         job = worker.claim(
@@ -127,6 +133,7 @@ def run_deterministic_program_cycle(
                 completed_jobs=len(completed),
                 stop_reason="idle",
                 jobs=tuple(completed),
+                failures=tuple(failures),
             )
         attempted += 1
         token = job.lease_token
@@ -143,6 +150,7 @@ def run_deterministic_program_cycle(
                     "code": "CLAIMED_JOB_LEASE_TOKEN_MISSING",
                     "program_job_id": job.program_job_id,
                 },
+                failures=tuple(failures),
             )
         registered: RegisteredExecutor | None = None
         try:
@@ -177,24 +185,61 @@ def run_deterministic_program_cycle(
             error_code = str(exc) or type(exc).__name__
             if rollback_error:
                 error_code = rollback_error
-            return AutonomousCycleResult(
-                owner=normalized_owner,
-                worker_id=normalized_worker,
-                attempted_jobs=attempted,
-                completed_jobs=len(completed),
-                stop_reason="error",
-                jobs=tuple(completed),
-                error={
-                    "code": error_code,
-                    "exception_type": type(exc).__name__,
-                    "program_job_id": job.program_job_id,
-                    "program_id": job.program_id,
-                    "job_key": job.job_key,
-                    "workspace_rollback": (
-                        "failed" if rollback_error else "completed_or_not_required"
-                    ),
-                },
+            failure: dict[str, Any] = {
+                "code": error_code,
+                "exception_type": type(exc).__name__,
+                "program_job_id": job.program_job_id,
+                "program_id": job.program_id,
+                "job_key": job.job_key,
+                "workspace_rollback": (
+                    "failed" if rollback_error else "completed_or_not_required"
+                ),
+            }
+            # Release the lease now rather than letting it run to expiry. The
+            # job is retried only after an exponential, capped backoff, and
+            # dead-lettered once its attempts are exhausted.
+            try:
+                released = worker.release_failed_attempt(
+                    program_job_id=job.program_job_id,
+                    worker_id=normalized_worker,
+                    lease_token=token,
+                    error_code=error_code,
+                    exception_type=type(exc).__name__,
+                )
+            except (LookupError, PermissionError) as release_exc:
+                failure["disposition"] = "lease_release_failed"
+                failure["release_error"] = (
+                    str(release_exc) or type(release_exc).__name__
+                )
+                return AutonomousCycleResult(
+                    owner=normalized_owner,
+                    worker_id=normalized_worker,
+                    attempted_jobs=attempted,
+                    completed_jobs=len(completed),
+                    stop_reason="error",
+                    jobs=tuple(completed),
+                    error=failure,
+                    failures=tuple(failures),
+                )
+            failure["disposition"] = (
+                "dead_letter" if released.outcome == "DEAD_LETTER" else "retry_backoff"
             )
+            failure["attempt_count"] = released.attempt_count
+            failures.append(failure)
+            if rollback_error:
+                # The workspace may still hold the failed mutation. Fail closed:
+                # do not run further jobs against it in this cycle.
+                return AutonomousCycleResult(
+                    owner=normalized_owner,
+                    worker_id=normalized_worker,
+                    attempted_jobs=attempted,
+                    completed_jobs=len(completed),
+                    stop_reason="error",
+                    jobs=tuple(completed),
+                    error=failure,
+                    failures=tuple(failures),
+                )
+            continue
         completed.append(
             CycleJobResult(
                 program_job_id=job.program_job_id,
@@ -215,4 +260,5 @@ def run_deterministic_program_cycle(
         completed_jobs=len(completed),
         stop_reason="budget_exhausted",
         jobs=tuple(completed),
+        failures=tuple(failures),
     )

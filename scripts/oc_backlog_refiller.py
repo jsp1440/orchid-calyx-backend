@@ -37,6 +37,12 @@ KNOWLEDGE_GAP_FALSE_AUTHORITY_FIELDS = {
     "taxonomy_mutation",
     "sensitive_locality_disclosure",
 }
+# Health violations that describe one contradictory issue rather than the
+# control plane as a whole. Such an issue is skipped and reported as a
+# structured conflict finding; it does not fail the whole planner. Every other
+# violation still fails the planner closed.
+ISSUE_SCOPED_CONFLICT_VIOLATIONS = frozenset({"executable_parked_conflict"})
+
 PROTECTED_BOUNDARIES = {
     "production",
     "scientific",
@@ -156,6 +162,42 @@ def _candidate_reason(
     return None
 
 
+def _split_issue_conflicts(
+    violations: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate isolatable per-issue conflicts from planner-blocking violations."""
+    conflicts: list[dict[str, Any]] = []
+    blocking: list[dict[str, Any]] = []
+    for violation in violations:
+        if (
+            violation.get("type") in ISSUE_SCOPED_CONFLICT_VIOLATIONS
+            and violation.get("issue") is not None
+        ):
+            conflicts.append(violation)
+        else:
+            blocking.append(violation)
+    return conflicts, blocking
+
+
+def _conflict_finding(violation: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "type": violation["type"],
+        "issue": violation["issue"],
+        "executable": list(violation.get("executable") or []),
+        "parked": list(violation.get("parked") or []),
+        "anomaly": "queue_backoff_contradiction",
+        "action": "issue_skipped",
+        "counted_as_reserve": False,
+    }
+
+
+def _source_issue_number(candidate: dict[str, Any]) -> Any:
+    ref = str(candidate.get("source_ref") or "")
+    if ref.startswith("#") and ref[1:].isdigit():
+        return int(ref[1:])
+    return None
+
+
 def plan_refill(
     snapshot: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -173,7 +215,16 @@ def plan_refill(
         raise ValueError("reserve_depth must be >= 0")
 
     health = evaluate(snapshot)
-    queued_count = health["counts"]["queued"]
+    conflicts, blocking = _split_issue_conflicts(health["violations"])
+    conflict_issues = {violation["issue"] for violation in conflicts}
+    # A contradictory issue is not executable reserve: the scheduler parks it.
+    queued_count = len(
+        [
+            ident
+            for ident in health["issues"]["queued"]
+            if ident not in conflict_issues
+        ]
+    )
     deficit = max(reserve_depth - queued_count, 0)
 
     result: dict[str, Any] = {
@@ -185,8 +236,12 @@ def plan_refill(
         "proposals": [],
         "rejections": [],
     }
+    if conflicts:
+        # Present only when there is something to report, so a healthy plan
+        # keeps the exact wire shape consumers (and the frontend fixture) pin.
+        result["conflicts"] = [_conflict_finding(violation) for violation in conflicts]
 
-    if not health["healthy"]:
+    if blocking:
         result["status"] = (
             "queue_empty_planner_failed" if queued_count == 0 else "planner_failed"
         )
@@ -226,6 +281,14 @@ def plan_refill(
     )
 
     for candidate in ordered:
+        if _source_issue_number(candidate) in conflict_issues:
+            result["rejections"].append(
+                {
+                    "source_ref": candidate.get("source_ref"),
+                    "reason": "executable_parked_conflict",
+                }
+            )
+            continue
         reason = _candidate_reason(
             candidate,
             completed,

@@ -17,7 +17,12 @@ All tests are provider-free.  NO-API MODE REMAINS IN FORCE.
 
 from __future__ import annotations
 
+import shlex
+import subprocess
+from pathlib import Path
 from typing import Any
+
+import yaml
 
 from runtime.portfolio_steward_reconciler import _filter_prepared, _issue_to_leaf
 from scripts.oc_portfolio_steward_reconcile import (
@@ -330,3 +335,65 @@ def test_refill_snapshot_omits_validating_records_without_exact_head_metadata():
     numbers = {row["number"] for row in snapshot["issues"]}
     assert 999 not in numbers
     assert 1000 in numbers
+
+
+def test_one_parked_conflict_in_frontend_state_does_not_fail_the_planner():
+    # #238 carries both oc-queued and oc-runtime-backoff. Before the fix this
+    # one issue returned bridge_status=planner_failed and admitted nothing.
+    conflicted = {
+        "number": 238,
+        "title": "P2 conflicted-lane — carries queued and backoff at once",
+        "labels": [{"name": "oc-queued"}, {"name": "oc-runtime-backoff"}],
+        "createdAt": "2026-07-01T00:00:00Z",
+    }
+    result = run_reconciliation(
+        [_ISSUE_660, _ISSUE_1264],
+        [conflicted, _ISSUE_660, _ISSUE_1264],
+        reserve_depth=3,
+    )
+    assert result["bridge_status"] == "refill_planned"
+    assert sorted(result["admitted_numbers"]) == [660, 1264]
+    conflicts = result["report"]["bridge_result"]["conflicts"]
+    assert [(c["type"], c["issue"]) for c in conflicts] == [
+        ("executable_parked_conflict", 238)
+    ]
+
+
+_STEWARD_WORKFLOW = (
+    Path(__file__).resolve().parents[1]
+    / ".github"
+    / "workflows"
+    / "orchid-portfolio-steward.yml"
+)
+
+
+def _reconcile_step() -> dict[str, Any]:
+    workflow = yaml.safe_load(_STEWARD_WORKFLOW.read_text())
+    steps = workflow["jobs"]["portfolio-steward-reconcile"]["steps"]
+    return next(step for step in steps if step.get("id") == "reconcile")
+
+
+def test_reconcile_step_pipes_through_tee_under_pipefail():
+    step = _reconcile_step()
+    assert "| tee" in step["run"]
+    shell = step.get("shell") or ""
+    assert shell.split()[0] == "bash"
+    assert "pipefail" in shell
+    assert shell.endswith("{0}")
+
+
+def _run_step_shell(shell: str, script: str, tmp_path: Path) -> int:
+    path = tmp_path / "step.sh"
+    path.write_text(script)
+    argv = [part.replace("{0}", str(path)) for part in shlex.split(shell)]
+    return subprocess.run(argv, capture_output=True, text=True, check=False).returncode
+
+
+def test_reconcile_step_shell_fails_when_the_reconciler_exits_2(tmp_path):
+    # The reconciler returns 2 for planner_failed. Run a stand-in with the
+    # step's exact pipeline shape through the step's declared shell.
+    script = 'python3 -c "import sys; sys.exit(2)" | tee "$0.out"\n'
+    assert _run_step_shell(_reconcile_step()["shell"], script, tmp_path) == 2
+    # Control: GitHub's default for a bare `run:` is `bash -e {0}`, under which
+    # the same pipeline reports tee's success. This is the defect being fixed.
+    assert _run_step_shell("bash -e {0}", script, tmp_path) == 0

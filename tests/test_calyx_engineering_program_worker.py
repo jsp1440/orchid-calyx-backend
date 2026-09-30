@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 import pytest
@@ -329,3 +330,151 @@ def test_branch_mutation_locked_is_unreachable_through_diagnose_by_scheduler_des
     decision = policy.evaluate(locked_candidate, [already_active])
     assert decision.admitted is False
     assert decision.code == "BRANCH_MUTATION_LOCKED"
+
+
+def _jobs_of(db: Session, program_id: str) -> dict[str, CalyxProgramJob]:
+    rows = db.scalars(select(CalyxProgramJob).where(CalyxProgramJob.program_id == program_id)).all()
+    return {row.job_key: row for row in rows}
+
+
+def _repair_jobs(db: Session, program_id: str) -> list[CalyxProgramJob]:
+    return [
+        job
+        for key, job in _jobs_of(db, program_id).items()
+        if key.startswith("dead-letter-repair:")
+    ]
+
+
+def test_dead_letter_blocks_program_and_writes_exactly_one_repair_job(db: Session) -> None:
+    program = _start(
+        db,
+        [
+            ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True),
+            ProgramJobSpec("two", "backend_engineer", "two", "repo-a", "branch", True),
+        ],
+        dependencies=[("one", "two")],
+    )
+    worker = PersistentProgramWorker(db)
+    claimed = worker.claim(worker_id="w1")
+    assert claimed is not None and claimed.job_key == "one"
+    claimed.attempt_count = claimed.max_attempts
+    claimed.lease_expires_at = utcnow() - timedelta(seconds=1)
+    db.commit()
+
+    assert worker.recover_expired_leases() == 1
+    db.refresh(program)
+    assert program.status == "blocked"
+    jobs = _jobs_of(db, program.program_id)
+    assert jobs["one"].outcome == "DEAD_LETTER"
+    assert jobs["one"].blocker == "PROGRAM_JOB_ATTEMPTS_EXHAUSTED"
+    # The dependant is settled rather than left waiting forever.
+    assert jobs["two"].status == "blocked"
+    assert jobs["two"].blocker == "UPSTREAM_JOB_FAILED"
+
+    repairs = _repair_jobs(db, program.program_id)
+    assert len(repairs) == 1
+    repair = repairs[0]
+    assert repair.job_key == f"dead-letter-repair:{claimed.program_job_id}"
+    assert repair.status == "waiting"
+    assert repair.outcome is None
+    manifest = json.loads(repair.input_json or "{}")
+    assert manifest["schema"] == "calyx.program-dead-letter-repair.v1"
+    assert manifest["reason"] == "PROGRAM_JOB_ATTEMPTS_EXHAUSTED:one"
+    assert manifest["dead_letter_program_job_id"] == claimed.program_job_id
+    assert manifest["automatic_retry"] is False
+
+    # Idempotent on re-run: recovery finds nothing new, re-blocking is a no-op,
+    # and the blocked program exposes nothing claimable.
+    assert worker.recover_expired_leases() == 0
+    again = worker.block_program_for_dead_letter(jobs["one"])
+    db.commit()
+    assert again is not None and again.program_job_id == repair.program_job_id
+    assert len(_repair_jobs(db, program.program_id)) == 1
+    assert len(_jobs_of(db, program.program_id)) == 3
+    assert worker.claim(worker_id="w2") is None
+
+
+def test_dead_letter_in_cancelled_program_writes_no_repair_job(db: Session) -> None:
+    program = _start(db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True)])
+    worker = PersistentProgramWorker(db)
+    claimed = worker.claim(worker_id="w1")
+    assert claimed is not None
+    PersistentProgramRepository(db).cancel(owner="owner", program_id=program.program_id, reason="owner stop")
+    claimed.attempt_count = claimed.max_attempts
+    claimed.lease_expires_at = utcnow() - timedelta(seconds=1)
+    db.commit()
+    assert worker.recover_expired_leases() == 1
+    db.refresh(program)
+    assert program.status == "cancelled"
+    assert _repair_jobs(db, program.program_id) == []
+
+
+def test_failed_attempt_releases_lease_with_backoff_before_retry(db: Session, monkeypatch) -> None:
+    import app.calyx_orchestrator.program_worker as program_worker_module
+
+    _start(db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True)])
+    worker = PersistentProgramWorker(db)
+    claimed = worker.claim(worker_id="w1")
+    assert claimed is not None
+    token = claimed.lease_token
+    failed_at = utcnow()
+
+    released = worker.release_failed_attempt(
+        program_job_id=claimed.program_job_id,
+        worker_id="w1",
+        lease_token=token,
+        error_code="SYNTHETIC_EXECUTOR_FAILURE",
+        exception_type="RuntimeError",
+        now=failed_at,
+    )
+    assert released.status == "queued"
+    assert released.lease_owner is None
+    assert released.lease_token is None
+    assert released.lease_expires_at is None
+    assert released.attempt_count == 1
+    record = json.loads(released.evidence_json or "{}")
+    assert record["schema"] == "calyx.program-job-retry-backoff.v1"
+    assert record["backoff_seconds"] == 60
+    assert record["failures"][0]["error_code"] == "SYNTHETIC_EXECUTOR_FAILURE"
+
+    # The same token cannot release twice.
+    with pytest.raises(PermissionError, match="STALE_PROGRAM_JOB_LEASE"):
+        worker.release_failed_attempt(
+            program_job_id=claimed.program_job_id,
+            worker_id="w1",
+            lease_token=token,
+            error_code="again",
+            exception_type="RuntimeError",
+        )
+
+    monkeypatch.setattr(program_worker_module, "utcnow", lambda: failed_at + timedelta(seconds=59))
+    assert worker.claim(worker_id="w2") is None
+    assert worker.diagnose().outcome == "IDLE_NO_CANDIDATE"
+
+    monkeypatch.setattr(program_worker_module, "utcnow", lambda: failed_at + timedelta(seconds=61))
+    retried = worker.claim(worker_id="w2")
+    assert retried is not None
+    assert retried.program_job_id == claimed.program_job_id
+    assert retried.attempt_count == 2
+
+
+def test_failed_attempt_at_ceiling_dead_letters_and_blocks_program(db: Session) -> None:
+    program = _start(db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True)])
+    worker = PersistentProgramWorker(db)
+    claimed = worker.claim(worker_id="w1")
+    assert claimed is not None
+    claimed.attempt_count = claimed.max_attempts
+    db.commit()
+    released = worker.release_failed_attempt(
+        program_job_id=claimed.program_job_id,
+        worker_id="w1",
+        lease_token=claimed.lease_token,
+        error_code="SYNTHETIC_EXECUTOR_FAILURE",
+        exception_type="RuntimeError",
+    )
+    assert released.outcome == "DEAD_LETTER"
+    assert released.status == "blocked"
+    assert released.lease_token is None
+    db.refresh(program)
+    assert program.status == "blocked"
+    assert len(_repair_jobs(db, program.program_id)) == 1
