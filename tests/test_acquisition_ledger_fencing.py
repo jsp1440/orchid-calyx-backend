@@ -14,16 +14,22 @@ guard.
 
 from __future__ import annotations
 
+import contextlib
+import json
+import logging
 import os
+import random
 import socket
 import threading
+import time
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 from uuid import uuid4
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import create_engine, event
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from app.database import Base
@@ -407,7 +413,8 @@ def _session():
     return sessionmaker(bind=engine)()
 
 
-def test_service_superseded_success_returns_stale_and_keeps_live_lease():
+def test_service_superseded_success_returns_stale_and_keeps_live_lease(caplog):
+    caplog.set_level(logging.WARNING, logger="app.federation.shared_firecrawl")
     session = _session()
     takeover = _supersede_during_call(session)
     held = {}
@@ -421,6 +428,11 @@ def test_service_superseded_success_returns_stale_and_keeps_live_lease():
     status, profile = _service(session, mapper).map_source(**_map_kwargs("lexicon"))
 
     assert (status, profile) == ("stale_lease", None)
+    # The stale holder's paid credit is reported, not dropped silently.
+    stale_logs = [r.getMessage() for r in caplog.records if "superseded" in r.msg]
+    assert len(stale_logs) == 1
+    assert "unrecorded_credits=1" in stale_logs[0]
+    assert "consumer=lexicon" in stale_logs[0]
     session.expire_all()
     row = session.query(AcquisitionLedgerRow).one()
     assert row.status == "leased"
@@ -452,6 +464,142 @@ def test_service_superseded_failure_reraises_and_keeps_live_lease():
     assert row.status == "leased"
     assert row.lease_token == held["b"].lease_token
     assert row.failure_count == 0 and row.next_retry_at is None
+
+
+# --- A matched fence always records the paid result -------------------------
+#
+# Consumer bookkeeping is not lease state. A consumer joining an in-flight
+# lease rewrites ``consumers_json``; that must never veto, retry away, or
+# discard the live holder's paid result (repair of checker finding on #1697).
+
+
+def _file_engine(tmp_path, name="ledger.sqlite3"):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / name}",
+        connect_args={"timeout": 30, "check_same_thread": False},
+    )
+    Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
+    return engine
+
+
+def _inject_before_updates(session, action, *, times):
+    """Run ``action`` before each of the next ``times`` ORM UPDATEs on ``session``.
+
+    Fires after ``complete`` has read the row and before its UPDATE executes,
+    which is exactly the window a concurrent consumer claim lands in.
+    """
+    remaining = {"n": times, "fired": 0}
+
+    @event.listens_for(session, "do_orm_execute")
+    def _hook(orm_execute_state):
+        if orm_execute_state.is_update and remaining["n"] > 0:
+            remaining["n"] -= 1
+            remaining["fired"] += 1
+            action(remaining["fired"])
+
+    return remaining
+
+
+def test_consumer_claim_between_read_and_update_cannot_discard_result(tmp_path):
+    engine = _file_engine(tmp_path)
+    make = sessionmaker(bind=engine)
+    holder = AcquisitionLedger(make())
+    lease = holder.claim(_request("lexicon"), worker_id=SHARED_WORKER, now=T0)
+
+    def _consumer_joins(n):
+        other = AcquisitionLedger(make())
+        joined = other.claim(_request(f"joiner{n}"), worker_id=SHARED_WORKER, now=T0)
+        assert joined.action == "in_flight"
+        other.session.close()
+
+    fired = _inject_before_updates(holder.session, _consumer_joins, times=1)
+    holder.complete(_record(_request(), b"paid"), lease=lease, payload_json="paid")
+
+    assert fired["fired"] == 1
+    row = make().query(AcquisitionLedgerRow).one()
+    assert (row.status, row.payload_json, row.credits_spent) == ("complete", "paid", 1)
+    assert row.failure_count == 0
+    assert {"lexicon", "joiner1"} <= set(json.loads(row.consumers_json))
+    engine.dispose()
+
+
+def test_consumer_claims_before_every_update_still_record_result(tmp_path, caplog):
+    # Worst case: the list changes before EVERY write, including each
+    # best-effort merge attempt. The result still lands; only the merge
+    # gives up, with a warning, and complete() does not raise.
+    caplog.set_level(logging.WARNING, logger="app.source_federation.acquisition_ledger")
+    engine = _file_engine(tmp_path)
+    make = sessionmaker(bind=engine)
+    holder = AcquisitionLedger(make())
+    lease = holder.claim(_request("lexicon"), worker_id=SHARED_WORKER, now=T0)
+
+    def _rewrite_consumers(n):
+        other = make()
+        row = other.query(AcquisitionLedgerRow).one()
+        row.consumers_json = json.dumps([f"joiner{n}"])
+        other.commit()
+        other.close()
+
+    fired = _inject_before_updates(holder.session, _rewrite_consumers, times=99)
+    holder.complete(_record(_request(), b"paid"), lease=lease, payload_json="paid")
+
+    assert fired["fired"] == 1 + MAX_LEDGER_ATTEMPTS
+    row = make().query(AcquisitionLedgerRow).one()
+    assert (row.status, row.payload_json, row.credits_spent) == ("complete", "paid", 1)
+    assert any("not merged" in r.getMessage() for r in caplog.records)
+    engine.dispose()
+
+
+def test_transient_lock_error_on_complete_is_retried_then_bounded(tmp_path):
+    engine = _file_engine(tmp_path)
+    make = sessionmaker(bind=engine)
+
+    def _locked(_n):
+        raise OperationalError("UPDATE", {}, Exception("database is locked"))
+
+    holder = AcquisitionLedger(make())
+    lease = holder.claim(_request(), worker_id=SHARED_WORKER, now=T0)
+    _inject_before_updates(holder.session, _locked, times=1)
+    holder.complete(_record(_request(), b"paid"), lease=lease, payload_json="paid")
+    assert make().query(AcquisitionLedgerRow).one().credits_spent == 1
+
+    holder = AcquisitionLedger(make())
+    holder.session.query(AcquisitionLedgerRow).delete()
+    holder.session.commit()
+    lease = holder.claim(_request(), worker_id=SHARED_WORKER, now=T0)
+    _inject_before_updates(holder.session, _locked, times=MAX_LEDGER_ATTEMPTS)
+    with pytest.raises(LedgerContentionError) as excinfo:
+        holder.complete(_record(_request(), b"paid"), lease=lease)
+    assert excinfo.value.operation == "complete"
+    assert "complete for" in str(excinfo.value)
+    assert "acquiring a lease" not in str(excinfo.value)
+    row = make().query(AcquisitionLedgerRow).one()
+    assert row.status == "leased" and row.lease_token == lease.lease_token
+    engine.dispose()
+
+
+def test_service_never_fails_a_paid_success_on_ledger_error(caplog):
+    caplog.set_level(logging.ERROR, logger="app.federation.shared_firecrawl")
+    session = _session()
+    mapper = Mock()
+    mapper.map_source.return_value = _profile()
+    service = _service(session, mapper)
+    service.ledger.fail = Mock(wraps=service.ledger.fail)
+    service.ledger.complete = Mock(
+        side_effect=LedgerContentionError(
+            resource_key="k", operation="complete", attempts=3
+        )
+    )
+    with pytest.raises(LedgerContentionError):
+        service.map_source(**_map_kwargs("lexicon"))
+
+    service.ledger.fail.assert_not_called()
+    session.expire_all()
+    row = session.query(AcquisitionLedgerRow).one()
+    assert row.status == "leased"  # left to expire, not marked failed
+    assert row.failure_count == 0 and row.next_retry_at is None
+    errors = [r.getMessage() for r in caplog.records if "not recorded" in r.msg]
+    assert len(errors) == 1 and "unrecorded_credits=1" in errors[0]
 
 
 # --- Concurrency -------------------------------------------------------------
@@ -580,8 +728,87 @@ def test_sqlite_threads_never_hand_out_two_leases_or_clobber_one(tmp_path):
         engine.dispose()
 
 
-@pytest.mark.requires_postgres
-def test_postgres_threads_never_hand_out_two_leases_or_clobber_one():
+class _CountingMapper:
+    """Thread-safe provider stand-in: counts would-be paid calls per key."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.calls = Counter()
+
+    def map_source(self, **kwargs):
+        with self._lock:
+            self.calls[kwargs["search"]] += 1
+        time.sleep(0.002)  # widen the in-flight window for joining consumers
+        return build_source_profile(
+            source_id=kwargs["source_id"],
+            root_url=kwargs["root_url"],
+            urls=(f"https://powo.science.kew.org/taxon/{kwargs['search']}",),
+        )
+
+
+def _service_stress(make_session, *, keys=100, threads=12):
+    """Many consumers per key through the service: zero discarded paid results."""
+    mapper = _CountingMapper()
+    searches = [f"S{index:03d}" for index in range(keys)]
+
+    def _consumer(index):
+        session = make_session()
+        service = SharedFirecrawlFederationService(session, mapper=mapper)
+        order = list(searches)
+        random.Random(index).shuffle(order)
+        outcomes = []
+        try:
+            for search in order:
+                # A consumer that finds the key in flight keeps asking, and
+                # each ask arrives as a distinct module, so every poll is a
+                # real ``consumers_json`` write racing the holder's complete().
+                for poll in range(400):
+                    status, _ = service.map_source(
+                        consumer_module=f"module{index}.{poll}",
+                        source_id="powo",
+                        root_url="https://powo.science.kew.org/",
+                        search=search,
+                        limit=25,
+                    )
+                    if status != "in_flight":
+                        break
+                outcomes.append(status)
+        finally:
+            session.close()
+        return outcomes
+
+    outcomes = Counter(
+        status for result in _run_threads(threads, _consumer) for status in result
+    )
+    assert set(outcomes) <= {"fetched", "cache_hit"}, outcomes
+    # Exactly one paid call per key, and every one of them was recorded.
+    assert set(mapper.calls) == set(searches)
+    assert set(mapper.calls.values()) == {1}, mapper.calls
+    assert outcomes["fetched"] == keys
+    check = make_session()
+    rows = check.query(AcquisitionLedgerRow).all()
+    discarded = [
+        row.resource_key
+        for row in rows
+        if row.status != "complete" or row.credits_spent != 1 or not row.payload_json
+    ]
+    assert discarded == []
+    assert len(rows) == keys
+    assert sum(row.failure_count for row in rows) == 0
+    check.close()
+    return outcomes
+
+
+def test_sqlite_service_stress_discards_no_paid_result(tmp_path):
+    engine = _file_engine(tmp_path, "stress.sqlite3")
+    try:
+        _service_stress(sessionmaker(bind=engine))
+    finally:
+        engine.dispose()
+
+
+@contextlib.contextmanager
+def _postgres_engine():
     import psycopg
     from psycopg import sql
     from psycopg.conninfo import conninfo_to_dict, make_conninfo
@@ -598,13 +825,27 @@ def test_postgres_threads_never_hand_out_two_leases_or_clobber_one():
             )
         )
     params = conninfo_to_dict(make_conninfo(base_dsn, dbname=name))
-    engine = create_engine("postgresql+psycopg://", connect_args=params, pool_size=10)
+    engine = create_engine(
+        "postgresql+psycopg://", connect_args=params, pool_size=14, max_overflow=4
+    )
     try:
         Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
-        _race_suite(sessionmaker(bind=engine), rounds=15)
+        yield engine
     finally:
         engine.dispose()
         with psycopg.connect(base_dsn, autocommit=True) as conn:
             conn.execute(
                 sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
             )
+
+
+@pytest.mark.requires_postgres
+def test_postgres_threads_never_hand_out_two_leases_or_clobber_one():
+    with _postgres_engine() as engine:
+        _race_suite(sessionmaker(bind=engine), rounds=15)
+
+
+@pytest.mark.requires_postgres
+def test_postgres_service_stress_discards_no_paid_result():
+    with _postgres_engine() as engine:
+        _service_stress(sessionmaker(bind=engine))

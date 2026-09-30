@@ -25,6 +25,12 @@ holder's own result is what populates the cache, and a result that bypassed
 the fence carries no ledger provenance. The exception reports the credits the
 stale worker says it spent so the caller can log them.
 
+The fenced ``complete`` write depends on the fence alone. The consumer list
+(bookkeeping, not lease state) is merged in the same statement only if it is
+unchanged since the read, and otherwise in a best-effort follow-up; a
+concurrent consumer joining an in-flight lease can never cause a paid result
+to be discarded.
+
 A lease that expired but was never re-claimed still carries the holder's token
 and may still be completed or failed: nobody else was authorised in the
 meantime, so accepting it costs nothing and wastes nothing.
@@ -44,15 +50,19 @@ lease.
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy import case
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.orm import Session
 
 from .acquisition import AcquisitionRecord, AcquisitionRequest
 from .acquisition_models import AcquisitionLedgerRow
+
+logger = logging.getLogger(__name__)
 
 #: Upper bound on optimistic retries inside one ledger call. Each retry means
 #: another writer changed the row between our read and our conditional write;
@@ -87,7 +97,12 @@ class StaleLeaseError(RuntimeError):
 
 
 class LedgerContentionError(RuntimeError):
-    """A ledger call lost its conditional write ``MAX_LEDGER_ATTEMPTS`` times."""
+    """A ledger call could not make progress in ``MAX_LEDGER_ATTEMPTS`` attempts.
+
+    ``claim`` raises it after losing its insert/compare-and-swap that often
+    (no lease is handed out). ``complete`` raises it only after repeated
+    transient database errors, with nothing committed.
+    """
 
     def __init__(self, *, resource_key: str, operation: str, attempts: int) -> None:
         self.resource_key = resource_key
@@ -95,7 +110,7 @@ class LedgerContentionError(RuntimeError):
         self.attempts = attempts
         super().__init__(
             f"acquisition ledger contention: {operation} for {resource_key} "
-            f"gave up after {attempts} attempts without acquiring a lease"
+            f"gave up after {attempts} attempts"
         )
 
 
@@ -310,7 +325,11 @@ class AcquisitionLedger:
         """Record ``record`` as the result of ``lease``.
 
         Raises :class:`StaleLeaseError` (writing nothing) when ``lease`` is no
-        longer the live lease for ``record.key``.
+        longer the live lease for ``record.key``. Once the fence matches, the
+        result write does not depend on anything else: concurrent consumer
+        claims cannot veto it, and consumer bookkeeping afterwards is
+        best-effort and never raises. Only repeated transient database errors
+        (nothing committed) raise :class:`LedgerContentionError`.
         """
         lease = _require_lease(lease, "complete")
         if lease.resource_key != record.key:
@@ -325,57 +344,119 @@ class AcquisitionLedger:
         )
         if lease.action != "acquired_lease" or lease.lease_token is None:
             raise stale
+        values = {
+            AcquisitionLedgerRow.status: "complete",
+            AcquisitionLedgerRow.content_hash: record.content_hash,
+            AcquisitionLedgerRow.durable_object_ref: record.durable_object_ref,
+            AcquisitionLedgerRow.payload_json: payload_json,
+            AcquisitionLedgerRow.etag: record.etag,
+            AcquisitionLedgerRow.last_modified: record.last_modified,
+            AcquisitionLedgerRow.provenance_json: json.dumps(
+                dict(record.provenance), sort_keys=True
+            ),
+            AcquisitionLedgerRow.credits_spent: (
+                AcquisitionLedgerRow.credits_spent + record.credits_spent
+            ),
+            AcquisitionLedgerRow.retrieved_at: _as_utc(record.retrieved_at),
+            AcquisitionLedgerRow.lease_holder: None,
+            AcquisitionLedgerRow.lease_token: _new_lease_token(),
+            AcquisitionLedgerRow.lease_expires_at: None,
+            AcquisitionLedgerRow.next_retry_at: None,
+        }
+        last_error: OperationalError | None = None
         for _attempt in range(MAX_LEDGER_ATTEMPTS):
-            self.session.expire_all()
-            row = self._fenced(lease).with_for_update().first()
-            if row is None:
-                self.session.rollback()
-                raise stale
-            observed_consumers = row.consumers_json
-            consumers = set(json.loads(observed_consumers or "[]"))
-            consumers.update(record.consumers)
-            written = (
-                self._fenced(lease)
-                # Optimistic check on the consumer list so a consumer that
-                # joined via ``claim`` between our read and write is merged
-                # on the next attempt rather than lost.
-                .filter(AcquisitionLedgerRow.consumers_json == observed_consumers)
-                .update(
+            try:
+                self.session.expire_all()
+                row = self._fenced(lease).with_for_update().first()
+                if row is None:
+                    self.session.rollback()
+                    raise stale
+                observed = row.consumers_json
+                merged = json.dumps(
+                    sorted(set(json.loads(observed or "[]")) | set(record.consumers))
+                )
+                # The result write depends ONLY on the fence. The consumer
+                # merge rides along as a CASE, so a concurrent ``claim`` that
+                # changed the list since our read keeps its value instead of
+                # vetoing the paid result; ``_merge_consumers`` then adds ours.
+                written = self._fenced(lease).update(
                     {
-                        AcquisitionLedgerRow.status: "complete",
-                        AcquisitionLedgerRow.content_hash: record.content_hash,
-                        AcquisitionLedgerRow.durable_object_ref: (
-                            record.durable_object_ref
+                        **values,
+                        AcquisitionLedgerRow.consumers_json: case(
+                            (AcquisitionLedgerRow.consumers_json == observed, merged),
+                            else_=AcquisitionLedgerRow.consumers_json,
                         ),
-                        AcquisitionLedgerRow.payload_json: payload_json,
-                        AcquisitionLedgerRow.etag: record.etag,
-                        AcquisitionLedgerRow.last_modified: record.last_modified,
-                        AcquisitionLedgerRow.provenance_json: json.dumps(
-                            dict(record.provenance), sort_keys=True
-                        ),
-                        AcquisitionLedgerRow.consumers_json: json.dumps(
-                            sorted(consumers)
-                        ),
-                        AcquisitionLedgerRow.credits_spent: (
-                            AcquisitionLedgerRow.credits_spent + record.credits_spent
-                        ),
-                        AcquisitionLedgerRow.retrieved_at: _as_utc(record.retrieved_at),
-                        AcquisitionLedgerRow.lease_holder: None,
-                        AcquisitionLedgerRow.lease_token: _new_lease_token(),
-                        AcquisitionLedgerRow.lease_expires_at: None,
-                        AcquisitionLedgerRow.next_retry_at: None,
                     },
                     synchronize_session=False,
                 )
-            )
-            if written == 1:
+                if written != 1:
+                    self.session.rollback()
+                    raise stale
                 self.session.commit()
-                return
-            self.session.rollback()
-        raise LedgerContentionError(
-            resource_key=record.key,
-            operation="complete",
-            attempts=MAX_LEDGER_ATTEMPTS,
+                break
+            except OperationalError as exc:
+                # A transient lock timeout (SQLite ``database is locked``).
+                # Nothing was committed; the fence is re-checked on retry.
+                self.session.rollback()
+                last_error = exc
+        else:
+            raise LedgerContentionError(
+                resource_key=record.key,
+                operation="complete",
+                attempts=MAX_LEDGER_ATTEMPTS,
+            ) from last_error
+        self._merge_consumers(record.key, record.consumers)
+
+    def _merge_consumers(self, resource_key: str, consumers: tuple[str, ...]) -> None:
+        """Best-effort consumer bookkeeping after a committed result.
+
+        Never raises: the paid result is already durable, and a lost race on
+        this list must not surface as a failure of the acquisition.
+        """
+        wanted = set(consumers)
+        if not wanted:
+            return
+        for _attempt in range(MAX_LEDGER_ATTEMPTS):
+            try:
+                self.session.expire_all()
+                row = (
+                    self.session.query(AcquisitionLedgerRow)
+                    .filter(AcquisitionLedgerRow.resource_key == resource_key)
+                    .first()
+                )
+                if row is None:
+                    return
+                observed = row.consumers_json
+                current = set(json.loads(observed or "[]"))
+                if wanted <= current:
+                    self.session.rollback()
+                    return
+                swapped = (
+                    self.session.query(AcquisitionLedgerRow)
+                    .filter(
+                        AcquisitionLedgerRow.resource_key == resource_key,
+                        AcquisitionLedgerRow.consumers_json == observed,
+                    )
+                    .update(
+                        {
+                            AcquisitionLedgerRow.consumers_json: json.dumps(
+                                sorted(current | wanted)
+                            )
+                        },
+                        synchronize_session=False,
+                    )
+                )
+                if swapped == 1:
+                    self.session.commit()
+                    return
+                self.session.rollback()
+            except Exception:  # noqa: BLE001 - bookkeeping must not fail the result
+                self.session.rollback()
+        logger.warning(
+            "acquisition ledger: consumer list for %s not merged after %d attempts; "
+            "the committed result is unaffected",
+            resource_key,
+            MAX_LEDGER_ATTEMPTS,
         )
 
     def fail(
