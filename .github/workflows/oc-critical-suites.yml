@@ -9,9 +9,10 @@ name: OC Critical Suites
 # The suite lists below are explicit on purpose. A missing file is a pytest
 # usage error (exit 4), so a renamed or deleted suite turns this workflow red
 # rather than silently dropping out of it. tests/test_critical_suite_coverage.py
-# fails when a security, auth, privacy, redaction, judging, ledger, fencing,
-# lease or locality test file exists but is in none of these lists (or in its
-# reasoned exclusion list).
+# fails when a test module under tests/ (any depth, test_*.py or *_test.py)
+# whose path names a security, auth, credential, session, privacy, redaction,
+# judging, ledger, fencing, lease or locality concern is in none of these
+# lists (or in its reasoned exclusion list).
 #
 # Both jobs run the SAME lists: critical-suites deselects requires_postgres,
 # postgres-ledger selects only requires_postgres. A PostgreSQL-gated test in
@@ -43,7 +44,9 @@ env:
   OC_CRITICAL_LEDGER_SUITES: >-
     tests/test_acquisition_ledger.py
     tests/test_acquisition_ledger_fencing.py
+    tests/test_acquisition_ledger_schema.py
     tests/test_shared_firecrawl.py
+    tests/test_firecrawl_federation_pilot_ledger.py
     tests/test_source_federation_acquisition.py
     tests/test_canonical_brain_leases.py
     tests/test_oc_swarm_lease_reconcile.py
@@ -62,6 +65,9 @@ env:
     tests/test_worker_lease_token_constant_time.py
     tests/test_constant_time_remaining_secrets.py
     tests/test_config_loader_credential_precedence.py
+    tests/test_calyx_115_secret_readiness.py
+    tests/test_github_agent_credential.py
+    tests/test_github_agent_zero_credential_live_shape_proof.py
     tests/test_common_security_boundary.py
     tests/test_agent_security_gateway.py
     tests/test_owner_authorization_gate.py
@@ -75,6 +81,8 @@ env:
     tests/test_privacy_owner_only_contacts_and_chat.py
     tests/test_legacy_feedback_privacy.py
     tests/test_evidence_feedback_routes.py
+    tests/test_evidence_feedback_grants_preflight.py
+    tests/test_release1_env_readiness.py
     tests/test_exact_occurrence_api_security.py
     tests/test_show_output_safety_redaction.py
     tests/test_show_output_safety_timing.py
@@ -91,23 +99,28 @@ env:
     tests/test_mission_control_role_001f_auth_postgres_wiring.py
     tests/test_mission_control_runner_auth_wiring.py
     tests/test_university_learner_auth.py
+    tests/test_university_session_discovery.py
+    tests/test_university_session_service.py
   # Release 1 member Matrix privacy and partner/locality disclosure.
   OC_CRITICAL_PRIVACY_SUITES: >-
     tests/test_member_matrix_identification.py
     tests/test_member_matrix_identification_adversarial.py
     tests/test_member_matrix_screen_broadened.py
+    tests/test_matrix_identification_session_001.py
+    tests/test_matrix_identification_session_store_001.py
+    tests/test_scan_trait_locality.py
     tests/test_partner_data_exact_atlas_security.py
     tests/test_partner_data_disclosure.py
     tests/test_partner_data_model_output_guards.py
     tests/test_partner_data_access_bridge.py
   # PENDING: critical suites added by open pull requests (#1704 per-judge
-  # auth, #1699 ledger schema, #1700 precise coordinates / legacy occurrence
-  # API). Each is run, and required to pass, as soon as it exists in the
-  # tree; until then it is reported as a notice. Move an entry into a list
-  # above once its pull request has merged.
+  # auth, #1700 precise coordinates / legacy occurrence API). Each is run,
+  # and required to pass, as soon as it exists in the tree; until then it is
+  # reported as a notice. tests/test_critical_suite_coverage.py fails once a
+  # pending file exists, so the pull request that lands it must also move it
+  # into a list above.
   OC_PENDING_CRITICAL_SUITES: >-
     tests/test_judge_auth_blind_judging.py
-    tests/test_acquisition_ledger_schema.py
     tests/test_no_precise_coordinates.py
     tests/test_legacy_occurrence_api_fail_closed.py
 
