@@ -293,7 +293,7 @@ TEXT_FUNCTIONS: dict[str, Callable[[str], object]] = {
     "name_value_pairs": lambda t: safety._NAME_VALUE_PAIR.sub(
         safety._mask_if_secret_name, t
     ),
-    "long_gap_pairs": safety._mask_long_gap_pairs,
+    "after_separators": safety._mask_after_separators,
     "spaced_values": safety._mask_spaced_values,
 }
 
@@ -319,11 +319,13 @@ PATTERN_INPUTS: dict[str, tuple[object, str]] = {
     "cli-user-httpie": (safety._CLI_USER, "-a "),
     "cli-user-auth": (safety._CLI_USER, "--auth "),
     "cli-segment": (safety._CLI_SEGMENT, "a\\'\"\\"),
-    "long-gap-pair": (safety._LONG_GAP_PAIR, "a= "),
-    "long-gap-pair-names": (safety._LONG_GAP_PAIR, "a" * 41 + "="),
+    "name-before-separator": (safety._NAME_BEFORE_SEPARATOR, "a= "),
+    "name-before-separator-names": (safety._NAME_BEFORE_SEPARATOR, "a" * 41 + "="),
+    "pair-value": (safety._PAIR_VALUE, 'a="\\'),
+    "separator-run": (safety._SPACED_SEPARATOR, "=:"),
+    "httpie-auth-type": (safety._HTTPIE_AUTH_TYPE, "-aaaaaa"),
     "name-value-doubled": (safety._NAME_VALUE_PAIR, "a = = = = "),
     "spaced-name": (safety._SPACED_NAME, "a "),
-    "digest-sibling": (safety._DIGEST_SIBLING, "digestx"),
 }
 
 
@@ -362,3 +364,156 @@ def test_config_redaction_of_new_shapes_is_bounded_at_the_64k_cap():
         assert len(config) <= safety.MAX_CONFIG_JSON_CHARS
         elapsed = _best_of(lambda text=config: redact_config_json(text))
         assert elapsed < BOUND_SECONDS[64 * 1024]
+
+
+# --- checker repair round 1 (#1709) ------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (f"http -aadmin:{SECRET} x", "http -aadmin:*** x"),
+        (f"http -va admin:{SECRET} x", "http -va admin:*** x"),
+        (f"http -ja 'admin:{SECRET} two' x", "http -ja 'admin:***' x"),
+        (f"http -a=admin:{SECRET} x", "http -a=admin:*** x"),
+    ],
+)
+def test_httpie_attached_and_combined_values_are_masked(value, expected):
+    _assert_masked_and_idempotent({"note": value}, {"note": expected})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        f"http --auth-type=jwt -a {SECRET} GET x",
+        f"http -A jwt -a{SECRET} GET x",
+        f"http -A jwt -va {SECRET} GET x",
+        f"http -A bearer -a {SECRET} GET x",
+    ],
+)
+def test_httpie_token_without_a_colon_is_masked_after_an_auth_type(value):
+    # other rules may mask the auth type too (over-redaction); the token never shows
+    out = redact_config_json(json.dumps({"note": value}))
+    assert SECRET not in out
+    assert json.loads(out)["note"].endswith(" GET x")
+    assert redact_config_json(out) == out
+
+
+def test_httpie_a_over_masking_on_other_commands_is_fail_safe():
+    # ``rsync -a host:path`` is masked like a credential (documented, fail safe);
+    # an ``-a`` value with no colon and no auth type stays readable.
+    assert _redact({"n": "rsync -a host:path /x"}) == {"n": "rsync -a host:*** /x"}
+    assert _redact({"n": "ls -la /tmp"}) == {"n": "ls -la /tmp"}
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"auth": "HTTPDigestAuth", "response": SECRET},
+        {"cls": "digestauth", "response": SECRET},
+        {"schemes": ["Digest"], "response": SECRET},
+        {"meta": {"type": "Digest"}, "response": SECRET},
+        {"digest": True, "response": SECRET, "cnonce": SECRET},
+        {"scheme": "Digest", "params": {"response": SECRET}},
+        {"scheme": "Dіgest", "CNONCE": SECRET},  # Cyrillic i
+        {"x": json.dumps({"scheme": "digest"}), "response": SECRET},
+    ],
+)
+def test_digest_mentions_anywhere_mask_response_and_cnonce(value):
+    out = redact_config_json(json.dumps({"http": value}))
+    assert SECRET not in out
+    json.loads(out)
+    assert redact_config_json(out) == out
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (
+            ["Accept", "a", "x:y", "b", "X-Api-Key", SECRET],
+            ["Accept", "a", "x:y", "b", "X-Api-Key", REDACTED],
+        ),
+        ([None, "a", "X-Api-Key", SECRET], [None, "a", "X-Api-Key", REDACTED]),
+        (
+            [1, "a", "X-Api-Key", SECRET, "Via"],
+            [1, "a", "X-Api-Key", REDACTED, "Via"],
+        ),
+        (["X-Api-Key:", SECRET], ["X-Api-Key:", REDACTED]),
+        (
+            ["x", "X-Api-Key", SECRET, "Accept", "a"],
+            ["x", "X-Api-Key", REDACTED, "Accept", "a"],
+        ),
+    ],
+)
+def test_ambiguous_flat_lists_mask_after_every_secret_name(value, expected):
+    _assert_masked_and_idempotent({"headers": value}, {"headers": expected})
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (f"password = = = = = {SECRET}", "password = = = = = ***"),
+        (f"password {'= ' * 12}{SECRET}", f"password {'= ' * 12}***"),
+        (
+            f"password ={' ' * 10}={' ' * 10}{SECRET}",
+            f"password ={' ' * 10}={' ' * 10}***",
+        ),
+        (f"password={'=' * 20}{SECRET}", f"password={'=' * 20}***"),
+        (
+            f"password:{' ' * 12}={' ' * 12}{SECRET}",
+            "password: ***",  # a header-shaped line masks its whole value
+        ),
+        # past the separator bound the rest of the text is masked
+        (f"password {'= ' * 70}{SECRET} tail", "password ***"),
+    ],
+)
+def test_many_separators_and_gaps_between_them_are_masked(value, expected):
+    _assert_masked_and_idempotent({"note": value}, {"note": expected})
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "https://x.example.invalid/?token=***&page=2",
+        "user=alice; region=eu",
+        "timeout = = 30",
+    ],
+)
+def test_separator_walk_keeps_ordinary_text(value):
+    assert _redact({"note": value}) == {"note": value}
+
+
+ROUND1_TEXT_INPUTS: dict[str, Callable[[int], str]] = {
+    "httpie-attached": lambda n: _fill("-aa:b ", n),
+    "httpie-clusters": lambda n: _fill("-vvvvva ", n),
+    "httpie-auth-type-tokens": lambda n: "-A jwt " + _fill("-a t ", n - 7),
+    "separator-words-bound": lambda n: "password " + _fill("= ", n - 9),
+    "separator-gaps": lambda n: "password =" + _fill(" " * 10 + "=", n - 10),
+    "separator-run": lambda n: "password" + "=" * (n - 8),
+    "many-secret-names": lambda n: _fill("password= ", n),
+}
+
+
+@pytest.mark.parametrize("size", SIZES)
+@pytest.mark.parametrize("function", sorted(TEXT_FUNCTIONS))
+@pytest.mark.parametrize("case", sorted(ROUND1_TEXT_INPUTS))
+def test_round1_text_rules_are_linear_on_hostile_input(case, function, size):
+    fn = TEXT_FUNCTIONS[function]
+    small, large = ROUND1_TEXT_INPUTS[case](size // 4), ROUND1_TEXT_INPUTS[case](size)
+    t_small = _best_of(lambda: fn(small))
+    t_large = _best_of(lambda: fn(large))
+    assert t_large < BOUND_SECONDS[size], f"{case}/{function}: {t_large:.3f}s"
+    assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+
+
+@pytest.mark.parametrize("size", SIZES)
+def test_round1_list_and_digest_scans_are_linear(size):
+    ambiguous = [None, "a", "X-Api-Key", "k", 1] * (size // 30)
+    digest = {f"k{i}": {"v": ["x"]} for i in range(size // 20)}
+    digest["z"] = "HTTPDigestAuth"
+    for build in (
+        lambda: safety._redact_list(ambiguous, 0),
+        lambda: safety._mentions_digest(digest),
+        lambda: safety._redact_dict(digest, 0),
+    ):
+        assert _best_of(build) < BOUND_SECONDS[size]

@@ -458,7 +458,9 @@ def test_flat_name_value_header_lists_mask_every_secret_value():
             "Accept", "application/json",
             "User-Agent", "orchid-show",
             "X-Api-Key", REDACTED,
-            "Via", "proxy",
+            # "synthetic-api-key" looks like a secret name: the element after it is
+            # masked too (a flat list's pairing is never inferred; fail closed)
+            REDACTED, "proxy",
             "Authorization", REDACTED,
         ],
         "short": ["Accept", "a", "X-Api-Key", REDACTED],
@@ -526,8 +528,10 @@ def test_partly_quoted_cli_passwords_never_leak():
 
 def test_flat_header_lists_treat_null_as_a_value():
     raw = ["Accept", "a", "X-Api-Key", "synthetic-key", "Via", None]
+    # "synthetic-key" itself looks like a secret name, so the element after it is
+    # masked too (fail closed: a flat list's pairing is never inferred).
     assert _redact({"raw": raw}) == {
-        "raw": ["Accept", "a", "X-Api-Key", REDACTED, "Via", None]
+        "raw": ["Accept", "a", "X-Api-Key", REDACTED, REDACTED, None]
     }
 
 
