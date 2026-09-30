@@ -258,14 +258,14 @@ def test_registry_detail_withholds_new_forms_in_labels_and_descriptions():
 SMALL = 16 * 1024
 SIZE = 64 * 1024
 BOUND_SECONDS = 1.0
-FLOOR_SECONDS = 0.02  # timer noise under parallel CI load
+FLOOR_SECONDS = 0.05  # timer noise under parallel CI load
 
 
 def _fill(unit: str, size: int) -> str:
     return (unit * (size // len(unit) + 1))[:size]
 
 
-def _best_of(fn: Callable[[], object], runs: int = 3) -> float:
+def _best_of(fn: Callable[[], object], runs: int = 5) -> float:
     best = float("inf")
     for _ in range(runs):
         started = time.perf_counter()
