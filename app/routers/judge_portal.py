@@ -17,6 +17,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.deps import get_db
 from app.judge_auth import (
@@ -24,9 +25,11 @@ from app.judge_auth import (
     JudgeContext,
     authenticate_judge_token,
     bearer_judge_token,
-    blind_safe_text,
     credential_scope,
+    event_exhibitors,
     judge_action,
+    judge_category_view,
+    judge_client_key,
     judge_event_view,
     judge_plant_view,
     judge_scope,
@@ -34,6 +37,7 @@ from app.judge_auth import (
     plant_in_scope,
     require_judge_secret,
     scorecard_handle,
+    text_mentions_any,
     write_judge_audit,
 )
 from app.models import (
@@ -45,7 +49,6 @@ from app.models import (
     PlantCategory,
     Scorecard,
 )
-from app.rate_limit import client_key
 from app.routers.judging import apply_scorecard_autosave, apply_scorecard_submit
 from app.routers.show_day import is_legacy_qr_token
 from app.schemas import ScorecardSaveRequest, ScorecardSubmitRequest
@@ -62,7 +65,7 @@ def require_judge_context(request: Request, db: DbSession) -> JudgeContext:
             detail="A judge credential (Authorization: Bearer ocj_...) is required",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    ctx = authenticate_judge_token(db, token, client_key(request))
+    ctx = authenticate_judge_token(db, token, judge_client_key(request))
     request.state.judge_context = ctx
     return ctx
 
@@ -70,8 +73,8 @@ def require_judge_context(request: Request, db: DbSession) -> JudgeContext:
 Judge = Annotated[JudgeContext, Depends(require_judge_context)]
 
 
-def _audit_rejected_request(request: Request, action: str) -> None:
-    """Audit a request FastAPI rejected before the route ran (422).
+def _audit_rejected_request(request: Request, action: str, status: int) -> None:
+    """Audit a request FastAPI rejected before the route ran (400 or 422).
 
     Only for a caller whose judge credential verifies: the context the
     dependency stored, or, when the body was unreadable and dependencies never
@@ -87,7 +90,7 @@ def _audit_rejected_request(request: Request, action: str) -> None:
             if token is None:
                 return
             try:
-                ctx = authenticate_judge_token(db, token, client_key(request))
+                ctx = authenticate_judge_token(db, token, judge_client_key(request))
             except HTTPException:
                 return
         write_judge_audit(
@@ -95,9 +98,11 @@ def _audit_rejected_request(request: Request, action: str) -> None:
             ctx,
             action=action,
             outcome="invalid",
-            http_status=422,
+            http_status=status,
             ref=AuditRef(),
-            detail="request validation failed",
+            detail="request body unreadable"
+            if status == 400
+            else "request validation failed",
         )
     finally:
         sessions.close()
@@ -114,7 +119,16 @@ class JudgeAuditedRoute(APIRoute):
             try:
                 return await handler(request)
             except RequestValidationError:
-                await run_in_threadpool(_audit_rejected_request, request, action)
+                await run_in_threadpool(_audit_rejected_request, request, action, 422)
+                raise
+            except StarletteHTTPException as exc:
+                # FastAPI answers 400 (Starlette's HTTPException) for a body it
+                # cannot read at all, such as bytes that are not UTF-8, before
+                # the route runs.
+                if exc.status_code == 400:
+                    await run_in_threadpool(
+                        _audit_rejected_request, request, action, 400
+                    )
                 raise
 
         return audited
@@ -206,11 +220,8 @@ def judge_me(ctx: Judge, db: DbSession):
 def judge_events(ctx: Judge, db: DbSession):
     with judge_action(db, ctx, "list_events"):
         scope = judge_scope(db, ctx)
-        events = [db.get(JudgingEvent, event_id) for event_id in scope]
-        return [
-            judge_event_view(e)
-            for e in sorted(events, key=lambda e: ((e.name or ""), e.id))
-        ]
+        views = [judge_event_view(db, db.get(JudgingEvent, i)) for i in scope]
+        return sorted(views, key=lambda v: (v["name"] or "", v["id"]))
 
 
 @router.get("/events/{event_id}/categories")
@@ -221,18 +232,8 @@ def judge_event_categories(event_id: str, ctx: Judge, db: DbSession):
         categories = [
             db.get(PlantCategory, category_id) for category_id in scope[event_id]
         ]
-        categories.sort(key=lambda c: (c.sort_order or 0, c.name, c.id))
-        return [
-            {
-                "id": c.id,
-                "name": c.name,
-                # Class text is schedule-level, not per plant; in a blind
-                # event it is still withheld if it mentions an exhibitor.
-                "description": blind_safe_text(db, event, c.description),
-                "sort_order": c.sort_order,
-            }
-            for c in categories
-        ]
+        categories.sort(key=lambda c: (c.sort_order or 0, c.id))
+        return [judge_category_view(db, event, c) for c in categories]
 
 
 @router.get("/events/{event_id}/plants")
@@ -348,7 +349,7 @@ def judge_scan(qr_token: str, ctx: Judge, db: DbSession):
             ref.scorecard_id = card.id
         return {
             "plant": judge_plant_view(db, ctx, event, plant),
-            "judging_event": judge_event_view(event),
+            "judging_event": judge_event_view(db, event),
             "scorecard": judge_scorecard_view(db, ctx, card, event, plant)
             if card
             else None,
@@ -357,8 +358,22 @@ def judge_scan(qr_token: str, ctx: Judge, db: DbSession):
 
 @router.get("/criteria")
 def judge_criteria(ctx: Judge, db: DbSession):
-    """Scoring criteria (award rubrics); no show or exhibitor data."""
+    """Scoring criteria (award rubrics); no show or exhibitor data.
+
+    Rubric wording is shared across shows, so while any event in the judge's
+    scope is blind, each free-text field is withheld when it mentions an
+    exhibitor with a plant in one of those blind events.
+    """
     with judge_action(db, ctx, "list_criteria"):
+        blind_exhibitors = []
+        for event_id in judge_scope(db, ctx):
+            event = db.get(JudgingEvent, event_id)
+            if event.is_blind:
+                blind_exhibitors.extend(event_exhibitors(db, event))
+
+        def safe(text):
+            return None if text_mentions_any(text, blind_exhibitors) else text
+
         awards = (
             db.execute(select(JudgingAward).order_by(JudgingAward.award_id))
             .scalars()
@@ -380,17 +395,17 @@ def judge_criteria(ctx: Judge, db: DbSession):
             out.append(
                 {
                     "award_id": award.award_id,
-                    "award_name": award.award_name,
+                    "award_name": safe(award.award_name),
                     "criteria": [
                         {
                             "criteria_id": c.criteria_id,
-                            "criteria_name": c.criteria_name,
-                            "criteria_description": c.criteria_description,
+                            "criteria_name": safe(c.criteria_name),
+                            "criteria_description": safe(c.criteria_description),
                             "points_min": c.points_min,
                             "points_max": c.points_max,
                             "weighting": c.weighting,
                             "scoring_type": c.scoring_type,
-                            "choices_json": c.choices_json,
+                            "choices_json": safe(c.choices_json),
                         }
                         for c in criteria
                     ],

@@ -46,8 +46,21 @@ try:
 except ImportError:
     _HAS_PSYCOPG2 = False
 
+_USABLE = URL.startswith("postgresql") and _HAS_PSYCOPG2
+# The postgres-ledger job of oc-critical-suites.yml sets OC_REQUIRE_POSTGRES:
+# there a missing database is a broken runner and must fail, not skip.
+if not _USABLE and os.environ.get("OC_REQUIRE_POSTGRES", "").strip() in {
+    "1",
+    "true",
+    "yes",
+}:
+    raise RuntimeError(
+        "OC_REQUIRE_POSTGRES is set but SHOW_JUDGING_TEST_POSTGRES_URL is missing "
+        "or psycopg2 is not installed"
+    )
+
 pytestmark = pytest.mark.skipif(
-    not (URL.startswith("postgresql") and _HAS_PSYCOPG2),
+    not _USABLE,
     reason="set SHOW_JUDGING_TEST_POSTGRES_URL to a disposable PostgreSQL database",
 )
 

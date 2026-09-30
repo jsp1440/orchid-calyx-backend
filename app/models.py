@@ -296,6 +296,8 @@ class JudgingEvent(Base):
     is_blind = Column(Boolean, default=False)
     # Re-drawn each time the event enters blind mode; keys judge-facing handles.
     blind_handle_salt = Column(String(32), nullable=True)
+    # The owner-approved event name judges see while the event is blind.
+    blind_display_name = Column(Text, nullable=True)
     status = Column(String, default="draft")
     published_at = Column(DateTime, nullable=True)
     closed_at = Column(DateTime, nullable=True)
@@ -310,6 +312,8 @@ class PlantCategory(Base):
     judging_event_id = Column(String, ForeignKey("judging_events.id"), nullable=False, index=True)
     name = Column(Text, nullable=False)
     description = Column(Text, nullable=True)
+    # The owner-approved class name judges see while its event is blind.
+    blind_display_name = Column(Text, nullable=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -492,65 +496,97 @@ class JudgeActionAudit(Base):
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
 
 
-@event.listens_for(JudgeActionAudit, "before_update")
-@event.listens_for(JudgeActionAudit, "before_delete")
-def _judge_action_audit_is_append_only(_mapper, _connection, _target):
-    raise ValueError("judge_action_audit is append-only")
+class ShowOwnerAudit(Base):
+    """Append-only record of owner actions on judging access and blind labels.
+
+    Written by ``app/routers/judge_admin.py`` for credential issue, rotation
+    and revocation, tag re-issue, and every blind display name the owner sets
+    or confirms over a warning. A name that drew warnings is stored only as a
+    SHA-256 digest (``text_sha256``, ``text_withheld``), never as text.
+    """
+
+    __tablename__ = "show_owner_audit"
+
+    id = Column(String, primary_key=True, default=generate_uuid)
+    actor = Column(String, nullable=False)
+    auth_type = Column(String, nullable=False)
+    action = Column(String, nullable=False)
+    object_type = Column(String, nullable=False)
+    object_id = Column(String, nullable=False, index=True)
+    show_id = Column(String, nullable=True, index=True)
+    judging_event_id = Column(String, nullable=True)
+    warnings_json = Column(Text, nullable=True)
+    confirmed_despite_warnings = Column(Boolean, nullable=False, default=False)
+    text_value = Column(Text, nullable=True)
+    text_sha256 = Column(String(64), nullable=True)
+    text_withheld = Column(Boolean, nullable=False, default=False)
+    detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+
+
+APPEND_ONLY_MODELS = (JudgeActionAudit, ShowOwnerAudit)
+APPEND_ONLY_TABLES = frozenset(m.__tablename__ for m in APPEND_ONLY_MODELS)
+
+
+def _refuse_append_only_change(_mapper, _connection, target):
+    raise ValueError(f"{target.__tablename__} is append-only")
+
+
+for _model in APPEND_ONLY_MODELS:
+    event.listen(_model, "before_update", _refuse_append_only_change)
+    event.listen(_model, "before_delete", _refuse_append_only_change)
 
 
 @event.listens_for(Session, "do_orm_execute")
-def _judge_action_audit_rejects_bulk_writes(state):
-    """Refuse ``update(...)`` / ``delete(...)`` statements aimed at the audit.
+def _append_only_tables_reject_bulk_writes(state):
+    """Refuse ``update(...)`` / ``delete(...)`` statements aimed at an audit.
 
     The mapper events above only see unit-of-work flushes; bulk statements
     executed through a session bypass them.
     """
     if not (state.is_update or state.is_delete):
         return
-    table = getattr(state.statement, "table", None)
-    if getattr(table, "name", None) == JudgeActionAudit.__tablename__:
-        raise ValueError("judge_action_audit is append-only")
+    name = getattr(getattr(state.statement, "table", None), "name", None)
+    if name in APPEND_ONLY_TABLES:
+        raise ValueError(f"{name} is append-only")
 
 
-# Database-level guards for tables made by ``create_all`` (the show profile's
-# rehearsal path and the tests); ``migrations/20260930_show_judge_credentials.sql``
-# installs the same PostgreSQL triggers on a migrated database.
-_AUDIT_TABLE = JudgeActionAudit.__table__
-for _op in ("UPDATE", "DELETE"):
-    event.listen(
-        _AUDIT_TABLE,
-        "after_create",
-        DDL(
-            f"CREATE TRIGGER judge_action_audit_no_{_op.lower()} BEFORE {_op} "
-            "ON judge_action_audit BEGIN "
-            "SELECT RAISE(ABORT, 'judge_action_audit is append-only'); END"
-        ).execute_if(dialect="sqlite"),
-    )
-event.listen(
-    _AUDIT_TABLE,
-    "after_create",
-    DDL(
-        "CREATE OR REPLACE FUNCTION judge_action_audit_append_only() RETURNS trigger "
-        "AS $$ BEGIN RAISE EXCEPTION 'judge_action_audit is append-only'; END; $$ "
-        "LANGUAGE plpgsql"
-    ).execute_if(dialect="postgresql"),
-)
-event.listen(
-    _AUDIT_TABLE,
-    "after_create",
-    DDL(
-        "CREATE TRIGGER judge_action_audit_no_update_delete BEFORE UPDATE OR DELETE "
-        "ON judge_action_audit FOR EACH ROW EXECUTE FUNCTION judge_action_audit_append_only()"
-    ).execute_if(dialect="postgresql"),
-)
-event.listen(
-    _AUDIT_TABLE,
-    "after_create",
-    DDL(
-        "CREATE TRIGGER judge_action_audit_no_truncate BEFORE TRUNCATE "
-        "ON judge_action_audit FOR EACH STATEMENT EXECUTE FUNCTION judge_action_audit_append_only()"
-    ).execute_if(dialect="postgresql"),
-)
+def _install_append_only_triggers(table) -> None:
+    """Database-level guards for tables made by ``create_all``.
+
+    That is the show profile's rehearsal path and the tests;
+    ``migrations/20260930_show_judge_credentials.sql`` installs the same
+    PostgreSQL triggers on a migrated database.
+    """
+    name = table.name
+    for op in ("UPDATE", "DELETE"):
+        event.listen(
+            table,
+            "after_create",
+            DDL(
+                f"CREATE TRIGGER {name}_no_{op.lower()} BEFORE {op} ON {name} BEGIN "
+                f"SELECT RAISE(ABORT, '{name} is append-only'); END"
+            ).execute_if(dialect="sqlite"),
+        )
+    for ddl in (
+        (
+            f"CREATE OR REPLACE FUNCTION {name}_append_only() RETURNS trigger AS $$ "
+            f"BEGIN RAISE EXCEPTION '{name} is append-only'; END; $$ LANGUAGE plpgsql"
+        ),
+        (
+            f"CREATE TRIGGER {name}_no_update_delete BEFORE UPDATE OR DELETE ON {name} "
+            f"FOR EACH ROW EXECUTE FUNCTION {name}_append_only()"
+        ),
+        (
+            f"CREATE TRIGGER {name}_no_truncate BEFORE TRUNCATE ON {name} "
+            f"FOR EACH STATEMENT EXECUTE FUNCTION {name}_append_only()"
+        ),
+    ):
+        event.listen(table, "after_create", DDL(ddl).execute_if(dialect="postgresql"))
+
+
+for _model in APPEND_ONLY_MODELS:
+    _install_append_only_triggers(_model.__table__)
 
 
 class ScoreSubmission(Base):

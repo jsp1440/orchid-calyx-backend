@@ -75,6 +75,7 @@ SHOW_TABLES = tuple(
         models.ScoreSubmission,
         models.JudgeCredential,
         models.JudgeActionAudit,
+        models.ShowOwnerAudit,
     )
 )
 

@@ -22,11 +22,15 @@ from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.models import Exhibitor, JudgingEvent, Plant, PlantCategory, Scorecard
-from app.security import verify_api_key
+from app.security import verify_owner_or_api_key
 
 DbSession = Annotated[Session, Depends(get_db)]
 
-router = APIRouter(prefix="/api", tags=["Show Day"], dependencies=[Depends(verify_api_key)])
+# The owner's browser session or the owner key (tags, scans, class results
+# are owner tooling); judge devices use /api/judge-portal instead.
+router = APIRouter(
+    prefix="/api", tags=["Show Day"], dependencies=[Depends(verify_owner_or_api_key)]
+)
 
 
 def tag_payload(qr_token: str) -> str:

@@ -14,6 +14,7 @@ constant-time; tag tokens are random and legacy tokens are refused in blind
 events; the SQL migration is additive, idempotent and matches the models.
 """
 
+import hashlib
 import json
 import re
 import unicodedata
@@ -27,11 +28,11 @@ from fastapi import Depends, FastAPI
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import delete, select, update
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, InternalError
 
 from app import judge_auth
 from app.judge_auth import (
-    AUTH_FAILURE_LIMITER,
+    AUTH_FAILURE_BRAKE,
     JUDGE_SECRET_ENV,
     exhibitor_mention_reasons,
     utcnow,
@@ -43,6 +44,7 @@ from app.models import (
     JudgingAward,
     Plant,
     Show,
+    ShowOwnerAudit,
 )
 from app.routers.show_day import legacy_qr_token
 from app.security import (
@@ -58,6 +60,7 @@ session_factory = phase1.session_factory
 client = phase1.client
 
 SECRET = "judge-token-secret-for-tests-0123456789abcdef"
+OWNER_SESSION_SECRET = "owner-session-secret-for-tests-0123456789"
 PORTAL = "/api/judge-portal"
 
 # Synthetic exhibitors whose every field is distinctive enough to find anywhere.
@@ -89,9 +92,9 @@ def judge_secret(monkeypatch):
     monkeypatch.setenv(JUDGE_SECRET_ENV, SECRET)
     monkeypatch.delenv("CALYX_OWNER_SESSION_SECRET", raising=False)
     monkeypatch.delenv("CALYX_OWNER_ACCESS_CODE", raising=False)
-    AUTH_FAILURE_LIMITER.reset()
+    AUTH_FAILURE_BRAKE.reset()
     yield
-    AUTH_FAILURE_LIMITER.reset()
+    AUTH_FAILURE_BRAKE.reset()
 
 
 @pytest.fixture
@@ -510,10 +513,12 @@ def test_owner_dependencies_reject_a_judge_token(client, show, monkeypatch):
         assert owner_client.get("/owner", headers=_bearer(session)).status_code == 200
 
 
-def test_judge_cannot_read_the_owner_audit_or_exhibitors(client, show):
+def test_judge_cannot_read_the_owner_audit_or_exhibitors(client, show, monkeypatch):
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", OWNER_SESSION_SECRET)
     token = _token(client, show, "A")
     for path in (
         "/api/judging/judge-audit",
+        "/api/judging/owner-audit",
         "/api/exhibitors",
         f"/api/exhibitors/{show['exhibitors'][0]['id']}",
     ):
@@ -694,6 +699,7 @@ def _assert_no_exhibitor_data(payload, show, route):
                 "notes",
                 "qr_code",
                 "created_at",
+                "submitted_at",
                 "updated_at",
             }, (route, where)
             continue
@@ -874,7 +880,10 @@ def _set_display_name(client, plant, text, **extra):
     )
 
 
-def test_owner_approved_blind_display_name_is_the_only_name_judges_see(client, show):
+def test_owner_approved_blind_display_name_is_the_only_name_judges_see(
+    client, show, monkeypatch
+):
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", OWNER_SESSION_SECRET)
     trianae, _, _, _, jose = show["plants"]
     assert _set_display_name(client, trianae, "Cattleya trianae").status_code == 200
     _set_blind(client, show)
@@ -1143,7 +1152,10 @@ def test_blind_scan_refuses_legacy_token_until_owner_reissues(
     assert _get(client, f"{PORTAL}/scan/{legacy}", token).status_code == 404
 
 
-def test_reissue_is_owner_only_and_respects_the_lock(client, show, session_factory):
+def test_reissue_is_owner_only_and_respects_the_lock(
+    client, show, session_factory, monkeypatch
+):
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", OWNER_SESSION_SECRET)
     path = f"/api/judging/events/{show['event']['id']}/reissue-qr-tokens"
     assert (
         client.post(path, headers=_bearer(_token(client, show, "A"))).status_code == 401
@@ -1179,6 +1191,8 @@ def test_migration_is_additive_idempotent_and_matches_the_models():
     alters = re.findall(r"ALTER TABLE [^;]*;", allowed)
     assert alters == [
         "ALTER TABLE JUDGING_EVENTS ADD COLUMN IF NOT EXISTS BLIND_HANDLE_SALT VARCHAR(32);",
+        "ALTER TABLE JUDGING_EVENTS ADD COLUMN IF NOT EXISTS BLIND_DISPLAY_NAME TEXT;",
+        "ALTER TABLE PLANT_CATEGORIES ADD COLUMN IF NOT EXISTS BLIND_DISPLAY_NAME TEXT;",
         "ALTER TABLE PLANTS ADD COLUMN IF NOT EXISTS BLIND_DISPLAY_NAME TEXT;",
     ]
     for alter in alters:
@@ -1198,10 +1212,11 @@ def test_migration_is_additive_idempotent_and_matches_the_models():
     assert statements.count("CREATE INDEX ") == statements.count(
         "CREATE INDEX IF NOT EXISTS"
     )
-    assert statements.count("CREATE TRIGGER") == 2
+    assert statements.count("CREATE TRIGGER %I") == 2
     assert statements.count("IF NOT EXISTS (") == 2
-    assert "BEFORE TRUNCATE ON JUDGE_ACTION_AUDIT" in statements
-    for model in (JudgeCredential, JudgeActionAudit):
+    assert "BEFORE TRUNCATE ON %I" in statements
+    assert "ARRAY['JUDGE_ACTION_AUDIT', 'SHOW_OWNER_AUDIT']" in statements
+    for model in (JudgeCredential, JudgeActionAudit, ShowOwnerAudit):
         assert _sql_columns(sql, model.__tablename__) == {
             c.name for c in model.__table__.columns
         }
@@ -1220,11 +1235,16 @@ def test_bulk_update_and_delete_on_the_audit_are_refused(client, show, session_f
         with pytest.raises(ValueError, match="append-only"):
             db.execute(delete(JudgeActionAudit))
         db.rollback()
+        # SQLite's RAISE(ABORT) surfaces as IntegrityError; a PostgreSQL
+        # trigger's RAISE EXCEPTION as InternalError.
+        refused = {"sqlite": IntegrityError, "postgresql": InternalError}[
+            db.get_bind().dialect.name
+        ]
         for raw in (
             "UPDATE judge_action_audit SET outcome = 'x'",
             "DELETE FROM judge_action_audit",
         ):
-            with pytest.raises(IntegrityError, match="append-only"):
+            with pytest.raises(refused, match="append-only"):
                 db.connection().exec_driver_sql(raw)
             db.rollback()
         assert db.execute(select(JudgeActionAudit)).scalars().first().outcome == "ok"
@@ -1290,33 +1310,111 @@ def test_wrong_secret_for_a_known_credential_is_audited_unknown_id_is_not(
     assert wrong not in stored and wrong.split("_")[-1] not in stored
 
 
-def test_failures_are_rate_limited_per_credential(client, show, monkeypatch):
-    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_PER_CREDENTIAL", "3")
+def _junk(n):
+    return f"ocj_{n:032x}_" + "q" * 43
+
+
+def test_junk_tokens_from_the_hall_address_never_lock_out_a_valid_judge(client, show):
+    """Checker attack 1: 55 junk tokens behind the hall's forwarded address."""
+    good = _token(client, show, "A")
+    hall = {"X-Forwarded-For": "198.51.100.20"}
+    codes = [
+        _get(client, f"{PORTAL}/me", _junk(n), headers=hall).status_code
+        for n in range(55)
+    ]
+    assert set(codes) == {401, 429} and codes[0] == 401 and codes[-1] == 429
+    assert _get(client, f"{PORTAL}/me", good, headers=hall).status_code == 200
+    assert _get(client, f"{PORTAL}/me", good).status_code == 200
+
+
+def test_bad_attempts_on_a_credential_back_off_but_never_block_its_secret(client, show):
+    """Checker attack 2: 12 wrong secrets on a valid credential id."""
     issued = _issue(client, show["judges"]["A"])
     wrong = issued["token"][:-4] + "abcd"
-    assert [_get(client, f"{PORTAL}/me", wrong).status_code for _ in range(3)] == [
-        401
-    ] * 3
-    limited = _get(client, f"{PORTAL}/me", issued["token"])
-    assert limited.status_code == 429 and int(limited.headers["Retry-After"]) >= 1
-    other = _token(client, show, "B")  # another credential is unaffected
-    assert _get(client, f"{PORTAL}/me", other).status_code == 200
-
-
-def test_failures_are_rate_limited_per_client(client, show, monkeypatch):
-    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT", "4")
-    good = _token(client, show, "A")
-    for n in range(4):
-        assert (
-            _get(client, f"{PORTAL}/me", f"ocj_{n:032x}_" + "q" * 43).status_code == 401
-        )
-    assert (
-        _get(client, f"{PORTAL}/me", "ocj_" + "c" * 32 + "_" + "q" * 43).status_code
-        == 429
-    )
-    assert _get(client, f"{PORTAL}/me", good).status_code == 429
+    responses = [_get(client, f"{PORTAL}/me", wrong) for _ in range(12)]
+    assert [r.status_code for r in responses[:3]] == [401] * 3
+    waits = [int(r.headers["Retry-After"]) for r in responses[3:]]
+    assert all(r.status_code == 429 for r in responses[3:])
+    assert waits == sorted(waits) and waits[-1] > waits[0]  # exponential backoff
     elsewhere = {"X-Forwarded-For": "203.0.113.9"}
-    assert _get(client, f"{PORTAL}/me", good, headers=elsewhere).status_code == 200
+    assert (
+        _get(client, f"{PORTAL}/me", issued["token"], headers=elsewhere).status_code
+        == 200
+    )
+    assert _get(client, f"{PORTAL}/me", issued["token"]).status_code == 200
+
+
+def test_rotating_forwarded_addresses_is_bounded(client, show, monkeypatch):
+    """Checker attack 3: a new X-Forwarded-For and a new unknown id every time."""
+    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT", "5")
+    good = _token(client, show, "A")
+    codes = [
+        _get(
+            client,
+            f"{PORTAL}/me",
+            _junk(n),
+            headers={"X-Forwarded-For": f"203.0.113.{n}"},
+        ).status_code
+        for n in range(10)
+    ]
+    assert codes == [401] * 5 + [429] * 5  # the forged hop is ignored: one peer
+    assert _get(client, f"{PORTAL}/me", good).status_code == 200
+
+
+def test_global_failure_budget_bounds_rotation_behind_a_trusted_proxy(
+    client, show, monkeypatch
+):
+    monkeypatch.setenv("JUDGE_AUTH_TRUSTED_PROXY_HOPS", "1")
+    monkeypatch.setenv("JUDGE_AUTH_FAILURE_LIMIT_GLOBAL", "8")
+    good = _token(client, show, "A")
+    codes = [
+        _get(
+            client,
+            f"{PORTAL}/me",
+            _junk(n),
+            headers={"X-Forwarded-For": f"203.0.113.{n}"},
+        ).status_code
+        for n in range(12)
+    ]
+    assert codes == [401] * 8 + [429] * 4
+    assert _get(client, f"{PORTAL}/me", good).status_code == 200
+
+
+def test_client_key_uses_the_peer_or_the_trusted_hop_never_a_forged_one(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.judge_auth import judge_client_key
+
+    def request(forwarded):
+        return SimpleNamespace(
+            client=SimpleNamespace(host="10.0.0.5"),
+            headers={"x-forwarded-for": forwarded} if forwarded else {},
+        )
+
+    monkeypatch.delenv("JUDGE_AUTH_TRUSTED_PROXY_HOPS", raising=False)
+    assert judge_client_key(request("1.2.3.4")) == "10.0.0.5"
+    monkeypatch.setenv("JUDGE_AUTH_TRUSTED_PROXY_HOPS", "1")
+    assert judge_client_key(request("6.6.6.6, 198.51.100.7")) == "198.51.100.7"
+    assert judge_client_key(request(None)) == "10.0.0.5"
+    monkeypatch.setenv("JUDGE_AUTH_TRUSTED_PROXY_HOPS", "2")
+    assert (
+        judge_client_key(request("6.6.6.6, 198.51.100.7, 10.0.0.9")) == "198.51.100.7"
+    )
+
+
+def test_unreadable_body_is_audited(client, show, session_factory):
+    token = _token(client, show, "A")
+    handle = _handles(client, show, token)[0]
+    response = client.put(
+        f"{PORTAL}/scorecards/{handle}",
+        content=bytes([0x7B, 0x22, 0xFF, 0xFE, 0x22, 0x7D]),  # {"<not UTF-8>"}
+        headers={**_bearer(token), "Content-Type": "application/json"},
+    )
+    assert response.status_code == 400
+    rows = _audit_rows(session_factory, outcome="invalid")
+    assert [(r.action, r.http_status, r.detail) for r in rows] == [
+        ("autosave_scorecard", 400, "request body unreadable")
+    ]
 
 
 @pytest.mark.parametrize(
@@ -1383,3 +1481,235 @@ def test_assignment_to_another_shows_event_grants_nothing(
         ).status_code
         == 404
     )
+
+
+# ── Round 2: schedule text, owner audit, owner session, timestamps ─
+
+
+def _leaky_schedule(client, show, session_factory):
+    """The checker's leaks: exhibitor names inside class, event and rubric text."""
+    from app.models import JudgingCriterion, JudgingEvent, PlantCategory
+
+    with session_factory() as db:
+        db.get(
+            PlantCategory, show["classes"]["Cattleya"]["id"]
+        ).name = "Rosalind Featherstonehaugh Memorial class"
+        db.get(JudgingEvent, show["event"]["id"]).name = "Featherstonehaugh Cup judging"
+        db.get(
+            JudgingCriterion, show["form"]["criteria_id"]
+        ).criteria_description = "Form as grown by Bartholomew Quince"
+        db.commit()
+
+
+def test_blind_schedule_text_naming_an_exhibitor_is_withheld_everywhere(
+    client, show, session_factory
+):
+    _leaky_schedule(client, show, session_factory)
+    token = _token(client, show, "A")
+    event_id = show["event"]["id"]
+    urls = [
+        f"{PORTAL}/events",
+        f"{PORTAL}/events/{event_id}/categories",
+        f"{PORTAL}/events/{event_id}/plants",
+        f"{PORTAL}/events/{event_id}/scorecards",
+        f"{PORTAL}/criteria",
+        f"{PORTAL}/scan/{show['plants'][0]['qr_code']}",
+    ]
+    assert "Featherstonehaugh" in _get(client, urls[0], token).text  # open event
+    _set_blind(client, show)
+    for url in urls:
+        body = _get(client, url, token)
+        assert body.status_code == 200, url
+        for word in ("featherstonehaugh", "quince", "rosalind"):
+            assert word not in _fold(body.text), (url, word)
+    events = _get(client, urls[0], token).json()
+    assert events[0]["name"] is None and events[0]["name_withheld"] is True
+    classes = {c["id"]: c for c in _get(client, urls[1], token).json()}
+    memorial = classes[show["classes"]["Cattleya"]["id"]]
+    assert memorial["name"] is None and memorial["name_withheld"] is True
+    assert classes[show["classes"]["Paphiopedilum"]["id"]]["name"] == "Paphiopedilum"
+
+
+def test_owner_blind_labels_for_class_and_event_are_shown_and_audited(
+    client, show, session_factory
+):
+    _leaky_schedule(client, show, session_factory)
+    _set_blind(client, show)
+    class_id, event_id = show["classes"]["Cattleya"]["id"], show["event"]["id"]
+    ok = client.put(
+        f"/api/judging/categories/{class_id}/blind-display-name",
+        json={"blind_display_name": "Memorial class"},
+        headers=HEADERS,
+    )
+    assert ok.status_code == 200 and ok.json()["warnings"] == []
+    refused = client.put(
+        f"/api/judging/events/{event_id}/blind-display-name",
+        json={"blind_display_name": "Featherstone Cup"},
+        headers=HEADERS,
+    )
+    assert refused.status_code == 409
+    assert (
+        client.put(
+            f"/api/judging/events/{event_id}/blind-display-name",
+            json={"blind_display_name": "Spring cup"},
+            headers=HEADERS,
+        ).status_code
+        == 200
+    )
+    token = _token(client, show, "A")
+    names = {
+        c["id"]: c["name"]
+        for c in _get(client, f"{PORTAL}/events/{event_id}/categories", token).json()
+    }
+    assert names[class_id] == "Memorial class"
+    assert _get(client, f"{PORTAL}/events", token).json()[0]["name"] == "Spring cup"
+    actions = [
+        r["action"]
+        for r in client.get("/api/judging/owner-audit", headers=HEADERS).json()
+    ]
+    assert actions.count("blind_label_set") == 2 and "blind_label_refused" in actions
+
+
+def test_confirmed_exhibitor_derived_label_is_audited_as_a_hash_only(
+    client, show, session_factory
+):
+    jose = show["plants"][4]
+    text = "Cattleya Jose Alvarez Gold"
+    confirmed = client.put(
+        f"/api/judging/plants/{jose['id']}/blind-display-name",
+        json={"blind_display_name": text, "confirm_despite_warnings": True},
+        headers=HEADERS,
+    )
+    assert (
+        confirmed.status_code == 200 and confirmed.json()["confirmed_despite_warnings"]
+    )
+    rows = client.get("/api/judging/owner-audit", headers=HEADERS).json()
+    row = next(r for r in rows if r["object_id"] == jose["id"])
+    assert (
+        row["action"] == "blind_label_set" and row["confirmed_despite_warnings"] is True
+    )
+    assert row["warnings"] and row["actor"] == "backend_api_key" and row["created_at"]
+    assert row["text_value"] is None and row["text_withheld"] is True
+    assert row["text_sha256"] == hashlib.sha256(text.encode()).hexdigest()
+    with session_factory() as db:
+        stored = db.execute(select(ShowOwnerAudit)).scalars().all()
+        dump = " ".join(
+            str(getattr(r, c.name))
+            for r in stored
+            for c in ShowOwnerAudit.__table__.columns
+        )
+    assert "alvarez" not in _fold(dump)
+    plain = client.put(
+        f"/api/judging/plants/{show['plants'][0]['id']}/blind-display-name",
+        json={"blind_display_name": "Cattleya trianae"},
+        headers=HEADERS,
+    )
+    assert plain.status_code == 200
+    rows = client.get("/api/judging/owner-audit", headers=HEADERS).json()
+    assert any(
+        r["text_value"] == "Cattleya trianae" and not r["confirmed_despite_warnings"]
+        for r in rows
+    )
+
+
+def test_credential_issue_rotate_revoke_and_reissue_are_owner_audited(client, show):
+    first = _issue(client, show["judges"]["A"])
+    _issue(client, show["judges"]["A"])
+    client.post(
+        f"/api/judge-credentials/{first['credential_id']}/revoke", headers=HEADERS
+    )
+    client.post(
+        f"/api/judging/events/{show['event']['id']}/reissue-qr-tokens", headers=HEADERS
+    )
+    actions = [
+        r["action"]
+        for r in client.get("/api/judging/owner-audit", headers=HEADERS).json()
+    ]
+    assert sorted(actions) == [
+        "issue_credential",
+        "reissue_qr_tokens",
+        "rotate_credential",
+    ]  # revoking an already rotated-out credential changes nothing
+
+
+def test_owner_audit_is_append_only(client, show, session_factory):
+    _issue(client, show["judges"]["A"])
+    with session_factory() as db:
+        with pytest.raises(ValueError, match="append-only"):
+            db.execute(update(ShowOwnerAudit).values(actor="someone"))
+        db.rollback()
+        row = db.execute(select(ShowOwnerAudit)).scalars().first()
+        db.delete(row)
+        with pytest.raises(ValueError, match="append-only"):
+            db.commit()
+
+
+OWNER_ROUTES = (
+    ("POST", "/api/judges/{judge}/credentials", {}),
+    ("GET", "/api/judges/{judge}/credentials", None),
+    ("GET", "/api/judging/judge-audit", None),
+    ("GET", "/api/judging/owner-audit", None),
+    ("POST", "/api/judging/events/{event}/reissue-qr-tokens", None),
+    (
+        "PUT",
+        "/api/judging/plants/{plant}/blind-display-name",
+        {"blind_display_name": "Cattleya"},
+    ),
+    (
+        "PUT",
+        "/api/judging/categories/{category}/blind-display-name",
+        {"blind_display_name": "Class A"},
+    ),
+    (
+        "PUT",
+        "/api/judging/events/{event}/blind-display-name",
+        {"blind_display_name": "Spring"},
+    ),
+    ("GET", "/api/judging/events/{event}/tags", None),
+    ("GET", "/api/judging/events/{event}/class-results", None),
+    ("GET", "/api/judging/scan/{qr}", None),
+)
+
+
+def _owner_path(show, template):
+    return template.format(
+        judge=show["judges"]["A"]["id"],
+        event=show["event"]["id"],
+        plant=show["plants"][0]["id"],
+        category=show["classes"]["Cattleya"]["id"],
+        qr=show["plants"][0]["qr_code"],
+    )
+
+
+def test_owner_session_opens_owner_routes_and_a_judge_token_does_not(
+    client, show, monkeypatch
+):
+    from app.security import create_owner_session_token
+
+    monkeypatch.setenv("CALYX_OWNER_SESSION_SECRET", OWNER_SESSION_SECRET)
+    token = _token(client, show, "B")
+    session = _bearer(create_owner_session_token("owner")["token"])
+    for method, template, body in OWNER_ROUTES:
+        path = _owner_path(show, template)
+        judged = client.request(method, path, json=body, headers=_bearer(token))
+        assert judged.status_code == 401, (method, template, judged.status_code)
+        owned = client.request(method, path, json=body, headers=session)
+        assert owned.status_code == 200, (method, template, owned.text)
+    rows = client.get("/api/judging/owner-audit", headers=session).json()
+    by_session = {r["action"] for r in rows if r["auth_type"] == "owner_session"}
+    assert {"issue_credential", "reissue_qr_tokens", "blind_label_set"} <= by_session
+
+
+def test_blind_scorecards_carry_no_timestamps(client, show):
+    token = _token(client, show, "C")
+    (handle,) = _handles(client, show, token)
+    assert _save(client, show, token, handle, 30).status_code == 200
+    submitted = client.post(
+        f"{PORTAL}/scorecards/{handle}/submit", json={}, headers=_bearer(token)
+    )
+    assert submitted.json()["submitted_at"]  # open event: shown
+    _set_blind(client, show)
+    for card in _get(
+        client, f"{PORTAL}/events/{show['event']['id']}/scorecards", token
+    ).json():
+        assert "submitted_at" not in card and card["status"] == "submitted"

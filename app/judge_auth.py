@@ -39,6 +39,8 @@ import os
 import re
 import secrets
 import string
+import threading
+import time
 import unicodedata
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -101,13 +103,6 @@ OTHER_SECRET_ENVS = (
     "PGPASSWORD",
 )
 
-# Authentication failures are braked per credential id and per client address
-# with the shared in-process SlidingWindowLimiter. Once either key is spent,
-# further attempts are refused (429) before any credential is checked. The
-# per-client allowance is generous because a show hall usually shares one
-# address.
-AUTH_FAILURE_LIMITER = SlidingWindowLimiter()
-
 
 def _int_env(name: str, default: int) -> int:
     try:
@@ -116,13 +111,115 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-def auth_failure_limits() -> tuple[int, int, int]:
-    """(per-credential limit, per-client limit, window seconds)."""
-    return (
-        _int_env("JUDGE_AUTH_FAILURE_LIMIT_PER_CREDENTIAL", 10),
-        _int_env("JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT", 50),
-        max(1, _int_env("JUDGE_AUTH_FAILURE_WINDOW_SECONDS", 300)),
-    )
+def judge_client_key(request) -> str:
+    """The address failures are counted against; never a client-chosen value.
+
+    The direct peer by default. Behind N proxies that each append the address
+    they saw, set ``JUDGE_AUTH_TRUSTED_PROXY_HOPS=N``: the N-th
+    ``X-Forwarded-For`` entry from the right is the one the outermost trusted
+    proxy recorded, and entries to its left (which a client can forge) are
+    ignored. With too few entries, the peer address is used.
+    """
+    peer = request.client.host if request.client and request.client.host else "unknown"
+    hops = _int_env("JUDGE_AUTH_TRUSTED_PROXY_HOPS", 0)
+    if hops <= 0:
+        return peer
+    entries = [
+        e.strip()
+        for e in request.headers.get("x-forwarded-for", "").split(",")
+        if e.strip()
+    ]
+    return entries[-hops][:64] if len(entries) >= hops else peer
+
+
+class AuthFailureBrake:
+    """Brakes on judge sign-in FAILURES only; a token that verifies always passes.
+
+    * per client address: a sliding window (default 50 failures / 300 s);
+    * global: one sliding window over all failures (default 500 / 300 s), so
+      rotating addresses or credential ids is still bounded;
+    * per credential id: after 3 free failures, exponential backoff
+      (2 s, 4 s, ... capped at 900 s) during which failures answer 429.
+
+    While a brake is on, failures answer 429 with ``Retry-After`` and are not
+    audited, which also bounds audit growth. Verification still runs first, so
+    a correct secret is never refused. In-process and per worker, like the
+    shared ``SlidingWindowLimiter`` it builds on.
+    """
+
+    FREE_FAILURES = 3
+    MAX_BACKOFF_SECONDS = 900
+    FORGET_AFTER_SECONDS = 3600
+    MAX_TRACKED = 10_000
+
+    def __init__(self, clock=time.monotonic) -> None:
+        self.clock = clock
+        self.windows = SlidingWindowLimiter(clock=clock)
+        self._backoff: dict[str, tuple[int, float]] = {}
+        self._lock = threading.Lock()
+
+    @staticmethod
+    def limits() -> tuple[int, int, int]:
+        """(per-client limit, global limit, window seconds)."""
+        return (
+            _int_env("JUDGE_AUTH_FAILURE_LIMIT_PER_CLIENT", 50),
+            _int_env("JUDGE_AUTH_FAILURE_LIMIT_GLOBAL", 500),
+            max(1, _int_env("JUDGE_AUTH_FAILURE_WINDOW_SECONDS", 300)),
+        )
+
+    def record_failure(self, client: str, credential_id: str | None) -> int:
+        """Count one failure; return seconds to wait (0 when not braked)."""
+        per_client, global_limit, window = self.limits()
+        waits = []
+        for key, limit in (
+            (f"judge-auth:client:{client}", per_client),
+            ("judge-auth:global", global_limit),
+        ):
+            allowed, retry_after = self.windows.check(
+                key, limit=limit, window_seconds=window
+            )
+            if not allowed:
+                waits.append(retry_after)
+        if credential_id:
+            waits.append(self._credential_failure(credential_id))
+        return max(waits, default=0)
+
+    def _credential_failure(self, credential_id: str) -> int:
+        now = self.clock()
+        with self._lock:
+            count, last = self._backoff.get(credential_id, (0, now))
+            if now - last > self.FORGET_AFTER_SECONDS:
+                count = 0
+            wait = 0
+            if count >= self.FREE_FAILURES:
+                backoff = min(
+                    2 ** (count - self.FREE_FAILURES + 1), self.MAX_BACKOFF_SECONDS
+                )
+                if now - last < backoff:
+                    wait = max(1, int(last + backoff - now) + 1)
+            if (
+                len(self._backoff) >= self.MAX_TRACKED
+                and credential_id not in self._backoff
+            ):
+                oldest = sorted(self._backoff.items(), key=lambda item: item[1][1])
+                for key, _ in oldest[: len(oldest) // 2]:
+                    del self._backoff[key]
+            # A failure inside the backoff window does not restart it, so a
+            # correct device never waits longer because an attacker kept trying.
+            self._backoff[credential_id] = (count + 1, last if wait else now)
+            return wait
+
+    def record_success(self, credential_id: str) -> None:
+        with self._lock:
+            self._backoff.pop(credential_id, None)
+
+    def reset(self) -> None:
+        self.windows.reset()
+        with self._lock:
+            self._backoff.clear()
+
+
+AUTH_FAILURE_BRAKE = AuthFailureBrake()
 
 
 def utcnow() -> datetime:
@@ -264,84 +361,71 @@ def credential_scope(credential: JudgeCredential) -> dict[str, list[str] | None]
     }
 
 
-def _auth_failure_keys(client: str, credential_id: str | None) -> list[tuple[str, int]]:
-    per_credential, per_client, _window = auth_failure_limits()
-    keys = [(f"judge-auth:client:{client}", per_client)]
-    if credential_id:
-        keys.append((f"judge-auth:credential:{credential_id}", per_credential))
-    return keys
-
-
 def authenticate_judge_token(
     db: Session, token: str, client: str = "unknown"
 ) -> JudgeContext:
     """Resolve a presented bearer token to a judge, or raise 401/429/503.
 
-    Every failure counts against the client address and, when the token
-    names one, the credential id. A spent allowance refuses further attempts
-    before any lookup. A known credential presented with the wrong secret,
-    revoked, expired or orphaned is audited under its judge; no presented
-    secret material is ever recorded. An unknown id is not audited, so
-    anonymous guessing cannot fill the table.
+    The token is always verified first, in constant time: a credential whose
+    secret matches and which is live, unrevoked and bound to its judge's show
+    is accepted whatever the failure brakes say. Only a failure consults
+    ``AUTH_FAILURE_BRAKE``; a braked failure answers 429 and is not audited.
+    Otherwise a known credential presented with the wrong secret, revoked,
+    expired or orphaned is audited under its judge, with no secret material;
+    an unknown id is not audited, so anonymous guessing cannot fill the table.
     """
     secret = require_judge_secret()
-    window = auth_failure_limits()[2]
     credential_id = parse_credential_id(token)
-    keys = _auth_failure_keys(client, credential_id)
-    for key, limit in keys:
-        limited, retry_after = AUTH_FAILURE_LIMITER.is_limited(
-            key, limit=limit, window_seconds=window
-        )
-        if limited:
-            raise HTTPException(
-                status_code=429,
-                detail="Too many failed judge sign-in attempts. Wait and try again.",
-                headers={"Retry-After": str(retry_after)},
-            )
-
-    def refuse(detail: str, credential: JudgeCredential | None, outcome: str) -> None:
-        for key, limit in keys:
-            AUTH_FAILURE_LIMITER.check(key, limit=limit, window_seconds=window)
-        if credential is not None:
-            _write_audit(
-                db,
-                judge_id=credential.judge_id,
-                credential_id=credential.id,
-                action="authenticate",
-                outcome=outcome,
-                http_status=401,
-                ref=AuditRef(),
-            )
-        raise HTTPException(status_code=401, detail=detail)
-
     credential = db.get(JudgeCredential, credential_id) if credential_id else None
     presented_hash = hash_judge_token(secret, token)
     matches = credentials_match(
         presented_hash, credential.token_hash if credential else _NO_MATCH_HASH
     )
+    judge = db.get(Judge, credential.judge_id) if credential is not None else None
+
+    failure = None
     if credential is None:
-        refuse("Invalid judge credential", None, "unknown_credential")
-    if not matches:
-        refuse("Invalid judge credential", credential, "credential_mismatch")
+        failure = ("Invalid judge credential", "unknown_credential")
+    elif not matches:
+        failure = ("Invalid judge credential", "credential_mismatch")
+    elif credential.revoked_at is not None:
+        failure = ("Judge credential has been revoked", "credential_revoked")
+    elif credential.expires_at <= utcnow():
+        failure = ("Judge credential has expired", "credential_expired")
+    elif judge is None or judge.show_id != credential.show_id:
+        failure = ("Invalid judge credential", "credential_invalid")
 
-    judge = db.get(Judge, credential.judge_id)
-    if credential.revoked_at is not None:
-        refuse("Judge credential has been revoked", credential, "credential_revoked")
-    if credential.expires_at <= utcnow():
-        refuse("Judge credential has expired", credential, "credential_expired")
-    if judge is None or judge.show_id != credential.show_id:
-        refuse("Invalid judge credential", credential, "credential_invalid")
+    if failure is None:
+        AUTH_FAILURE_BRAKE.record_success(credential.id)
+        return JudgeContext(
+            judge_id=judge.id,
+            judge_name=judge.name,
+            show_id=credential.show_id,
+            credential_id=credential.id,
+            expires_at=credential.expires_at,
+            secret=secret,
+            event_ids=_json_ids(credential.event_ids_json),
+            category_ids=_json_ids(credential.category_ids_json),
+        )
 
-    return JudgeContext(
-        judge_id=judge.id,
-        judge_name=judge.name,
-        show_id=credential.show_id,
-        credential_id=credential.id,
-        expires_at=credential.expires_at,
-        secret=secret,
-        event_ids=_json_ids(credential.event_ids_json),
-        category_ids=_json_ids(credential.category_ids_json),
-    )
+    wait = AUTH_FAILURE_BRAKE.record_failure(client, credential_id)
+    if wait:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many failed judge sign-in attempts. Wait and try again.",
+            headers={"Retry-After": str(wait)},
+        )
+    if credential is not None:
+        _write_audit(
+            db,
+            judge_id=credential.judge_id,
+            credential_id=credential.id,
+            action="authenticate",
+            outcome=failure[1],
+            http_status=401,
+            ref=AuditRef(),
+        )
+    raise HTTPException(status_code=401, detail=failure[0])
 
 
 def bearer_judge_token(authorization: str | None) -> str | None:
@@ -449,12 +533,12 @@ def fold_text(text: str | None) -> str:
 
 
 def exhibitor_mention_reasons(
-    text: str | None, exhibitor: Exhibitor | None
+    text: str | None, exhibitor: Exhibitor | None, *, min_prefix: int = 3
 ) -> list[str]:
     """Why ``text`` may identify ``exhibitor``: a deliberately loose warning.
 
     Accent-insensitive; matches whole name words of any length, shared
-    prefixes of 3+ letters (partial surnames, many nicknames), initials,
+    prefixes of ``min_prefix``+ letters (partial surnames, many nicknames), initials,
     email local part and non-generic domain labels, the id and phone digits.
     It is a warning for the owner, never a guarantee: blind events withhold
     free-text plant names whatever it says.
@@ -473,8 +557,9 @@ def exhibitor_mention_reasons(
         if candidate in words:
             reasons.append("contains an exhibitor name word")
             break
-        if len(candidate) >= 3 and any(
-            len(w) >= 3 and (w[:3] == candidate[:3]) for w in words
+        if len(candidate) >= min_prefix and any(
+            len(w) >= min_prefix and (w[:min_prefix] == candidate[:min_prefix])
+            for w in words
         ):
             reasons.append("shares a prefix with an exhibitor name word")
             break
@@ -502,7 +587,14 @@ def mentions_exhibitor(text: str | None, exhibitor: Exhibitor | None) -> bool:
     return bool(exhibitor_mention_reasons(text, exhibitor))
 
 
-def _event_exhibitors(db: Session, event: JudgingEvent) -> list[Exhibitor]:
+# Schedule text (event, class and rubric wording) is owner-authored and shared
+# by every entry, so a looser prefix would withhold ordinary class names
+# ("Cattleya" for an exhibitor called Catherine). Four letters still catches a
+# partial surname ("Featherstone" for Featherstonehaugh).
+SCHEDULE_MIN_PREFIX = 4
+
+
+def event_exhibitors(db: Session, event: JudgingEvent) -> list[Exhibitor]:
     ids = set(
         db.execute(
             select(Plant.exhibitor_id).where(Plant.judging_event_id == event.id)
@@ -511,13 +603,56 @@ def _event_exhibitors(db: Session, event: JudgingEvent) -> list[Exhibitor]:
     return [e for e in (db.get(Exhibitor, i) for i in sorted(ids)) if e is not None]
 
 
+def text_mentions_any(text: str | None, exhibitors: list[Exhibitor]) -> bool:
+    return any(
+        exhibitor_mention_reasons(text, e, min_prefix=SCHEDULE_MIN_PREFIX)
+        for e in exhibitors
+    )
+
+
+def blind_label(
+    db: Session,
+    event: JudgingEvent,
+    text: str | None,
+    approved: str | None = None,
+) -> tuple[str | None, bool]:
+    """``(shown text, withheld)`` for owner-authored schedule text.
+
+    Outside blind mode the text is shown as written. In a blind event an
+    owner-approved blind label wins; otherwise the text is shown only when it
+    mentions none of the event's exhibitors, and is withheld (``None``)
+    when it does.
+    """
+    if not event.is_blind:
+        return text, False
+    if approved:
+        return approved, False
+    if text and text_mentions_any(text, event_exhibitors(db, event)):
+        return None, True
+    return text, False
+
+
 def blind_safe_text(db: Session, event: JudgingEvent, text: str | None) -> str | None:
-    """Schedule text (a class description) with any exhibitor mention withheld."""
-    if not text or not event.is_blind:
-        return text
-    if any(mentions_exhibitor(text, e) for e in _event_exhibitors(db, event)):
-        return None
-    return text
+    return blind_label(db, event, text)[0]
+
+
+def judge_category_view(
+    db: Session, event: JudgingEvent, category: PlantCategory | None
+) -> dict:
+    if category is None:
+        return {"category_name": None, "category_name_withheld": False}
+    name, name_withheld = blind_label(
+        db, event, category.name, category.blind_display_name
+    )
+    description, description_withheld = blind_label(db, event, category.description)
+    return {
+        "id": category.id,
+        "name": name,
+        "name_withheld": name_withheld,
+        "description": description,
+        "description_withheld": description_withheld,
+        "sort_order": category.sort_order,
+    }
 
 
 def judge_plant_view(
@@ -533,12 +668,13 @@ def judge_plant_view(
     looks like. A non-blind event shows the entered name, the notes and the
     exhibitor's name, as the owner's tag sheet does.
     """
-    category = db.get(PlantCategory, plant.category_id)
+    category = judge_category_view(db, event, db.get(PlantCategory, plant.category_id))
     view: dict = {
         "plant_handle": plant_handle(ctx.secret, ctx.judge_id, event, plant.id),
         "judging_event_id": event.id,
         "category_id": plant.category_id,
-        "category_name": category.name if category else None,
+        "category_name": category.get("name"),
+        "category_name_withheld": category.get("name_withheld", False),
         "blind": bool(event.is_blind),
     }
     if event.is_blind:
@@ -556,10 +692,12 @@ def judge_plant_view(
     return view
 
 
-def judge_event_view(event: JudgingEvent) -> dict:
+def judge_event_view(db: Session, event: JudgingEvent) -> dict:
+    name, withheld = blind_label(db, event, event.name, event.blind_display_name)
     return {
         "id": event.id,
-        "name": event.name,
+        "name": name,
+        "name_withheld": withheld,
         "judging_type": event.judging_type,
         "is_blind": bool(event.is_blind),
         "status": event.status,
@@ -583,11 +721,14 @@ def judge_scorecard_view(
         "status": scorecard.status,
         "total": scorecard.total,
         "version": scorecard.version,
-        "submitted_at": scorecard.submitted_at.isoformat()
-        if scorecard.submitted_at
-        else None,
         "plant": judge_plant_view(db, ctx, event, plant),
     }
+    if not event.is_blind:
+        # A blind event gives no timestamps: submission times recorded before
+        # the switch could be matched against what a judge saw then.
+        view["submitted_at"] = (
+            scorecard.submitted_at.isoformat() if scorecard.submitted_at else None
+        )
     if include_scores:
         scores = (
             db.execute(
