@@ -4,17 +4,21 @@ All module consumers should use this service instead of invoking
 FirecrawlFederationMapper directly. The ledger coalesces duplicate requests,
 blocks retry storms, and records Firecrawl credit usage/provenance.
 """
+
 from __future__ import annotations
 
 import json
-from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.source_federation.acquisition import AcquisitionRecord, AcquisitionRequest, canonicalize_url
-from app.source_federation.acquisition_ledger import AcquisitionLedger
+from app.source_federation.acquisition import (
+    AcquisitionRecord,
+    AcquisitionRequest,
+    canonicalize_url,
+)
+from app.source_federation.acquisition_ledger import AcquisitionLedger, StaleLeaseError
 
-from .firecrawl_mapper import FirecrawlFederationMapper, FederationSourceProfile
+from .firecrawl_mapper import FederationSourceProfile, FirecrawlFederationMapper
 
 
 class SharedFirecrawlFederationService:
@@ -103,10 +107,23 @@ class SharedFirecrawlFederationService:
                 # current operational contract. Keep accounting explicit here.
                 credits_spent=1,
             )
-            self.ledger.complete(record, payload_json=payload.decode("utf-8"))
+            self.ledger.complete(
+                record, lease=claim, payload_json=payload.decode("utf-8")
+            )
             return "fetched", profile
+        except StaleLeaseError:
+            # Fail closed: our lease was superseded while the call ran, so the
+            # live holder's result owns the cache. This late result is not
+            # persisted and is not handed on without ledger provenance.
+            return "stale_lease", None
         except Exception:
-            self.ledger.fail(request.key)
+            try:
+                self.ledger.fail(claim)
+            except StaleLeaseError:
+                # Superseded while the call ran: the row belongs to the live
+                # holder and must not be touched. The original error is still
+                # what the caller sees.
+                pass
             raise
 
     @staticmethod

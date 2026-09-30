@@ -41,14 +41,14 @@ def test_duplicate_modules_coalesce_to_one_external_lease():
 def test_completed_acquisition_becomes_zero_fetch_cache_hit():
     ledger = _ledger()
     request = _request()
-    ledger.claim(request, worker_id="w1")
+    lease = ledger.claim(request, worker_id="w1")
     record = AcquisitionRecord.completed(
         request=request,
         content=b"evidence",
         provenance={"source": "fixture"},
         credits_spent=1,
     )
-    ledger.complete(record)
+    ledger.complete(record, lease=lease)
     hit = ledger.claim(_request("atlas"), worker_id="w2")
     assert hit.action == "cache_hit"
     assert ledger.metrics()["credits_spent"] == 1
@@ -58,7 +58,7 @@ def test_failure_blocks_immediate_credit_burning_retry():
     ledger = _ledger()
     now = datetime.now(timezone.utc)
     claim = ledger.claim(_request(), worker_id="w1", now=now)
-    ledger.fail(claim.resource_key, retry_after_seconds=300, now=now)
+    ledger.fail(claim, retry_after_seconds=300, now=now)
     retry = ledger.claim(
         _request("brain"), worker_id="w2", now=now + timedelta(seconds=1)
     )
@@ -165,7 +165,7 @@ def test_naive_stored_retry_window_blocks_until_it_passes():
     ledger = _ledger()
     now = datetime.now(timezone.utc)
     claim = ledger.claim(_request(), worker_id="w1", now=now)
-    ledger.fail(claim.resource_key, retry_after_seconds=300, now=now)
+    ledger.fail(claim, retry_after_seconds=300, now=now)
     _store_naive(ledger, next_retry_at=_naive_utc(now + timedelta(seconds=300)))
     blocked = ledger.claim(
         _request("brain"), worker_id="w2", now=now + timedelta(seconds=299)
@@ -205,7 +205,7 @@ def test_non_utc_caller_offset_does_not_shorten_a_retry_window():
     ledger = _ledger()
     now = datetime(2026, 1, 1, 10, 0, tzinfo=_MINUS_FIVE)
     claim = ledger.claim(_request(), worker_id="w1", now=now)
-    ledger.fail(claim.resource_key, retry_after_seconds=300, now=now)
+    ledger.fail(claim, retry_after_seconds=300, now=now)
     retry = ledger.claim(
         _request("brain"), worker_id="w2", now=now + timedelta(seconds=1)
     )
@@ -231,14 +231,14 @@ def test_naive_caller_now_is_treated_as_utc():
 def test_retrieved_at_is_stored_as_utc():
     ledger = _ledger()
     request = _request()
-    ledger.claim(request, worker_id="w1")
+    lease = ledger.claim(request, worker_id="w1")
     record = AcquisitionRecord.completed(
         request=request,
         content=b"evidence",
         provenance={"source": "fixture"},
     )
     local = datetime(2026, 1, 1, 7, 0, tzinfo=_MINUS_FIVE)
-    ledger.complete(dataclasses.replace(record, retrieved_at=local))
+    ledger.complete(dataclasses.replace(record, retrieved_at=local), lease=lease)
     ledger.session.expire_all()
     assert _as_utc(_row(ledger).retrieved_at) == datetime(
         2026, 1, 1, 12, 0, tzinfo=timezone.utc

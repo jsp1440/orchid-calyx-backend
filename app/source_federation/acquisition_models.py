@@ -16,7 +16,9 @@ def _utcnow() -> datetime:
 
 class AcquisitionLedgerRow(Base):
     __tablename__ = "acquisition_ledger"
-    __table_args__ = (UniqueConstraint("resource_key", name="uq_acquisition_resource_key"),)
+    __table_args__ = (
+        UniqueConstraint("resource_key", name="uq_acquisition_resource_key"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     resource_key: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -34,7 +36,14 @@ class AcquisitionLedgerRow(Base):
     failure_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     lease_holder: Mapped[str | None] = mapped_column(String(160))
+    # Fencing token minted per granted lease (complete/fail must present it)
+    # and rotated on release, so it also versions the row for claim CAS.
+    lease_token: Mapped[str | None] = mapped_column(String(64))
     lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow
+    )
