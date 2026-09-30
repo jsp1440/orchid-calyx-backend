@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import logging
 import os
+import unicodedata
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -80,6 +81,42 @@ MEMBER_DUPLICATE_STATUS = "already_reported"
 # ``registered_by_role`` values on stored object snapshots (owner review shows
 # them). A role, never an identity; any other principal records ``None``.
 REGISTERED_BY_ROLE = {"owner": "owner_session", "api_key": "api_key", "member": "member"}
+# Deepest object/array nesting accepted in a member snapshot.
+MEMBER_OBJECT_PAYLOAD_MAX_DEPTH = 64
+
+
+def has_format_characters(value: str) -> bool:
+    """True when ``value`` holds a Unicode format control (category Cf).
+
+    Bidirectional overrides/isolates (U+202A-U+202E, U+2066-U+2069) and
+    zero-width characters (U+200B-U+200D, U+FEFF) make text display
+    differently from what it contains, so a reviewer could read something
+    other than what was submitted.
+    """
+
+    return any(unicodedata.category(char) == "Cf" for char in value)
+
+
+def _member_payload_problem(payload: dict[str, Any]) -> str | None:
+    """Why a member snapshot is refused, walking it iteratively (never recursing)."""
+
+    stack: list[tuple[Any, int]] = [(payload, 1)]
+    while stack:
+        value, depth = stack.pop()
+        if isinstance(value, dict):
+            if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
+                return "OBJECT_PAYLOAD_TOO_DEEP"
+            for key, item in value.items():
+                if isinstance(key, str) and has_format_characters(key):
+                    return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+                stack.append((item, depth + 1))
+        elif isinstance(value, list):
+            if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
+                return "OBJECT_PAYLOAD_TOO_DEEP"
+            stack.extend((item, depth + 1) for item in value)
+        elif isinstance(value, str) and has_format_characters(value):
+            return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+    return None
 
 
 class EvidenceObjectIn(BaseModel):
@@ -249,12 +286,31 @@ def register_object(payload: EvidenceObjectIn, auth: Auth):
                 status_code=422,
                 detail={"code": "MEMBER_LINEAGE_CLAIM_NOT_ACCEPTED"},
             )
+        problem = _member_payload_problem(payload.payload)
+        if problem is not None:
+            raise HTTPException(status_code=422, detail={"code": problem})
         size = len(canonical_json(payload.payload).encode("utf-8"))
         if size > MEMBER_OBJECT_PAYLOAD_MAX_BYTES:
             raise HTTPException(
                 status_code=413,
                 detail={"code": "OBJECT_PAYLOAD_TOO_LARGE"},
             )
+        try:
+            version, _provisional = _service().register_member_snapshot(
+                object_id=payload.object_id,
+                object_type=payload.object_type,
+                payload=payload.payload,
+            )
+        except Exception as exc:
+            _translate(exc)
+            raise
+        # The content hash the member's case will bind to, under the id the
+        # member used; nothing about who registered it first, or when.
+        return {
+            "object_id": payload.object_id.strip(),
+            "object_type": payload.object_type.value,
+            "version_hash": version.version_hash,
+        }
     try:
         version = _service().register_object(
             object_id=payload.object_id,
@@ -266,14 +322,6 @@ def register_object(payload: EvidenceObjectIn, auth: Auth):
     except Exception as exc:
         _translate(exc)
         raise
-    if member:
-        # The version the member's case will bind to; not who registered it first
-        # or when, which may describe someone else.
-        return {
-            "object_id": version.object_id,
-            "object_type": version.object_type.value,
-            "version_hash": version.version_hash,
-        }
     return version.to_dict()
 
 
@@ -295,6 +343,23 @@ def submit_case(payload: EvidenceFeedbackIn, auth: Auth):
     member = _is_member(auth)
     if member:
         enforce_member_write_rate_limit(MEMBER_CASES_RATE_FAMILY, submitter_id)
+        # A partner source routes a case to partner review: an owner decision.
+        if payload.source_partner_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "MEMBER_SOURCE_PARTNER_NOT_ACCEPTED"},
+            )
+        for text in (
+            payload.statement,
+            payload.page_context,
+            payload.proposed_replacement,
+            payload.citation,
+        ):
+            if text is not None and has_format_characters(text):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "MEMBER_TEXT_FORMAT_CHARACTERS"},
+                )
     try:
         result = _service().submit(
             object_id=payload.object_id,
@@ -309,6 +374,7 @@ def submit_case(payload: EvidenceFeedbackIn, auth: Auth):
             source_partner_id=payload.source_partner_id,
             defect_kind=payload.defect_kind,
             severity=payload.severity,
+            submitter_role=REGISTERED_BY_ROLE.get(principal_role(auth)),
         )
     except Exception as exc:
         _translate(exc)

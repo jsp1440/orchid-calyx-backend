@@ -355,7 +355,13 @@ def test_member_gets_403_on_accept_trivial_and_every_review_route(
 def test_accept_trivial_keeps_its_owner_and_api_key_behaviour(
     file_store, client, supabase
 ):
+    # The owner registered the displayed record, so the member's case takes the
+    # trusted (registered) lexicon type and the deterministic path stays open.
+    assert register(client, owner_headers()).status_code == 201
     case_id = submit(client, MEMBER_A).json()["case_id"]
+    stored = file_store.repository().get_case(case_id)
+    assert stored.object_type_source == "registered"
+    assert stored.disposition.value == "auto_correctable"
     anonymous = client.post(
         f"{BASE}/cases/{case_id}/accept-trivial", json={"corrected_payload": {"d": "x"}}
     )
@@ -385,9 +391,17 @@ def test_owner_review_shows_who_registered_the_snapshot(store, client, supabase)
     assert MEMBER_A_UUID not in detail.text
     assert member_actor(MEMBER_A_UUID) not in detail.text
 
-    # First registration wins: the owner re-presenting the same snapshot keeps the record.
+    assert detail.json()["object_version_provisional"] is True
+    assert detail.json()["case"]["submitter_role"] == "member"
+
+    # The owner registering the same content creates the canonical version,
+    # which supersedes the member's provisional snapshot in the review.
     again = register(client, owner_headers())
-    assert again.json()["registered_by_role"] == "member"
+    assert again.status_code == 201
+    assert again.json()["registered_by_role"] == "owner_session"
+    superseded = client.get(f"{REVIEW}/{case_id}", headers=owner_headers()).json()
+    assert superseded["object_version"]["registered_by_role"] == "owner_session"
+    assert superseded["object_version_provisional"] is False
     fresh = register(client, owner_headers(), payload={"term": "column"})
     assert fresh.json()["registered_by_role"] == "owner_session"
     by_key = register(client, API_KEY, payload={"term": "sepal"})
@@ -430,6 +444,7 @@ def test_member_writes_are_rate_limited_per_subject_not_per_address(
     file_store, client, supabase, monkeypatch
 ):
     monkeypatch.setenv(rate_limit.MEMBER_WRITE_RATE_LIMIT_ENV, "2")
+    assert register(client, owner_headers()).status_code == 201
     version = register(client, MEMBER_A).json()["version_hash"]
     for index in range(2):
         ok = client.post(
@@ -609,6 +624,8 @@ CASE_FIELDS = {
     "resolution",
     "resulting_version_hash",
     "reviewer_id",
+    "submitter_role",
+    "object_type_source",
 }
 
 
@@ -726,3 +743,242 @@ def test_principal_role():
         == "member"
     )
     assert member_auth.principal_role({"actor": "x"}) == "unknown"
+
+
+# --- checker round 1: provisional snapshots, trusted type, input hygiene ------------
+
+TAXON_PAYLOAD = {"accepted_name": "SYNTHETIC taxon", "rank": "species"}
+
+
+def register_as(client, headers, object_id, object_type, payload):
+    return client.post(
+        f"{BASE}/objects",
+        json={"object_id": object_id, "object_type": object_type, "payload": payload},
+        headers=headers,
+    )
+
+
+def test_member_snapshot_cannot_squat_an_owner_registration(store, client, supabase):
+    squat = register_as(client, MEMBER_A, "taxon:1", "lexicon", TAXON_PAYLOAD)
+    assert squat.status_code == 201, squat.text
+    # Another member claiming a different type is not blocked either.
+    other = register_as(client, MEMBER_B, "taxon:1", "taxonomy", TAXON_PAYLOAD)
+    assert other.status_code == 201, other.text
+
+    owner = register_as(client, owner_headers(), "taxon:1", "taxonomy", TAXON_PAYLOAD)
+    assert owner.status_code == 201, owner.text
+    assert owner.json()["object_type"] == "taxonomy"
+    assert owner.json()["registered_by_role"] == "owner_session"
+    assert owner.json()["version_hash"] == squat.json()["version_hash"]
+    # The canonical namespace holds exactly the owner's version.
+    versions = store.repository().list_object_versions("taxon:1")
+    assert [(v.object_type.value, v.registered_by_role) for v in versions] == [
+        ("taxonomy", "owner_session")
+    ]
+    # A later member registration returns the canonical version and writes nothing canonical.
+    again = register_as(client, MEMBER_A, "taxon:1", "lexicon", TAXON_PAYLOAD)
+    assert again.status_code == 201
+    assert len(store.repository().list_object_versions("taxon:1")) == 1
+
+
+def test_nobody_can_address_the_member_snapshot_namespace(file_store, client, supabase):
+    for headers in (owner_headers(), MEMBER_A, API_KEY):
+        response = register_as(
+            client, headers, "member-snapshot:lexicon:taxon:1", "lexicon", {"d": 1}
+        )
+        assert response.status_code == 422, headers
+        assert response.json()["detail"] == {"code": "OBJECT_ID_RESERVED"}
+    body = case_body("0" * 64, object_id="member-snapshot:lexicon:x")
+    assert (
+        client.post(f"{BASE}/cases", json=body, headers=owner_headers()).status_code
+        == 422
+    )
+
+
+def _lexicon_claim_on(client, object_id, payload, headers=MEMBER_A):
+    version = register_as(client, headers, object_id, "lexicon", payload).json()[
+        "version_hash"
+    ]
+    return client.post(
+        f"{BASE}/cases",
+        json=case_body(version, "Typo in the name.", object_id=object_id),
+        headers=headers,
+    )
+
+
+def test_member_typed_lexicon_on_an_owner_registered_scientific_object_takes_the_trusted_type(
+    store, client, supabase
+):
+    assert (
+        register_as(
+            client, owner_headers(), "taxon:1", "taxonomy", TAXON_PAYLOAD
+        ).status_code
+        == 201
+    )
+    response = _lexicon_claim_on(client, "taxon:1", TAXON_PAYLOAD)
+    assert response.status_code == 201, response.text
+    case = store.repository().get_case(response.json()["case_id"])
+    assert case.object_type.value == "taxonomy"
+    assert case.object_type_source == "registered"
+    assert case.disposition.value == "needs_taxonomic_review"
+    detail = client.get(f"{REVIEW}/{case.case_id}", headers=owner_headers()).json()
+    assert "accept_trivial" not in detail["allowed_decisions"]
+    refused = client.post(
+        f"{BASE}/cases/{case.case_id}/accept-trivial",
+        json={"corrected_payload": {"accepted_name": "x"}},
+        headers=owner_headers(),
+    )
+    assert refused.status_code == 409
+
+
+def test_member_typed_lexicon_without_a_registered_object_is_never_accept_trivial_eligible(
+    store, client, supabase
+):
+    response = _lexicon_claim_on(client, "taxon:1", TAXON_PAYLOAD)
+    assert response.status_code == 201, response.text
+    case = store.repository().get_case(response.json()["case_id"])
+    assert case.object_type_source == "member_claimed"
+    assert case.disposition.value == "needs_scientific_review"
+    assert case.review_lane.value == "scientific"
+    detail = client.get(f"{REVIEW}/{case.case_id}", headers=owner_headers()).json()
+    assert detail["object_version_provisional"] is True
+    assert detail["allowed_decisions"] == ["reject", "needs_governed_review"]
+    refused = client.post(
+        f"{REVIEW}/{case.case_id}/decision",
+        json={
+            "decision": "accept_trivial",
+            "corrected_payload": {"accepted_name": "x"},
+        },
+        headers=owner_headers(),
+    )
+    assert refused.status_code == 409, refused.text
+    # Even after the owner registers the same content, the member-claimed case stays governed.
+    register_as(client, owner_headers(), "taxon:1", "lexicon", TAXON_PAYLOAD)
+    assert (
+        "accept_trivial"
+        not in client.get(f"{REVIEW}/{case.case_id}", headers=owner_headers()).json()[
+            "allowed_decisions"
+        ]
+    )
+
+
+FORMAT_CHARACTERS = ["\u202e", "\u200b", "\u2066", "\ufeff", "\u200e"]
+
+
+@pytest.mark.parametrize("char", FORMAT_CHARACTERS, ids=lambda c: f"U+{ord(c):04X}")
+@pytest.mark.parametrize(
+    "field", ["statement", "page_context", "proposed_replacement", "citation"]
+)
+def test_member_text_with_format_characters_is_refused(
+    file_store, client, supabase, char, field
+):
+    version = register(client, MEMBER_A).json()["version_hash"]
+    body = case_body(version, **{field: f"looks fine{char}evil"})
+    response = client.post(f"{BASE}/cases", json=body, headers=MEMBER_A)
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "MEMBER_TEXT_FORMAT_CHARACTERS"}
+    assert (
+        file_store.repository().list_cases(
+            status=None, object_type=None, limit=5, before=None
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("char", FORMAT_CHARACTERS, ids=lambda c: f"U+{ord(c):04X}")
+@pytest.mark.parametrize(
+    "shape",
+    [
+        lambda c: {"definition": f"a{c}b"},
+        lambda c: {f"key{c}": "value"},
+        lambda c: {"nested": [{"deeper": [f"x{c}"]}]},
+    ],
+    ids=["value", "key", "nested"],
+)
+def test_member_snapshot_with_format_characters_is_refused(
+    file_store, client, supabase, char, shape
+):
+    response = register(client, MEMBER_A, payload=shape(char))
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "OBJECT_PAYLOAD_FORMAT_CHARACTERS"}
+    assert file_store.files_written() == []
+
+
+def test_member_snapshot_nesting_is_capped(file_store, client, supabase):
+    def nested(depth):
+        value: dict = {"leaf": 1}
+        for _ in range(depth - 1):
+            value = {"n": value}
+        return value
+
+    at_cap = register(
+        client, MEMBER_A, payload=nested(routes.MEMBER_OBJECT_PAYLOAD_MAX_DEPTH)
+    )
+    assert at_cap.status_code == 201, at_cap.text
+    too_deep = register(
+        client, MEMBER_A, payload=nested(routes.MEMBER_OBJECT_PAYLOAD_MAX_DEPTH + 1)
+    )
+    assert too_deep.status_code == 422
+    assert too_deep.json()["detail"] == {"code": "OBJECT_PAYLOAD_TOO_DEEP"}
+    lists: list = [1]
+    for _ in range(routes.MEMBER_OBJECT_PAYLOAD_MAX_DEPTH):
+        lists = [lists]
+    in_lists = register(client, MEMBER_A, payload={"l": lists})
+    assert in_lists.status_code == 422
+    assert in_lists.json()["detail"] == {"code": "OBJECT_PAYLOAD_TOO_DEEP"}
+
+
+def test_member_cannot_set_source_partner(file_store, client, supabase):
+    version = register(client, MEMBER_A).json()["version_hash"]
+    response = client.post(
+        f"{BASE}/cases",
+        json=case_body(version, source_partner_id="SYNTHETIC-partner"),
+        headers=MEMBER_A,
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "MEMBER_SOURCE_PARTNER_NOT_ACCEPTED"}
+    # The owner keeps partner routing.
+    assert register(client, owner_headers()).status_code == 201
+    owner = client.post(
+        f"{BASE}/cases",
+        json=case_body(version, source_partner_id="SYNTHETIC-partner"),
+        headers=owner_headers(),
+    )
+    assert owner.status_code == 201
+    assert owner.json()["case"]["review_lane"] == "source_partner"
+
+
+def test_owner_review_labels_who_submitted_each_case(store, client, supabase):
+    member_case = submit(client, MEMBER_A).json()["case_id"]
+    owner_case = submit(client, owner_headers(), "Owner report.").json()["case"][
+        "case_id"
+    ]
+    items = {
+        item["case_id"]: item
+        for item in client.get(REVIEW, headers=owner_headers()).json()["items"]
+    }
+    assert items[member_case]["submitter_role"] == "member"
+    assert items[member_case]["object_type_source"] == "member_claimed"
+    assert items[owner_case]["submitter_role"] == "owner_session"
+    detail = client.get(f"{REVIEW}/{member_case}", headers=owner_headers()).json()
+    assert detail["case"]["submitter_role"] == "member"
+
+
+@pytest.mark.parametrize("switch", ["feedback", "reads"])
+def test_switches_are_checked_before_any_supabase_call(
+    file_store, client, supabase, monkeypatch, switch
+):
+    if switch == "feedback":
+        monkeypatch.delenv(member_auth.MEMBER_FEEDBACK_ENV, raising=False)
+    else:
+        monkeypatch.setenv("OC_MEMBER_READS_ENABLED", "false")
+    for token in (TOKEN_A, TOKEN_REJECTED):
+        for method, url, body in _member_calls("0" * 64):
+            response = client.request(method, url, json=body, headers=bearer(token))
+            assert response.status_code == 403, (method, url)
+            assert response.json() == FEEDBACK_DISABLED_BODY
+    assert supabase.call_count == 0
+    # Anonymous and forged owner-shaped bearers keep their 401, still without Supabase.
+    assert register(client, {}).status_code == 401
+    assert register(client, bearer("abc." + "0" * 64)).status_code == 401
+    assert supabase.call_count == 0

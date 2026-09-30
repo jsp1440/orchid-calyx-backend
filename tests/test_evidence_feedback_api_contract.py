@@ -270,7 +270,10 @@ def test_api_key_submits_and_non_owner_callers_are_rejected(client):
     anonymous_status = client.get(f"{FRONTEND_BASE}/cases/efc-anything")
     assert anonymous.status_code == 401
     assert wrong_key.status_code == 401
-    assert member_bearer.status_code == 401
+    # Member feedback defaults OFF, and the switch is checked before any
+    # verification: a member-shaped bearer is told the feature is off.
+    assert member_bearer.status_code == 403
+    assert member_bearer.json()["detail"]["code"] == "MEMBER_FEEDBACK_DISABLED"
     assert anonymous_status.status_code == 401
 
 

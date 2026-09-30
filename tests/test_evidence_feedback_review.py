@@ -230,7 +230,11 @@ def test_queue_lists_newest_first_with_triage_fields_and_no_raw_identity(store, 
         "case_id", "status", "disposition", "review_lane", "object_type", "object_id",
         "object_version_hash", "feedback_class", "severity", "defect_kind", "page_context",
         "statement_preview", "created_at", "updated_at", "duplicate_count", "submitter_ref",
+        "submitter_role", "object_type_source",
     }
+    # Roles, never identities: the owner session submitted, against a registered version.
+    assert item["submitter_role"] == "owner_session"
+    assert item["object_type_source"] == "registered"
     assert item["object_type"] == "matrix_identification"
     assert item["severity"] == "high"
     assert item["status"] == "pending_review"
@@ -603,6 +607,11 @@ def test_member_submission_enabled_still_cannot_review(file_store, clock, client
     monkeypatch.setenv(member_auth.MEMBER_FEEDBACK_ENV, "true")
     member_case = submit(client, headers=bearer(member_jwt()))
     assert set(member_case) == {"created", "case_id", "status"}
+    detail = client.get(f"{REVIEW}/{member_case['case_id']}", headers=reviewer_headers())
+    assert detail.status_code == 200
+    assert detail.json()["case"]["submitter_role"] == "member"
+    assert detail.json()["object_version"]["registered_by_role"] == "member"
+    assert detail.json()["object_version_provisional"] is True
     member_body = {"detail": {"code": "OWNER_ACCESS_REQUIRED", "message": "This view is limited to owner access"}}
     for case_id in (member_case["case_id"], submit(client, statement="Owner case.")["case"]["case_id"]):
         calls = [
@@ -614,9 +623,6 @@ def test_member_submission_enabled_still_cannot_review(file_store, clock, client
             assert member.status_code == 403, (method, url)
             assert member.json() == member_body
     assert file_store.repository().get_case(member_case["case_id"]).status.value == "pending_review"
-    detail = client.get(f"{REVIEW}/{member_case['case_id']}", headers=reviewer_headers())
-    assert detail.status_code == 200
-    assert detail.json()["object_version"]["registered_by_role"] == "member"
 
 
 def test_member_rejected_when_member_reads_disabled(file_store, client, supabase, monkeypatch):

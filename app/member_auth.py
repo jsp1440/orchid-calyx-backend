@@ -436,8 +436,10 @@ async def owner_or_member_write(
 
     * a verified member on a POST marked ``@member_writable`` (or a GET/HEAD marked
       ``@member_readable``) is admitted while ``OC_MEMBER_READS_ENABLED`` and
-      ``OC_MEMBER_FEEDBACK_ENABLED`` are both on; with either off it gets 403
-      ``MEMBER_FEEDBACK_DISABLED``;
+      ``OC_MEMBER_FEEDBACK_ENABLED`` are both on. With either off, the switches are
+      checked BEFORE any Supabase call: a member-shaped bearer gets 403
+      ``MEMBER_FEEDBACK_DISABLED`` without being verified (the answer is a
+      statement about the feature, not about the token), and no bearer stays 401;
     * a verified member on any other route gets 403 ``OWNER_ACCESS_REQUIRED`` (401
       while member reads are off, as on every other owner-only route);
     * anonymous and unverifiable tokens keep the owner path's 401.
@@ -454,10 +456,13 @@ async def owner_or_member_write(
             if await _verified_member_or_none(request, api_key) is not None:
                 raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
             raise
+        if not (member_reads_enabled() and member_feedback_enabled()):
+            _, bearer = _bearer(request)
+            if api_key or not bearer or _OWNER_TOKEN_SHAPE.fullmatch(bearer):
+                raise
+            raise HTTPException(status_code=403, detail=dict(MEMBER_FEEDBACK_DISABLED)) from None
         member = await _verified_member_bearer(request, api_key)
         if member is None:
             raise
-        if not (member_reads_enabled() and member_feedback_enabled()):
-            raise HTTPException(status_code=403, detail=dict(MEMBER_FEEDBACK_DISABLED)) from None
         return _record(request, member)
     return _record(request, {**principal, "role": principal_role(principal)})

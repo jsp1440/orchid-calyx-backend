@@ -157,6 +157,14 @@ class EvidenceFeedbackCase:
     resolution: str | None = None
     resulting_version_hash: str | None = None
     reviewer_id: str | None = None
+    # Who submitted: "owner_session", "api_key" or "member" (a role, never an
+    # identity); ``None`` for cases stored before this field.
+    submitter_role: str | None = None
+    # Where ``object_type`` came from: "registered" (a canonical, owner- or
+    # API-key-registered version) or "member_claimed" (a member's provisional
+    # snapshot, whose type is only the member's claim and never decides a
+    # deterministic path). ``None`` for cases stored before this field.
+    object_type_source: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -183,6 +191,8 @@ class EvidenceFeedbackCase:
             "resolution": self.resolution,
             "resulting_version_hash": self.resulting_version_hash,
             "reviewer_id": self.reviewer_id,
+            "submitter_role": self.submitter_role,
+            "object_type_source": self.object_type_source,
         }
 
     @classmethod
@@ -211,4 +221,6 @@ class EvidenceFeedbackCase:
             resolution=value.get("resolution"),
             resulting_version_hash=value.get("resulting_version_hash"),
             reviewer_id=value.get("reviewer_id"),
+            submitter_role=value.get("submitter_role"),
+            object_type_source=value.get("object_type_source"),
         )

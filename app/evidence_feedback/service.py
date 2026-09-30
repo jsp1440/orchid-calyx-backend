@@ -20,12 +20,31 @@ from .models import (
 )
 from .repository import (
     EvidenceFeedbackRepository,
+    EvidenceFeedbackRepositoryError,
     normalized_key,
     validate_free_text,
     validate_label,
 )
 
 Clock = Callable[[], str]
+
+# Member-registered snapshots live in their own object namespace, keyed by the
+# type the member CLAIMED, so they can never collide with, block or pre-empt a
+# canonical (owner / API-key) registration, nor one another. The prefix is
+# reserved: no caller may register or submit against it directly.
+MEMBER_SNAPSHOT_PREFIX = "member-snapshot:"
+TYPE_SOURCE_REGISTERED = "registered"
+TYPE_SOURCE_MEMBER_CLAIMED = "member_claimed"
+MEMBER_ROLE = "member"
+
+
+def member_snapshot_object_id(object_type: ObjectType, object_id: str) -> str:
+    return f"{MEMBER_SNAPSHOT_PREFIX}{object_type.value}:{object_id.strip()}"
+
+
+def _refuse_reserved_object_id(object_id: str) -> None:
+    if object_id.strip().startswith(MEMBER_SNAPSHOT_PREFIX):
+        raise ValueError("OBJECT_ID_RESERVED")
 
 
 def utc_now() -> str:
@@ -60,6 +79,64 @@ class EvidenceFeedbackService:
         previous_version_hash: str | None = None,
         registered_by_role: str | None = None,
     ) -> EvidenceObjectVersion:
+        _refuse_reserved_object_id(object_id)
+        return self._save_version(
+            object_id=object_id,
+            object_type=object_type,
+            payload=payload,
+            previous_version_hash=previous_version_hash,
+            registered_by_role=registered_by_role,
+        )
+
+    def register_member_snapshot(
+        self,
+        *,
+        object_id: str,
+        object_type: ObjectType,
+        payload: dict[str, Any],
+    ) -> tuple[EvidenceObjectVersion, bool]:
+        """Record what a member says they saw; returns ``(version, provisional)``.
+
+        When a canonical version with this content already exists, nothing is
+        written and that version is returned (``provisional`` False): the
+        member's case will bind to it and take its trusted type. Otherwise the
+        snapshot is stored provisionally in the member namespace, where it can
+        never block a later canonical registration of the same content.
+        """
+
+        _refuse_reserved_object_id(object_id)
+        normalized_key(object_id, code="OBJECT_ID_REQUIRED")
+        canonical = self._canonical_or_none(object_id, content_hash(payload))
+        if canonical is not None:
+            return canonical, False
+        snapshot = self._save_version(
+            object_id=member_snapshot_object_id(object_type, object_id),
+            object_type=object_type,
+            payload=payload,
+            previous_version_hash=None,
+            registered_by_role=MEMBER_ROLE,
+        )
+        return snapshot, True
+
+    def _canonical_or_none(
+        self, object_id: str, version_hash: str
+    ) -> EvidenceObjectVersion | None:
+        try:
+            return self.repository.get_object_version(object_id, version_hash)
+        except EvidenceFeedbackRepositoryError as exc:
+            if str(exc) == "OBJECT_VERSION_NOT_FOUND":
+                return None
+            raise
+
+    def _save_version(
+        self,
+        *,
+        object_id: str,
+        object_type: ObjectType,
+        payload: dict[str, Any],
+        previous_version_hash: str | None,
+        registered_by_role: str | None,
+    ) -> EvidenceObjectVersion:
         now = self.clock()
         version = EvidenceObjectVersion(
             object_id=object_id.strip(),
@@ -87,7 +164,9 @@ class EvidenceFeedbackService:
         source_partner_id: str | None = None,
         defect_kind: str | None = None,
         severity: str = "normal",
+        submitter_role: str | None = None,
     ) -> SubmissionResult:
+        _refuse_reserved_object_id(object_id)
         if not statement.strip():
             raise ValueError("FEEDBACK_STATEMENT_REQUIRED")
         # Refused identically by both stores (422), before any store access.
@@ -105,12 +184,26 @@ class EvidenceFeedbackService:
         ):
             validate_label(label, code=f"{name}_INVALID_CHARACTERS")
         normalized_key(object_id, code="OBJECT_ID_REQUIRED")
-        persisted = self.repository.get_object_version(
-            object_id,
-            object_version_hash,
-        )
-        if persisted.object_type is not object_type:
-            raise ValueError("OBJECT_TYPE_MISMATCH")
+        if submitter_role == MEMBER_ROLE:
+            # A member's claimed type never decides triage when a canonical
+            # version exists: that version's type is the trusted one.
+            canonical = self._canonical_or_none(object_id, object_version_hash)
+            if canonical is not None:
+                object_type, type_source = canonical.object_type, TYPE_SOURCE_REGISTERED
+            else:
+                self.repository.get_object_version(
+                    member_snapshot_object_id(object_type, object_id),
+                    object_version_hash,
+                )
+                type_source = TYPE_SOURCE_MEMBER_CLAIMED
+        else:
+            persisted = self.repository.get_object_version(
+                object_id,
+                object_version_hash,
+            )
+            if persisted.object_type is not object_type:
+                raise ValueError("OBJECT_TYPE_MISMATCH")
+            type_source = TYPE_SOURCE_REGISTERED
 
         fingerprint = feedback_fingerprint(
             object_id=object_id,
@@ -138,6 +231,8 @@ class EvidenceFeedbackService:
                 source_partner_id=source_partner_id,
                 defect_kind=defect_kind,
                 severity=severity,
+                submitter_role=submitter_role,
+                object_type_source=type_source,
             ),
             lock_key=f"fingerprint:{fingerprint}",
         )
@@ -158,6 +253,8 @@ class EvidenceFeedbackService:
         source_partner_id: str | None,
         defect_kind: str | None,
         severity: str,
+        submitter_role: str | None = None,
+        object_type_source: str | None = None,
     ) -> SubmissionResult:
         existing = self.repository.find_by_fingerprint(fingerprint)
         if existing is not None:
@@ -181,6 +278,16 @@ class EvidenceFeedbackService:
             source_partner_id=source_partner_id,
             defect_kind=defect_kind,
         )
+        if (
+            object_type_source == TYPE_SOURCE_MEMBER_CLAIMED
+            and disposition is Disposition.AUTO_CORRECTABLE
+        ):
+            # A type only the member claimed never opens the deterministic
+            # path: the case goes to scientific review until the owner confirms.
+            disposition, lane = (
+                Disposition.NEEDS_SCIENTIFIC_REVIEW,
+                ReviewLane.SCIENTIFIC,
+            )
         now = self.clock()
         case = EvidenceFeedbackCase(
             case_id=f"efc-{fingerprint[:24]}",
@@ -204,6 +311,8 @@ class EvidenceFeedbackService:
             source_partner_id=source_partner_id,
             defect_kind=defect_kind,
             severity=severity,
+            submitter_role=submitter_role,
+            object_type_source=object_type_source,
         )
         self.repository.save_case(case)
         self.repository.append_event(
@@ -298,6 +407,8 @@ class EvidenceFeedbackService:
         """
 
         if case.status is CaseStatus.GOVERNED_REVIEW_REQUIRED:
+            return "GOVERNED_REVIEW_REQUIRED"
+        if case.object_type_source == TYPE_SOURCE_MEMBER_CLAIMED:
             return "GOVERNED_REVIEW_REQUIRED"
         if case.disposition is not Disposition.AUTO_CORRECTABLE:
             return "GOVERNED_REVIEW_REQUIRED"
