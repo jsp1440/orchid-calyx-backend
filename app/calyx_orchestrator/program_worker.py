@@ -15,10 +15,13 @@ from .program_models import CalyxProgram, CalyxProgramJob
 from .program_repository import PersistentProgramRepository
 from .program_retry import (
     DEAD_LETTER_BLOCKER,
-    DEAD_LETTER_REPAIR_SCHEMA,
+    DEAD_LETTER_OWNER_ACTION_SCHEMA,
+    OWNER_ACTION_BLOCKER,
     build_retry_backoff_record,
     dead_letter_repair_fingerprint,
     dead_letter_repair_job_key,
+    in_retry_backoff,
+    is_owner_action_record,
     prior_failures,
 )
 
@@ -90,7 +93,9 @@ class PersistentProgramWorker:
             if not allowed_role_keys:
                 return None
             query = query.where(CalyxProgramJob.role_key.in_(tuple(sorted(allowed_role_keys))))
-        candidates = self.db.scalars(query).all()
+        # populate_existing: evaluate the rows as they are now, not as this
+        # session's identity map last saw them.
+        candidates = self.db.scalars(query.execution_options(populate_existing=True)).all()
         candidates.sort(key=lambda item: runnable_rank[item.program_job_id])
 
         active_query = select(CalyxProgramJob).join(
@@ -102,6 +107,12 @@ class PersistentProgramWorker:
         active = [self._identity(item) for item in active_rows]
 
         for candidate in candidates:
+            # Re-check backoff on the row this claim will fence on, not only
+            # on the schedule projection read earlier.
+            if in_retry_backoff(candidate.status, candidate.evidence_json, now):
+                continue
+            observed_attempts = candidate.attempt_count
+            observed_evidence = candidate.evidence_json
             decision = self.policy.evaluate(self._identity(candidate), active)
             if not decision.admitted:
                 continue
@@ -110,6 +121,15 @@ class PersistentProgramWorker:
                 CalyxProgramJob.program_job_id == candidate.program_job_id,
                 CalyxProgramJob.status == "queued",
                 CalyxProgramJob.outcome.is_(None),
+                # Compare-and-swap on what was evaluated. Any claim, failed
+                # attempt or backoff written since then changes these, so a
+                # concurrent worker's fresh backoff cannot be claimed through.
+                CalyxProgramJob.attempt_count == observed_attempts,
+                (
+                    CalyxProgramJob.evidence_json.is_(None)
+                    if observed_evidence is None
+                    else CalyxProgramJob.evidence_json == observed_evidence
+                ),
             ]
             if owner is not None:
                 owned_program_ids = select(CalyxProgram.program_id).where(CalyxProgram.owner == owner)
@@ -418,8 +438,7 @@ class PersistentProgramWorker:
         self.db.refresh(job)
         return job
 
-    def recover_expired_leases(self, *, now=None, owner: str | None = None) -> int:
-        now = now or utcnow()
+    def _select_expired_leases(self, *, now, owner: str | None) -> list[CalyxProgramJob]:
         query = (
             select(CalyxProgramJob)
             .join(CalyxProgram, CalyxProgram.program_id == CalyxProgramJob.program_id)
@@ -429,31 +448,65 @@ class PersistentProgramWorker:
                 CalyxProgramJob.lease_expires_at.is_not(None),
                 CalyxProgramJob.lease_expires_at <= now,
             )
+            .execution_options(populate_existing=True)
         )
         if owner is not None:
             query = query.where(CalyxProgram.owner == owner)
-        expired = self.db.scalars(query).all()
+        return list(self.db.scalars(query).all())
+
+    def recover_expired_leases(self, *, now=None, owner: str | None = None) -> int:
+        now = now or utcnow()
+        observed = [
+            (job.program_job_id, job.lease_token, job.attempt_count >= job.max_attempts)
+            for job in self._select_expired_leases(now=now, owner=owner)
+        ]
         recovered = 0
-        for job in expired:
-            job.lease_owner = None
-            job.lease_token = None
-            job.lease_expires_at = None
-            if job.attempt_count >= job.max_attempts:
-                self._dead_letter(job, now=now, failures=prior_failures(job.evidence_json))
-            else:
-                job.status = "queued"
+        for program_job_id, token, exhausted in observed:
+            # Fence on the expired lease exactly as observed. If its holder
+            # released it (with a backoff record) or it was recovered
+            # elsewhere in the meantime, this matches nothing and the newer
+            # state, including its failure history, is left alone.
+            fenced = (
+                self.db.query(CalyxProgramJob)
+                .filter(
+                    CalyxProgramJob.program_job_id == program_job_id,
+                    CalyxProgramJob.status == "running",
+                    CalyxProgramJob.outcome.is_(None),
+                    (
+                        CalyxProgramJob.lease_token.is_(None)
+                        if token is None
+                        else CalyxProgramJob.lease_token == token
+                    ),
+                    CalyxProgramJob.lease_expires_at.is_not(None),
+                    CalyxProgramJob.lease_expires_at <= now,
+                )
+                .update(
+                    {
+                        CalyxProgramJob.lease_owner: None,
+                        CalyxProgramJob.lease_token: None,
+                        CalyxProgramJob.lease_expires_at: None,
+                        # Exhausted jobs stay running (unclaimable) until the
+                        # dead letter below is written in this transaction.
+                        CalyxProgramJob.status: "running" if exhausted else "queued",
+                    },
+                    synchronize_session=False,
+                )
+            )
+            if not fenced:
+                continue
             recovered += 1
+            if exhausted:
+                job = self.db.get(CalyxProgramJob, program_job_id)
+                if job is None:
+                    continue
+                self.db.refresh(job)
+                self._dead_letter(job, now=now, failures=prior_failures(job.evidence_json))
         if recovered:
             self.db.commit()
         return recovered
 
     def _dead_letter(self, job: CalyxProgramJob, *, now, failures: list[dict]) -> None:
-        """Dead-letter ``job``, block its program, and record one repair job.
-
-        Idempotent: the repair job is keyed on the dead-lettered job's id and
-        guarded by the program's unique job-key constraint, so re-running the
-        recovery never creates a second follow-up.
-        """
+        """Dead-letter ``job``, block its program, and record one owner action."""
         job.status = "blocked"
         job.outcome = "DEAD_LETTER"
         job.blocker = DEAD_LETTER_BLOCKER
@@ -467,11 +520,23 @@ class PersistentProgramWorker:
         self.block_program_for_dead_letter(job, now=now)
 
     def block_program_for_dead_letter(self, job: CalyxProgramJob, *, now=None) -> CalyxProgramJob | None:
-        """Block the program of a dead-lettered job and ensure one repair job.
+        """Block the program of a dead-lettered job and record one owner action.
 
-        Returns the follow-up repair job, or ``None`` when ``job`` is not a
-        dead letter or its program no longer exists or was already completed
-        or cancelled by its owner. Does not commit.
+        The follow-up is an explicit owner-action record, not a runnable job.
+        There is no repair executor, and re-running the capability that just
+        failed its full attempt budget is exactly what the dead letter exists
+        to stop; the governed path is a new program revision. So the record is
+        ``blocked`` with ``blocker=OWNER_ACTION_REQUIRED:DEAD_LETTER`` and no
+        outcome, which every owner surface (program snapshot, portfolio
+        blockers and next actions) already shows. It is never schedulable
+        (terminal status, ``max_attempts=0``), and the owner resolves it by
+        recording an outcome on it (``POST /{program_id}/jobs/{job_key}/outcome``).
+
+        Returns the record, or ``None`` when ``job`` is not a dead letter, is
+        itself an owner-action record (no chaining), or its program no longer
+        exists or was already completed or cancelled. Idempotent: the record
+        is keyed on the dead job's id under the program's unique job-key
+        constraint. Does not commit.
         """
         if job.outcome != "DEAD_LETTER":
             return None
@@ -479,59 +544,70 @@ class PersistentProgramWorker:
         program = self.db.get(CalyxProgram, job.program_id)
         if program is None:
             return None
-        # Settle dependants first: waiting jobs downstream of the dead letter
-        # become BLOCKED/UPSTREAM_JOB_FAILED, as for any other failed outcome.
-        # This only acts while the program is still running.
-        PersistentProgramRepository(self.db).release_ready_jobs(program_id=program.program_id)
+        # Settle every dependant, transitively and regardless of row order.
+        PersistentProgramRepository(self.db).settle_failed_dependants(program_id=program.program_id)
         if program.status in {"completed", "cancelled"}:
             # The owner already ended this program; nothing is left to repair.
             return None
         program.status = "blocked"
-        reason = f"{DEAD_LETTER_BLOCKER}:{job.job_key}"
+        if is_owner_action_record(job.job_key, job.input_json):
+            # A follow-up record never produces another follow-up.
+            return None
 
-        repair_key = dead_letter_repair_job_key(job.program_job_id)
+        record_key = dead_letter_repair_job_key(job.program_job_id)
         existing = self.db.scalar(
             select(CalyxProgramJob).where(
                 CalyxProgramJob.program_id == program.program_id,
-                CalyxProgramJob.job_key == repair_key,
+                CalyxProgramJob.job_key == record_key,
             )
         )
         if existing is not None:
             return existing
-        repair = CalyxProgramJob(
+        reason = f"{DEAD_LETTER_BLOCKER}:{job.job_key}"
+        record = CalyxProgramJob(
             program_id=program.program_id,
-            job_key=repair_key,
+            job_key=record_key,
             role_key=job.role_key,
-            title=f"Repair dead-lettered job {job.job_key}"[:240],
+            title=f"Owner action: dead-lettered job {job.job_key}"[:240],
             repository=job.repository,
             branch=job.branch,
-            mutating=job.mutating,
+            mutating=False,
+            # No reserved assignment keys: this manifest describes the record
+            # and is never turned into an assignment.
             input_json=json.dumps(
                 {
-                    "schema": DEAD_LETTER_REPAIR_SCHEMA,
+                    "schema": DEAD_LETTER_OWNER_ACTION_SCHEMA,
+                    "record_kind": "owner_action",
                     "reason": reason,
                     "dead_letter_program_job_id": job.program_job_id,
                     "dead_letter_job_key": job.job_key,
-                    "attempt_count": job.attempt_count,
-                    "max_attempts": job.max_attempts,
+                    "attempts_used": job.attempt_count,
+                    "attempt_limit": job.max_attempts,
                     "dead_lettered_at": now.isoformat(),
-                    "execution_mode": "governed_repair_revision_required",
                     "automatic_retry": False,
+                    "resolution": (
+                        "Create a governed program revision that repairs or replaces "
+                        "the failed capability, then record an outcome on this record."
+                    ),
                 },
                 sort_keys=True,
                 separators=(",", ":"),
             ),
             work_fingerprint=dead_letter_repair_fingerprint(job.program_job_id),
-            # Never released into a blocked program: it stays an inert,
-            # reviewable record until a governed revision acts on it.
-            status="waiting",
-            human_action=DEAD_LETTER_HUMAN_ACTION,
+            status="blocked",
+            outcome=None,
+            blocker=OWNER_ACTION_BLOCKER,
+            human_action=(
+                f"Dead letter {reason} blocked program {program.program_id}. "
+                f"{DEAD_LETTER_HUMAN_ACTION} Then record an outcome on job "
+                f"{record_key} to close this owner action."
+            ),
             attempt_count=0,
-            max_attempts=job.max_attempts,
+            max_attempts=0,
         )
-        self.db.add(repair)
+        self.db.add(record)
         self.db.flush()
-        return repair
+        return record
 
     @staticmethod
     def _identity(job: CalyxProgramJob) -> EngineeringWorkIdentity:

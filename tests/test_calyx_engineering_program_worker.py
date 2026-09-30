@@ -345,7 +345,22 @@ def _repair_jobs(db: Session, program_id: str) -> list[CalyxProgramJob]:
     ]
 
 
-def test_dead_letter_blocks_program_and_writes_exactly_one_repair_job(db: Session) -> None:
+def _force_dead_letter(db: Session, worker: PersistentProgramWorker, job: CalyxProgramJob) -> int:
+    """Put ``job`` into an expired, attempt-exhausted lease and recover it."""
+    job.status = "running"
+    job.lease_owner = "forced"
+    job.lease_token = "forced-token"
+    job.attempt_count = max(job.max_attempts, 1)
+    job.max_attempts = max(job.max_attempts, 1)
+    job.lease_expires_at = utcnow() - timedelta(seconds=1)
+    db.commit()
+    return worker.recover_expired_leases()
+
+
+def test_dead_letter_blocks_program_and_writes_exactly_one_owner_action(db: Session) -> None:
+    from app.calyx_orchestrator.assignment_factory import RESERVED_JOB_INPUT_KEYS
+    from app.calyx_orchestrator.portfolio import orchestration_portfolio
+
     program = _start(
         db,
         [
@@ -367,31 +382,139 @@ def test_dead_letter_blocks_program_and_writes_exactly_one_repair_job(db: Sessio
     jobs = _jobs_of(db, program.program_id)
     assert jobs["one"].outcome == "DEAD_LETTER"
     assert jobs["one"].blocker == "PROGRAM_JOB_ATTEMPTS_EXHAUSTED"
-    # The dependant is settled rather than left waiting forever.
     assert jobs["two"].status == "blocked"
     assert jobs["two"].blocker == "UPSTREAM_JOB_FAILED"
 
-    repairs = _repair_jobs(db, program.program_id)
-    assert len(repairs) == 1
-    repair = repairs[0]
-    assert repair.job_key == f"dead-letter-repair:{claimed.program_job_id}"
-    assert repair.status == "waiting"
-    assert repair.outcome is None
-    manifest = json.loads(repair.input_json or "{}")
-    assert manifest["schema"] == "calyx.program-dead-letter-repair.v1"
+    records = _repair_jobs(db, program.program_id)
+    assert len(records) == 1
+    record = records[0]
+    assert record.job_key == f"dead-letter-repair:{claimed.program_job_id}"
+    # An explicit owner-action record: terminal for automation, unresolved.
+    assert record.status == "blocked"
+    assert record.outcome is None
+    assert record.blocker == "OWNER_ACTION_REQUIRED:DEAD_LETTER"
+    assert record.max_attempts == 0 and record.attempt_count == 0
+    assert f"record an outcome on job {record.job_key}" in (record.human_action or "")
+    manifest = json.loads(record.input_json or "{}")
+    assert manifest["schema"] == "calyx.program-dead-letter-owner-action.v1"
+    assert manifest["record_kind"] == "owner_action"
     assert manifest["reason"] == "PROGRAM_JOB_ATTEMPTS_EXHAUSTED:one"
     assert manifest["dead_letter_program_job_id"] == claimed.program_job_id
     assert manifest["automatic_retry"] is False
+    # The claim-time reserved-key check can no longer reject it.
+    assert not set(manifest) & RESERVED_JOB_INPUT_KEYS
 
-    # Idempotent on re-run: recovery finds nothing new, re-blocking is a no-op,
-    # and the blocked program exposes nothing claimable.
+    # Surfaced for the owner: a portfolio blocker with its exact next action.
+    portfolio = orchestration_portfolio(db, owner="owner")
+    blockers = {item["job_key"]: item for item in portfolio["blockers"]}
+    assert blockers[record.job_key]["code"] == "OWNER_ACTION_REQUIRED:DEAD_LETTER"
+    assert blockers[record.job_key]["next_action"] == record.human_action
+    assert record.human_action in portfolio["next_actions"]
+
+    # Idempotent on re-run, and nothing is claimable.
     assert worker.recover_expired_leases() == 0
     again = worker.block_program_for_dead_letter(jobs["one"])
     db.commit()
-    assert again is not None and again.program_job_id == repair.program_job_id
+    assert again is not None and again.program_job_id == record.program_job_id
     assert len(_repair_jobs(db, program.program_id)) == 1
     assert len(_jobs_of(db, program.program_id)) == 3
     assert worker.claim(worker_id="w2") is None
+
+    # Actionable: the owner closes it through the existing outcome API.
+    resolved = PersistentProgramRepository(db).record_outcome(
+        owner="owner",
+        program_id=program.program_id,
+        job_key=record.job_key,
+        outcome="NO_OP",
+        evidence={"resolution": "governed revision created"},
+    )
+    assert resolved.status == "completed" and resolved.outcome == "NO_OP"
+
+
+def test_owner_action_record_never_chains_even_when_forced_to_dead_letter(db: Session) -> None:
+    program = _start(db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "branch", True)])
+    worker = PersistentProgramWorker(db)
+    first = worker.claim(worker_id="w1")
+    assert first is not None
+    assert _force_dead_letter(db, worker, first) == 1
+    [record] = _repair_jobs(db, program.program_id)
+
+    # Force the record itself through a dead letter four times over.
+    for _ in range(4):
+        _force_dead_letter(db, worker, record)
+        db.refresh(record)
+        record.outcome = None  # re-arm for the next forced round
+        db.commit()
+    assert len(_repair_jobs(db, program.program_id)) == 1
+    assert len(_jobs_of(db, program.program_id)) == 2
+
+
+@pytest.mark.parametrize("grandchild_first", [False, True])
+def test_dead_letter_blocks_every_descendant_in_either_spec_order(
+    db: Session, grandchild_first: bool
+) -> None:
+    specs = {
+        "root": ProgramJobSpec("root", "backend_engineer", "root", "repo-a", "b1", False),
+        "child": ProgramJobSpec("child", "backend_engineer", "child", "repo-a", "b2", False),
+        "grandchild": ProgramJobSpec("grandchild", "backend_engineer", "gc", "repo-a", "b3", False),
+    }
+    order = ["root", "grandchild", "child"] if grandchild_first else ["root", "child", "grandchild"]
+    program = _start(
+        db,
+        [specs[key] for key in order],
+        dependencies=[("root", "child"), ("child", "grandchild")],
+    )
+    worker = PersistentProgramWorker(db)
+    root = worker.claim(worker_id="w1")
+    assert root is not None and root.job_key == "root"
+    assert _force_dead_letter(db, worker, root) == 1
+    jobs = _jobs_of(db, program.program_id)
+    for key in ("child", "grandchild"):
+        assert jobs[key].status == "blocked", key
+        assert jobs[key].blocker == "UPSTREAM_JOB_FAILED", key
+    assert not [job for job in jobs.values() if job.status == "waiting"]
+
+
+def test_expired_lease_recovery_does_not_overwrite_a_concurrent_release(tmp_path) -> None:
+    # Recovery reads an expired lease; before it writes, the lease holder
+    # releases the attempt with a backoff record. Recovery must not then
+    # re-queue the row by primary key and erase that failure history.
+    from sqlalchemy.orm import sessionmaker
+
+    engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'race.db'}")
+    Base.metadata.create_all(
+        engine,
+        tables=[CalyxProgram.__table__, CalyxProgramJob.__table__, CalyxProgramDependency.__table__],
+    )
+    Sessions = sessionmaker(engine)
+    with Sessions() as holder_db, Sessions() as recovery_db:
+        _start(holder_db, [ProgramJobSpec("one", "backend_engineer", "one", "repo-a", "b", True)])
+        holder = PersistentProgramWorker(holder_db)
+        claimed = holder.claim(worker_id="holder", lease_seconds=60)
+        assert claimed is not None
+        job_id, token = claimed.program_job_id, claimed.lease_token
+        claimed.lease_expires_at = utcnow() - timedelta(seconds=1)
+        holder_db.commit()
+
+        class RacingRecovery(PersistentProgramWorker):
+            def _select_expired_leases(self, *, now, owner):
+                rows = super()._select_expired_leases(now=now, owner=owner)
+                holder.release_failed_attempt(
+                    program_job_id=job_id,
+                    worker_id="holder",
+                    lease_token=token,
+                    error_code="SYNTHETIC_EXECUTOR_FAILURE",
+                    exception_type="RuntimeError",
+                )
+                return rows
+
+        assert RacingRecovery(recovery_db).recover_expired_leases() == 0
+        final = holder_db.get(CalyxProgramJob, job_id)
+        holder_db.refresh(final)
+        assert final.status == "queued"
+        record = json.loads(final.evidence_json or "{}")
+        assert record["schema"] == "calyx.program-job-retry-backoff.v1"
+        assert record["failures"][0]["error_code"] == "SYNTHETIC_EXECUTOR_FAILURE"
 
 
 def test_dead_letter_in_cancelled_program_writes_no_repair_job(db: Session) -> None:

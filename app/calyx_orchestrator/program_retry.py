@@ -22,6 +22,8 @@ from typing import Any
 
 RETRY_BACKOFF_SCHEMA = "calyx.program-job-retry-backoff.v1"
 DEAD_LETTER_REPAIR_SCHEMA = "calyx.program-dead-letter-repair.v1"
+DEAD_LETTER_OWNER_ACTION_SCHEMA = "calyx.program-dead-letter-owner-action.v1"
+OWNER_ACTION_BLOCKER = "OWNER_ACTION_REQUIRED:DEAD_LETTER"
 RETRY_BACKOFF_BASE_SECONDS = 60
 RETRY_BACKOFF_MAX_SECONDS = 3600
 DEAD_LETTER_BLOCKER = "PROGRAM_JOB_ATTEMPTS_EXHAUSTED"
@@ -126,3 +128,11 @@ def dead_letter_repair_fingerprint(program_job_id: str) -> str:
     return hashlib.sha256(
         f"{DEAD_LETTER_REPAIR_SCHEMA}|{program_job_id}".encode()
     ).hexdigest()
+
+
+def is_owner_action_record(job_key: str, input_json: str | None) -> bool:
+    """Whether a program job row is a dead-letter follow-up record."""
+    if job_key.startswith(DEAD_LETTER_REPAIR_JOB_KEY_PREFIX):
+        return True
+    record = _loads(input_json)
+    return isinstance(record, dict) and record.get("record_kind") == "owner_action"

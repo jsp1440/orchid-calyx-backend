@@ -153,8 +153,12 @@ jobs:
           echo "Suppressed (dedup): ${{ steps.reconcile.outputs.suppressed_count }}"
           echo "Rejected: ${{ steps.reconcile.outputs.rejected_count }}"
           echo "NO-API mode: ${{ steps.reconcile.outputs.no_api_mode }}"
+          echo "Queue conflicts: ${{ steps.reconcile.outputs.conflict_count }}"
 
           if [ -f "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" ]; then
-            jq '{schema, admitted_count, suppressed_count, bridge_status, no_api_mode, conflicts: (.report.bridge_result.conflicts // [])}' \
+            jq '{schema, admitted_count, suppressed_count, bridge_status, no_api_mode, conflict_count}' \
+              "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" || true
+            # One line per contradictory issue with the exact relabel that fixes it.
+            jq -r '.conflict_follow_ups[]? | "CONFLICT #\(.issue): \(.relabel_command | join(" "))"' \
               "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" || true
           fi
