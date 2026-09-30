@@ -24,3 +24,12 @@ wheels/
 venv/
 ENV/
 .pythonlibs/
+
+# Exact occurrence-coordinate outputs must never be committed (this repository
+# is public). See docs/privacy/TRACKED-LOCALITY-REMEDIATION.md; the tracked-file
+# guard is scripts/check_no_precise_coordinates.py.
+orchid_atlas.html
+orchid_atlas_RESTRICTED_EXACT.html
+orchid_points.csv
+ecuador_orchids.geojson
+ecuador_orchids.geojson.json
