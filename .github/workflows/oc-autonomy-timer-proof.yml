@@ -56,6 +56,9 @@ jobs:
       # tests/conftest.py already fails, rather than skips, when CI=true.
       # This makes the same rule explicit for this job.
       OC_REQUIRE_POSTGRES: "1"
+      # Strict: D6, D7 and D7-crash are fixed (#1710), so each is now a hard
+      # assertion. A regression to any of them fails this job, not a warning.
+      OC_AUTPROOF_REQUIRE_DEFECT_FIXES: "1"
       OC_AUTPROOF_EVIDENCE: artifacts/program-autonomy-timer-proof.json
     steps:
       # Tag pins (@v4/@v5), matching the repository convention that
@@ -111,10 +114,14 @@ jobs:
               "known_defects": [d["id"] for d in report["known_defects"]],
               "lost_claim_races": report["claims"]["lost_claim_races"],
           }, sort_keys=True))
-          # Open known defects never pass silently: each is annotated on the run.
-          # Set OC_AUTPROOF_REQUIRE_DEFECT_FIXES=1 to make them fail the job.
+          # Open known defects never pass silently: each is annotated on the run,
+          # and with OC_AUTPROOF_REQUIRE_DEFECT_FIXES=1 (set above) any one fails it.
           for item in report["known_defects"]:
-              print(f"::warning title=Known autonomy defect {item['id']}::{item['observed']}")
+              print(f"::error title=Known autonomy defect {item['id']}::{item['observed']}")
+          strict = os.environ.get("OC_AUTPROOF_REQUIRE_DEFECT_FIXES", "").strip().lower() in {"1", "true", "yes"}
+          if strict and (report["known_defects"] or not report["parameters"]["require_defect_fixes"]):
+              print("::error::strict mode: open known defects, or the proof did not run strict")
+              sys.exit(1)
           if report["status"] != "PASS" or len(cycles) < 2 or min(cycles.values()) < 10:
               sys.exit(1)
           PY
