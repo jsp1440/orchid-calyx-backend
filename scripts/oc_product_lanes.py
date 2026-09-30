@@ -19,6 +19,12 @@ The lane order is the owner's, recorded here so it survives a session:
     → Research Station → Matrix ID → Atlas → Interaction Graph → Vision Lab
     → Improvement Discovery Loop
 
+The two cross-cutting bindings are deliberately explicit as well.  They are
+conservatively ranked at P5 so adding a truthful owner does not silently
+outrank an established product lane: ``platform`` covers the composition root
+and ``university-education`` covers the University surface.  Raising either
+priority is a separate owner decision, not something discovery may infer.
+
 "unless repository dependencies require another sequence" is not encoded here
 and must not be: a dependency edge is a fact about two specific tasks, and the
 dependency graph the controller already runs is where that belongs.
@@ -187,6 +193,19 @@ PRODUCT_LANES: tuple[ProductLane, ...] = (
             "scripts/run_live_dispatch_canary.py",
         ),
         test_name_markers=("improvement", "self_audit", "work_discovery", "live_dispatch"),
+    ),
+    ProductLane(
+        key="platform",
+        name="Platform / Cross-cutting API",
+        rank=5,
+        path_prefixes=("app/main.py",),
+    ),
+    ProductLane(
+        key="university-education",
+        name="University / Education",
+        rank=5,
+        path_prefixes=("app/university/",),
+        test_name_markers=("university", "learner_auth", "education"),
     ),
 )
 
