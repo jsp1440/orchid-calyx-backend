@@ -2,36 +2,26 @@ name: OC Autonomy Timer Proof
 
 # Proves the program-autonomy supervisor's own run_forever timer completes at
 # least ten consecutive cycles per supervisor with no manual trigger. It runs
-# real supervisor subprocesses against a disposable PostgreSQL, with a SIGKILL,
-# a fake provider 503, a dead-letter and duplicate-lease attempts injected.
+# real supervisor subprocesses against a disposable PostgreSQL from a shared
+# barrier. It injects a controlled concurrent claim, a SIGKILL mid-lease,
+# duplicate-lease and dead-token attempts, provider failures (503,
+# ConnectionError, httpx) and a dead-letter. Negative controls then show the
+# proof fails when the claim guard or the lease-token check is removed.
 # The proof is NO-API: fake providers only, and a socket guard allows only the
 # loopback database. It uses no secrets.
 
+# No path filter, on purpose. The proof imports runtime.program_autonomy_worker,
+# and through it runtime/__init__.py and everything that imports (health,
+# governance, mission, scheduler and their own imports), app.database,
+# app.security and the whole calyx_orchestrator package. A path list is a claim
+# about that import closure which nothing checks mechanically, and an earlier
+# list here already missed several entries. The job costs about 6 runner
+# minutes and runs in parallel with the other checks.
 on:
   pull_request:
     branches: [main, oc-autonomous-integration]
-    paths:
-      - "app/calyx_orchestrator/**"
-      - "app/database.py"
-      - "runtime/program_autonomy_worker.py"
-      - "scripts/oc_program_autonomy_timer_proof.py"
-      - "tests/test_program_autonomy_timer_proof.py"
-      - "tests/conftest.py"
-      - "requirements.txt"
-      - "requirements-dev.txt"
-      - ".github/workflows/oc-autonomy-timer-proof.yml"
   push:
     branches: [main, oc-autonomous-integration]
-    paths:
-      - "app/calyx_orchestrator/**"
-      - "app/database.py"
-      - "runtime/program_autonomy_worker.py"
-      - "scripts/oc_program_autonomy_timer_proof.py"
-      - "tests/test_program_autonomy_timer_proof.py"
-      - "tests/conftest.py"
-      - "requirements.txt"
-      - "requirements-dev.txt"
-      - ".github/workflows/oc-autonomy-timer-proof.yml"
   workflow_dispatch:
 
 permissions:
@@ -45,7 +35,7 @@ jobs:
   timer-proof:
     name: Supervisor timer proof (>=10 consecutive cycles)
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     services:
       postgres:
         image: postgres:16
@@ -68,6 +58,8 @@ jobs:
       OC_REQUIRE_POSTGRES: "1"
       OC_AUTPROOF_EVIDENCE: artifacts/program-autonomy-timer-proof.json
     steps:
+      # Tag pins (@v4/@v5), matching the repository convention that
+      # oc-critical-suites.yml and the other validation workflows follow.
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
@@ -116,8 +108,13 @@ jobs:
               "cycles": cycles,
               "duration_seconds": report["duration_seconds"],
               "postgres": report["postgres"]["server_version"],
-              "defects_observed": [d["id"] for d in report["defects_observed"]],
+              "known_defects": [d["id"] for d in report["known_defects"]],
+              "lost_claim_races": report["claims"]["lost_claim_races"],
           }, sort_keys=True))
+          # Open known defects never pass silently: each is annotated on the run.
+          # Set OC_AUTPROOF_REQUIRE_DEFECT_FIXES=1 to make them fail the job.
+          for item in report["known_defects"]:
+              print(f"::warning title=Known autonomy defect {item['id']}::{item['observed']}")
           if report["status"] != "PASS" or len(cycles) < 2 or min(cycles.values()) < 10:
               sys.exit(1)
           PY
