@@ -17,7 +17,6 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
-import os
 import random
 import socket
 import threading
@@ -25,7 +24,6 @@ import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
-from uuid import uuid4
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -44,6 +42,11 @@ from app.source_federation.acquisition_ledger import (
     StaleLeaseError,
 )
 from app.source_federation.acquisition_models import AcquisitionLedgerRow
+from tests.acquisition_ledger_backends import (
+    LEDGER_BACKENDS,
+    ledger_engine_fixture,  # noqa: F401 - the ``ledger_engine`` fixture
+    migrated_postgres_engine,
+)
 
 # Every SharedFirecrawlFederationService defaults to this worker id, so a
 # fence on the holder name alone would not distinguish a stale worker from
@@ -62,7 +65,10 @@ def _no_network(monkeypatch):
     monkeypatch.setattr(socket, "create_connection", _refuse)
 
 
-def _ledger():
+def _ledger(engine=None):
+    """A ledger on ``engine`` (``ledger_engine``), else a fresh SQLite one."""
+    if engine is not None:
+        return AcquisitionLedger(sessionmaker(bind=engine)())
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
     return AcquisitionLedger(sessionmaker(bind=engine)())
@@ -122,8 +128,11 @@ WORKER_PAIRS = pytest.mark.parametrize(
 
 
 @WORKER_PAIRS
-def test_stale_complete_is_refused_and_leaves_live_lease_intact(a_worker, b_worker):
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_stale_complete_is_refused_and_leaves_live_lease_intact(
+    a_worker, b_worker, ledger_engine
+):
+    ledger = _ledger(ledger_engine)
     a, b = _a_expired_then_b_claims(ledger, a_worker=a_worker, b_worker=b_worker)
     before = _snapshot(_row(ledger))
 
@@ -145,8 +154,11 @@ def test_stale_complete_is_refused_and_leaves_live_lease_intact(a_worker, b_work
 
 
 @WORKER_PAIRS
-def test_stale_fail_is_refused_and_leaves_live_lease_intact(a_worker, b_worker):
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_stale_fail_is_refused_and_leaves_live_lease_intact(
+    a_worker, b_worker, ledger_engine
+):
+    ledger = _ledger(ledger_engine)
     a, _b = _a_expired_then_b_claims(ledger, a_worker=a_worker, b_worker=b_worker)
     before = _snapshot(_row(ledger))
 
@@ -164,8 +176,9 @@ def test_stale_fail_is_refused_and_leaves_live_lease_intact(a_worker, b_worker):
 
 
 @WORKER_PAIRS
-def test_live_holder_completes_after_stale_attempt(a_worker, b_worker):
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_live_holder_completes_after_stale_attempt(a_worker, b_worker, ledger_engine):
+    ledger = _ledger(ledger_engine)
     a, b = _a_expired_then_b_claims(ledger, a_worker=a_worker, b_worker=b_worker)
     with pytest.raises(StaleLeaseError):
         ledger.complete(_record(_request(), b"stale-A"), lease=a, payload_json="A")
@@ -186,8 +199,9 @@ def test_live_holder_completes_after_stale_attempt(a_worker, b_worker):
     assert _row(ledger).payload_json == "B"
 
 
-def test_live_holder_fail_still_opens_retry_window():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_live_holder_fail_still_opens_retry_window(ledger_engine):
+    ledger = _ledger(ledger_engine)
     lease = ledger.claim(_request(), worker_id=SHARED_WORKER, now=T0)
     ledger.fail(lease, retry_after_seconds=300, now=T0)
     row = _row(ledger)
@@ -201,16 +215,18 @@ def test_live_holder_fail_still_opens_retry_window():
     assert blocked.action == "retry_blocked"
 
 
-def test_expired_but_unreclaimed_lease_may_still_complete():
+@LEDGER_BACKENDS
+def test_expired_but_unreclaimed_lease_may_still_complete(ledger_engine):
     # Nobody else was authorised in the meantime, so the result is kept.
-    ledger = _ledger()
+    ledger = _ledger(ledger_engine)
     lease = ledger.claim(_request(), worker_id="slow", lease_seconds=1, now=T0)
     ledger.complete(_record(_request(), b"late"), lease=lease, payload_json="late")
     assert _row(ledger).status == "complete"
 
 
-def test_lease_cannot_be_used_twice():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_lease_cannot_be_used_twice(ledger_engine):
+    ledger = _ledger(ledger_engine)
     lease = ledger.claim(_request(), worker_id=SHARED_WORKER, now=T0)
     ledger.complete(_record(_request(), b"once"), lease=lease, payload_json="once")
     with pytest.raises(StaleLeaseError):
@@ -222,8 +238,9 @@ def test_lease_cannot_be_used_twice():
     assert row.failure_count == 0
 
 
-def test_force_refresh_lease_supersedes_nothing_it_should_not():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_force_refresh_lease_supersedes_nothing_it_should_not(ledger_engine):
+    ledger = _ledger(ledger_engine)
     first = ledger.claim(_request(), worker_id=SHARED_WORKER, now=T0)
     ledger.complete(_record(_request(), b"v1"), lease=first, payload_json="v1")
     refresh = ledger.claim(
@@ -236,8 +253,9 @@ def test_force_refresh_lease_supersedes_nothing_it_should_not():
     assert _row(ledger).payload_json == "v2"
 
 
-def test_non_lease_results_and_raw_keys_are_refused():
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_non_lease_results_and_raw_keys_are_refused(ledger_engine):
+    ledger = _ledger(ledger_engine)
     lease = ledger.claim(_request(), worker_id="w1", now=T0)
     in_flight = ledger.claim(_request("matrix"), worker_id="w2", now=T0)
     assert in_flight.action == "in_flight"
@@ -316,8 +334,9 @@ def test_claim_takeover_rereads_a_row_that_cycled_since_it_was_read(
 # --- Bounded retry -----------------------------------------------------------
 
 
-def test_insert_race_retry_is_bounded(monkeypatch):
-    ledger = _ledger()
+@LEDGER_BACKENDS
+def test_insert_race_retry_is_bounded(monkeypatch, ledger_engine):
+    ledger = _ledger(ledger_engine)
     commits = []
 
     def _always_lose(*_args, **_kwargs):
@@ -331,9 +350,10 @@ def test_insert_race_retry_is_bounded(monkeypatch):
     assert excinfo.value.attempts == 3
 
 
-def test_insert_race_recovers_when_the_winner_is_visible(monkeypatch):
+@LEDGER_BACKENDS
+def test_insert_race_recovers_when_the_winner_is_visible(monkeypatch, ledger_engine):
     # One lost insert, then the re-read sees the winner's live lease.
-    ledger = _ledger()
+    ledger = _ledger(ledger_engine)
     winner = AcquisitionLedger(ledger.session)
     real_commit = ledger.session.commit
     state = {"lost": False}
@@ -407,15 +427,20 @@ def _supersede_during_call(session):
     return _takeover
 
 
-def _session():
+def _session(engine=None):
+    if engine is not None:
+        return sessionmaker(bind=engine)()
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
     return sessionmaker(bind=engine)()
 
 
-def test_service_superseded_success_returns_stale_and_keeps_live_lease(caplog):
+@LEDGER_BACKENDS
+def test_service_superseded_success_returns_stale_and_keeps_live_lease(
+    caplog, ledger_engine
+):
     caplog.set_level(logging.WARNING, logger="app.federation.shared_firecrawl")
-    session = _session()
+    session = _session(ledger_engine)
     takeover = _supersede_during_call(session)
     held = {}
     mapper = Mock()
@@ -445,8 +470,9 @@ def test_service_superseded_success_returns_stale_and_keeps_live_lease(caplog):
     third.map_source.assert_not_called()
 
 
-def test_service_superseded_failure_reraises_and_keeps_live_lease():
-    session = _session()
+@LEDGER_BACKENDS
+def test_service_superseded_failure_reraises_and_keeps_live_lease(ledger_engine):
+    session = _session(ledger_engine)
     takeover = _supersede_during_call(session)
     held = {}
     mapper = Mock()
@@ -578,9 +604,10 @@ def test_transient_lock_error_on_complete_is_retried_then_bounded(tmp_path):
     engine.dispose()
 
 
-def test_service_never_fails_a_paid_success_on_ledger_error(caplog):
+@LEDGER_BACKENDS
+def test_service_never_fails_a_paid_success_on_ledger_error(caplog, ledger_engine):
     caplog.set_level(logging.ERROR, logger="app.federation.shared_firecrawl")
-    session = _session()
+    session = _session(ledger_engine)
     mapper = Mock()
     mapper.map_source.return_value = _profile()
     service = _service(session, mapper)
@@ -809,34 +836,10 @@ def test_sqlite_service_stress_discards_no_paid_result(tmp_path):
 
 @contextlib.contextmanager
 def _postgres_engine():
-    import psycopg
-    from psycopg import sql
-    from psycopg.conninfo import conninfo_to_dict, make_conninfo
-
-    base_dsn = os.environ.get("TEST_DATABASE_URL") or os.environ["DATABASE_URL"]
-    base_dsn = base_dsn.replace("postgresql+psycopg://", "postgresql://")
-    name = "acq_ledger_fence_" + uuid4().hex
-    with psycopg.connect(base_dsn, autocommit=True) as conn:
-        # UTF8 explicitly: a cluster initialised as SQL_ASCII makes psycopg
-        # return bytes, which SQLAlchemy's version probe cannot parse.
-        conn.execute(
-            sql.SQL("CREATE DATABASE {} ENCODING 'UTF8' TEMPLATE template0").format(
-                sql.Identifier(name)
-            )
-        )
-    params = conninfo_to_dict(make_conninfo(base_dsn, dbname=name))
-    engine = create_engine(
-        "postgresql+psycopg://", connect_args=params, pool_size=14, max_overflow=4
-    )
-    try:
-        Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
+    # Built by the production migration, not create_all, so these races run
+    # against the schema production will actually have.
+    with migrated_postgres_engine(pool_size=14, max_overflow=4) as engine:
         yield engine
-    finally:
-        engine.dispose()
-        with psycopg.connect(base_dsn, autocommit=True) as conn:
-            conn.execute(
-                sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name))
-            )
 
 
 @pytest.mark.requires_postgres
