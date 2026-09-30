@@ -61,7 +61,10 @@ CAPABILITY_INVENTORY: list[dict] = [
         "accessible": True,
         "notes": (
             "Show Day Phase 1: judging_locked returns 409 on judge autosave, judge submit and "
-            "the per-criterion score write (tests/test_show_day_phase1.py)"
+            "the per-criterion score write (tests/test_show_day_phase1.py), and on every "
+            "show-scoped judging write: events, status changes, classes, plants, judges, "
+            "assignments, scorecard generation and score submissions "
+            "(tests/test_show_day_judging_lock.py)"
         ),
     },
     # -------------------------------------------------------------------------

@@ -26,6 +26,7 @@ from app.models import (
     ScoreSubmission,
     Show,
 )
+from app.routers.show_day import _exhibitor_name
 from app.schemas import (
     ExhibitorCreate,
     ExhibitorOut,
@@ -105,6 +106,38 @@ def _ensure_show_unlocked(db: Session, show_id: str | None) -> None:
         )
 
 
+# A judging event only moves forward: draft -> published -> closed (the publish
+# and close routes, and the model's "draft" default). A status outside this
+# order is not one the model defines.
+EVENT_STATUS_ORDER = {"draft": 0, "published": 1, "closed": 2}
+
+
+def _check_event_status_change(event: JudgingEvent, new_status: Any) -> bool:
+    """Validate a PATCHed status; return True when it actually changes.
+
+    Closed is terminal, and no event moves backwards, so results cannot be
+    reopened for edits by an ordinary update.
+    """
+    current = event.status
+    if current == "closed" and new_status != "closed":
+        raise HTTPException(status_code=409, detail="Closed events cannot be reopened.")
+    if new_status not in EVENT_STATUS_ORDER:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown judging event status: {new_status!r}. "
+            f"Expected one of {sorted(EVENT_STATUS_ORDER)}.",
+        )
+    if new_status == current:
+        return False
+    if EVENT_STATUS_ORDER[new_status] < EVENT_STATUS_ORDER.get(current, 0):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Judging event status cannot move from {current!r} back to "
+            f"{new_status!r}.",
+        )
+    return True
+
+
 def _get_scorable_criterion(
     db: Session, criterion_id: str, value: float | None
 ) -> JudgingCriterion:
@@ -137,6 +170,7 @@ def create_judging_event(
     show = db.get(Show, show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    _ensure_show_unlocked(db, show_id)
 
     event = JudgingEvent(
         show_id=show_id,
@@ -176,7 +210,16 @@ def update_judging_event(
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
 
-    for field, val in data.model_dump(exclude_unset=True).items():
+    _ensure_show_unlocked(db, event.show_id)
+
+    changes = data.model_dump(exclude_unset=True)
+    if "status" in changes and _check_event_status_change(event, changes["status"]):
+        now = _utcnow()
+        if changes["status"] == "published":
+            event.published_at = now
+        elif changes["status"] == "closed":
+            event.closed_at = now
+    for field, val in changes.items():
         setattr(event, field, val)
 
     db.commit()
@@ -189,6 +232,7 @@ def publish_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
     if event.status == "closed":
         raise HTTPException(
             status_code=409, detail="Closed events cannot be re-published"
@@ -206,6 +250,7 @@ def close_judging_event(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
 
     event.status = "closed"
     event.closed_at = _utcnow()
@@ -224,6 +269,7 @@ def create_category(
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
 
     cat = PlantCategory(
         judging_event_id=event_id,
@@ -358,6 +404,7 @@ def create_plant(event_id: str, data: PlantCreate, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
 
     exhibitor = db.get(Exhibitor, data.exhibitor_id)
     if not exhibitor:
@@ -515,14 +562,15 @@ def get_event_results(event_id: str, db: Session = DB_DEPENDENCY):
             sum(total_by_judge.values()) / len(total_by_judge) if total_by_judge else 0
         )
 
-        exhibitor = db.get(Exhibitor, plant.exhibitor_id)
         category = db.get(PlantCategory, plant.category_id)
 
         results.append(
             {
                 "plant_id": plant.id,
                 "plant_name": plant.name,
-                "exhibitor_name": exhibitor.name if exhibitor else None,
+                # Same rule as the scan, tag and class-results routes: blind
+                # judging withholds who grew the plant.
+                "exhibitor_name": _exhibitor_name(db, event, plant.exhibitor_id),
                 "category_name": category.name if category else None,
                 "avg_weighted_score": round(avg_total, 2),
                 "num_judges": len(judge_ids),
@@ -550,6 +598,7 @@ def create_judge(data: JudgeCreate, db: Session = DB_DEPENDENCY):
     show = db.get(Show, data.show_id)
     if not show:
         raise HTTPException(status_code=404, detail="Show not found")
+    _ensure_show_unlocked(db, data.show_id)
 
     judge = Judge(
         show_id=data.show_id,
@@ -777,6 +826,7 @@ def create_judge_assignment(
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
 
     judge = db.get(Judge, data.judge_id)
     if not judge:
@@ -831,6 +881,7 @@ def generate_scorecards(event_id: str, db: Session = DB_DEPENDENCY):
     event = db.get(JudgingEvent, event_id)
     if not event:
         raise HTTPException(status_code=404, detail="Judging event not found")
+    _ensure_show_unlocked(db, event.show_id)
 
     assignments = (
         db.execute(
