@@ -45,6 +45,24 @@ completed it (the ABA case a cleared token would allow). The claim loop,
 including the retry after a unique-key insert race, is bounded; exhausting it
 raises :class:`LedgerContentionError` rather than recursing or handing out a
 lease.
+
+Schema
+------
+
+The table is created only by ``migrations/20260930_acquisition_ledger.sql``,
+never at request time. ``claim`` fails closed with
+:class:`LedgerSchemaUnavailableError` -- no lease, so the caller makes zero
+provider calls -- when:
+
+* the read-only schema check (:mod:`.acquisition_ledger_schema`) finds a
+  missing table or column, an incompatible type, or no valid NON-partial
+  unique key on ``resource_key``. A PASS is cached per engine for
+  ``SCHEMA_PASS_TTL_SECONDS``;
+* inserting a new key, the unique key is re-checked inside the inserting
+  transaction, so a key dropped after a cached PASS cannot admit a second
+  paid lease;
+* any other SQL error during the claim coincides with a failing uncached
+  schema check (a column or table dropped after the PASS).
 """
 
 from __future__ import annotations
@@ -56,11 +74,27 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case
-from sqlalchemy.exc import IntegrityError, OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from .acquisition import AcquisitionRecord, AcquisitionRequest
+from .acquisition_ledger_schema import (
+    MISSING_UNIQUE,
+    LedgerSchemaUnavailableError,
+    forget_verified_schema,
+    require_ledger_schema,
+    unique_key_present,
+)
 from .acquisition_models import AcquisitionLedgerRow
+
+__all__ = [
+    "MAX_LEDGER_ATTEMPTS",
+    "AcquisitionLedger",
+    "ClaimResult",
+    "LedgerContentionError",
+    "LedgerSchemaUnavailableError",
+    "StaleLeaseError",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -187,11 +221,23 @@ class AcquisitionLedger:
         lease_seconds: int = 120,
         now: datetime | None = None,
     ) -> ClaimResult:
+        """Coalesce ``request`` onto the ledger; only ``acquired_lease`` may fetch.
+
+        Raises :class:`LedgerSchemaUnavailableError` (no lease, nothing
+        written) when the ledger table is missing or incompatible.
+        """
+        require_ledger_schema(self.session)
         now = _utc_now(now)
         for _attempt in range(MAX_LEDGER_ATTEMPTS):
-            result = self._try_claim(
-                request, worker_id=worker_id, lease_seconds=lease_seconds, now=now
-            )
+            try:
+                result = self._try_claim(
+                    request, worker_id=worker_id, lease_seconds=lease_seconds, now=now
+                )
+            except LedgerSchemaUnavailableError:
+                raise
+            except SQLAlchemyError as exc:
+                self._raise_if_schema_unavailable(exc)
+                raise
             if result is not None:
                 return result
         raise LedgerContentionError(
@@ -217,6 +263,16 @@ class AcquisitionLedger:
             .first()
         )
         if row is None:
+            # Coalescing a new key rests entirely on the unique key: without it
+            # a concurrent worker's insert also succeeds and both pay. So it is
+            # re-checked here, in the inserting transaction, not only through
+            # the (time-bounded) cached schema PASS. On PostgreSQL the SELECT
+            # above already holds a lock on the table, so the key cannot be
+            # dropped between this check and our commit.
+            if not unique_key_present(self.session.connection()):
+                self.session.rollback()
+                forget_verified_schema(self.session)
+                raise LedgerSchemaUnavailableError((MISSING_UNIQUE,))
             token = _new_lease_token()
             row = AcquisitionLedgerRow(
                 resource_key=request.key,
@@ -297,6 +353,22 @@ class AcquisitionLedger:
             return None
         self.session.commit()
         return ClaimResult("acquired_lease", row_id, request.key, worker_id, token)
+
+    def _raise_if_schema_unavailable(self, exc: SQLAlchemyError) -> None:
+        """Re-raise a claim-time SQL error as typed when the schema is the cause.
+
+        A column or table dropped after the cached PASS surfaces as an
+        untyped ``ProgrammingError``/``OperationalError``. Re-run the full
+        check uncached; if it finds a problem, raise
+        :class:`LedgerSchemaUnavailableError` (no lease, no provider call).
+        Otherwise return and let the caller re-raise the original error.
+        """
+        self.session.rollback()
+        forget_verified_schema(self.session)
+        try:
+            require_ledger_schema(self.session, use_cache=False)
+        except LedgerSchemaUnavailableError as schema_error:
+            raise schema_error from exc
 
     def cached_payload(self, resource_key: str) -> str | None:
         row = (
