@@ -17,6 +17,8 @@ from __future__ import annotations
 import importlib.util
 import json
 import socket
+import threading
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import Mock
@@ -588,3 +590,324 @@ def test_activation_script_refuses_a_non_postgres_database(monkeypatch, tmp_path
     report = json.loads(evidence.read_text())
     assert report["blockers"] == ["POSTGRESQL_DATABASE_REQUIRED"]
     assert report["database_mutation_attempted"] is False
+
+
+# --- Repair round 1: every incompatible unique key fails closed -------------
+#
+# A claim coalesces a new key ONLY through the unique key on resource_key. A
+# partial or INVALID unique index, or a key dropped after a cached PASS, lets
+# two workers both insert, both lease and both pay. Each case below must give
+# zero provider calls and zero double purchases.
+
+KEYS = ("S0", "S1", "S2")
+
+
+class _CountingSpy:
+    """Thread-safe provider stand-in counting would-be paid calls per key."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.calls = Counter()
+
+    def map_source(self, **kwargs):
+        with self._lock:
+            self.calls[kwargs["search"]] += 1
+        return build_source_profile(
+            source_id=kwargs["source_id"],
+            root_url=kwargs["root_url"],
+            urls=(f"https://powo.science.kew.org/taxon/{kwargs['search']}",),
+        )
+
+    @property
+    def double_purchases(self):
+        return sum(count - 1 for count in self.calls.values() if count > 1)
+
+
+def _contend(engine, *, threads=4, keys=KEYS):
+    """``threads`` consumers race every key through the service at once."""
+    spy = _CountingSpy()
+    barrier = threading.Barrier(threads)
+    outcomes = Counter()
+    lock = threading.Lock()
+    errors = []
+
+    def _worker(index):
+        session = sessionmaker(bind=engine)()
+        service = SharedFirecrawlFederationService(session, mapper=spy)
+        try:
+            barrier.wait()
+            for search in keys:
+                try:
+                    status, _ = _map(service, module=f"m{index}", search=search)
+                except LedgerSchemaUnavailableError:
+                    status = "schema_unavailable"
+                with lock:
+                    outcomes[status] += 1
+        except Exception as exc:  # noqa: BLE001 - surfaced by the assertion below
+            errors.append(exc)
+        finally:
+            session.close()
+
+    workers = [threading.Thread(target=_worker, args=(i,)) for i in range(threads)]
+    for worker in workers:
+        worker.start()
+    for worker in workers:
+        worker.join(timeout=120)
+    assert not errors, errors
+    return spy, outcomes
+
+
+def _assert_all_refused(engine, spy, outcomes, *, threads=4):
+    assert sum(spy.calls.values()) == 0, spy.calls
+    assert spy.double_purchases == 0
+    assert outcomes == Counter({"schema_unavailable": threads * len(KEYS)})
+    assert _all_rows(engine, ["resource_key"]) == []
+
+
+def _assert_pays_exactly_once(engine, spy, outcomes):
+    assert dict(spy.calls) == dict.fromkeys(KEYS, 1)
+    assert spy.double_purchases == 0
+    assert set(outcomes) <= {"fetched", "cache_hit", "in_flight"}
+    assert len(_all_rows(engine, ["resource_key"])) == len(KEYS)
+
+
+def _execute(engine, *statements, autocommit=False):
+    if autocommit:
+        with engine.connect().execution_options(
+            isolation_level="AUTOCOMMIT"
+        ) as connection:
+            for statement in statements:
+                connection.execute(text(statement))
+        return
+    with engine.begin() as connection:
+        for statement in statements:
+            connection.execute(text(statement))
+
+
+_DROP_KEY = "ALTER TABLE acquisition_ledger DROP CONSTRAINT uq_acquisition_resource_key"
+
+
+def test_sqlite_partial_or_expression_unique_index_is_not_a_unique_key():
+    for index_sql in (
+        (
+            "CREATE UNIQUE INDEX uq_partial ON acquisition_ledger (resource_key) "
+            "WHERE status = 'complete'"
+        ),
+        "CREATE UNIQUE INDEX uq_expr ON acquisition_ledger (lower(resource_key))",
+    ):
+        engine = create_engine("sqlite:///:memory:")
+        metadata = MetaData()
+        _legacy_table(metadata, unique=False)
+        metadata.create_all(engine)
+        _execute(engine, index_sql)
+        error = _assert_fails_closed(engine, "missing_unique:resource_key")
+        assert error.problems == ("missing_unique:resource_key",)
+
+
+def test_sqlite_unique_key_dropped_after_cached_pass_fails_closed(tmp_path):
+    engine = create_engine(f"sqlite:///{tmp_path / 'ledger.db'}")
+    metadata = MetaData()
+    _legacy_table(metadata, unique=False)
+    metadata.create_all(engine)
+    _execute(engine, "CREATE UNIQUE INDEX uq_key ON acquisition_ledger (resource_key)")
+    spy = _CountingSpy()
+    make = sessionmaker(bind=engine)
+    assert _map(SharedFirecrawlFederationService(make(), mapper=spy))[0] == "fetched"
+    _execute(engine, "DROP INDEX uq_key")  # the PASS above is still cached
+    with pytest.raises(LedgerSchemaUnavailableError) as excinfo:
+        _map(SharedFirecrawlFederationService(make(), mapper=spy), search="new")
+    assert excinfo.value.problems == ("missing_unique:resource_key",)
+    assert sum(spy.calls.values()) == 1
+
+
+def test_schema_pass_is_re_verified_after_its_ttl(monkeypatch):
+    engine = sqlite_memory_engine()
+    checks = []
+    real = schema_module.ledger_schema_problems
+    monkeypatch.setattr(
+        schema_module,
+        "ledger_schema_problems",
+        lambda connection: checks.append(1) or real(connection),
+    )
+    clock = {"now": 1000.0}
+    monkeypatch.setattr(schema_module.time, "monotonic", lambda: clock["now"])
+    ledger = AcquisitionLedger(sessionmaker(bind=engine)())
+    request = AcquisitionRequest(
+        url="https://example.org/x", provider="powo", consumer_module="m"
+    )
+    ledger.claim(request, worker_id="w")
+    clock["now"] += schema_module.SCHEMA_PASS_TTL_SECONDS - 1
+    ledger.claim(request, worker_id="w")
+    assert len(checks) == 1
+    clock["now"] += 2
+    ledger.claim(request, worker_id="w")
+    assert len(checks) == 2
+
+
+@pytest.mark.requires_postgres
+def test_postgres_partial_unique_index_fails_closed_then_migration_adds_real_key():
+    with disposable_postgres_schema(pool_size=8) as (engine, _):
+        _migrate(engine)
+        _execute(
+            engine,
+            _DROP_KEY,
+            "CREATE UNIQUE INDEX uq_complete_only ON acquisition_ledger "
+            "(resource_key) WHERE status = 'complete'",
+        )
+        spy, outcomes = _contend(engine)
+        _assert_all_refused(engine, spy, outcomes)
+
+        _migrate(engine)  # a partial index is not the key: the real one is added
+        with engine.connect() as connection:
+            assert ledger_schema_problems(connection) == ()
+        spy, outcomes = _contend(engine)
+        _assert_pays_exactly_once(engine, spy, outcomes)
+
+
+def _leave_invalid_unique_index(engine, name):
+    """A failed CREATE UNIQUE INDEX CONCURRENTLY leaves an INVALID index."""
+    _execute(
+        engine,
+        "INSERT INTO acquisition_ledger (resource_key, provider, canonical_url, "
+        "status, provenance_json, consumers_json, credits_spent, failure_count, "
+        "created_at, updated_at) SELECT 'dup', 'powo', 'https://example.org/d', "
+        "'failed', '{}', '[]', 0, 0, now(), now() FROM generate_series(1, 2)",
+    )
+    with pytest.raises(Exception, match="could not create unique index"):
+        _execute(
+            engine,
+            f"CREATE UNIQUE INDEX CONCURRENTLY {name} ON acquisition_ledger "
+            "(resource_key)",
+            autocommit=True,
+        )
+    with engine.connect() as connection:
+        valid = connection.execute(
+            text(
+                "SELECT indisvalid FROM pg_index WHERE indexrelid = to_regclass(:name)"
+            ),
+            {"name": name},
+        ).scalar_one()
+    assert valid is False
+
+
+@pytest.mark.requires_postgres
+def test_postgres_invalid_unique_index_fails_closed_then_migration_adds_real_key():
+    with disposable_postgres_schema(pool_size=8) as (engine, _):
+        _migrate(engine)
+        _execute(engine, _DROP_KEY)
+        _leave_invalid_unique_index(engine, "uq_left_invalid")
+        # Test fixture cleanup of the synthetic duplicate on a disposable DB.
+        _execute(engine, "DELETE FROM acquisition_ledger")
+        spy, outcomes = _contend(engine)
+        _assert_all_refused(engine, spy, outcomes)
+
+        _migrate(engine)  # the INVALID index is not the key: the real one is added
+        with engine.connect() as connection:
+            assert ledger_schema_problems(connection) == ()
+        spy, outcomes = _contend(engine)
+        _assert_pays_exactly_once(engine, spy, outcomes)
+
+
+@pytest.mark.requires_postgres
+def test_postgres_migration_never_silently_skips_an_unusable_key():
+    with disposable_postgres_schema() as (engine, _):
+        _migrate(engine)
+        _execute(engine, _DROP_KEY)
+        _leave_invalid_unique_index(engine, "uq_acquisition_resource_key")
+        # Duplicates present: a clear error, nothing committed.
+        with pytest.raises(Exception, match="duplicate resource_key rows"):
+            _migrate(engine)
+        _execute(
+            engine,
+            "DELETE FROM acquisition_ledger WHERE ctid IN "
+            "(SELECT ctid FROM acquisition_ledger LIMIT 1)",
+        )
+        # An INVALID index holding the constraint's name: a clear error.
+        with pytest.raises(Exception, match="not a valid non-partial unique key"):
+            _migrate(engine)
+        spy, outcomes = _contend(engine, keys=("S0",))
+        assert sum(spy.calls.values()) == 0
+        assert outcomes == Counter({"schema_unavailable": 4})
+
+
+@pytest.mark.requires_postgres
+def test_postgres_unique_key_dropped_after_cached_pass_fails_closed():
+    with disposable_postgres_schema(pool_size=8) as (engine, _):
+        _migrate(engine)
+        warm = _CountingSpy()
+        make = sessionmaker(bind=engine)
+        status, _ = _map(
+            SharedFirecrawlFederationService(make(), mapper=warm), search="W"
+        )
+        assert status == "fetched"  # the schema PASS is now cached for this engine
+        _execute(engine, _DROP_KEY)
+        spy, outcomes = _contend(engine)
+        assert sum(spy.calls.values()) == 0, spy.calls
+        assert spy.double_purchases == 0
+        assert outcomes == Counter({"schema_unavailable": 4 * len(KEYS)})
+        # Only the warm-up key's row: no refused claim inserted anything.
+        assert len(_all_rows(engine, ["resource_key"])) == 1
+
+
+@pytest.mark.requires_postgres
+@pytest.mark.parametrize(
+    ("defect", "problem"),
+    [
+        (
+            "ALTER TABLE acquisition_ledger DROP COLUMN lease_token",
+            "missing_column:lease_token",
+        ),
+        ("DROP TABLE acquisition_ledger", "missing_table"),
+    ],
+    ids=["column", "table"],
+)
+def test_postgres_schema_dropped_after_cached_pass_is_typed_and_pays_nothing(
+    defect, problem
+):
+    with disposable_postgres_schema() as (engine, _):
+        _migrate(engine)
+        make = sessionmaker(bind=engine)
+        warm = _CountingSpy()
+        assert (
+            _map(SharedFirecrawlFederationService(make(), mapper=warm))[0] == "fetched"
+        )
+        _execute(engine, defect)
+        spy = _CountingSpy()
+        with pytest.raises(LedgerSchemaUnavailableError) as excinfo:
+            _map(SharedFirecrawlFederationService(make(), mapper=spy), search="new")
+        assert problem in excinfo.value.problems
+        assert sum(spy.calls.values()) == 0
+
+
+@pytest.mark.requires_postgres
+def test_postgres_concurrent_migrations_on_an_empty_database_all_succeed():
+    with disposable_postgres_schema(pool_size=6) as (engine, _):
+        barrier = threading.Barrier(4)
+        errors = []
+
+        def _run():
+            try:
+                barrier.wait()
+                _migrate(engine)
+            except Exception as exc:  # noqa: BLE001 - asserted below
+                errors.append(exc)
+
+        workers = [threading.Thread(target=_run) for _ in range(4)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join(timeout=60)
+        assert errors == []
+        with engine.connect() as connection:
+            assert ledger_schema_problems(connection) == ()
+
+
+@pytest.mark.requires_postgres
+def test_postgres_migration_refuses_to_run_outside_a_transaction():
+    with disposable_postgres_schema() as (engine, _):
+        with (
+            engine.connect() as connection,
+            pytest.raises(RuntimeError, match="one transaction"),
+        ):
+            apply_ledger_migration(connection)
+        assert inspect(engine).get_table_names() == []

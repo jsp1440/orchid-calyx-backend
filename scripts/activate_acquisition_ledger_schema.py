@@ -8,8 +8,10 @@ what is missing. Nothing is written.
 Mutation requires BOTH ``--apply`` and
 ``CALYX_ACQUISITION_LEDGER_MIGRATION_CONFIRM=APPLY_ACQUISITION_LEDGER``. The
 migration (``migrations/20260930_acquisition_ledger.sql``) is additive and
-idempotent and runs in one transaction; the schema check is re-run afterwards
-and the run fails unless it passes. Applying it to production is an owner
+idempotent and runs in one transaction (it is transaction-scoped: SET LOCAL
+and an advisory lock; without this script use ``psql -1 -v ON_ERROR_STOP=1
+-f``); the schema check is re-run afterwards and the run fails unless it
+passes. Applying it to production is an owner
 deployment action. No provider call is made and no ledger row is touched.
 """
 

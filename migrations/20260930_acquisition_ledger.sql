@@ -14,7 +14,7 @@
 --     change in PostgreSQL 11+: no table rewrite, existing rows read NULL,
 --     which the ledger treats as "written before the token column existed".
 --   * The unique constraint on resource_key (claim coalescing depends on it)
---     is added only when no single-column unique index on resource_key exists.
+--     is added unless a valid, non-partial unique key on it already exists.
 --   * The two model indexes, IF NOT EXISTS.
 --
 -- A NOT NULL column missing from an existing table, or a column with an
@@ -26,11 +26,17 @@
 -- Unqualified names, exactly like the model (no __table_args__ schema): the
 -- table resolves through the connection's search_path, as the ORM does.
 --
--- Apply with scripts/activate_acquisition_ledger_schema.py (preflight by
--- default; --apply plus an explicit confirmation), which runs this file in a
--- single transaction. Production application is an owner deployment action.
+-- Run it as ONE transaction: SET LOCAL and the advisory lock are
+-- transaction-scoped. Either scripts/activate_acquisition_ledger_schema.py
+-- (preflight by default; --apply plus an explicit confirmation), or
+--   psql -1 -v ON_ERROR_STOP=1 -f migrations/20260930_acquisition_ledger.sql
+-- Re-running it is always safe. Production application is an owner
+-- deployment action.
 
 SET LOCAL lock_timeout = '5s';
+-- Serialise concurrent runs: two sessions racing CREATE TABLE IF NOT EXISTS on
+-- an empty database would otherwise fail in the loser.
+SELECT pg_advisory_xact_lock(hashtext('oc_acquisition_ledger_migration'));
 
 CREATE TABLE IF NOT EXISTS acquisition_ledger (
     id SERIAL NOT NULL,
@@ -69,6 +75,12 @@ ALTER TABLE acquisition_ledger ADD COLUMN IF NOT EXISTS lease_token VARCHAR(64);
 ALTER TABLE acquisition_ledger ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMP WITH TIME ZONE;
 ALTER TABLE acquisition_ledger ADD COLUMN IF NOT EXISTS retrieved_at TIMESTAMP WITH TIME ZONE;
 
+-- The unique key claim coalescing depends on. Only a NON-partial, valid,
+-- ready, immediate unique index on exactly (resource_key) counts: a partial
+-- index or an INVALID one (left by a failed CREATE UNIQUE INDEX CONCURRENTLY)
+-- does not stop a second insert of the same key, i.e. a second paid lease.
+-- If none exists the real constraint is added; anything that prevents that
+-- raises a clear error (the whole transaction rolls back). Never skipped.
 DO $$
 BEGIN
     IF NOT EXISTS (
@@ -78,10 +90,26 @@ BEGIN
           ON a.attrelid = i.indrelid AND a.attnum = i.indkey[0]
         WHERE i.indrelid = 'acquisition_ledger'::regclass
           AND i.indisunique
-          AND i.indnkeyatts = 1
+          AND i.indisvalid
+          AND i.indisready
+          AND i.indislive
+          AND i.indimmediate
           AND i.indpred IS NULL
+          AND i.indexprs IS NULL
+          AND i.indnkeyatts = 1
           AND a.attname = 'resource_key'
     ) THEN
+        IF EXISTS (
+            SELECT 1 FROM acquisition_ledger
+            GROUP BY resource_key HAVING count(*) > 1
+        ) THEN
+            RAISE EXCEPTION
+                'acquisition_ledger has duplicate resource_key rows and no valid unique key; resolve the duplicates (owner decision) and re-run';
+        END IF;
+        IF to_regclass('uq_acquisition_resource_key') IS NOT NULL THEN
+            RAISE EXCEPTION
+                'relation uq_acquisition_resource_key exists but is not a valid non-partial unique key on resource_key (e.g. an INVALID index from a failed CREATE INDEX CONCURRENTLY); remove or rebuild it (owner decision) and re-run';
+        END IF;
         ALTER TABLE acquisition_ledger
             ADD CONSTRAINT uq_acquisition_resource_key UNIQUE (resource_key);
     END IF;
