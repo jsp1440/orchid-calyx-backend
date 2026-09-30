@@ -46,7 +46,7 @@ A committed data file bypasses every one of those runtime safeguards.
   The only exemption is an explicit allowlist of small synthetic fixtures under `tests/`. That allowlist is currently empty.
 
   Source code (`.py`, `.js`, `.ts`) and Markdown are not scanned; extending the guard to them is a follow-up.
-- `tests/test_no_precise_coordinates.py` runs the guard over `git ls-files`. The guard runs in CI only when a workflow runs that test. Orchid Autonomous Backend Validation runs only the test files a pull request changes, so this change adds the test to the explicit suite list in `.github/workflows/oc-critical-suites.yml`. That workflow runs on every pull request and push to `main` and `oc-autonomous-integration`.
+- `tests/test_no_precise_coordinates.py` runs the guard over `git ls-files`. The guard runs in CI only when a workflow runs that test, and Orchid Autonomous Backend Validation runs only the test files a pull request changes. `.github/workflows/oc-critical-suites.yml` runs on every pull request and push to `main` and `oc-autonomous-integration`. It lists this test, and `tests/test_legacy_occurrence_api_fail_closed.py`, in `OC_PENDING_CRITICAL_SUITES`: each is run, and required to pass, as soon as it exists in the tree. Once this change merges, move both entries into a required list (`OC_CRITICAL_PRIVACY_SUITES`).
 - `tests/test_legacy_occurrence_api_fail_closed.py` parses every standalone FastAPI route handler outside `app/`. It fails when a handler that touches coordinate names does not actually depend on `verify_owner_or_api_key`, whether through the decorator, a parameter dependency, the app's dependencies, or a wrapper that calls the check.
 - `.gitignore` now lists the generated exact-coordinate outputs.
 
