@@ -310,6 +310,57 @@ def test_preflight_never_prints_an_unreachable_connection_string():
     assert "someone" not in result.stdout + result.stderr
 
 
+@pytest.mark.requires_postgres
+def test_an_object_of_the_wrong_kind_is_not_reported_ok(disposable):
+    import psycopg
+
+    apply_migration(disposable["admin"])
+    with psycopg.connect(disposable["admin"], autocommit=True) as conn:
+        conn.execute(f"ALTER TABLE {SCHEMA}.case_events RENAME TO case_events_real")
+        conn.execute(
+            f"CREATE VIEW {SCHEMA}.case_events AS SELECT * FROM {SCHEMA}.case_events_real"
+        )
+    code, report, output = run_preflight(disposable["admin"])
+    assert code == 1, output
+    assert report["status"] == "MISSING"
+    assert f"TABLE {SCHEMA}.case_events (found a view)" in report["missing"]
+    entry = {t["name"]: t for t in report["tables"]}[f"{SCHEMA}.case_events"]
+    assert entry["present"] is False
+    assert entry["found_kind"] == "view"
+
+
+@pytest.mark.requires_postgres
+def test_sql_ascii_database_reports_text_not_bytes():
+    import psycopg
+    from psycopg import sql
+    from psycopg.conninfo import conninfo_to_dict
+
+    admin = test_database_url()
+    name = f"oc_fb_ascii_{secrets.token_hex(4)}"
+    with psycopg.connect(admin, autocommit=True) as conn:
+        conn.execute(
+            sql.SQL(
+                "CREATE DATABASE {} ENCODING 'SQL_ASCII' TEMPLATE template0 "
+                "LC_COLLATE 'C' LC_CTYPE 'C'"
+            ).format(sql.Identifier(name))
+        )
+    try:
+        dsn = _dsn(admin, dbname=name)
+        apply_migration(dsn)
+        code, report, output = run_preflight(dsn)
+        assert code == 0, output
+        assert report["status"] == "OK"
+        assert report["role"] == conninfo_to_dict(admin)["user"]
+        assert report["sequences"][0]["name"] == f"{SCHEMA}.case_events_event_id_seq"
+    finally:
+        with psycopg.connect(admin, autocommit=True) as conn:
+            conn.execute(
+                sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(
+                    sql.Identifier(name)
+                )
+            )
+
+
 def _submit(repository) -> None:
     service = EvidenceFeedbackService(repository, clock=lambda: CLOCK)
     version = service.register_object(
