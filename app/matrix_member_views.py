@@ -97,6 +97,11 @@ VALUE_TYPES = frozenset({"categorical", "multi_state", "numeric", "numeric_range
 # "Unambiguous" words only: ``long.``, ``alt.``, ``site`` and ``station`` are ordinary
 # words in morphology prose ("Spur 12 cm long.", "leaves alt.", "attachment site"),
 # so they are withheld only in the shapes that carry a locality value.
+# Units after "alt": m, mts, ft, metros, metres, meters, feet, msnm, masl.
+_ALT_UNIT = r"(?:metros?|metres?|meters?|mts?|msnm|masl|feet|ft|m)"
+# An elevation-sized metre value: three or more digits, or 1.500 / 1,500 / 1 500.
+_METRES_NUMBER = r"(?:\d{3,5}|\d{1,2}[.,\s]\d{3})"
+_ALTURA_QUALIFIER = r"(?:ca\.?|c\.|aprox\.?|aproximadamente|de|entre|desde|hasta|sobre)"
 _SENSITIVE_WORDS = re.compile(
     # locality / coordinate vocabulary (English, Spanish, Portuguese, French)
     r"latitud|longitud|localit|localidad|localiza[cç]|localisation|coordinat"
@@ -106,30 +111,32 @@ _SENSITIVE_WORDS = re.compile(
     r"|plus\s?codes?\b|open\s{1,3}location\s{1,3}code|grid\s{0,2}ref"
     # elevation / altitude, including abbreviations and "metres above sea level"
     r"|elevation|elevaci|elevaç|elevacao|altitud|\belev\.|\belevs?\b"
-    r"|\balt\.?\s{0,2}\(\s{0,2}(?:m|ft|metres?|meters?)\s{0,2}\)"
-    # alt m / Alt [m] / alt<TAB>m / alt. ft: a unit, never a following word
-    r"|\balt\.?\s{0,2}\[\s{0,2}(?:m|ft|metres?|meters?|feet)\s{0,2}\]"
-    r"|\balt\.?\s{1,2}(?:m|ft|metres?|meters?|feet)\b(?![-'])"
-    r"|\balt\.?\s{0,2}[:=]?\s{0,2}(?:ca?\.\s{0,2})?\d"
+    # alt (m) / Alt [mts] / alt m / alt: m / alt<TAB>m / Alt (metros): a unit, never a
+    # following word ("leaves alt. many-flowered" stays readable)
+    rf"|\balt\.?\s{{0,4}}(?:[:=]\s{{0,4}})?[(\[]\s{{0,4}}{_ALT_UNIT}\.?\s{{0,4}}[)\]]"
+    rf"|\balt\.?\s{{0,4}}(?:[:=]\s{{0,4}})?{_ALT_UNIT}\b(?![-'])"
+    r"|\balt\.?\s{0,4}[:=]?\s{0,4}(?:(?:ca?\.?|approx\.?|aprox\.?)\s{0,4})?\d"
     r"|\bm\.?\s?s\.?\s?n\.?\s?m\b|\bs\.\s?n\.\s?m\b"
     r"|\bm\.?\s?a\.?\s?s\.?\s?l\b|\ba\.\s?s\.\s?l\b|\basl\b"
-    r"|sea\s{1,3}level|nivel\s{1,3}del\s{1,3}mar|n[ií]vel\s{1,3}do\s{1,3}mar"
-    r"|niveau\s{1,3}de\s{1,3}la\s{1,3}mer|au-dessus\s{1,3}du\s{1,3}niveau"
-    r"|livello\s{1,3}del\s{1,3}mare|meeresspiegel"
+    r"|sea\s{1,4}level|nivel(?:\s{1,4}medio)?\s{1,4}del\s{1,4}mar"
+    r"|n[ií]vel(?:\s{1,4}m[eé]dio)?\s{1,4}do\s{1,4}mar"
+    r"|niveau(?:\s{1,4}moyen)?\s{1,4}de\s{1,4}la\s{1,4}mer"
+    r"|au[-\s]{1,4}dessus\s{1,4}du\s{1,4}niveau"
+    r"|livello(?:\s{1,4}medio)?\s{1,4}del\s{1,4}mare|meeresspiegel"
     # German Höhe (altitude; also height -- withheld either way, fail closed)
     r"|(?<![a-zäöüß])h(?:ö|oe)he(?![a-zäöüß])"
     r"|h(?:ö|oe)henlage|(?:meeres|see)h(?:ö|oe)he"
     # Spanish altura means plant height too: withheld only with an elevation unit
     # (a three-digit-or-more metre value, s.n.m., "sobre el nivel") -- "altura de
     # la planta 30 cm" and "altura 1,5 m" stay readable.
-    r"|\baltura\s{0,3}[:=]?\s{0,3}(?:(?:ca?\.|aprox\.?|de|entre)\s{0,3})?"
-    r"(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3}"
-    r"(?:[-–a]\s{0,3}(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3})?"
-    r"(?:m\b|mts?\b|metros\b|msnm|s\.?\s?n\.?\s?m)"
-    r"|\baltura\s{0,3}(?:s\.\s?n\.\s?m|sobre\s{1,3}el\s{1,3}nivel)"
-    r"|\b(?:\d{3,5}|\d{1,2}[.,]\d{3})\s{0,3}(?:m|mts?|metros)\.?\s{0,3}de\s{1,3}altura\b"
+    rf"|\baltura\s{{0,4}}[:=]?\s{{0,4}}(?:{_ALTURA_QUALIFIER}\s{{0,4}}){{0,3}}"
+    rf"{_METRES_NUMBER}\s{{0,4}}"
+    rf"(?:(?:-|a|y|e|to|hasta)\s{{0,4}}{_METRES_NUMBER}\s{{0,4}})?"
+    r"(?:metros\b|mts?\b|msnm|m\.?\s{0,2}s\.?\s{0,2}n\.?\s{0,2}m|m\b)"
+    r"|\baltura\s{0,4}(?:s\.\s{0,2}n\.\s{0,2}m|sobre\s{1,4}el\s{1,4}nivel)"
+    rf"|\b{_METRES_NUMBER}\s{{0,4}}(?:metros|mts?|m)\.?\s{{0,4}}de\s{{1,4}}altura\b"
     # specimen / collector / collecting-event vocabulary
-    r"|specimen|voucher|collector|herbari|herbier|exsiccat|\bejemplar"
+    r"|specimen|voucher|collector|herbari|herbier|exsicc?at|\bejemplar"
     r"|sp[eé]cimen|esp[eé]cime|\bleg\.|\bcoll\.|\bcollected\b"
     r"|\bcollecting\b|\bcollection\s{1,3}(?:site|number|no\.|data|place|point)"
     r"|colect|coletad|coletor|recolet"
@@ -150,18 +157,19 @@ _COORDINATE_SHAPES = re.compile(
     r"|[°º˚′″]"  # degree / minute / second marks
     r"|\b\d{1,3}\s*deg(?:rees?)?\b"
     # degrees written out: 18 grados / 18 graus / 18 degrés (degres after folding)
-    r"|\b\d{1,3}(?:[.,]\d{1,6})?\s{0,2}(?:grados?|graus?|degr[eé]s?)\b"
+    r"|\b\d{1,3}(?:[.,]\d{1,6})?\s{0,3}(?:grados?|graus?|degr[eé]s?)\b"
     # minutes written out then a hemisphere: 55 minutos S / 55 minutes sud
-    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:minutos?|minutes?)\b\s{0,3}"
-    r"(?:\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:segundos?|secondes?|seconds?)\b\s{0,3})?"
+    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,3}(?:minutos?|minutes?)\b\s{0,3}"
+    r"(?:\d{1,2}(?:[.,]\d{1,4})?\s{0,3}(?:segundos?|secondes?|seconds?)\b\s{0,3})?"
     r"(?:[NSEW]|norte|sur|sul|nord|sud|este|leste|est|oeste|ouest|north|south|east|west)\b"
     # degrees-minutes with an ASCII minute mark: 12 34' / 12 34.5'
-    r"|\b\d{1,3}\s{1,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'"
+    r"|\b\d{1,3}\s{1,3}\d{1,2}(?:[.,]\d{1,4})?\s{0,3}'"
     # minutes-seconds with ASCII marks: 34' 56" / 34'56'' / 34' 56.7"
-    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,2}'\s{0,2}\d{1,2}(?:[.,]\d{1,4})?\s{0,2}(?:\"|'')"
-    # 12d34m / 12d 34m 56s / 18d55mS / 18d55m12sS
-    r"|\b\d{1,3}\s?d\s?\d{1,2}(?:[.,]\d{1,4})?\s?m"
-    r"(?:\s?\d{1,2}(?:[.,]\d{1,4})?\s?s)?\s?[NSEW]?(?![a-z])"
+    r"|\b\d{1,2}(?:[.,]\d{1,4})?\s{0,3}'\s{0,3}\d{1,2}(?:[.,]\d{1,4})?\s{0,3}(?:\"|'')"
+    # 12d34m / 12d 34m 56s / 18d55mS / 18d55m12sS / 18d55'S / 18d55min S
+    r"|\b\d{1,3}\s{0,3}d\s{0,3}\d{1,2}(?:[.,]\d{1,4})?\s{0,3}(?:min\.?|m|')"
+    r"(?:\s{0,3}\d{1,2}(?:[.,]\d{1,4})?\s{0,3}(?:sec\.?|s|\"|''))?"
+    r"\s{0,3}[NSEW]?(?![a-z])"
     # Paired hemisphere coordinates are unambiguous even in lower case.
     r"|\b\d{1,3}(?:[.,]\d{2,6})?\s?[NS][\s,;/]{1,3}\d{1,3}(?:[.,]\d{2,6})?\s?[EW]\b"
     r"|\b[NS]\s?\d{1,3}(?:[.,]\d{2,6})?[\s,;/]{1,3}[EW]\s?\d{1,3}(?:[.,]\d{2,6})?\b"
@@ -174,16 +182,19 @@ _COORDINATE_SHAPES = re.compile(
 # counts only after a decimal or a spaced degrees-minutes value (18.9s, 18 55 s), so
 # "2n = 40" and "S 12.5 mm" stay readable; e/w need two decimals ("47.52e").
 _COORDINATE_LOWER = re.compile(
-    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,2}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s?[ns]\b"
-    r"|\b\d{1,3}[.,]\d{2,6}\s?[ew]\b"
-    # lower-case MGRS: 33twn1234567890 / 33t wn 12345 67890
-    r"|\b\d{1,2}[c-hj-np-x]\s?[a-hj-np-z][a-hj-np-v]\s?\d{2,5}\s?\d{2,5}\b"
+    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,3}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s{0,3}[ns]\b"
+    r"|\b\d{1,3}[.,]\d{2,6}\s{0,3}[ew]\b"
+)
+# MGRS in any case: 33TWN1234567890 / 33twn... / 33tWN... / 33T  WN 12345 67890.
+_MGRS = re.compile(
+    r"\b\d{1,2}[c-hj-np-x]\s{0,3}[a-hj-np-z][a-hj-np-v]\s{0,3}\d{2,5}\s{0,3}\d{2,5}\b",
+    re.IGNORECASE,
 )
 # Case-sensitive shapes: single hemisphere letters and UTM/MGRS grid references
 # are upper case; matching them case-insensitively would catch "2n", "5 s", etc.
 _COORDINATE_CASED = re.compile(
     # 12.34S / 12,345 N / 18 55 S / 18:55:30 S
-    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,2}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s?[NSEW]\b"
+    r"\b\d{1,3}(?:[.,]\d{1,6}|(?:[\s:]{1,3}\d{1,2}(?:[.,]\d{1,4})?){1,2})\s{0,3}[NSEW]\b"
     # N 12.34 / S18.91 (two or more decimals: "S 12.5" may be a sepal measurement)
     r"|\b[NS]\s?\d{1,3}[.,]\d{2,6}"
     # N 18 E 47 / S18.9, E47.5 (latitude then longitude)
@@ -192,8 +203,6 @@ _COORDINATE_CASED = re.compile(
     r"|\b\d{1,2}\s?[C-HJ-NP-X]\s{1,3}\d{6}(?:\.\d{1,3})?\s?m?E?[\s,;]{1,3}\d{7}\b"
     # UTM easting/northing pair without zone: 630084 4833438 / 630084mE 4833438mN
     r"|\b\d{6}(?:\.\d{1,3})?\s?(?:mE)?[\s,;]{1,3}\d{7}(?:\.\d{1,3})?\s?(?:mN\b)?(?!\d)"
-    # MGRS: 33TWN1234567890 / 33T WN 12345 67890
-    r"|\b\d{1,2}[C-HJ-NP-X]\s?[A-HJ-NP-Z][A-HJ-NP-V]\s?\d{2,5}\s?\d{2,5}\b"
     # collector abbreviation "col." followed by an initial, a name or a number
     r"|\b[Cc]ol\.\s{0,2}(?:[A-Z]\.|[A-Z][a-z]{1,30}\b|\d)"
 )
@@ -205,12 +214,21 @@ _COORDINATE_CASED = re.compile(
 _TOKEN_SPLIT = re.compile(
     r"[_\-./:]|(?<=[a-z])(?=[A-Z])|(?<=[A-Za-z])(?=\d)|(?<=\d)(?=[A-Za-z])"
 )
-_ELEVATION_TOKENS = re.compile(r"\b(?:elevs?|m?asl|msnm|snm)\b", re.IGNORECASE)
-# Run-together ids: elevm, altm, aslm, elevft, ELEVmax, ALTmin, ASLrange. A known
-# unit/qualifier suffix is required, so "Altensteinia" and "Altmann" stay readable.
+_ELEVATION_TOKENS = re.compile(
+    r"\b(?:elevs?|m?asl|a?msl|msnm|snm|h(?:ö|oe)he)\b", re.IGNORECASE
+)
+# Run-together ids: elevm, altm, aslm, elevft, ELEVmax, ALTmin, ASLrange, höhem,
+# elevmaximum, elevmsl, altmsl, minalt. A known unit/qualifier prefix or suffix is
+# required, so "alt" in prose, "Altensteinia" and "Altmann" stay readable.
+_ELEVATION_ROOT = r"(?:elevs?|alts?|m?asl|a?msl|msnm|snm|h(?:ö|oe)hen?)"
+_ELEVATION_PREFIX = r"(?:min|max|mean|avg|median|lo|low|hi|high|top|bot|bottom)"
+_ELEVATION_SUFFIX = (
+    r"(?:m|ft|feet|meters?|metres?|min|max|minimum|maximum|median|mean|avg|average"
+    r"|range|band|low|high|lo|hi|top|bottom|m?asl|a?msl|msnm|snm)"
+)
 _ELEVATION_COMPOUND = re.compile(
-    r"\b(?:elevs?|alts?|m?asl|msnm|snm)"
-    r"(?:m|ft|feet|meters?|metres?|min|max|range|band|low|high|lo|hi|mean|avg|top)\b",
+    rf"\b(?:{_ELEVATION_PREFIX}{_ELEVATION_ROOT}{_ELEVATION_SUFFIX}?"
+    rf"|{_ELEVATION_ROOT}{_ELEVATION_SUFFIX})\b",
     re.IGNORECASE,
 )
 _ALT_TOKEN = re.compile(r"\balts?\b", re.IGNORECASE)
@@ -223,30 +241,83 @@ _TIMESTAMP = re.compile(
 _DOI = re.compile(r"10\.\d{4,9}/[-._;()/:A-Za-z0-9]{1,200}")
 
 
-# A small confusables fold, screening only: Cyrillic and Greek letters that render
-# like the Latin letters of the locality vocabulary, and apostrophe/quote look-alikes
-# that stand in for the ASCII minute/second marks (the modifier apostrophe U+02BC).
+# A small confusables fold, screening only. Each Latin letter of the locality
+# vocabulary with the Cyrillic, Greek and other look-alikes that render like it; the
+# apostrophe/prime and quote look-alikes that stand in for the ASCII minute/second
+# marks (U+02BC and friends); hyphen and dash variants; and invisible fillers that
+# are not format (Cf) characters, which are deleted.
+_LOOKALIKES = {
+    "a": "аαɑ",
+    "b": "в",
+    "c": "сϲ",
+    "d": "ԁ",
+    "e": "еεёҽ",
+    "g": "ɡԍ",
+    "h": "һн",
+    "i": "іιıї",
+    "j": "јϳ",
+    "k": "кκ",
+    "l": "ӏ",
+    "m": "м",
+    "n": "пη",
+    "o": "оοσօ",
+    "p": "рρ",
+    "q": "ԛ",
+    "r": "г",
+    "s": "ѕ",
+    "t": "тτ",
+    "u": "υս",
+    "v": "νѵ",
+    "w": "ԝωѡ",
+    "x": "хχ",
+    "y": "уγ",
+    "A": "АΑ",
+    "B": "ВΒ",
+    "C": "СϹ",
+    "D": "Ԁ",
+    "E": "ЕΕ",
+    "H": "НΗ",
+    "I": "ІΙӀ",
+    "J": "Ј",
+    "K": "КΚ",
+    "M": "МΜ",
+    "N": "Ν",
+    "O": "ОΟ",
+    "P": "РΡ",
+    "Q": "Ԛ",
+    "S": "Ѕ",
+    "T": "ТΤ",
+    "W": "Ԝ",
+    "X": "ХΧ",
+    "Y": "УΥ",
+    "Z": "Ζ",
+    "'": "ʼʹ’‘ʻˈ`´ꞌ‛׳‵ʽ",
+    '"': "ʺ“”˝״‟‶ˮ",
+    "-": "‐‑‒–—―−⁃﹘﹣˗",
+}
+_INVISIBLE_FILLERS = "ㅤﾠ⠀ᅟᅠ᠎឴឵͏"
 _CONFUSABLES = str.maketrans(
-    # Cyrillic lower case, Cyrillic upper case, Greek, then quote look-alikes ...
-    "авеһіјкӏмнорԛгѕтухсԁԝёїАВЕНІЈКМОРСЅТХУԀԚԜαεικνορτυχΑΒΕΗΙΚΜΝΟΡΤΧΥΖʼʹ’‘ʻˈ`´ʺ“”˝",
-    # ... and the ASCII each one is screened as.
-    "abehijklmhopqrstyxcdwei"
-    "ABEHIJKMOPCSTXYDQW"
-    "aeikvoptuxABEHIKMNOPTXYZ" + "'" * 8 + '"' * 4,
+    {
+        **{ch: latin for latin, chars in _LOOKALIKES.items() for ch in chars},
+        **dict.fromkeys(_INVISIBLE_FILLERS),
+    }
 )
 
 
 def _screen_form(value: str) -> str:
-    """NFKC with Unicode format (Cf) characters removed: zero-width, bidi, soft hyphen,
-    then the confusables fold above.
+    """The text folded for screening: confusables, NFKC, no format (Cf) characters.
 
     Used for screening only; the returned text is never altered. Full-width digits
-    and letters fold to ASCII, a zero-width space can no longer split a pattern, and a
-    Cyrillic ``а`` inside ``locаlity`` is screened as ``a``.
+    and letters fold to ASCII, a zero-width space or a Hangul filler can no longer
+    split a pattern, and a Cyrillic ``а`` inside ``locаlity`` is screened as ``a``.
+    The fold is applied again to the decomposed text, so an accented look-alike
+    (Cyrillic ``ӧ`` in ``lӧcality``, Greek ``ό``) keeps its accent on a Latin base
+    letter: ``Hӧhe`` is screened as ``Höhe``.
     """
-    folded = unicodedata.normalize("NFKC", value)
+    folded = unicodedata.normalize("NFKC", value.translate(_CONFUSABLES))
     stripped = "".join(ch for ch in folded if unicodedata.category(ch) != "Cf")
-    return stripped.translate(_CONFUSABLES)
+    decomposed = unicodedata.normalize("NFD", stripped).translate(_CONFUSABLES)
+    return unicodedata.normalize("NFC", decomposed)
 
 
 def _strip_marks(value: str) -> str:
@@ -256,7 +327,8 @@ def _strip_marks(value: str) -> str:
     otherwise one word that no ASCII elevation token can match.
     """
     decomposed = unicodedata.normalize("NFD", value)
-    return "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    bare = "".join(ch for ch in decomposed if unicodedata.category(ch) != "Mn")
+    return bare.translate(_CONFUSABLES)
 
 
 def _screen_hit(text: str) -> bool:
@@ -265,6 +337,7 @@ def _screen_hit(text: str) -> bool:
         or _COORDINATE_SHAPES.search(text)
         or _COORDINATE_CASED.search(text)
         or _COORDINATE_LOWER.search(text)
+        or _MGRS.search(text)
     ):
         return True
     tokens = _TOKEN_SPLIT.sub(" ", text)

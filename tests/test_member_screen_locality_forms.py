@@ -35,6 +35,7 @@ from app.matrix_member_views import (
     _COORDINATE_SHAPES,
     _ELEVATION_COMPOUND,
     _ELEVATION_TOKENS,
+    _MGRS,
     _SENSITIVE_WORDS,
     _TOKEN_SPLIT,
     WITHHELD,
@@ -355,3 +356,179 @@ def test_token_split_and_folds_are_linear_on_64k_input():
     text = _fill("aA1_\u0430e\u0301\u02bc", SIZE)
     assert _best_of(lambda: _TOKEN_SPLIT.sub(" ", text)) < BOUND_SECONDS
     assert _best_of(lambda: _strip_marks(_screen_form(text))) < BOUND_SECONDS
+
+
+# --- checker repair round 1 (#1708) ------------------------------------------------------
+
+REPAIR_POSITIVE = {
+    "accented_lookalikes": [
+        "l\u04e7cality",  # Cyrillic o with diaeresis
+        "\u0450levation",  # Cyrillic ie with grave
+        "H\u04e7he 1200",
+        "l\u03cccality",  # Greek omicron with tonos
+        "\u0435\u0301lev_m",  # Cyrillic ie + combining acute
+        "lo\u03f2ality",  # Greek lunate sigma
+        "\u03f2ollector",
+        "sp\u0435\u03f2imen",
+    ],
+    "mgrs_mixed_case_and_spacing": [
+        "33tWN1234567890",
+        "33Twn1234567890",
+        "33t  wn 12345 67890",
+        "33T WN  12345  67890",
+        "33tWn 12345 67890",
+    ],
+    "run_together_ids": [
+        "hoeheMax",
+        "minHöhe",
+        "maxHoehe",
+        "höhem",
+        "elevmaximum",
+        "elevmedian",
+        "elevmsl",
+        "elevmasl",
+        "altmsl",
+        "minalt",
+        "maxelev_m",
+        "Höhe_max",
+    ],
+    "near_misses_coordinates": [
+        "18.9  s",
+        "18.9   S",
+        "18d55'S",
+        "18d55min S",
+        "18d 55 min S",
+        "18 d 55 m S",
+        "12 34  56\u2033",
+        "34'  56\"",
+    ],
+    "near_misses_alt": [
+        "alt   m",
+        "alt: m",
+        "Alt (metros)",
+        "Alt [mts]",
+        "alt = ft",
+        "Alt ( m )",
+        "alt   1500",
+    ],
+    "near_misses_altura": [
+        "altura entre 1500 y 2000 m",
+        "altura 1 500 m",
+        "altura ca 1500 m",
+        "altura de ca. 1500 msnm",
+        "altura desde 1200 hasta 1500 m",
+        "altura 1500 m.s.n.m.",
+    ],
+    "near_misses_words": [
+        "exsicata",
+        "au\u2011dessus du niveau de la mer",  # non-breaking hyphen
+        "au\u2010dessus du niveau",
+        "au \u2014 dessus du niveau",
+        "niveau moyen de la mer",
+        "nivel medio del mar",
+        "livello medio del mare",
+    ],
+    "prime_lookalikes": [
+        "12 34\ua78c 56\ua78c\ua78c",
+        "18 55\u201b S",
+        "18 55\u05f3 S",
+        "34\u05f3 56\u05f4",
+        "34\u2035 56\u2036",
+    ],
+    "invisible_fillers": [
+        "loc\u3164ality",
+        "lat\uffa0itude",
+        "loc\u2800ality",
+        "e\u115flev_m",
+        "G\u17b4PS",
+    ],
+}
+REPAIR_CASES = [
+    (group, text) for group, items in REPAIR_POSITIVE.items() for text in items
+]
+
+
+@pytest.mark.parametrize(("group", "text"), REPAIR_CASES)
+def test_screen_withholds_checker_round1_bypasses(group, text):
+    assert screened_text(text) == WITHHELD, (group, text)
+
+
+REPAIR_READABLE = [
+    "\u0441o\u043f\u0442\u0435\u043f\u0456do",  # folds to "coptenido": no locality word
+    "Lip 3\u20135 mm",
+    "Petals \u2014 white",
+    "12.5\u201318 mm",
+    "Sepals 2,5\u20133,5 cm",
+    "5th ed 1234 5678",
+    "15mm 12 34",
+    "2nd pp 12 34",
+    "3rd ed 1990 2000",
+    "altura 1,5 m",
+    "altura de 150 cm",
+    "altura 300 mm",
+    "leaves alt. many-flowered",
+    "Altmann",
+    "hohe Pflanze",
+    "Petals 12.5 × 3.5 mm",
+    "12d34mm",
+    "Lip \u2018saccate\u2019",
+    "Flowers open for 30 minutes",
+    "median lip length",
+    "Column 5 mm, winged",
+]
+
+
+@pytest.mark.parametrize("text", REPAIR_READABLE)
+def test_screen_keeps_morphology_readable_after_round1(text):
+    assert screened_text(text) == text
+
+
+def test_fold_runs_before_and_after_decomposition():
+    assert _screen_form("H\u04e7he") == "Höhe"
+    assert _strip_marks(_screen_form("l\u03cccality")) == "locality"
+    assert _screen_form("au\u2011dessus") == "au-dessus"
+    assert _screen_form("loc\u3164ality") == "locality"
+    assert _screen_form("18 55\ua78c") == "18 55'"
+
+
+ROUND1_HOSTILE_UNITS = [
+    "33t  w",
+    "33tW  n1 ",
+    "1d  1 min ",
+    "1d1'",
+    "1.1  ",
+    "alt   (",
+    "alt: ",
+    "altura entre 111 y ",
+    "altura 1 111 ",
+    "altura ca ",
+    "niveau moyen de la ",
+    "au\u2011",
+    "hoeheM",
+    "minHöh",
+    "elevma",
+    "elevmsx",
+    "l\u04e7c",
+    "\u03f2",
+    "\u3164",
+    "\ua78c1 ",
+]
+
+
+@pytest.mark.parametrize("unit", ROUND1_HOSTILE_UNITS)
+def test_screened_text_is_linear_on_round1_hostile_input(unit):
+    small, large = _fill(unit, SMALL), _fill(unit, SIZE)
+    t_small = _best_of(lambda: screened_text(small, max_len=SIZE))
+    t_large = _best_of(lambda: screened_text(large, max_len=SIZE))
+    assert t_large < BOUND_SECONDS, f"{unit!r}: {t_large:.3f}s"
+    assert t_large < 8 * max(t_small, FLOOR_SECONDS)
+
+
+@pytest.mark.parametrize("unit", ROUND1_HOSTILE_UNITS)
+def test_mgrs_and_compound_patterns_are_linear_on_round1_input(unit):
+    small, large = _fill(unit, SMALL), _fill(unit, SIZE)
+    for pattern in (_MGRS, _ELEVATION_COMPOUND, _SENSITIVE_WORDS, _COORDINATE_SHAPES):
+        t_small = _best_of(lambda p=pattern: p.search(small))
+        t_large = _best_of(lambda p=pattern: p.search(large))
+        assert t_large < BOUND_SECONDS
+        assert t_large < 8 * max(t_small, FLOOR_SECONDS)
