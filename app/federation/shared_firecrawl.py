@@ -55,7 +55,31 @@ class SharedFirecrawlFederationService:
             force_refresh=force_refresh,
         )
         claim = self.ledger.claim(request, worker_id=self.worker_id)
-        if claim.action == "cache_hit":\n            cached = self.ledger.cached_payload(request.key)\n            if cached:\n                data = json.loads(cached)\n                profile = FederationSourceProfile(**{\n                    **data,\n                    "urls": tuple(data["urls"]),\n                    "url_classes": {k: tuple(v) for k, v in data["url_classes"].items()},\n                    "candidate_identifiers": {k: tuple(v) for k, v in data["candidate_identifiers"].items()},\n                    "api_download_hints": tuple(data["api_download_hints"]),\n                    "terms_license_hints": tuple(data["terms_license_hints"]),\n                })\n                return "cache_hit", profile\n            raise RuntimeError("completed acquisition is missing its cached payload")\n        if claim.action != "acquired_lease":\n            return claim.action, None\n
+        if claim.action == "cache_hit":
+            cached = self.ledger.cached_payload(request.key)
+            if cached:
+                data = json.loads(cached)
+                profile = FederationSourceProfile(
+                    **{
+                        **data,
+                        "urls": tuple(data["urls"]),
+                        "url_classes": {
+                            key: tuple(value)
+                            for key, value in data["url_classes"].items()
+                        },
+                        "candidate_identifiers": {
+                            key: tuple(value)
+                            for key, value in data["candidate_identifiers"].items()
+                        },
+                        "api_download_hints": tuple(data["api_download_hints"]),
+                        "terms_license_hints": tuple(data["terms_license_hints"]),
+                    }
+                )
+                return "cache_hit", profile
+            raise RuntimeError("completed acquisition is missing its cached payload")
+        if claim.action != "acquired_lease":
+            return claim.action, None
+
         try:
             profile = self.mapper.map_source(
                 source_id=source_id,
@@ -79,7 +103,8 @@ class SharedFirecrawlFederationService:
                 # current operational contract. Keep accounting explicit here.
                 credits_spent=1,
             )
-            self.ledger.complete(record, payload_json=payload.decode("utf-8"))\n            return "fetched", profile
+            self.ledger.complete(record, payload_json=payload.decode("utf-8"))
+            return "fetched", profile
         except Exception:
             self.ledger.fail(request.key)
             raise

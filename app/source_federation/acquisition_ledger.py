@@ -82,7 +82,21 @@ class AcquisitionLedger:
         self.session.commit()
         return ClaimResult("acquired_lease", row.id, request.key)
 
-    def cached_payload(self, resource_key: str) -> str | None:\n        row = self.session.query(AcquisitionLedgerRow).filter(AcquisitionLedgerRow.resource_key == resource_key).first()\n        return row.payload_json if row and row.status == "complete" else None\n\n    def complete(self, record: AcquisitionRecord, *, payload_json: str | None = None) -> None:\n        row = (
+    def cached_payload(self, resource_key: str) -> str | None:
+        row = (
+            self.session.query(AcquisitionLedgerRow)
+            .filter(AcquisitionLedgerRow.resource_key == resource_key)
+            .first()
+        )
+        return row.payload_json if row and row.status == "complete" else None
+
+    def complete(
+        self,
+        record: AcquisitionRecord,
+        *,
+        payload_json: str | None = None,
+    ) -> None:
+        row = (
             self.session.query(AcquisitionLedgerRow)
             .filter(AcquisitionLedgerRow.resource_key == record.key)
             .with_for_update()
@@ -92,7 +106,9 @@ class AcquisitionLedger:
         consumers.update(record.consumers)
         row.status = "complete"
         row.content_hash = record.content_hash
-        row.durable_object_ref = record.durable_object_ref\n        row.payload_json = payload_json\n        row.etag = record.etag
+        row.durable_object_ref = record.durable_object_ref
+        row.payload_json = payload_json
+        row.etag = record.etag
         row.last_modified = record.last_modified
         row.provenance_json = json.dumps(dict(record.provenance), sort_keys=True)
         row.consumers_json = json.dumps(sorted(consumers))

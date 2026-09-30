@@ -40,7 +40,8 @@ def test_two_modules_trigger_one_firecrawl_call():
     assert first == "fetched"
     assert profile is not None
     assert second == "cache_hit"
-    assert cached is not None\n    assert cached.urls == profile.urls
+    assert cached is not None
+    assert cached.urls == profile.urls
     mapper.map_source.assert_called_once()
     assert service.ledger.metrics()["credits_spent"] == 1
 
