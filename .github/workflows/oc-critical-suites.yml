@@ -81,6 +81,7 @@ env:
     tests/test_legacy_feedback_privacy.py
     tests/test_evidence_feedback_routes.py
     tests/test_evidence_feedback_grants_preflight.py
+    tests/test_release1_env_readiness.py
     tests/test_exact_occurrence_api_security.py
     tests/test_show_output_safety_redaction.py
     tests/test_show_output_safety_timing.py
@@ -106,6 +107,7 @@ env:
     tests/test_member_matrix_screen_broadened.py
     tests/test_matrix_identification_session_001.py
     tests/test_matrix_identification_session_store_001.py
+    tests/test_scan_trait_locality.py
     tests/test_partner_data_exact_atlas_security.py
     tests/test_partner_data_disclosure.py
     tests/test_partner_data_model_output_guards.py
