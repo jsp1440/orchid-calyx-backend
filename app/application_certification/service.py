@@ -843,6 +843,37 @@ class ApplicationCertificationService:
             source_under_test=getattr(self, "_source_under_test", None),
         )
 
+    @staticmethod
+    def _supersede_by_compiled_identity(gates: list[CertificationGate]) -> list[CertificationGate]:
+        """Byte-identical compiled output is stronger evidence than the static heuristics.
+
+        Only an exact sha256 match between the build of the source-under-test and
+        the live JavaScript supersedes source_candidate_selection and
+        source_runtime_fingerprint; prose coverage alone never does.
+        """
+        compiled = next((g for g in gates if g.gate_id == "compiled_asset_correspondence"), None)
+        if (
+            compiled is None
+            or compiled.status != GateStatus.PASS
+            or "identical sha256: ['" not in compiled.observed_evidence
+        ):
+            return gates
+        out = []
+        for g in gates:
+            if g.gate_id in {"source_candidate_selection", "source_runtime_fingerprint"} and g.status != GateStatus.PASS:
+                g = g.model_copy(update={
+                    "status": GateStatus.PASS,
+                    "observed_evidence": (
+                        f"{g.observed_evidence} SUPERSEDED: the build of the source-under-test is "
+                        "byte-identical to the live JavaScript (compiled_asset_correspondence); the "
+                        "static shortfall is source the bundler did not ship."
+                    ),
+                    "blocker": None,
+                    "smallest_next_action": None,
+                })
+            out.append(g)
+        return out
+
     def finalize(
         self, report: CertificationReport, evidence: list[CertificationGate]
     ) -> CertificationReport:
@@ -853,6 +884,7 @@ class ApplicationCertificationService:
         """
         replaced = {g.gate_id for g in evidence}
         gates = [g for g in report.gates if g.gate_id not in replaced] + list(evidence)
+        gates = self._supersede_by_compiled_identity(gates)
         target = CertificationTarget(
             application_id=report.application_id,
             application_name=report.application_name,

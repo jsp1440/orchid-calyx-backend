@@ -802,3 +802,44 @@ def test_finalize_cli_merges_evidence_files_and_keeps_the_run_identity(tmp_path)
     assert "app_build" in merged["failed_gates"]
     assert merged["report"]["source_under_test"] == "story 9.zip"
     assert merged["publish_ready"] == "NO"
+
+
+def _diverged_report():
+    # Static selection fails on prose (tree-shaken content), every other signal agrees.
+    return _certify(
+        {"story 9.zip": _export(_LIVE_PROSE + _OLD_PROSE, wired=True, rpc=True, routes=ROUTES)},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+
+
+def _compiled(status: str, evidence: str):
+    from app.application_certification.models import CertificationGate
+
+    return CertificationGate(gate_id="compiled_asset_correspondence", status=status,
+                             evidence_type="deployment", observed_evidence=evidence)
+
+
+def test_byte_identical_build_supersedes_static_prose_heuristics():
+    report = _diverged_report()
+    before = {g.gate_id: g for g in report.gates}
+    assert before["source_candidate_selection"].status == GateStatus.FAIL
+    final = ApplicationCertificationService(httpx.Client()).finalize(report, [_compiled(
+        "PASS", "Live scripts {...}; identical sha256: ['964a97']. Prose literals: ...")])
+    by_id = {g.gate_id: g for g in final.gates}
+    for gate_id in ("source_candidate_selection", "source_runtime_fingerprint"):
+        assert by_id[gate_id].status == GateStatus.PASS
+        assert "SUPERSEDED" in by_id[gate_id].observed_evidence
+        # The original static evidence is preserved verbatim, not replaced.
+        assert by_id[gate_id].observed_evidence.startswith(before[gate_id].observed_evidence)
+
+
+def test_prose_only_compiled_match_does_not_supersede():
+    final = ApplicationCertificationService(httpx.Client()).finalize(_diverged_report(), [_compiled(
+        "PASS", "identical sha256: none. Prose literals: live covered 99.5%, built covered 99.4%")])
+    assert {g.gate_id: g for g in final.gates}["source_candidate_selection"].status == GateStatus.FAIL
+
+
+def test_failed_compiled_correspondence_does_not_supersede():
+    final = ApplicationCertificationService(httpx.Client()).finalize(_diverged_report(), [_compiled(
+        "FAIL", "identical sha256: ['abc'] but other scripts differ")])
+    assert {g.gate_id: g for g in final.gates}["source_candidate_selection"].status == GateStatus.FAIL

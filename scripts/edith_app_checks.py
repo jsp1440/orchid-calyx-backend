@@ -164,6 +164,15 @@ def main(argv: list[str] | None = None) -> int:
             ("app_typecheck", ["npx", "--no-install", "tsc", "--noEmit", "-p", tsconfig]),
         ):
             rc, out, secs = run(cmd, app, 900)
+            if gate_id == "app_lint" and rc:
+                # Lead with the errors; warnings follow them in eslint output.
+                lines = out.splitlines()
+                errs = []
+                for i, line in enumerate(lines):
+                    if re.search(r"^\s+\d+:\d+\s+error\s", line):
+                        owner = next((lines[j] for j in range(i, -1, -1) if lines[j].startswith("/")), "")
+                        errs.append(f"{owner.split('/app/', 1)[-1]} {line.strip()}")
+                out = "ERRORS: " + " ; ".join(errs[:10]) + "\n" + out
             status = "PASS" if rc == 0 else ("BLOCKED" if rc is None else "FAIL")
             gates.append(gate(
                 gate_id, status,
@@ -208,6 +217,27 @@ def main(argv: list[str] | None = None) -> int:
             kind="deployment",
             blocker="The build of the source-under-test is not the JavaScript the live runtime serves.",
             action="Commit the exact source of the deployed Famous build, then re-run certification.",
+        ))
+
+    if live and built_ok:
+        live_html = client.get(args.runtime_url).text
+        built_html_path = app / "dist" / "index.html"
+        built_html = built_html_path.read_text(encoding="utf-8") if built_html_path.exists() else ""
+        def markers(html: str) -> set[str]:
+            return set(re.findall(r"<script[^>]*src=[\"']([^\"']+)", html)) | set(
+                re.findall(r"\bid=[\"']([^\"']+)", html))
+        injected = sorted(markers(live_html) - markers(built_html))
+        inline_live = len(re.findall(r"<script(?![^>]*src=)[^>]*>", live_html))
+        inline_built = len(re.findall(r"<script(?![^>]*src=)[^>]*>", built_html))
+        same = live_html == built_html
+        gates.append(gate(
+            "runtime_html_correspondence", "PASS" if same else "PARTIAL",
+            (f"Live index.html sha256={hashlib.sha256(live_html.encode()).hexdigest()} vs built "
+             f"sha256={hashlib.sha256(built_html.encode()).hexdigest()}; identical={same}; script srcs/ids "
+             f"only in live: {injected[:10]}; inline scripts live={inline_live} built={inline_built}."),
+            kind="deployment",
+            blocker="The hosting platform serves HTML the application did not build (injected content).",
+            action="Disable hosting-platform injection (e.g. builder badge) for the published site.",
         ))
 
     if live:

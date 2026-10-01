@@ -23,6 +23,10 @@ const VIEWPORTS = {
   phone: { ...devices['iPhone 13'] },
 };
 
+// Elements the hosting platform injects (not in the built index.html; proven
+// by runtime_html_correspondence). The app is scored without them; they get
+// their own accessibility gate so the defect stays visible.
+const INJECTED = (process.env.INJECTED_SELECTORS || '#aiappbuilder-badge').split(',').filter(Boolean);
 const results = {}; // journey -> viewport -> {ok, detail}
 const a11y = {}; // page -> viewport -> {ok, detail}
 
@@ -179,7 +183,10 @@ async function main() {
     for (const [name, fn] of Object.entries(JOURNEYS)) {
       const page = await context.newPage();
       const errors = [];
+      const network = [];
       page.on('pageerror', (e) => errors.push(String(e).slice(0, 200)));
+      page.on('requestfailed', (r) => network.push(`${r.method()} ${r.url().slice(0, 120)} failed: ${r.failure()?.errorText}`));
+      page.on('response', (r) => { if (r.status() >= 400) network.push(`${r.request().method()} ${r.url().slice(0, 120)} -> ${r.status()}`); });
       try {
         const detail = await fn(page);
         results[name] ??= {};
@@ -200,7 +207,8 @@ async function main() {
         }).catch(() => null);
         results[name][vpName] = {
           ok: false,
-          detail: `${String(e.message || e).split('\n')[0].slice(0, 200)}; page state ${JSON.stringify(state)}`,
+          detail: `${String(e.message || e).split('\n')[0].slice(0, 200)}; page state ${JSON.stringify(state)}; ` +
+            `network failures ${JSON.stringify(network.slice(0, 4))}`,
         };
       } finally {
         await page.close();
@@ -211,7 +219,9 @@ async function main() {
       try {
         await goto(page, path);
         if (path === '/explore') await speciesReady(page).catch(() => {});
-        const r = await new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']).analyze();
+        let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']);
+        for (const sel of INJECTED) builder = builder.exclude(sel);
+        const r = await builder.analyze();
         const severe = r.violations.filter((v) => ['serious', 'critical'].includes(v.impact));
         const other = r.violations.filter((v) => !['serious', 'critical'].includes(v.impact));
         a11y[pageName] ??= {};
@@ -223,6 +233,31 @@ async function main() {
       } catch (e) {
         a11y[pageName] ??= {};
         a11y[pageName][vpName] = { ok: null, detail: String(e.message || e).split('\n')[0].slice(0, 300) };
+      } finally {
+        await page.close();
+      }
+    }
+    {
+      const page = await context.newPage();
+      try {
+        await goto(page, '/');
+        const present = [];
+        for (const sel of INJECTED) if (await page.locator(sel).count()) present.push(sel);
+        let detail = `injected elements present: ${JSON.stringify(present)}`;
+        let ok = true;
+        if (present.length) {
+          let builder = new AxeBuilder({ page }).withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa']);
+          for (const sel of present) builder = builder.include(sel);
+          const r = await builder.analyze();
+          const severe = r.violations.filter((v) => ['serious', 'critical'].includes(v.impact));
+          ok = severe.length === 0;
+          detail += `; serious/critical: ${severe.map((v) => `${v.id}(${v.nodes.length})`).join(', ') || 'none'}`;
+        }
+        a11y.hosting_injected ??= {};
+        a11y.hosting_injected[vpName] = { ok, detail };
+      } catch (e) {
+        a11y.hosting_injected ??= {};
+        a11y.hosting_injected[vpName] = { ok: null, detail: String(e.message || e).split('\n')[0].slice(0, 300) };
       } finally {
         await page.close();
       }
@@ -247,7 +282,9 @@ async function main() {
     const status = states.includes(null) ? 'BLOCKED' : states.every(Boolean) ? 'PASS' : 'FAIL';
     gates.push({
       gate_id: `accessibility_${name}`, status, evidence_type: 'browser',
-      observed_evidence: `axe-core WCAG 2.x A/AA on ${RUNTIME}${A11Y_PAGES[name]}: ${summarise(byVp)}`,
+      observed_evidence: name === 'hosting_injected'
+        ? `axe-core WCAG 2.x A/AA on hosting-injected elements ${JSON.stringify(INJECTED)} (absent from the application build): ${summarise(byVp)}`
+        : `axe-core WCAG 2.x A/AA on ${RUNTIME}${A11Y_PAGES[name]} excluding hosting-injected ${JSON.stringify(INJECTED)}: ${summarise(byVp)}`,
       blocker: status === 'PASS' ? null : `Accessibility check for ${name} did not pass on every viewport.`,
       smallest_next_action: status === 'PASS' ? null : 'Fix the serious/critical axe violations listed, redeploy, then re-run.',
     });
