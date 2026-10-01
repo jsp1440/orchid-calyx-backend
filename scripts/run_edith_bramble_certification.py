@@ -32,7 +32,9 @@ from app.application_certification import (
 
 
 def _repo_sha() -> str | None:
-    sha = os.environ.get("GITHUB_SHA")
+    # On pull_request events GITHUB_SHA is the synthetic merge ref, not the
+    # head under test; the workflow passes the exact head explicitly.
+    sha = os.environ.get("CERT_REPOSITORY_SHA") or os.environ.get("GITHUB_SHA")
     if sha:
         return sha
     try:

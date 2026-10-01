@@ -25,6 +25,14 @@ TEXT_SUFFIXES = {
     ".yml", ".yaml", ".toml", ".env", ".txt",
 }
 
+SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".py")
+
+
+def _inspection_priority(path: str) -> tuple[int, str]:
+    """Application code first, so the inspection cap never starves it for docs/JSON."""
+    return (0 if path.lower().endswith(SOURCE_SUFFIXES) else 1, path)
+
+
 EDITH_TARGET = CertificationTarget(
     application_id="edith-bramble-famous",
     application_name="Edith Bramble Chronicles / Famous.ai",
@@ -76,7 +84,7 @@ class ApplicationCertificationService:
             ))
             texts: list[str] = []
             inspected = 0
-            for path in paths:
+            for path in sorted(paths, key=_inspection_priority):
                 if inspected >= 120:
                     break
                 lower = path.lower()
@@ -169,7 +177,7 @@ class ApplicationCertificationService:
                 names = [name for name in archive.namelist() if not name.endswith("/")]
                 texts: list[str] = []
                 inspected = 0
-                for name in names:
+                for name in sorted(names, key=_inspection_priority):
                     if inspected >= 120:
                         break
                     lower = name.lower()
@@ -275,6 +283,8 @@ class ApplicationCertificationService:
         resolved_taxon: str | None = None
         for gate_id, url in probes:
             status, detail, data = self._probe(url)
+            if gate_id == "calyx_federation" and status == GateStatus.PASS:
+                status, detail = self._federation_verdict(detail, data)
             gates.append(CertificationGate(
                 gate_id=gate_id,
                 status=status,
@@ -311,6 +321,108 @@ class ApplicationCertificationService:
                     smallest_next_action="Restore federation resolution, then re-run dependent probes.",
                 ))
 
+    @staticmethod
+    def _federation_verdict(detail: str, data: Any | None) -> tuple[GateStatus, str]:
+        """HTTP 200 is reachability, not resolution: read the resolver's own verdict."""
+        if not isinstance(data, dict):
+            return GateStatus.FAIL, f"{detail}; body is not a FederationResolveResult object"
+        verdict = (
+            f"{detail}; status={data.get('status')!r} match_state={data.get('match_state')!r} "
+            f"taxon_id={data.get('taxon_id')!r} candidates={len(data.get('candidates') or [])} "
+            f"explanation={str(data.get('explanation') or '')[:300]!r}"
+        )
+        if data.get("status") == "resolved" and data.get("taxon_id"):
+            return GateStatus.PASS, verdict
+        return GateStatus.FAIL, verdict
+
+    def _runtime_bundle_gate(self, runtime: str, gates: list[CertificationGate]) -> None:
+        """Static inspection of the deployed bundle: what the live app actually ships.
+
+        Read-only text inspection of same-origin HTML/JS. Nothing is executed.
+        """
+        try:
+            page = self.client.get(runtime, headers={"Accept": "text/html"})
+        except httpx.ProxyError as exc:
+            gates.append(CertificationGate(
+                gate_id="runtime_oc_wiring",
+                status=GateStatus.BLOCKED,
+                evidence_type="deployment",
+                observed_evidence=f"{runtime} runner egress refused: {type(exc).__name__}: {exc}",
+                blocker="Certifying runner cannot reach the runtime.",
+                smallest_next_action="Run certification from a runner with egress to the runtime host.",
+            ))
+            return
+        except httpx.HTTPError as exc:
+            gates.append(CertificationGate(
+                gate_id="runtime_oc_wiring",
+                status=GateStatus.FAIL,
+                evidence_type="deployment",
+                observed_evidence=f"{runtime} network error: {type(exc).__name__}: {exc}",
+                blocker="Runtime HTML could not be fetched.",
+                smallest_next_action="Repair live deployment reachability, then re-run certification.",
+            ))
+            return
+        html = page.text if page.status_code == 200 else ""
+        base = httpx.URL(str(page.url))
+        scripts: list[str] = []
+        for src in re.findall(r"<script[^>]+src=[\"']([^\"']+)[\"']", html, re.IGNORECASE):
+            url = base.join(src)
+            if url.host == base.host and str(url) not in scripts:
+                scripts.append(str(url))
+        bundle = [html]
+        fetched: list[str] = []
+        for url in scripts[:8]:
+            try:
+                response = self.client.get(url)
+            except httpx.HTTPError:
+                continue
+            if response.status_code == 200:
+                bundle.append(response.text[:8_000_000])
+                fetched.append(url.rsplit("/", 1)[-1])
+        text = "\n".join(bundle).lower()
+        markers = {
+            "oc_public_api_host": "orchid-continuum-public-api.onrender.com",
+            "calyx_api_host": "orchid-calyx-backend.onrender.com",
+            "species_search_path": "/api/species/search",
+            "genus_images_path": "/images/genus/",
+            "federation_resolve_path": "/api/platform/federation/resolve-species",
+            "species_platform_path": "/api/platform/species/",
+        }
+        present = sorted(k for k, v in markers.items() if v in text)
+        not_live = [
+            phrase for phrase in (
+                "integration is not live",
+                "intentionally not connected",
+            ) if phrase in text
+        ]
+        if not fetched:
+            status = GateStatus.UNVERIFIED
+        elif {"oc_public_api_host", "calyx_api_host"} & set(present) and not not_live:
+            status = GateStatus.PASS
+        elif present:
+            status = GateStatus.PARTIAL
+        else:
+            status = GateStatus.FAIL
+        gates.append(CertificationGate(
+            gate_id="runtime_oc_wiring",
+            status=status,
+            evidence_type="deployment",
+            observed_evidence=(
+                f"Inspected deployed HTML (HTTP {page.status_code}) and {len(fetched)} same-origin "
+                f"script(s) {fetched}; OC/Calyx markers present={present}; "
+                f"'not live' statements={not_live}."
+            ),
+            blocker=None if status == GateStatus.PASS else (
+                "Deployed bundle could not be inspected." if status == GateStatus.UNVERIFIED else
+                "Deployed application does not ship canonical OC/Calyx endpoint wiring, "
+                "or still tells readers the integration is not live."
+            ),
+            smallest_next_action=None if status == GateStatus.PASS else (
+                "Wire the deployed app to the canonical OC public API / Calyx endpoints, remove "
+                "'not live' copy, redeploy, then re-run certification."
+            ),
+        ))
+
     def _runtime_gate(self, target: CertificationTarget, gates: list[CertificationGate]) -> None:
         """Probe runtime reachability only; browser journey certification is a later gate."""
         runtime = target.runtime_url or target.preview_url
@@ -333,6 +445,8 @@ class ApplicationCertificationService:
             blocker=None if status == GateStatus.PASS else detail,
             smallest_next_action=None if status == GateStatus.PASS else "Repair live deployment reachability, then execute browser journey gates.",
         ))
+        if status == GateStatus.PASS:
+            self._runtime_bundle_gate(str(runtime), gates)
 
     def _report(
         self,
@@ -342,14 +456,14 @@ class ApplicationCertificationService:
     ) -> CertificationReport:
         by_id = {g.gate_id: g for g in gates}
         source_status = self._aggregate(gates, evidence_types={"source", "test", "configuration"})
-        runtime_status = by_id.get("live_runtime_journeys", CertificationGate(
-            gate_id="missing", status=GateStatus.UNVERIFIED, evidence_type="browser", observed_evidence="missing"
-        )).status
+        runtime_gates = [g for g in gates if g.gate_id in {"live_runtime_journeys", "runtime_oc_wiring"}]
+        runtime_status = self._aggregate(runtime_gates) if "live_runtime_journeys" in by_id else GateStatus.UNVERIFIED
         security = by_id.get("client_role_security")
         security_status = security.status if security else GateStatus.UNVERIFIED
         media_status = self._aggregate([g for g in gates if g.gate_id in {"oc_genus_media", "oc_source_wiring"}])
         scientific_status = self._aggregate([g for g in gates if g.gate_id in {
-            "oc_source_wiring", "oc_species_search", "calyx_federation", "calyx_species_dossier", "calyx_species_atlas"
+            "oc_source_wiring", "oc_species_search", "calyx_federation", "calyx_species_dossier", "calyx_species_atlas",
+            "runtime_oc_wiring",
         }])
         accessibility = GateStatus.UNVERIFIED
         blockers = [g.blocker for g in gates if g.blocker and g.status in {

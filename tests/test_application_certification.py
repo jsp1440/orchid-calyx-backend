@@ -201,3 +201,83 @@ def test_certification_run_record_binds_run_repo_sha_and_gate_lists():
     summary = module.render_summary(record)
     assert all(line.count("\n") == 0 for line in summary.splitlines())
     assert "| live_runtime_journeys | BLOCKED |" in summary
+
+
+def _live_handler(federation: dict, bundle_js: str):
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "api.github.com" in url or "raw.githubusercontent.com" in url:
+            return httpx.Response(404, request=request)
+        if "/federation/resolve-species" in url:
+            return _json(request, federation)
+        if "/species/101/" in url or "/api/species/search" in url or "/images/genus/" in url:
+            return _json(request, {"ok": True})
+        if url.endswith("/assets/index-abc.js"):
+            return httpx.Response(200, text=bundle_js, request=request)
+        if "deploypad.app" in url:
+            return httpx.Response(
+                200,
+                text="<html><script type='module' src='/assets/index-abc.js'></script>"
+                "<script src='https://cdn.example.test/x.js'></script></html>",
+                headers={"content-type": "text/html"},
+                request=request,
+            )
+        return httpx.Response(404, request=request)
+
+    return handler
+
+
+def test_federation_http_200_without_resolution_is_a_failure_with_resolver_evidence():
+    handler = _live_handler(
+        {"status": "unresolved", "match_state": "none", "taxon_id": None,
+         "explanation": "No canonical taxon matched."},
+        "",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    by_id = {g.gate_id: g for g in report.gates}
+    assert by_id["calyx_federation"].status == GateStatus.FAIL
+    assert "status='unresolved'" in by_id["calyx_federation"].observed_evidence
+    assert "No canonical taxon matched." in by_id["calyx_federation"].observed_evidence
+    assert by_id["calyx_species_dossier"].status == GateStatus.BLOCKED
+
+
+def test_deployed_bundle_with_canonical_wiring_passes_runtime_oc_gate():
+    handler = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search?q='+q)",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    gate = {g.gate_id: g for g in report.gates}["runtime_oc_wiring"]
+    assert gate.status == GateStatus.PASS
+    assert "index-abc.js" in gate.observed_evidence
+    assert "cdn.example.test" not in gate.observed_evidence
+
+
+def test_deployed_bundle_saying_integration_not_live_is_not_a_pass():
+    handler = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        "const a='orchid-continuum-public-api.onrender.com';"
+        "const copy='The Orchid Continuum / Calyx integration is not live.'",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    by_id = {g.gate_id: g for g in report.gates}
+    assert by_id["runtime_oc_wiring"].status == GateStatus.PARTIAL
+    assert report.runtime_audit_status == GateStatus.PARTIAL
+    assert report.publish_ready != "YES"
+
+
+def test_deployed_bundle_without_any_oc_wiring_fails():
+    handler = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        "const dataSource = staticDataSource;",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    assert {g.gate_id: g for g in report.gates}["runtime_oc_wiring"].status == GateStatus.FAIL
+    assert report.runtime_audit_status == GateStatus.FAIL
+
+
+def test_source_inspection_reads_application_code_before_docs():
+    from app.application_certification.service import _inspection_priority
+
+    ordered = sorted(["README.md", "a.json", "src/lib/orchid-continuum.ts", "src/App.tsx"], key=_inspection_priority)
+    assert ordered[:2] == ["src/App.tsx", "src/lib/orchid-continuum.ts"]

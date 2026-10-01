@@ -34,6 +34,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run real Edith Bramble certification
+        env:
+          CERT_REPOSITORY_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: python scripts/run_edith_bramble_certification.py --output-dir artifacts/application-certification
 
       - name: Persist certification report
