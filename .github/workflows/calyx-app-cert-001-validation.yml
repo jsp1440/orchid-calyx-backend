@@ -1,0 +1,41 @@
+name: CALYX-APP-CERT-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - "app/application_certification/**"
+      - "app/calyx_orchestrator/service.py"
+      - "app/main.py"
+      - "tests/test_application_certification.py"
+      - "tests/test_calyx_agent_003.py"
+      - ".github/workflows/calyx-app-cert-001-validation.yml"
+  workflow_dispatch:
+
+jobs:
+  application-certification:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest ruff
+
+      - name: Compile
+        run: python -m compileall -q app/application_certification app/calyx_orchestrator
+
+      - name: Lint
+        run: |
+          ruff check             app/application_certification             app/calyx_orchestrator/service.py             tests/test_application_certification.py             tests/test_calyx_agent_003.py
+
+      - name: Focused tests
+        run: |
+          pytest -q             tests/test_application_certification.py             tests/test_calyx_agent_003.py

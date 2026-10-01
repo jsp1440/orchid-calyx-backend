@@ -3,14 +3,14 @@ from unittest.mock import Mock
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
 from app.federation.firecrawl_mapper import build_source_profile
 from app.federation.shared_firecrawl import SharedFirecrawlFederationService
+from app.source_federation.acquisition_models import AcquisitionLedgerRow
 
 
 def _service():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    AcquisitionLedgerRow.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     mapper = Mock()
     mapper.map_source.return_value = build_source_profile(

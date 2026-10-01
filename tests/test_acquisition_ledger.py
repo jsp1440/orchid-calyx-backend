@@ -3,14 +3,14 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from app.database import Base
 from app.source_federation.acquisition import AcquisitionRecord, AcquisitionRequest
 from app.source_federation.acquisition_ledger import AcquisitionLedger
+from app.source_federation.acquisition_models import AcquisitionLedgerRow
 
 
 def _ledger():
     engine = create_engine("sqlite:///:memory:")
-    Base.metadata.create_all(engine)
+    AcquisitionLedgerRow.__table__.create(engine)
     session = sessionmaker(bind=engine)()
     return AcquisitionLedger(session)
 
