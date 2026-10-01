@@ -281,3 +281,81 @@ def test_source_inspection_reads_application_code_before_docs():
 
     ordered = sorted(["README.md", "a.json", "src/lib/orchid-continuum.ts", "src/App.tsx"], key=_inspection_priority)
     assert ordered[:2] == ["src/App.tsx", "src/lib/orchid-continuum.ts"]
+
+
+def _source_and_runtime_handler(source_ts: str, bundle_js: str):
+    sha = "c" * 40
+    live = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        bundle_js,
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/commits/main" in url:
+            return _json(request, {"sha": sha})
+        if f"/git/trees/{sha}" in url:
+            return _json(request, {"tree": [{"path": "src/lib/orchid-continuum.ts", "type": "blob"}]})
+        if "raw.githubusercontent.com" in url:
+            return httpx.Response(200, text=source_ts, request=request)
+        return live(request)
+
+    return handler
+
+
+def test_deployed_client_role_self_update_fails_runtime_security():
+    bundle = (
+        "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search');"
+        'await s.from("profiles").update({role:e,updated_at:new Date().toISOString()}).eq("id",u)'
+    )
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler("const x=1;", bundle)))
+    ).certify(EDITH_TARGET)
+    gate = {g.gate_id: g for g in report.gates}["runtime_role_security"]
+    assert gate.status == GateStatus.FAIL
+    assert report.security_status == GateStatus.FAIL
+
+
+def test_deployed_role_rpc_without_client_write_passes_runtime_security():
+    bundle = (
+        "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search');"
+        'await s.rpc("set_user_role",{target:u,new_role:e})'
+    )
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler("const x=1;", bundle)))
+    ).certify(EDITH_TARGET)
+    assert {g.gate_id: g for g in report.gates}["runtime_role_security"].status == GateStatus.PASS
+
+
+def test_stale_source_handoff_is_a_correspondence_failure():
+    bundle = "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search')"
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(
+            _source_and_runtime_handler("export const ocConnection = { adapter: null };", bundle)
+        ))
+    ).certify(EDITH_TARGET)
+    by_id = {g.gate_id: g for g in report.gates}
+    assert by_id["source_runtime_correspondence"].status == GateStatus.FAIL
+    assert report.source_audit_status == GateStatus.FAIL
+    assert report.publish_ready == "NO"
+
+
+def test_matching_source_and_runtime_correspond():
+    source = (
+        "const api='https://orchid-continuum-public-api.onrender.com';"
+        "const r='/api/platform/federation/resolve-species';"
+    )
+    bundle = "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search')"
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler(source, bundle)))
+    ).certify(EDITH_TARGET)
+    assert {g.gate_id: g for g in report.gates}["source_runtime_correspondence"].status == GateStatus.PASS
+
+
+def test_unavailable_source_makes_no_correspondence_claim():
+    handler = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        "fetch('https://orchid-continuum-public-api.onrender.com/x')",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    assert "source_runtime_correspondence" not in {g.gate_id for g in report.gates}

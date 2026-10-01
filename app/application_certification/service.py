@@ -56,6 +56,7 @@ class ApplicationCertificationService:
         self._source_contract_checks(paths, source_text, gates)
         self._backend_probes(gates)
         self._runtime_gate(target, gates)
+        self._correspondence_gate(gates)
         return self._report(target, sha, gates)
 
     def _source_inventory(
@@ -328,7 +329,7 @@ class ApplicationCertificationService:
             return GateStatus.FAIL, f"{detail}; body is not a FederationResolveResult object"
         verdict = (
             f"{detail}; status={data.get('status')!r} match_state={data.get('match_state')!r} "
-            f"taxon_id={data.get('taxon_id')!r} candidates={len(data.get('candidates') or [])} "
+            f"taxon_id={data.get('taxon_id')!r} candidates={[(c.get('taxon_id'), c.get('accepted_name')) for c in (data.get('candidates') or []) if isinstance(c, dict)]} "
             f"explanation={str(data.get('explanation') or '')[:300]!r}"
         )
         if data.get("status") == "resolved" and data.get("taxon_id"):
@@ -380,6 +381,8 @@ class ApplicationCertificationService:
                 bundle.append(response.text[:8_000_000])
                 fetched.append(url.rsplit("/", 1)[-1])
         text = "\n".join(bundle).lower()
+        if fetched:
+            self._role_security_runtime_gate(text, fetched, gates)
         markers = {
             "oc_public_api_host": "orchid-continuum-public-api.onrender.com",
             "calyx_api_host": "orchid-calyx-backend.onrender.com",
@@ -423,6 +426,83 @@ class ApplicationCertificationService:
             ),
         ))
 
+    @staticmethod
+    def _role_security_runtime_gate(
+        text: str, fetched: list[str], gates: list[CertificationGate]
+    ) -> None:
+        """Does the deployed client mutate its own role, or delegate to a guarded RPC?"""
+        compact = re.sub(r"\s+", "", text)
+        self_update = bool(re.search(r"\.update\(\{role:", compact))
+        signup_role = bool(re.search(r"role:[\w$.]+\?[\"'`]editor[\"'`]", compact))
+        server_rpc = "set_user_role" in compact
+        risky = [name for name, hit in (
+            ("client .update({role:...})", self_update),
+            ("signup metadata role:<flag>?'editor'", signup_role),
+        ) if hit]
+        if risky:
+            status = GateStatus.FAIL
+        elif server_rpc:
+            status = GateStatus.PASS
+        else:
+            status = GateStatus.UNVERIFIED
+        gates.append(CertificationGate(
+            gate_id="runtime_role_security",
+            status=status,
+            evidence_type="deployment",
+            observed_evidence=(
+                f"Deployed script(s) {fetched}: client role-mutation patterns={risky}; "
+                f"server-side set_user_role RPC referenced={server_rpc}. Static inspection only; "
+                "database RLS enforcement is not exercised by this gate."
+            ),
+            blocker=None if status == GateStatus.PASS else (
+                "Deployed client can request or write a privileged role." if risky else
+                "Deployed bundle shows neither a client role write nor a server-side role RPC."
+            ),
+            smallest_next_action=None if status == GateStatus.PASS else (
+                "Route role changes through an admin-checked server RPC and ignore client-supplied "
+                "signup roles, redeploy, then re-run certification."
+            ),
+        ))
+
+    @staticmethod
+    def _correspondence_gate(gates: list[CertificationGate]) -> None:
+        """A source audit only certifies the runtime if they are the same application."""
+        by_id = {g.gate_id: g for g in gates}
+        source = by_id.get("oc_source_wiring")
+        runtime = by_id.get("runtime_oc_wiring")
+        if source is None or runtime is None or GateStatus.UNVERIFIED in {source.status, runtime.status}:
+            return
+        source_wired = "OC wiring markers=[]" not in source.observed_evidence
+        runtime_wired = "oc_public_api_host" in runtime.observed_evidence or (
+            "calyx_api_host" in runtime.observed_evidence
+        )
+        if runtime_wired and not source_wired:
+            gates.append(CertificationGate(
+                gate_id="source_runtime_correspondence",
+                status=GateStatus.FAIL,
+                evidence_type="configuration",
+                observed_evidence=(
+                    "The deployed bundle ships canonical OC/Calyx endpoint wiring that the audited "
+                    "source does not contain, so the audited source is not the deployed application."
+                ),
+                blocker="Source handoff is stale relative to the deployed Famous runtime.",
+                smallest_next_action=(
+                    "Export the current Famous.ai project source into the registered source "
+                    "repository, then re-run certification."
+                ),
+            ))
+        else:
+            gates.append(CertificationGate(
+                gate_id="source_runtime_correspondence",
+                status=GateStatus.PASS if source_wired == runtime_wired else GateStatus.PARTIAL,
+                evidence_type="configuration",
+                observed_evidence=(
+                    f"Source OC wiring present={source_wired}; deployed OC wiring present={runtime_wired}."
+                ),
+                blocker=None if source_wired == runtime_wired else
+                "Audited source and deployed bundle disagree about OC wiring.",
+            ))
+
     def _runtime_gate(self, target: CertificationTarget, gates: list[CertificationGate]) -> None:
         """Probe runtime reachability only; browser journey certification is a later gate."""
         runtime = target.runtime_url or target.preview_url
@@ -458,8 +538,8 @@ class ApplicationCertificationService:
         source_status = self._aggregate(gates, evidence_types={"source", "test", "configuration"})
         runtime_gates = [g for g in gates if g.gate_id in {"live_runtime_journeys", "runtime_oc_wiring"}]
         runtime_status = self._aggregate(runtime_gates) if "live_runtime_journeys" in by_id else GateStatus.UNVERIFIED
-        security = by_id.get("client_role_security")
-        security_status = security.status if security else GateStatus.UNVERIFIED
+        security_gates = [g for g in gates if g.gate_id in {"client_role_security", "runtime_role_security"}]
+        security_status = self._aggregate(security_gates) if security_gates else GateStatus.UNVERIFIED
         media_status = self._aggregate([g for g in gates if g.gate_id in {"oc_genus_media", "oc_source_wiring"}])
         scientific_status = self._aggregate([g for g in gates if g.gate_id in {
             "oc_source_wiring", "oc_species_search", "calyx_federation", "calyx_species_dossier", "calyx_species_atlas",
