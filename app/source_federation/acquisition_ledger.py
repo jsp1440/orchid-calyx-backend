@@ -13,6 +13,15 @@ from .acquisition import AcquisitionRecord, AcquisitionRequest
 from .acquisition_models import AcquisitionLedgerRow
 
 
+def _aware_utc(value: datetime | None) -> datetime | None:
+    """Normalize DB datetimes for comparisons across SQLite/PostgreSQL."""
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)
+
+
 @dataclass(frozen=True, slots=True)
 class ClaimResult:
     action: str  # cache_hit | acquired_lease | in_flight | retry_blocked
@@ -69,10 +78,12 @@ class AcquisitionLedger:
         if row.status == "complete" and not request.force_refresh:
             self.session.commit()
             return ClaimResult("cache_hit", row.id, request.key)
-        if row.next_retry_at and row.next_retry_at > now:
+        next_retry_at = _aware_utc(row.next_retry_at)
+        if next_retry_at and next_retry_at > now:
             self.session.commit()
             return ClaimResult("retry_blocked", row.id, request.key)
-        if row.status == "leased" and row.lease_expires_at and row.lease_expires_at > now:
+        lease_expires_at = _aware_utc(row.lease_expires_at)
+        if row.status == "leased" and lease_expires_at and lease_expires_at > now:
             self.session.commit()
             return ClaimResult("in_flight", row.id, request.key)
 
