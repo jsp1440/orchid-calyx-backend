@@ -11,6 +11,34 @@ index 2087ea2..31f59a0 100644
        setMode('signin');
        return;
      }
+diff --git a/src/components/c1/SanitationSpell.tsx b/src/components/c1/SanitationSpell.tsx
+index 8a057c7..6482bfc 100644
+--- a/src/components/c1/SanitationSpell.tsx
++++ b/src/components/c1/SanitationSpell.tsx
+@@ -41,8 +41,8 @@ const MnemonicReveal: React.FC<{ reduced: boolean }> = ({ reduced }) => {
+     measure();
+     const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+     if (ro) {
+-      stackRef.current && ro.observe(stackRef.current);
+-      rowRef.current && ro.observe(rowRef.current);
++      if (stackRef.current) ro.observe(stackRef.current);
++      if (rowRef.current) ro.observe(rowRef.current);
+     }
+     window.addEventListener('resize', measure);
+     return () => {
+diff --git a/src/components/c1/soundscape.ts b/src/components/c1/soundscape.ts
+index 703d3b3..98a915e 100644
+--- a/src/components/c1/soundscape.ts
++++ b/src/components/c1/soundscape.ts
+@@ -42,7 +42,7 @@ const NOTE = (n: string) => {
+   const map: Record<string, number> = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
+   const m = /^([A-G])(#|b)?(\d)$/.exec(n);
+   if (!m) return 440;
+-  let semi = map[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 4) * 12;
++  const semi = map[m[1]] + (m[2] === '#' ? 1 : m[2] === 'b' ? -1 : 0) + (Number(m[3]) - 4) * 12;
+   return 440 * Math.pow(2, semi / 12);
+ };
+ 
 diff --git a/src/components/pages/GoDeeperPage.tsx b/src/components/pages/GoDeeperPage.tsx
 index 9a73ae9..a2f790c 100644
 --- a/src/components/pages/GoDeeperPage.tsx

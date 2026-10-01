@@ -11,6 +11,7 @@ It repairs defects the certification reproduced against export 9:
 |---|---|
 | `tsc` TS2339 `import.meta.glob` / `import.meta.env` (`app_typecheck`) | add `src/vite-env.d.ts` (`/// <reference types="vite/client" />`) |
 | `tsc` TS2345 `AuthModal.tsx(61)` (`app_typecheck`) | `setNotice(String(result.message))` |
+| eslint `no-unused-expressions` `SanitationSpell.tsx` 44:7, 45:7; `prefer-const` `soundscape.ts` 45:7 (`app_lint`) | `if (...) ro.observe(...)`; `const semi` |
 | Go Deeper tells readers "The Orchid Continuum / Calyx integration is not live" while the page's own status reads Connected and species are read live (`runtime_oc_wiring`, `journey_go_deeper_no_stale_not_live_claim`) | accurate copy: connected read-only for species; concept / pathogen / card subjects not yet served |
 
 The lockfile (`app_lockfile_sync`) is repaired by running `npm install` in
