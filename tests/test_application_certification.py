@@ -376,3 +376,144 @@ def test_domain_names_alone_are_not_canonical_runtime_wiring():
     )
     report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
     assert {g.gate_id: g for g in report.gates}["runtime_oc_wiring"].status == GateStatus.PARTIAL
+
+
+def _source_handler(source_ts: str):
+    sha = "d" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/commits/main" in url:
+            return _json(request, {"sha": sha})
+        if f"/git/trees/{sha}" in url:
+            return _json(request, {"tree": [{"path": "src/contexts/AuthContext.tsx", "type": "blob"}]})
+        if "raw.githubusercontent.com" in url:
+            return httpx.Response(200, text=source_ts, request=request)
+        return httpx.Response(404, request=request)
+
+    return handler
+
+
+def _role_gate(source_ts: str):
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_handler(source_ts)))
+    ).certify(EDITH_TARGET)
+    return {g.gate_id: g for g in report.gates}["client_role_security"]
+
+
+def test_set_role_delegating_to_server_rpc_is_not_a_client_role_write():
+    source = (
+        "const setRole = useCallback(async (userId, role) => {"
+        " const { error } = await supabase.rpc('set_user_role', { target: userId, new_role: role }); });"
+        "\nonClick={async () => { await setRole(user.id, 'member'); }}"
+    )
+    assert _role_gate(source).status == GateStatus.PASS
+
+
+def test_client_profile_role_update_is_a_role_write():
+    source = (
+        "const setRole = useCallback(async (role) => { await supabase.from('profiles')"
+        "\n  .update({ role, updated_at: new Date().toISOString() }).eq('id', id); });"
+    )
+    assert _role_gate(source).status == GateStatus.FAIL
+
+
+def test_signup_metadata_role_flag_is_a_role_write():
+    source = "options: { data: { display_name: displayName, role: asEditor ? 'editor' : 'member' } }"
+    assert _role_gate(source).status == GateStatus.FAIL
+
+
+def test_ambiguous_taxonomy_is_blocked_with_candidate_provenance_and_no_selection():
+    dossier_calls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/federation/resolve-species" in url:
+            return _json(request, {
+                "status": "ambiguous", "match_state": "none", "taxon_id": None,
+                "candidates": [
+                    {"taxon_id": "46599", "accepted_name": "Catasetum macrocarpum", "match_state": "accepted_name"},
+                    {"taxon_id": "27265", "accepted_name": "Catasetum macrocarpum", "match_state": "accepted_name"},
+                ],
+                "explanation": "Multiple canonical taxa match the supplied identifier; human selection is required.",
+            })
+        if "/dossier" in url:
+            dossier_calls.append(url)
+            taxon = url.split("/species/")[1].split("/")[0]
+            return _json(request, {
+                "taxon_id": taxon,
+                "identity": {"full_scientific_name": f"Catasetum macrocarpum Author{taxon}",
+                             "authorship": f"Author{taxon}", "taxonomic_status": "accepted", "rank": "species"},
+                "provenance": [{"source_name": f"Source{taxon}"}],
+            })
+        if "/atlas" in url:
+            raise AssertionError("atlas must not be probed for an unselected candidate")
+        return httpx.Response(404, request=request)
+
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(handler))
+    ).certify(EDITH_TARGET.model_copy(update={"runtime_url": None}))
+    by_id = {g.gate_id: g for g in report.gates}
+    federation = by_id["calyx_federation"]
+    assert federation.status == GateStatus.BLOCKED
+    for taxon in ("46599", "27265"):
+        assert taxon in federation.blocker
+        assert f"Author{taxon}" in federation.observed_evidence
+        assert f"Source{taxon}" in federation.observed_evidence
+    assert len(dossier_calls) == 2
+    assert by_id["calyx_species_dossier"].status == GateStatus.BLOCKED
+    assert by_id["calyx_species_atlas"].status == GateStatus.BLOCKED
+    assert report.publish_ready == "NO"
+
+
+_LITERALS = [f"Chapter {i}: the greenhouse lesson about observing roots and light carefully" for i in range(30)]
+
+
+def _fingerprint_report(bundle_literals: list[str]):
+    source = "\n".join(f"const s{i} = '{lit}';" for i, lit in enumerate(_LITERALS))
+    bundle = (
+        "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search');"
+        + ";".join(f'x("{lit}")' for lit in bundle_literals)
+    )
+    return ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler(source, bundle)))
+    ).certify(EDITH_TARGET)
+
+
+def test_identical_content_fingerprints_as_the_deployed_build():
+    gate = {g.gate_id: g for g in _fingerprint_report(_LITERALS).gates}["source_runtime_fingerprint"]
+    assert gate.status == GateStatus.PASS
+    assert "30/30" in gate.observed_evidence
+    assert "sha256=" in gate.observed_evidence
+    assert "index-abc.js" in gate.observed_evidence
+
+
+def test_diverged_content_is_not_certified_as_equivalent():
+    report = _fingerprint_report(_LITERALS[:20])
+    gate = {g.gate_id: g for g in report.gates}["source_runtime_fingerprint"]
+    assert gate.status == GateStatus.FAIL
+    assert "20/30" in gate.observed_evidence
+    assert report.publish_ready == "NO"
+
+
+def test_unavailable_runtime_makes_no_fingerprint_claim():
+    source = "\n".join(f"const s{i} = '{lit}';" for i, lit in enumerate(_LITERALS))
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_handler(source)))
+    ).certify(EDITH_TARGET)
+    assert "source_runtime_fingerprint" not in {g.gate_id for g in report.gates}
+
+
+def test_fingerprint_reads_minifier_unicode_escapes():
+    literal = "Edith’s greenhouse — an observation-first lesson about roots and light"
+    literals = [literal] + _LITERALS[:25]
+    source = "\n".join(f"const s{i} = \"{lit}\";" for i, lit in enumerate(literals))
+    escaped = literal.encode("ascii", "backslashreplace").decode("ascii")
+    bundle = "fetch('https://orchid-continuum-public-api.onrender.com/x');" + ";".join(
+        f'x("{lit}")' for lit in [escaped] + _LITERALS[:25]
+    )
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler(source, bundle)))
+    ).certify(EDITH_TARGET)
+    gate = {g.gate_id: g for g in report.gates}["source_runtime_fingerprint"]
+    assert gate.status == GateStatus.PASS, gate.observed_evidence

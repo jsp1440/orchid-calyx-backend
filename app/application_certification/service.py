@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import io
 import re
 import zipfile
@@ -26,6 +27,10 @@ TEXT_SUFFIXES = {
 }
 
 SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".py")
+INSPECTION_CAP = 400
+# Correspondence threshold: share of the audited source's distinctive string
+# literals that must appear verbatim in the deployed bundle.
+CORRESPONDENCE_MIN_MATCH = 0.98
 
 
 def _inspection_priority(path: str) -> tuple[int, str]:
@@ -52,11 +57,16 @@ class ApplicationCertificationService:
 
     def certify(self, target: CertificationTarget) -> CertificationReport:
         gates: list[CertificationGate] = []
+        self._source_identity: str | None = None
+        self._source_strings_text = ""
+        self._runtime_identity: str | None = None
+        self._runtime_text = ""
         sha, paths, source_text = self._source_inventory(target, gates)
         self._source_contract_checks(paths, source_text, gates)
         self._backend_probes(gates)
         self._runtime_gate(target, gates)
         self._correspondence_gate(gates)
+        self._fingerprint_gate(gates)
         return self._report(target, sha, gates)
 
     def _source_inventory(
@@ -86,7 +96,7 @@ class ApplicationCertificationService:
             texts: list[str] = []
             inspected = 0
             for path in sorted(paths, key=_inspection_priority):
-                if inspected >= 120:
+                if inspected >= INSPECTION_CAP:
                     break
                 lower = path.lower()
                 if not any(lower.endswith(sfx) for sfx in TEXT_SUFFIXES):
@@ -102,6 +112,8 @@ class ApplicationCertificationService:
                 except httpx.HTTPError:
                     continue
             source_text = "".join(texts)
+            self._source_identity = f"{target.source_repository}@{sha} (repository tree)"
+            self._source_strings_text = source_text
             source_files = [p for p in paths if p.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".py"))]
             if source_files:
                 gates.append(CertificationGate(
@@ -125,6 +137,7 @@ class ApplicationCertificationService:
                 if archive_source_files:
                     paths = archive_paths
                     source_text = archive_text
+                    self._source_strings_text = archive_text
                     gates.append(CertificationGate(
                         gate_id="source_application_files",
                         status=GateStatus.PASS,
@@ -174,12 +187,16 @@ class ApplicationCertificationService:
         try:
             response = self.client.get(raw)
             response.raise_for_status()
+            self._source_identity = (
+                f"{owner}/{repo}@{sha}:{archive_path} "
+                f"sha256={hashlib.sha256(response.content).hexdigest()}"
+            )
             with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
                 names = [name for name in archive.namelist() if not name.endswith("/")]
                 texts: list[str] = []
                 inspected = 0
                 for name in sorted(names, key=_inspection_priority):
-                    if inspected >= 120:
+                    if inspected >= INSPECTION_CAP:
                         break
                     lower = name.lower()
                     if not any(lower.endswith(sfx) for sfx in TEXT_SUFFIXES):
@@ -237,8 +254,11 @@ class ApplicationCertificationService:
             smallest_next_action="Remove pending/null OC wiring and use canonical OC adapters." if pending_hits else None,
         ))
 
+        # A function NAME is not a write: setRole() that delegates to an
+        # admin-checked server RPC is the repair, not the defect.
         privilege_patterns = [
-            r"setrole\s*\(",
+            r"\.update\(\s*\{\s*role\b",
+            r"role\s*:\s*[\w$.]+\s*\?\s*['\"]editor['\"]",
             r"role\s*:\s*['\"](?:editor|admin)['\"]",
             r"update\([^\n]{0,200}role",
         ]
@@ -282,10 +302,32 @@ class ApplicationCertificationService:
             ("calyx_federation", f"{CALYX_API}/api/platform/federation/resolve-species?name=Catasetum%20macrocarpum"),
         )
         resolved_taxon: str | None = None
+        ambiguous: list[str] = []
         for gate_id, url in probes:
             status, detail, data = self._probe(url)
             if gate_id == "calyx_federation" and status == GateStatus.PASS:
                 status, detail = self._federation_verdict(detail, data)
+            if gate_id == "calyx_federation" and isinstance(data, dict) and data.get("status") == "ambiguous":
+                ambiguous = [
+                    str(c["taxon_id"]) for c in (data.get("candidates") or [])
+                    if isinstance(c, dict) and c.get("taxon_id")
+                ][:5]
+                provenance = [self._candidate_provenance(t) for t in ambiguous]
+                gates.append(CertificationGate(
+                    gate_id=gate_id,
+                    status=GateStatus.BLOCKED,
+                    evidence_type="api",
+                    observed_evidence=f"{detail}; candidate provenance={provenance}",
+                    blocker=(
+                        "Canonical taxonomy is ambiguous for the probe name; candidates "
+                        f"{ambiguous} require authoritative human taxonomic selection."
+                    ),
+                    smallest_next_action=(
+                        "A taxonomy reviewer selects/merges the canonical record among "
+                        f"{ambiguous} through the governed taxonomy path, then re-run certification."
+                    ),
+                ))
+                continue
             gates.append(CertificationGate(
                 gate_id=gate_id,
                 status=status,
@@ -317,10 +359,32 @@ class ApplicationCertificationService:
                     gate_id=gate_id,
                     status=GateStatus.BLOCKED,
                     evidence_type="api",
-                    observed_evidence="Canonical taxon ID was not resolved, so the dependent endpoint was not guessed.",
+                    observed_evidence=(
+                        "Canonical taxon ID was not resolved, so the dependent endpoint was not guessed"
+                        + (f"; ambiguous candidates {ambiguous} were probed for provenance only." if ambiguous else ".")
+                    ),
                     blocker="Federation resolver did not provide a taxon_id.",
                     smallest_next_action="Restore federation resolution, then re-run dependent probes.",
                 ))
+
+    def _candidate_provenance(self, taxon_id: str) -> dict[str, Any]:
+        """Evidence for a human reviewer. Never selects a candidate."""
+        url = f"{CALYX_API}/api/platform/species/{quote(taxon_id, safe='')}/dossier"
+        _status, detail, data = self._probe(url)
+        record: dict[str, Any] = {"taxon_id": taxon_id, "dossier_http": detail.split(" -> ")[-1]}
+        if isinstance(data, dict):
+            identity = data.get("identity") if isinstance(data.get("identity"), dict) else {}
+            record.update({
+                "full_scientific_name": identity.get("full_scientific_name") or data.get("full_scientific_name"),
+                "authorship": identity.get("authorship"),
+                "taxonomic_status": identity.get("taxonomic_status"),
+                "rank": identity.get("rank"),
+                "provenance_sources": sorted({
+                    str(r.get("source_name")) for r in (data.get("provenance") or [])
+                    if isinstance(r, dict) and r.get("source_name")
+                })[:5],
+            })
+        return record
 
     @staticmethod
     def _federation_verdict(detail: str, data: Any | None) -> tuple[GateStatus, str]:
@@ -381,6 +445,11 @@ class ApplicationCertificationService:
                 bundle.append(response.text[:8_000_000])
                 fetched.append(url.rsplit("/", 1)[-1])
         text = "\n".join(bundle).lower()
+        self._runtime_text = text
+        self._runtime_identity = ", ".join(
+            f"{name} sha256={hashlib.sha256(body.encode('utf-8')).hexdigest()}"
+            for name, body in zip(fetched, bundle[1:], strict=True)
+        ) or None
         if fetched:
             self._role_security_runtime_gate(text, fetched, gates)
         markers = {
@@ -462,6 +531,51 @@ class ApplicationCertificationService:
             smallest_next_action=None if status == GateStatus.PASS else (
                 "Route role changes through an admin-checked server RPC and ignore client-supplied "
                 "signup roles, redeploy, then re-run certification."
+            ),
+        ))
+
+    def _fingerprint_gate(self, gates: list[CertificationGate]) -> None:
+        """Exact evidence that the audited source IS the deployed build, or is not."""
+        if not self._runtime_identity or not self._source_strings_text:
+            return
+        literals = sorted({
+            " ".join(m.split()).lower()
+            for m in re.findall(r"[\"']([^\"'\\\n`]{40,400})[\"']", self._source_strings_text)
+            if not re.search(r"https?://|\.(?:png|jpe?g|svg|webp)\b", m)
+        })
+        if len(literals) < 20:
+            gates.append(CertificationGate(
+                gate_id="source_runtime_fingerprint",
+                status=GateStatus.UNVERIFIED,
+                evidence_type="configuration",
+                observed_evidence=f"Only {len(literals)} distinctive source literals; too few to fingerprint.",
+                blocker="Insufficient source content to prove or disprove build identity.",
+            ))
+            return
+        # Minifiers may escape non-ASCII and quotes; compare decoded text.
+        decoded = re.sub(
+            r"\\u\{?([0-9a-f]{4,5})\}?", lambda m: chr(int(m.group(1), 16)), self._runtime_text
+        ).replace("\\'", "'").replace('\\"', '"')
+        runtime = " ".join(decoded.split())
+        missing = [lit for lit in literals if lit not in runtime]
+        share = 1 - len(missing) / len(literals)
+        status = GateStatus.PASS if share >= CORRESPONDENCE_MIN_MATCH else GateStatus.FAIL
+        gates.append(CertificationGate(
+            gate_id="source_runtime_fingerprint",
+            status=status,
+            evidence_type="configuration",
+            observed_evidence=(
+                f"Audited source: {self._source_identity}. Deployed: {self._runtime_identity}. "
+                f"{len(literals) - len(missing)}/{len(literals)} distinctive source string literals "
+                f"({share:.1%}) appear verbatim in the deployed bundle; examples absent from the "
+                f"deployed bundle: {[m[:90] for m in missing[:3]]}."
+            ),
+            blocker=None if status == GateStatus.PASS else (
+                "The deployed bundle is not a build of the audited source; equivalence is not proven."
+            ),
+            smallest_next_action=None if status == GateStatus.PASS else (
+                "Commit the exact source of the deployed Famous build to the registered source "
+                "repository, then re-run certification."
             ),
         ))
 
