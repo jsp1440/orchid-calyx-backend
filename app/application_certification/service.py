@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import io
 import re
+import zipfile
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -98,19 +101,45 @@ class ApplicationCertificationService:
                     observed_evidence=f"Found {len(source_files)} source files; inspected up to {inspected} text files.",
                 ))
             else:
-                archives = [p for p in paths if p.lower().endswith((".zip", ".tar.gz", ".tgz"))]
-                gates.append(CertificationGate(
-                    gate_id="source_application_files",
-                    status=GateStatus.PARTIAL if archives else GateStatus.FAIL,
-                    evidence_type="source",
-                    observed_evidence=(
-                        "Repository contains packaged handoff artifact(s) but no directly auditable application source tree."
-                        if archives else
-                        "Repository exposes no directly auditable application source files."
-                    ),
-                    blocker="Canonical source tree is not present in the certification repository.",
-                    smallest_next_action="Sync/export the current Famous.ai source tree to the GitHub target repository.",
-                ))
+                archives = [p for p in paths if p.lower().endswith(".zip")]
+                archive_paths: list[str] = []
+                archive_text = ""
+                if archives:
+                    archive_paths, archive_text = self._inspect_zip_source(
+                        owner, repo, sha, archives[0]
+                    )
+                archive_source_files = [
+                    p for p in archive_paths
+                    if p.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".py"))
+                ]
+                if archive_source_files:
+                    paths = archive_paths
+                    source_text = archive_text
+                    gates.append(CertificationGate(
+                        gate_id="source_application_files",
+                        status=GateStatus.PASS,
+                        evidence_type="source",
+                        observed_evidence=(
+                            f"Audited packaged source from {archives[0]}: "
+                            f"{len(archive_source_files)} source files found."
+                        ),
+                    ))
+                else:
+                    gates.append(CertificationGate(
+                        gate_id="source_application_files",
+                        status=GateStatus.PARTIAL if archives else GateStatus.FAIL,
+                        evidence_type="source",
+                        observed_evidence=(
+                            "Repository contains a ZIP handoff, but no auditable application source "
+                            "could be extracted from it."
+                            if archives else
+                            "Repository exposes no directly auditable application source files."
+                        ),
+                        blocker="Canonical source is not available to the certification target.",
+                        smallest_next_action=(
+                            "Export/sync the current Famous.ai source or provide a readable ZIP handoff."
+                        ),
+                    ))
             return sha, paths, source_text
         except (httpx.HTTPError, ValueError) as exc:
             gates.append(CertificationGate(
@@ -122,6 +151,41 @@ class ApplicationCertificationService:
                 smallest_next_action="Restore GitHub reachability or correct the source repository/ref.",
             ))
             return None, [], ""
+
+    def _inspect_zip_source(
+        self,
+        owner: str,
+        repo: str,
+        sha: str,
+        archive_path: str,
+    ) -> tuple[list[str], str]:
+        encoded_path = quote(archive_path, safe="/")
+        raw = f"https://raw.githubusercontent.com/{owner}/{repo}/{sha}/{encoded_path}"
+        try:
+            response = self.client.get(raw)
+            response.raise_for_status()
+            with zipfile.ZipFile(io.BytesIO(response.content)) as archive:
+                names = [name for name in archive.namelist() if not name.endswith("/")]
+                texts: list[str] = []
+                inspected = 0
+                for name in names:
+                    if inspected >= 120:
+                        break
+                    lower = name.lower()
+                    if not any(lower.endswith(sfx) for sfx in TEXT_SUFFIXES):
+                        continue
+                    if any(part in lower for part in ("node_modules/", "dist/", "build/", ".min.js")):
+                        continue
+                    try:
+                        payload = archive.read(name)
+                        decoded = payload.decode("utf-8")
+                    except (KeyError, UnicodeDecodeError):
+                        continue
+                    texts.append(f"\n--- {name} ---\n{decoded[:100000]}")
+                    inspected += 1
+                return names, "".join(texts)
+        except (httpx.HTTPError, zipfile.BadZipFile):
+            return [], ""
 
     def _source_contract_checks(
         self, paths: list[str], source_text: str, gates: list[CertificationGate]
