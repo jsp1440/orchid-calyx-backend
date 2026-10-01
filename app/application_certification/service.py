@@ -15,6 +15,7 @@ from .models import (
     GateStatus,
 )
 
+# Certification implementation issue: #1717
 GITHUB_API = "https://api.github.com"
 OC_PUBLIC_API = "https://orchid-continuum-public-api.onrender.com"
 CALYX_API = "https://orchid-calyx-backend.onrender.com"
