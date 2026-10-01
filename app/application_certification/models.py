@@ -53,4 +53,5 @@ class CertificationReport(BaseModel):
     accessibility_status: GateStatus
     publish_ready: Literal["YES", "NO", "UNVERIFIED"]
     exact_blockers: list[str] = Field(default_factory=list)
+    source_under_test: str | None = None
     last_verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
