@@ -327,7 +327,7 @@ class ApplicationCertificationService:
         status, detail, _ = self._probe(str(runtime))
         gates.append(CertificationGate(
             gate_id="live_runtime_journeys",
-            status=status if status == GateStatus.PASS else GateStatus.FAIL,
+            status=status if status in {GateStatus.PASS, GateStatus.BLOCKED} else GateStatus.FAIL,
             evidence_type="deployment",
             observed_evidence=detail,
             blocker=None if status == GateStatus.PASS else detail,
@@ -404,6 +404,10 @@ class ApplicationCertificationService:
     def _probe(self, url: str) -> tuple[GateStatus, str, Any | None]:
         try:
             response = self.client.get(url, headers={"Accept": "application/json"})
+        except httpx.ProxyError as exc:
+            # The certifying runner's own egress proxy refused the host: that
+            # is evidence about the runner, not about the target.
+            return GateStatus.BLOCKED, f"{url} runner egress refused: {type(exc).__name__}: {exc}", None
         except httpx.HTTPError as exc:
             return GateStatus.FAIL, f"{url} network error: {type(exc).__name__}: {exc}", None
         content_type = response.headers.get("content-type", "")

@@ -145,3 +145,59 @@ def test_zip_handoff_source_is_auditable():
     assert gates["source_application_files"].status == GateStatus.PASS
     assert "packaged source" in gates["source_application_files"].observed_evidence
     assert gates["oc_source_wiring"].status == GateStatus.PASS
+
+
+def test_runner_proxy_refusal_is_blocked_not_a_target_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ProxyError("403 Forbidden", request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    report = ApplicationCertificationService(client).certify(EDITH_TARGET)
+    by_id = {g.gate_id: g for g in report.gates}
+
+    for gate_id in ("oc_species_search", "oc_genus_media", "calyx_federation", "live_runtime_journeys"):
+        assert by_id[gate_id].status == GateStatus.BLOCKED
+        assert "runner egress refused" in by_id[gate_id].observed_evidence
+    assert report.publish_ready == "NO"
+
+
+def test_runtime_connect_error_remains_a_failure():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "deploypad.app" in str(request.url):
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(404, request=request)
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    report = ApplicationCertificationService(client).certify(EDITH_TARGET)
+    runtime = {g.gate_id: g for g in report.gates}["live_runtime_journeys"]
+    assert runtime.status == GateStatus.FAIL
+
+
+def test_certification_run_record_binds_run_repo_sha_and_gate_lists():
+    import importlib.util
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_edith_bramble_certification.py"
+    spec = importlib.util.spec_from_file_location("run_edith_cert", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ProxyError("403 Forbidden", request=request)
+
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(handler))
+    ).certify(EDITH_TARGET)
+    record = module.build_record(
+        report.model_dump(mode="json"), "run-1", "b" * 40, datetime(2026, 10, 1, tzinfo=timezone.utc)
+    )
+    assert record["certification_run_id"] == "run-1"
+    assert record["calyx_repository_sha"] == "b" * 40
+    assert record["runtime_tested"] == "https://story-orchids-interactive.deploypad.app/"
+    assert "live_runtime_journeys" in record["blocked_gates"]
+    assert record["passed_gates"] == []
+    assert record["publish_ready"] == "NO"
+    summary = module.render_summary(record)
+    assert all(line.count("\n") == 0 for line in summary.splitlines())
+    assert "| live_runtime_journeys | BLOCKED |" in summary

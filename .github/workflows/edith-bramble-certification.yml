@@ -1,0 +1,45 @@
+name: Edith Bramble Application Certification
+
+# Executes the real CALYX-APP-CERT-001 certification against the registered
+# Edith Bramble source repository and Famous runtime from a hosted runner.
+# Read-only: it probes public endpoints and persists the report as an artifact.
+
+on:
+  pull_request:
+    paths:
+      - "app/application_certification/**"
+      - "scripts/run_edith_bramble_certification.py"
+      - ".github/workflows/edith-bramble-certification.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  certify-edith-bramble:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: .
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run real Edith Bramble certification
+        run: python scripts/run_edith_bramble_certification.py --output-dir artifacts/application-certification
+
+      - name: Persist certification report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edith-bramble-certification-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/application-certification/
+          if-no-files-found: error
