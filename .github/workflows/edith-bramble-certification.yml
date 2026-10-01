@@ -7,6 +7,8 @@ name: Edith Bramble Application Certification
 #      compiled-asset comparison with the live JavaScript
 #   3. browser journeys and axe accessibility at desktop, iPad and phone
 #   4. merge of the executed evidence into the same certification run record
+# A candidate repair patch for the source-under-test is validated on a copy;
+# its results go to repair-validation/, never into the certification record.
 # Read-only against every external system: no deploy, no sign-up, no writes.
 
 on:
@@ -16,6 +18,7 @@ on:
       - "scripts/run_edith_bramble_certification.py"
       - "scripts/edith_app_checks.py"
       - "scripts/edith_runtime_journeys.mjs"
+      - "artifacts/application-certification/edith-bramble/**"
       - ".github/workflows/edith-bramble-certification.yml"
   workflow_dispatch:
 
@@ -62,7 +65,9 @@ jobs:
           python scripts/edith_app_checks.py \
             --source-repo "$SOURCE_REPOSITORY" --source-sha "$SOURCE_SHA" \
             --archive "$SOURCE_UNDER_TEST" --runtime-url "$RUNTIME_URL" \
-            --workdir "$RUNNER_TEMP/edith-app" --out evidence/app-checks.json
+            --workdir "$RUNNER_TEMP/edith-app" --out evidence/app-checks.json \
+            --patch artifacts/application-certification/edith-bramble/export-9-repairs.patch \
+            --repair-out repair-validation/export-9-repairs.json
 
       - name: Browser journeys and accessibility
         if: steps.cert.outputs.runtime_url != ''
@@ -93,4 +98,5 @@ jobs:
           path: |
             artifacts/application-certification/
             evidence/
+            repair-validation/
           if-no-files-found: error

@@ -44,3 +44,15 @@ def test_failed_gate_carries_blocker_and_passing_gate_does_not():
     assert checks.gate("app_build", "FAIL", "exit 1", blocker="b", action="a")["blocker"] == "b"
     passing = checks.gate("app_build", "PASS", "exit 0", blocker="b", action="a")
     assert passing["blocker"] is None and passing["smallest_next_action"] is None
+
+
+def test_lint_errors_keep_errors_with_their_files_and_drop_warnings():
+    out = (
+        "/home/runner/work/_temp/edith-app/app/src/components/ui/sidebar.tsx\n"
+        "  733:3  warning  Fast refresh only works when a file only exports components  react-refresh/only-export-components\n"
+        "/home/runner/work/_temp/edith-app/app/src/lib/content.ts\n"
+        "  12:7  error  'x' is assigned a value but never used  @typescript-eslint/no-unused-vars\n"
+    )
+    assert checks.lint_errors(out) == [
+        "lib/content.ts 12:7 error 'x' is assigned a value but never used @typescript-eslint/no-unused-vars"
+    ]

@@ -24,6 +24,7 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -102,6 +103,99 @@ def jwt_roles(text: str) -> list[tuple[str, str]]:
     return sorted(roles)
 
 
+def lint_errors(out: str) -> list[str]:
+    """eslint prints `<path>` then `  L:C  error  message  rule` lines; keep the errors."""
+    lines = out.splitlines()
+    errs = []
+    for i, line in enumerate(lines):
+        if re.search(r"^\s+\d+:\d+\s+error\s", line):
+            owner = next((lines[j] for j in range(i, -1, -1) if lines[j].startswith("/")), "")
+            errs.append(f"{owner.split('/src/', 1)[-1] if '/src/' in owner else owner} {' '.join(line.split())}")
+    return errs
+
+
+def exercise(app: Path, identity: str, prefix: str) -> list[dict]:
+    """Install, build, lint and typecheck one application tree."""
+    gates: list[dict] = []
+    install_rc, install_out, install_s = run(
+        ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
+    )
+    gates.append(gate(
+        f"{prefix}_lockfile_sync", "PASS" if install_rc == 0 else "FAIL",
+        f"{identity}: `npm ci --ignore-scripts` exited {install_rc} after {install_s:.0f}s"
+        + ("" if install_rc == 0 else f": {tail(install_out, 8)}"),
+        blocker="package-lock.json does not match package.json, so the build is not reproducible.",
+        action="Regenerate package-lock.json with `npm install` in the application and commit it.",
+    ))
+    install_mode = "npm ci (lockfile)"
+    if install_rc != 0:
+        # The lockfile defect is recorded above; still find out whether the code
+        # builds, but say plainly that this build is not reproducible.
+        install_rc, install_out, install_s = run(
+            ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
+        )
+        install_mode = "npm install (lockfile out of sync; NOT reproducible)"
+    if install_rc != 0:
+        for step in ("build", "lint", "typecheck"):
+            gates.append(gate(
+                f"{prefix}_{step}", "BLOCKED",
+                f"{identity}: dependency install exited {install_rc} after {install_s:.0f}s: {tail(install_out)}",
+                blocker="Dependencies could not be installed, so the command was not run.",
+                action="Repair the lockfile/dependency install, then re-run certification.",
+            ))
+        return gates
+    tsconfig = "tsconfig.app.json" if (app / "tsconfig.app.json").exists() else "tsconfig.json"
+    for step, cmd in (
+        ("build", ["npm", "run", "build"]),
+        ("lint", ["npm", "run", "lint"]),
+        ("typecheck", ["npx", "--no-install", "tsc", "--noEmit", "-p", tsconfig]),
+    ):
+        rc, out, secs = run(cmd, app, 900)
+        errors = lint_errors(out) if step == "lint" else []
+        status = "PASS" if rc == 0 else ("BLOCKED" if rc is None else "FAIL")
+        gates.append(gate(
+            f"{prefix}_{step}", status,
+            f"{identity} [{install_mode}]: `{' '.join(cmd)}` exited {rc} in {secs:.0f}s; "
+            + (f"errors: {errors[:10]}; " if errors else "")
+            + f"output tail: {tail(out)}",
+            blocker=f"`{' '.join(cmd)}` did not succeed.",
+            action=f"Fix the {step} errors in the source-under-test, then re-run.",
+        ))
+    return gates
+
+
+NOT_LIVE_PHRASES = ("integration is not live", "intentionally not connected")
+
+
+def validate_repair(pristine: Path, patch: Path, identity: str) -> list[dict]:
+    """Apply a repair patch to a copy of the source-under-test and exercise it.
+
+    Evidence about a CANDIDATE repair, never about the live runtime: these
+    gates are written to a separate file and are not certification gates.
+    """
+    rc, out, _ = run(["git", "apply", "--verbose", str(patch.resolve())], pristine, 60)
+    label = f"{identity} + {patch.name} sha256={hashlib.sha256(patch.read_bytes()).hexdigest()}"
+    gates = [gate("repair_patch_applies", "PASS" if rc == 0 else "FAIL", f"{label}: git apply exited {rc}: {tail(out, 6)}")]
+    if rc != 0:
+        return gates
+    # The repair regenerates the lockfile, then must install from it with npm ci.
+    rc, out, secs = run(["npm", "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund"], pristine, 900)
+    lock = pristine / "package-lock.json"
+    gates.append(gate(
+        "repair_lockfile_regenerated", "PASS" if rc == 0 else "FAIL",
+        f"{label}: `npm install --package-lock-only` exited {rc} in {secs:.0f}s; regenerated "
+        f"package-lock.json sha256={hashlib.sha256(lock.read_bytes()).hexdigest() if lock.exists() else None}",
+    ))
+    gates.extend(exercise(pristine, label, prefix="repair"))
+    built = "\n".join(p.read_text(encoding="utf-8", errors="replace") for p in (pristine / "dist").rglob("*.js")).lower()
+    stale = [p for p in NOT_LIVE_PHRASES if p in built]
+    gates.append(gate(
+        "repair_not_live_copy_removed", "PASS" if built and not stale else "FAIL",
+        f"{label}: stale phrases in repaired build: {stale}; build present={bool(built)}",
+    ))
+    return gates
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-repo", required=True)
@@ -110,6 +204,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runtime-url", required=True)
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--patch", type=Path, help="Candidate repair patch to validate on a copy.")
+    parser.add_argument("--repair-out", type=Path, help="Where repair-validation gates are written.")
     args = parser.parse_args(argv)
 
     gates: list[dict] = []
@@ -129,57 +225,10 @@ def main(argv: list[str] | None = None) -> int:
         if len(nested) == 1:
             app = nested[0]
 
-    install_rc, install_out, install_s = run(
-        ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
-    )
-    gates.append(gate(
-        "app_lockfile_sync", "PASS" if install_rc == 0 else "FAIL",
-        f"{identity}: `npm ci --ignore-scripts` exited {install_rc} after {install_s:.0f}s"
-        + ("" if install_rc == 0 else f": {tail(install_out, 8)}"),
-        blocker="package-lock.json does not match package.json, so the build is not reproducible.",
-        action="Regenerate package-lock.json with `npm install` in the application and commit it.",
-    ))
-    install_mode = "npm ci (lockfile)"
-    if install_rc != 0:
-        # The lockfile defect is recorded above; still find out whether the code
-        # builds, but say plainly that this build is not reproducible.
-        install_rc, install_out, install_s = run(
-            ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
-        )
-        install_mode = "npm install (lockfile out of sync; NOT reproducible)"
-    installed = install_rc == 0
-    if not installed:
-        for gate_id in ("app_build", "app_lint", "app_typecheck"):
-            gates.append(gate(
-                gate_id, "BLOCKED",
-                f"{identity}: `npm ci --ignore-scripts` exited {install_rc} after {install_s:.0f}s: {tail(install_out)}",
-                blocker="Dependencies could not be installed, so the command was not run.",
-                action="Repair the lockfile/dependency install, then re-run certification.",
-            ))
-    else:
-        tsconfig = "tsconfig.app.json" if (app / "tsconfig.app.json").exists() else "tsconfig.json"
-        for gate_id, cmd in (
-            ("app_build", ["npm", "run", "build"]),
-            ("app_lint", ["npm", "run", "lint"]),
-            ("app_typecheck", ["npx", "--no-install", "tsc", "--noEmit", "-p", tsconfig]),
-        ):
-            rc, out, secs = run(cmd, app, 900)
-            if gate_id == "app_lint" and rc:
-                # Lead with the errors; warnings follow them in eslint output.
-                lines = out.splitlines()
-                errs = []
-                for i, line in enumerate(lines):
-                    if re.search(r"^\s+\d+:\d+\s+error\s", line):
-                        owner = next((lines[j] for j in range(i, -1, -1) if lines[j].startswith("/")), "")
-                        errs.append(f"{owner.split('/app/', 1)[-1]} {line.strip()}")
-                out = "ERRORS: " + " ; ".join(errs[:10]) + "\n" + out
-            status = "PASS" if rc == 0 else ("BLOCKED" if rc is None else "FAIL")
-            gates.append(gate(
-                gate_id, status,
-                f"{identity} [{install_mode}]: `{' '.join(cmd)}` exited {rc} in {secs:.0f}s; output tail: {tail(out)}",
-                blocker=f"`{' '.join(cmd)}` did not succeed.",
-                action=f"Fix the {gate_id.removeprefix('app_')} errors in the source-under-test, then re-run.",
-            ))
+    pristine = args.workdir / "pristine"
+    if args.patch:
+        shutil.copytree(app, pristine)
+    gates.extend(exercise(app, identity, prefix="app"))
 
     try:
         live = deployed_scripts(client, args.runtime_url)
@@ -250,6 +299,13 @@ def main(argv: list[str] | None = None) -> int:
             blocker="A non-anon credential is shipped to every browser.",
             action="Rotate the exposed credential (owner) and remove it from client code.",
         ))
+
+    if args.patch and args.repair_out:
+        repair = validate_repair(pristine, args.patch, identity)
+        args.repair_out.parent.mkdir(parents=True, exist_ok=True)
+        args.repair_out.write_text(json.dumps(repair, indent=2) + "\n", encoding="utf-8")
+        for g in repair:
+            print(f"REPAIR {g['gate_id']}: {g['status']} -- {g['observed_evidence'][:600]}")
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(gates, indent=2) + "\n", encoding="utf-8")

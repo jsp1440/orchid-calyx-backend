@@ -1,0 +1,65 @@
+diff --git a/src/components/auth/AuthModal.tsx b/src/components/auth/AuthModal.tsx
+index 2087ea2..31f59a0 100644
+--- a/src/components/auth/AuthModal.tsx
++++ b/src/components/auth/AuthModal.tsx
+@@ -58,7 +58,7 @@ const AuthModal: React.FC = () => {
+       return;
+     }
+     if ('message' in result && result.message) {
+-      setNotice(result.message);
++      setNotice(String(result.message));
+       setMode('signin');
+       return;
+     }
+diff --git a/src/components/pages/GoDeeperPage.tsx b/src/components/pages/GoDeeperPage.tsx
+index 9a73ae9..a2f790c 100644
+--- a/src/components/pages/GoDeeperPage.tsx
++++ b/src/components/pages/GoDeeperPage.tsx
+@@ -42,8 +42,9 @@ const GoDeeperPage: React.FC = () => {
+         )}
+ 
+         <p className="mt-5 text-sm leading-relaxed text-muted-foreground">
+-          This request was received by the boundary and intentionally not answered. No external data is fetched,
+-          cached, or invented while the Orchid Continuum / Calyx endpoint is unavailable.
++          This request was received by the boundary and intentionally not answered: the Orchid Continuum does not
++          yet serve this subject. No external data is fetched, cached, or invented. Species are read live, read-only,
++          on their Species Dossier pages.
+         </p>
+       </section>
+     </ModulePage>
+diff --git a/src/content/modules/go-deeper.json b/src/content/modules/go-deeper.json
+index baa6ef1..4e27eba 100644
+--- a/src/content/modules/go-deeper.json
++++ b/src/content/modules/go-deeper.json
+@@ -1,18 +1,18 @@
+ {
+   "id": "go-deeper",
+   "title": "Go Deeper",
+-  "kicker": "Reserved integration",
+-  "subtitle": "A doorway to the Orchid Continuum / Calyx — built, boundaried, and not yet connected.",
++  "kicker": "Integration boundary",
++  "subtitle": "Where story deep links meet the Orchid Continuum / Calyx — connected for species, honest about everything else.",
+   "layout": "default",
+   "heroImage": "plate-orchid-watercolor",
+   "intro": [
+-    "This section is a deliberate empty room. The component boundary exists so that story plants and scientific concepts can eventually resolve to deeper taxonomic, ecological, conservation and cultivation data.",
+-    "No integration is simulated. Until a real endpoint is available, every deep link resolves to this page and says so plainly."
++    "Species identity, media and dossier sections across this site are read live, read-only, from the Orchid Continuum: open any Species Dossier or the Featured Genus to see them, each with its source and its own reason when a section is not yet available.",
++    "This page is where deep links land when their subject is not yet served by the Continuum — concepts, pathogens and collector cards. Those requests are received and deliberately not answered: nothing is simulated, cached or invented."
+   ],
+   "notice": {
+     "tone": "info",
+-    "title": "Not yet connected",
+-    "body": "The Orchid Continuum / Calyx integration is not live. The adapter in /src/lib/goDeeper.ts defines the request and response contract; supplying a base URL activates every existing deep link across the site with no other code changes."
++    "title": "Connected for species; other subjects pending",
++    "body": "Species (taxon) records are read from the Orchid Continuum through a read-only relay to the Calyx species dossier. Concept, pathogen and collector-card subjects are not yet served by the Continuum, so links for them resolve here and say so plainly."
+   },
+   "entries": [
+     {
+diff --git a/src/vite-env.d.ts b/src/vite-env.d.ts
+new file mode 100644
+index 0000000..11f02fe
+--- /dev/null
++++ b/src/vite-env.d.ts
+@@ -0,0 +1 @@
++/// <reference types="vite/client" />

@@ -202,6 +202,7 @@ async function main() {
             genus: s?.querySelector('#featured-genus-title')?.textContent?.trim() ?? null,
             busy: s?.querySelector('ul')?.getAttribute('aria-busy') ?? null,
             buttons: s ? s.querySelectorAll('ul button[aria-pressed]').length : null,
+            honestError: /could not be loaded just now|could not be reached just now/i.test(s?.innerText ?? ''),
             text: (s ?? document.body).innerText.replace(/\s+/g, ' ').slice(0, 160),
           };
         }).catch(() => null);
