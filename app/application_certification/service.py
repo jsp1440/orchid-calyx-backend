@@ -26,6 +26,7 @@ EDITH_TARGET = CertificationTarget(
     application_name="Edith Bramble Chronicles / Famous.ai",
     source_repository="jsp1440/edith-bramble-famous-sync",
     source_ref="main",
+    runtime_url="https://story-orchids-interactive.deploypad.app",
 )
 
 
