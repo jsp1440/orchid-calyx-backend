@@ -6,7 +6,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from starlette.responses import Response as StarletteResponse
 
-from app.application_certification.routes import router as application_certification_router
+from app.application_certification.routes import (
+    router as application_certification_router,
+)
 from app.atlas_intelligence.api import router as atlas_intelligence_router
 from app.brain.routes import router as brain_router
 from app.calyx_conversation.store import ConversationStoreUnavailable

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends
 
 from app.security import verify_owner_or_api_key
 
 from .models import CertificationReport, CertificationTarget
-from .service import ApplicationCertificationService, EDITH_TARGET
+from .service import EDITH_TARGET, ApplicationCertificationService
 
 router = APIRouter(
     prefix="/api/application-certification",
@@ -26,13 +28,13 @@ def edith_target() -> CertificationTarget:
 @router.post("/certify", response_model=CertificationReport)
 def certify(
     target: CertificationTarget,
-    service: ApplicationCertificationService = Depends(get_service),
+    service: Annotated[ApplicationCertificationService, Depends(get_service)],
 ) -> CertificationReport:
     return service.certify(target)
 
 
 @router.post("/targets/edith-bramble/run", response_model=CertificationReport)
 def certify_edith(
-    service: ApplicationCertificationService = Depends(get_service),
+    service: Annotated[ApplicationCertificationService, Depends(get_service)],
 ) -> CertificationReport:
     return service.certify(EDITH_TARGET)

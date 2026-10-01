@@ -5,7 +5,12 @@ from typing import Any
 
 import httpx
 
-from .models import CertificationGate, CertificationReport, CertificationTarget, GateStatus
+from .models import (
+    CertificationGate,
+    CertificationReport,
+    CertificationTarget,
+    GateStatus,
+)
 
 GITHUB_API = "https://api.github.com"
 OC_PUBLIC_API = "https://orchid-continuum-public-api.onrender.com"
@@ -351,7 +356,7 @@ class ApplicationCertificationService:
         response.raise_for_status()
         data = response.json()
         if not isinstance(data, dict):
-            raise ValueError("JSON object required")
+            raise TypeError("JSON object required")
         return data
 
     @staticmethod

@@ -2,8 +2,8 @@ import httpx
 
 from app.application_certification.models import GateStatus
 from app.application_certification.service import (
-    ApplicationCertificationService,
     EDITH_TARGET,
+    ApplicationCertificationService,
 )
 
 
