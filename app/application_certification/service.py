@@ -28,6 +28,21 @@ TEXT_SUFFIXES = {
 
 SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".py")
 INSPECTION_CAP = 400
+MAX_ARCHIVES = 5
+ROUTE_MIN_MATCH = 0.98
+OC_MARKERS = {
+    "oc_public_api_host": "orchid-continuum-public-api.onrender.com",
+    "calyx_api_host": "orchid-calyx-backend.onrender.com",
+    "species_search_path": "/api/species/search",
+    "genus_images_path": "/images/genus/",
+    "federation_resolve_path": "/api/platform/federation/resolve-species",
+    "species_platform_path": "/api/platform/species/",
+}
+NOT_LIVE_PHRASES = ("integration is not live", "intentionally not connected")
+ROLE_WRITE_PATTERNS = (
+    r"\.update\(\{role:",
+    r"role:[\w$.]+\?[\"'`]editor[\"'`]",
+)
 _CODE_LIKE = re.compile(r"[{}()<>=;|&\[\]]|\b(?:const|return|classname|function)\b")
 # Correspondence threshold: share of the audited source's distinctive string
 # literals that must appear verbatim in the deployed bundle.
@@ -62,10 +77,13 @@ class ApplicationCertificationService:
         self._source_strings_text = ""
         self._runtime_identity: str | None = None
         self._runtime_text = ""
+        self._candidates: list[dict[str, Any]] = []
         sha, paths, source_text = self._source_inventory(target, gates)
-        self._source_contract_checks(paths, source_text, gates)
         self._backend_probes(gates)
         self._runtime_gate(target, gates)
+        if self._candidates:
+            paths, source_text = self._select_source(gates)
+        self._source_contract_checks(paths, source_text, gates)
         self._correspondence_gate(gates)
         self._fingerprint_gate(gates)
         return self._report(target, sha, gates)
@@ -124,30 +142,33 @@ class ApplicationCertificationService:
                     observed_evidence=f"Found {len(source_files)} source files; inspected up to {inspected} text files.",
                 ))
             else:
-                archives = [p for p in paths if p.lower().endswith(".zip")]
-                archive_paths: list[str] = []
-                archive_text = ""
-                if archives:
-                    archive_paths, archive_text = self._inspect_zip_source(
-                        owner, repo, sha, archives[0]
-                    )
-                archive_source_files = [
-                    p for p in archive_paths
-                    if p.lower().endswith((".ts", ".tsx", ".js", ".jsx", ".py"))
-                ]
-                if archive_source_files:
-                    paths = archive_paths
-                    source_text = archive_text
-                    self._source_strings_text = archive_text
+                archives = sorted(p for p in paths if p.lower().endswith(".zip"))[:MAX_ARCHIVES]
+                for archive in archives:
+                    names, text, identity = self._inspect_zip_source(owner, repo, sha, archive)
+                    sources = [n for n in names if n.lower().endswith(SOURCE_SUFFIXES)]
+                    if sources:
+                        self._candidates.append({
+                            "archive": archive, "identity": identity, "names": names,
+                            "text": text, "source_files": len(sources),
+                        })
+                if self._candidates:
+                    # Which archive is the source-under-test is decided later, from
+                    # correspondence with the deployed build -- never from file
+                    # order, recency or a README claim.
                     gates.append(CertificationGate(
                         gate_id="source_application_files",
                         status=GateStatus.PASS,
                         evidence_type="source",
                         observed_evidence=(
-                            f"Audited packaged source from {archives[0]}: "
-                            f"{len(archive_source_files)} source files found."
+                            "Audited packaged source candidates: "
+                            + "; ".join(
+                                f"{c['identity']} ({c['source_files']} source files)"
+                                for c in self._candidates
+                            )
+                            + "."
                         ),
                     ))
+                    return sha, [], ""
                 else:
                     gates.append(CertificationGate(
                         gate_id="source_application_files",
@@ -182,13 +203,13 @@ class ApplicationCertificationService:
         repo: str,
         sha: str,
         archive_path: str,
-    ) -> tuple[list[str], str]:
+    ) -> tuple[list[str], str, str]:
         encoded_path = quote(archive_path, safe="/")
         raw = f"https://raw.githubusercontent.com/{owner}/{repo}/{sha}/{encoded_path}"
         try:
             response = self.client.get(raw)
             response.raise_for_status()
-            self._source_identity = (
+            identity = (
                 f"{owner}/{repo}@{sha}:{archive_path} "
                 f"sha256={hashlib.sha256(response.content).hexdigest()}"
             )
@@ -211,9 +232,9 @@ class ApplicationCertificationService:
                         continue
                     texts.append(f"\n--- {name} ---\n{decoded[:100000]}")
                     inspected += 1
-                return names, "".join(texts)
+                return names, "".join(texts), identity
         except (httpx.HTTPError, zipfile.BadZipFile):
-            return [], ""
+            return [], "", ""
 
     def _source_contract_checks(
         self, paths: list[str], source_text: str, gates: list[CertificationGate]
@@ -453,21 +474,9 @@ class ApplicationCertificationService:
         ) or None
         if fetched:
             self._role_security_runtime_gate(text, fetched, gates)
-        markers = {
-            "oc_public_api_host": "orchid-continuum-public-api.onrender.com",
-            "calyx_api_host": "orchid-calyx-backend.onrender.com",
-            "species_search_path": "/api/species/search",
-            "genus_images_path": "/images/genus/",
-            "federation_resolve_path": "/api/platform/federation/resolve-species",
-            "species_platform_path": "/api/platform/species/",
-        }
+        markers = OC_MARKERS
         present = sorted(k for k, v in markers.items() if v in text)
-        not_live = [
-            phrase for phrase in (
-                "integration is not live",
-                "intentionally not connected",
-            ) if phrase in text
-        ]
+        not_live = [phrase for phrase in NOT_LIVE_PHRASES if phrase in text]
         if not fetched:
             status = GateStatus.UNVERIFIED
         elif set(present) == set(markers) and not not_live:
@@ -503,8 +512,8 @@ class ApplicationCertificationService:
     ) -> None:
         """Does the deployed client mutate its own role, or delegate to a guarded RPC?"""
         compact = re.sub(r"\s+", "", text)
-        self_update = bool(re.search(r"\.update\(\{role:", compact))
-        signup_role = bool(re.search(r"role:[\w$.]+\?[\"'`]editor[\"'`]", compact))
+        self_update = bool(re.search(ROLE_WRITE_PATTERNS[0], compact))
+        signup_role = bool(re.search(ROLE_WRITE_PATTERNS[1], compact))
         server_rpc = "set_user_role" in compact
         risky = [name for name, hit in (
             ("client .update({role:...})", self_update),
@@ -535,21 +544,128 @@ class ApplicationCertificationService:
             ),
         ))
 
-    def _fingerprint_gate(self, gates: list[CertificationGate]) -> None:
-        """Exact evidence that the audited source IS the deployed build, or is not."""
-        if not self._runtime_identity or not self._source_strings_text:
-            return
+    @staticmethod
+    def _prose_literals(source_text: str) -> list[str]:
         literals = {
             " ".join(m.split()).lower()
-            for m in re.findall(r"[\"']([^\"'\\\n`]{40,400})[\"']", self._source_strings_text)
+            for m in re.findall(r"[\"']([^\"'\\\n`]{40,400})[\"']", source_text)
             if not re.search(r"https?://|\.(?:png|jpe?g|svg|webp)\b", m)
         }
         # Prose only: code spans and utility-class strings are rewritten by the
         # minifier, so they measure the build tool, not the build's identity.
-        literals = sorted(
+        return sorted(
             lit for lit in literals
             if not _CODE_LIKE.search(lit) and len(re.findall(r"[a-z]{2,}", lit)) >= 6
         )
+
+    def _decoded_runtime(self) -> str:
+        # Minifiers may escape non-ASCII and quotes; compare decoded text.
+        decoded = re.sub(
+            r"\\u\{?([0-9a-f]{4,5})\}?", lambda m: chr(int(m.group(1), 16)), self._runtime_text
+        ).replace("\\'", "'").replace('\\"', '"')
+        return " ".join(decoded.split())
+
+    def _correspondence_signals(self, text: str, runtime: str) -> dict[str, Any]:
+        """Independent signals that a source tree is the deployed build."""
+        lower = text.lower()
+        compact_source = re.sub(r"\s+", "", lower)
+        compact_runtime = re.sub(r"\s+", "", runtime)
+        literals = self._prose_literals(text)
+        prose_hits = sum(1 for lit in literals if lit in runtime)
+        routes = sorted(set(re.findall(
+            r"(?:path|to)\s*[=:]\s*[\"'](/[a-z0-9][a-z0-9/_:-]*)[\"']", lower
+        )))
+        route_hits = [r for r in routes if f'"{r}"' in runtime or f"'{r}'" in runtime or f"`{r}`" in runtime]
+        source_markers = sorted(k for k, v in OC_MARKERS.items() if v in lower)
+        runtime_markers = sorted(k for k, v in OC_MARKERS.items() if v in runtime)
+        return {
+            "prose": (prose_hits, len(literals)),
+            "routes": (len(route_hits), len(routes)),
+            "oc_markers_agree": source_markers == runtime_markers,
+            "source_oc_markers": source_markers,
+            "role_rpc_agree": ("set_user_role" in lower) == ("set_user_role" in runtime),
+            "role_write_agree": any(re.search(p, compact_source) for p in ROLE_WRITE_PATTERNS)
+            == any(re.search(p, compact_runtime) for p in ROLE_WRITE_PATTERNS),
+            "not_live_agree": [p for p in NOT_LIVE_PHRASES if p in lower]
+            == [p for p in NOT_LIVE_PHRASES if p in runtime],
+        }
+
+    @staticmethod
+    def _signals_verified(sig: dict[str, Any]) -> bool:
+        prose_hit, prose_total = sig["prose"]
+        route_hit, route_total = sig["routes"]
+        return (
+            prose_total >= 20 and prose_hit / prose_total >= CORRESPONDENCE_MIN_MATCH
+            and (route_total == 0 or route_hit / route_total >= ROUTE_MIN_MATCH)
+            and sig["oc_markers_agree"] and sig["role_rpc_agree"]
+            and sig["role_write_agree"] and sig["not_live_agree"]
+        )
+
+    def _select_source(self, gates: list[CertificationGate]) -> tuple[list[str], str]:
+        """Choose the source-under-test by correspondence with the deployed build."""
+        runtime = self._decoded_runtime() if self._runtime_identity else ""
+        scored = []
+        for cand in self._candidates:
+            sig = self._correspondence_signals(cand["text"], runtime) if runtime else None
+            scored.append((cand, sig))
+
+        def rank(item: tuple[dict[str, Any], dict[str, Any] | None]) -> tuple[int, float]:
+            _, sig = item
+            if sig is None:
+                return (0, 0.0)
+            hit, total = sig["prose"]
+            return (int(self._signals_verified(sig)), hit / total if total else 0.0)
+
+        chosen, chosen_sig = max(scored, key=rank) if runtime else scored[0]
+        verified = [c["archive"] for c, sig in scored if sig and self._signals_verified(sig)]
+        self._source_identity = chosen["identity"]
+        self._source_strings_text = chosen["text"]
+
+        def describe(cand: dict[str, Any], sig: dict[str, Any] | None) -> str:
+            if sig is None:
+                return f"{cand['identity']}: not compared (deployed bundle unavailable)"
+            return (
+                f"{cand['identity']}: prose {sig['prose'][0]}/{sig['prose'][1]}, "
+                f"routes {sig['routes'][0]}/{sig['routes'][1]}, "
+                f"oc_markers_agree={sig['oc_markers_agree']} role_rpc_agree={sig['role_rpc_agree']} "
+                f"role_write_agree={sig['role_write_agree']} not_live_agree={sig['not_live_agree']} "
+                f"-> {'VERIFIED' if self._signals_verified(sig) else 'not verified'}"
+            )
+
+        if not runtime:
+            status = GateStatus.BLOCKED
+        elif len(verified) == 1 and verified[0] == chosen["archive"]:
+            status = GateStatus.PASS
+        else:
+            status = GateStatus.FAIL
+        historical = [c["archive"] for c, _ in scored if c is not chosen]
+        gates.append(CertificationGate(
+            gate_id="source_candidate_selection",
+            status=status,
+            evidence_type="configuration",
+            observed_evidence=(
+                f"Deployed: {self._runtime_identity or 'unavailable'}. Candidates: "
+                + " | ".join(describe(c, sig) for c, sig in scored)
+                + f". Source-under-test: {chosen['archive']}; historical provenance only: {historical}."
+            ),
+            blocker=None if status == GateStatus.PASS else (
+                "Deployed bundle unavailable, so no candidate can be tied to the live build."
+                if status == GateStatus.BLOCKED else
+                f"{len(verified)} candidate(s) verified as the deployed build; exactly one is required."
+            ),
+            smallest_next_action=None if status == GateStatus.PASS else (
+                "Commit the exact source of the deployed Famous build to the registered source "
+                "repository, then re-run certification."
+            ),
+        ))
+        del chosen_sig
+        return chosen["names"], chosen["text"]
+
+    def _fingerprint_gate(self, gates: list[CertificationGate]) -> None:
+        """Exact evidence that the audited source IS the deployed build, or is not."""
+        if not self._runtime_identity or not self._source_strings_text:
+            return
+        literals = self._prose_literals(self._source_strings_text)
         if len(literals) < 20:
             gates.append(CertificationGate(
                 gate_id="source_runtime_fingerprint",
@@ -559,11 +675,7 @@ class ApplicationCertificationService:
                 blocker="Insufficient source content to prove or disprove build identity.",
             ))
             return
-        # Minifiers may escape non-ASCII and quotes; compare decoded text.
-        decoded = re.sub(
-            r"\\u\{?([0-9a-f]{4,5})\}?", lambda m: chr(int(m.group(1), 16)), self._runtime_text
-        ).replace("\\'", "'").replace('\\"', '"')
-        runtime = " ".join(decoded.split())
+        runtime = self._decoded_runtime()
         missing = [lit for lit in literals if lit not in runtime]
         share = 1 - len(missing) / len(literals)
         status = GateStatus.PASS if share >= CORRESPONDENCE_MIN_MATCH else GateStatus.FAIL

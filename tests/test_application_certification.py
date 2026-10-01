@@ -1,5 +1,6 @@
 import io
 import zipfile
+from urllib.parse import quote
 
 import httpx
 
@@ -535,3 +536,145 @@ def test_fingerprint_ignores_code_fragments_the_minifier_rewrites():
     gate = {g.gate_id: g for g in report.gates}["source_runtime_fingerprint"]
     assert gate.status == GateStatus.PASS, gate.observed_evidence
     assert "30/30" in gate.observed_evidence
+
+
+_LIVE_PROSE = [f"Chronicle {i}: Edith asks what the reader actually sees on the roots today" for i in range(30)]
+_OLD_PROSE = [f"Draft {i}: an earlier chapter that the greenhouse story later rewrote entirely" for i in range(30)]
+
+
+def _zip(files: dict[str, str]) -> bytes:
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        for name, text in files.items():
+            archive.writestr(name, text)
+    return payload.getvalue()
+
+
+def _export(prose: list[str], *, wired: bool, rpc: bool, routes: list[str]) -> bytes:
+    lines = [f"const p{i} = '{lit}';" for i, lit in enumerate(prose)]
+    if wired:
+        lines.append("const a='https://orchid-continuum-public-api.onrender.com';")
+        lines.append("const b='https://orchid-calyx-backend.onrender.com';")
+        lines.append("get('/api/species/search');get('/images/genus/');")
+        lines.append("get('/api/platform/federation/resolve-species');get('/api/platform/species/');")
+    lines.append(
+        "supabase.rpc('set_user_role', { target: u, new_role: r });" if rpc
+        else "supabase.from('profiles').update({ role, updated_at: now }).eq('id', u);"
+    )
+    lines.extend(f"<Route path=\"{r}\" element={{<X/>}} />" for r in routes)
+    return _zip({"src/App.tsx": "\n".join(lines)})
+
+
+def _multi_archive_handler(archives: dict[str, bytes], bundle: str | None):
+    sha = "e" * 40
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/commits/main" in url:
+            return _json(request, {"sha": sha})
+        if f"/git/trees/{sha}" in url:
+            return _json(request, {"tree": [{"path": n, "type": "blob"} for n in archives]
+                                   + [{"path": "README.md", "type": "blob"}]})
+        if "raw.githubusercontent.com" in url:
+            for name, data in archives.items():
+                if url.endswith(quote(name, safe="/")):
+                    return httpx.Response(200, content=data, request=request)
+            return httpx.Response(200, text="Authoritative export: story 5.zip", request=request)
+        if "/federation/resolve-species" in url:
+            return _json(request, {"status": "resolved", "match_state": "accepted_name",
+                                   "taxon_id": "101", "explanation": "ok"})
+        if "/api/" in url or "/images/" in url:
+            return _json(request, {"ok": True})
+        if bundle is None and "deploypad.app" in url:
+            return httpx.Response(503, request=request)
+        if url.endswith("/assets/index-abc.js"):
+            return httpx.Response(200, text=bundle, request=request)
+        if "deploypad.app" in url:
+            return httpx.Response(
+                200, text="<html><script type='module' src='/assets/index-abc.js'></script></html>",
+                headers={"content-type": "text/html"}, request=request,
+            )
+        return httpx.Response(404, request=request)
+
+    return handler
+
+
+def _live_bundle(prose: list[str], routes: list[str]) -> str:
+    return (
+        FULL_WIRING
+        + ";".join(f'x("{lit}")' for lit in prose)
+        + ';s.rpc("set_user_role",{target:u,new_role:r});'
+        + "".join(f'{{path:"{r}",element:X}},' for r in routes)
+    )
+
+
+ROUTES = ["/chronicle-i", "/chronicle-ii", "/featured-genus", "/species/:taxon"]
+
+
+def _certify(archives: dict[str, bytes], bundle: str | None):
+    return ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_multi_archive_handler(archives, bundle)))
+    ).certify(EDITH_TARGET)
+
+
+def test_source_under_test_is_the_archive_that_matches_the_live_build_not_the_first():
+    report = _certify(
+        {
+            "story 5.zip": _export(_OLD_PROSE, wired=False, rpc=False, routes=ROUTES[:2]),
+            "story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES),
+        },
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    by_id = {g.gate_id: g for g in report.gates}
+    selection = by_id["source_candidate_selection"]
+    assert selection.status == GateStatus.PASS, selection.observed_evidence
+    assert "Source-under-test: story 9.zip" in selection.observed_evidence
+    assert "historical provenance only: ['story 5.zip']" in selection.observed_evidence
+    assert "routes 4/4" in selection.observed_evidence
+    assert by_id["source_runtime_fingerprint"].status == GateStatus.PASS
+    assert by_id["client_role_security"].status == GateStatus.PASS
+    assert by_id["source_runtime_correspondence"].status == GateStatus.PASS
+
+
+def test_newer_archive_that_does_not_match_the_live_build_is_not_selected_as_verified():
+    report = _certify(
+        {
+            "story 5.zip": _export(_OLD_PROSE, wired=False, rpc=False, routes=ROUTES),
+            "story 9.zip": _export(_OLD_PROSE[:15] + _LIVE_PROSE[:15], wired=True, rpc=True, routes=ROUTES),
+        },
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
+    assert selection.status == GateStatus.FAIL
+    assert "0 candidate(s) verified" in selection.blocker
+    assert report.publish_ready == "NO"
+
+
+def test_matching_prose_with_a_divergent_role_model_is_not_verified():
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=False, routes=ROUTES)},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
+    assert selection.status == GateStatus.FAIL
+    assert "role_rpc_agree=False" in selection.observed_evidence
+
+
+def test_no_live_bundle_means_no_source_is_tied_to_the_runtime():
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES)},
+        None,
+    )
+    selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
+    assert selection.status == GateStatus.BLOCKED
+    assert report.publish_ready == "NO"
+
+
+def test_matching_prose_with_a_divergent_route_set_is_not_verified():
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES + ["/grimoire", "/kitchen"])},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
+    assert selection.status == GateStatus.FAIL
+    assert "routes 4/6" in selection.observed_evidence
