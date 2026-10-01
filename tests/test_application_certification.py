@@ -1,3 +1,6 @@
+import io
+import zipfile
+
 import httpx
 
 from app.application_certification.models import GateStatus
@@ -92,3 +95,53 @@ def test_client_role_elevation_is_a_release_failure():
     assert gates["client_role_security"].status == GateStatus.FAIL
     assert report.security_status == GateStatus.FAIL
     assert report.publish_ready == "NO"
+
+
+def test_zip_handoff_source_is_auditable():
+    sha = "c" * 40
+    payload = io.BytesIO()
+    with zipfile.ZipFile(payload, "w") as archive:
+        archive.writestr(
+            "src/lib/orchid-continuum.ts",
+            (
+                "const api='https://orchid-continuum-public-api.onrender.com'; "
+                "const dossier='/api/platform/species/'; "
+                "const resolve='/api/platform/federation/resolve-species';"
+            ),
+        )
+        archive.writestr("src/App.tsx", "<a href='/science'>Science</a>")
+    zip_bytes = payload.getvalue()
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/commits/main" in url:
+            return _json(request, {"sha": sha})
+        if f"/git/trees/{sha}" in url:
+            return _json(
+                request,
+                {"tree": [{"path": "handoff.zip", "type": "blob"}]},
+            )
+        if "raw.githubusercontent.com" in url and url.endswith("handoff.zip"):
+            return httpx.Response(
+                200,
+                content=zip_bytes,
+                headers={"content-type": "application/zip"},
+                request=request,
+            )
+        if "/api/species/search" in url:
+            return _json(request, {})
+        if "/images/genus/Catasetum" in url:
+            return _json(request, {})
+        if "/federation/resolve-species" in url:
+            return _json(request, {"status": "unresolved"})
+        return _json(request, {})
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    report = ApplicationCertificationService(client).certify(
+        EDITH_TARGET.model_copy(update={"runtime_url": None})
+    )
+    gates = {gate.gate_id: gate for gate in report.gates}
+
+    assert gates["source_application_files"].status == GateStatus.PASS
+    assert "packaged source" in gates["source_application_files"].observed_evidence
+    assert gates["oc_source_wiring"].status == GateStatus.PASS
