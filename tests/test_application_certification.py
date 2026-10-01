@@ -910,3 +910,18 @@ def test_cli_overrides_certify_an_exact_ref_against_a_given_runtime(monkeypatch,
     assert seen["target"].source_ref == "1655b45b2fef3dbbadd478294e4cae1c975dfa1f"
     assert str(seen["target"].runtime_url) == "http://127.0.0.1:4173/"
     assert seen["target"].source_repository == "jsp1440/edith-bramble-famous-sync"
+
+
+def test_runtime_probe_asks_for_html_like_a_browser():
+    # An SPA preview server answers index.html only to HTML requests (404 to JSON).
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "127.0.0.1" in str(request.url):
+            if "text/html" not in request.headers.get("accept", ""):
+                return httpx.Response(404, request=request)
+            return httpx.Response(200, text="<html></html>", headers={"content-type": "text/html"}, request=request)
+        return httpx.Response(404, request=request)
+
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(
+        EDITH_TARGET.model_validate({**EDITH_TARGET.model_dump(), "runtime_url": "http://127.0.0.1:4173"})
+    )
+    assert {g.gate_id: g for g in report.gates}["live_runtime_journeys"].status == GateStatus.PASS

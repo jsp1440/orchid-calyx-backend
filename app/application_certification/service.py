@@ -770,7 +770,8 @@ class ApplicationCertificationService:
                 smallest_next_action="Register the current Famous.ai preview or published URL; source/API audits continue independently.",
             ))
             return
-        status, detail, _ = self._probe(str(runtime))
+        # A browser asks for HTML; SPA hosts only fall back to index.html for it.
+        status, detail, _ = self._probe(str(runtime), accept="text/html,application/xhtml+xml")
         gates.append(CertificationGate(
             gate_id="live_runtime_journeys",
             status=status if status in {GateStatus.PASS, GateStatus.BLOCKED} else GateStatus.FAIL,
@@ -920,9 +921,9 @@ class ApplicationCertificationService:
             return GateStatus.PARTIAL
         return GateStatus.PASS
 
-    def _probe(self, url: str) -> tuple[GateStatus, str, Any | None]:
+    def _probe(self, url: str, accept: str = "application/json") -> tuple[GateStatus, str, Any | None]:
         try:
-            response = self.client.get(url, headers={"Accept": "application/json"})
+            response = self.client.get(url, headers={"Accept": accept})
         except httpx.ProxyError as exc:
             # The certifying runner's own egress proxy refused the host: that
             # is evidence about the runner, not about the target.
