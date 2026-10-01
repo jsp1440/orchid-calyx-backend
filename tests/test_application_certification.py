@@ -843,3 +843,25 @@ def test_failed_compiled_correspondence_does_not_supersede():
     final = ApplicationCertificationService(httpx.Client()).finalize(_diverged_report(), [_compiled(
         "FAIL", "identical sha256: ['abc'] but other scripts differ")])
     assert {g.gate_id: g for g in final.gates}["source_candidate_selection"].status == GateStatus.FAIL
+
+
+def test_github_token_is_sent_to_the_github_api_only(monkeypatch):
+    monkeypatch.setenv("CERT_GITHUB_TOKEN", "tok-123")
+    seen: dict[str, str | None] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen[str(request.url)] = request.headers.get("authorization")
+        if "/commits/main" in str(request.url):
+            return _json(request, {"sha": "a" * 40})
+        if "/git/trees/" in str(request.url):
+            return _json(request, {"tree": [{"path": "src/a.ts", "type": "blob"}]})
+        return httpx.Response(200, text="<html></html>", headers={"content-type": "text/html"}, request=request)
+
+    ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    for url, auth in seen.items():
+        if url.startswith("https://api.github.com/"):
+            assert auth == "Bearer tok-123", url
+        else:
+            assert auth is None, f"token leaked to {url}"
+    assert any(u.startswith("https://raw.githubusercontent.com/") for u in seen)
+    assert any("deploypad.app" in u for u in seen)

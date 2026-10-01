@@ -51,6 +51,9 @@ jobs:
         id: cert
         env:
           CERT_REPOSITORY_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Read-only (contents: read); sent to api.github.com only, to avoid the
+          # shared-runner unauthenticated rate limit.
+          CERT_GITHUB_TOKEN: ${{ github.token }}
         run: python scripts/run_edith_bramble_certification.py --output-dir artifacts/application-certification
 
       - name: Build, lint, typecheck and compiled-asset correspondence

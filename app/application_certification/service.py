@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import io
+import os
 import re
 import zipfile
 from typing import Any
@@ -936,7 +937,14 @@ class ApplicationCertificationService:
         return GateStatus.FAIL, detail, data
 
     def _get_json(self, url: str) -> dict[str, Any]:
-        response = self.client.get(url)
+        # Shared hosted-runner IPs exhaust GitHub's unauthenticated quota. A token,
+        # when provided, is sent to api.github.com only -- never to the runtime,
+        # raw.githubusercontent.com or any probed service.
+        headers = {}
+        token = os.environ.get("CERT_GITHUB_TOKEN", "").strip()
+        if token and url.startswith(f"{GITHUB_API}/"):
+            headers["Authorization"] = f"Bearer {token}"
+        response = self.client.get(url, headers=headers)
         response.raise_for_status()
         data = response.json()
         if not isinstance(data, dict):
