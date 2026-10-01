@@ -32,11 +32,11 @@ def test_seed_overnight_is_durable_and_idempotent(monkeypatch):
     service = CalyxOrchestrator(db, CalyxAgentService())
     first = service.seed_overnight(owner="owner")
     second = service.seed_overnight(owner="owner")
-    assert len(first) == 9
+    assert len(first) == 10
     assert {job.job_id for job in first} == {job.job_id for job in second}
-    assert db.query(CalyxJob).count() == 9
+    assert db.query(CalyxJob).count() == 10
     assert {job.job_type for job in first}.issuperset(
-        {"website_design_audit", "education_readiness"}
+        {"website_design_audit", "education_readiness", "application_certification"}
     )
 
 
