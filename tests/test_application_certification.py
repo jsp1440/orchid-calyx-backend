@@ -517,3 +517,21 @@ def test_fingerprint_reads_minifier_unicode_escapes():
     ).certify(EDITH_TARGET)
     gate = {g.gate_id: g for g in report.gates}["source_runtime_fingerprint"]
     assert gate.status == GateStatus.PASS, gate.observed_evidence
+
+
+def test_fingerprint_ignores_code_fragments_the_minifier_rewrites():
+    code_spans = [
+        f" && data{i} && !data{i}.found && <p className=" for i in range(40)
+    ]
+    source = "\n".join(f"const s{i} = '{lit}';" for i, lit in enumerate(_LITERALS)) + "\n" + "\n".join(
+        f'x = "{span}"' for span in code_spans
+    )
+    bundle = "fetch('https://orchid-continuum-public-api.onrender.com/x');" + ";".join(
+        f'x("{lit}")' for lit in _LITERALS
+    )
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_and_runtime_handler(source, bundle)))
+    ).certify(EDITH_TARGET)
+    gate = {g.gate_id: g for g in report.gates}["source_runtime_fingerprint"]
+    assert gate.status == GateStatus.PASS, gate.observed_evidence
+    assert "30/30" in gate.observed_evidence

@@ -28,6 +28,7 @@ TEXT_SUFFIXES = {
 
 SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".py")
 INSPECTION_CAP = 400
+_CODE_LIKE = re.compile(r"[{}()<>=;|&\[\]]|\b(?:const|return|classname|function)\b")
 # Correspondence threshold: share of the audited source's distinctive string
 # literals that must appear verbatim in the deployed bundle.
 CORRESPONDENCE_MIN_MATCH = 0.98
@@ -538,11 +539,17 @@ class ApplicationCertificationService:
         """Exact evidence that the audited source IS the deployed build, or is not."""
         if not self._runtime_identity or not self._source_strings_text:
             return
-        literals = sorted({
+        literals = {
             " ".join(m.split()).lower()
             for m in re.findall(r"[\"']([^\"'\\\n`]{40,400})[\"']", self._source_strings_text)
             if not re.search(r"https?://|\.(?:png|jpe?g|svg|webp)\b", m)
-        })
+        }
+        # Prose only: code spans and utility-class strings are rewritten by the
+        # minifier, so they measure the build tool, not the build's identity.
+        literals = sorted(
+            lit for lit in literals
+            if not _CODE_LIKE.search(lit) and len(re.findall(r"[a-z]{2,}", lit)) >= 6
+        )
         if len(literals) < 20:
             gates.append(CertificationGate(
                 gate_id="source_runtime_fingerprint",
