@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.application_certification import (
     EDITH_TARGET,
     ApplicationCertificationService,
+    CertificationGate,
+    CertificationReport,
 )
 
 
@@ -82,6 +84,7 @@ def render_summary(record: dict) -> str:
         f"- executed at: {record['executed_at']}",
         f"- source: `{report['source_repository']}@{report['source_sha']}`",
         f"- runtime tested: {record['runtime_tested']}",
+        f"- source under test: {report.get('source_under_test')}",
         f"- **publish_ready: {record['publish_ready']}**",
         "",
         "| gate | status | evidence | blocker |",
@@ -94,10 +97,54 @@ def render_summary(record: dict) -> str:
     return "\n".join(lines) + "\n"
 
 
+def _emit(record: dict, out_path: Path) -> None:
+    out_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    summary = render_summary(record)
+    print(summary)
+    print(f"report persisted: {out_path}")
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if step_summary:
+        with open(step_summary, "a", encoding="utf-8") as handle:
+            handle.write(summary)
+
+
+def load_evidence(evidence_dir: Path) -> list[CertificationGate]:
+    """Every *.json under evidence_dir is a list of gate objects produced by an executed job."""
+    gates: list[CertificationGate] = []
+    for path in sorted(evidence_dir.glob("*.json")):
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        gates.extend(CertificationGate.model_validate(item) for item in payload)
+    return gates
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", default="artifacts/application-certification")
+    parser.add_argument(
+        "--finalize", type=Path,
+        help="An existing run record to merge executed evidence into (keeps its run ID).",
+    )
+    parser.add_argument("--evidence-dir", type=Path, help="Directory of evidence gate JSON files.")
     args = parser.parse_args(argv)
+
+    if args.finalize:
+        if not args.evidence_dir:
+            parser.error("--finalize requires --evidence-dir")
+        record = json.loads(args.finalize.read_text(encoding="utf-8"))
+        evidence = load_evidence(args.evidence_dir)
+        final = ApplicationCertificationService().finalize(
+            CertificationReport.model_validate(record["report"]), evidence
+        )
+        merged = build_record(
+            final.model_dump(mode="json"),
+            record["certification_run_id"],
+            record["calyx_repository_sha"],
+            datetime.fromisoformat(record["executed_at"]),
+        )
+        merged["finalized_at"] = datetime.now(timezone.utc).isoformat()
+        merged["evidence_files"] = sorted(p.name for p in args.evidence_dir.glob("*.json"))
+        _emit(merged, args.finalize)
+        return 0
 
     started = datetime.now(timezone.utc)
     run_id = f"edith-cert-{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
@@ -110,16 +157,15 @@ def main(argv: list[str] | None = None) -> int:
     record = build_record(report.model_dump(mode="json"), run_id, _repo_sha(), started)
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    out_path = out_dir / f"{run_id}.json"
-    out_path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-
-    summary = render_summary(record)
-    print(summary)
-    print(f"report persisted: {out_path}")
-    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
-    if step_summary:
-        with open(step_summary, "a", encoding="utf-8") as handle:
-            handle.write(summary)
+    _emit(record, out_dir / f"{run_id}.json")
+    github_output = os.environ.get("GITHUB_OUTPUT")
+    if github_output:
+        with open(github_output, "a", encoding="utf-8") as handle:
+            handle.write(f"record={out_dir / f'{run_id}.json'}\n")
+            handle.write(f"source_sha={report.source_sha or ''}\n")
+            handle.write(f"source_under_test={report.source_under_test or ''}\n")
+            handle.write(f"source_repository={report.source_repository}\n")
+            handle.write(f"runtime_url={report.runtime_url or ''}\n")
     return 0
 
 

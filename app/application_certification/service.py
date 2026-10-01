@@ -30,6 +30,13 @@ SOURCE_SUFFIXES = (".ts", ".tsx", ".js", ".jsx", ".py")
 INSPECTION_CAP = 400
 MAX_ARCHIVES = 5
 ROUTE_MIN_MATCH = 0.98
+# Gates a certification cannot be YES without. Executed out-of-process (hosted
+# build / browser jobs) and ingested via finalize(); absent ones are UNVERIFIED.
+REQUIRED_EXTERNAL_GATES = (
+    "app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
+)
+REQUIRED_EXTERNAL_PREFIXES = ("journey_", "accessibility_")
+NOT_EXECUTED = "Not executed in this certification run."
 OC_MARKERS = {
     "oc_public_api_host": "orchid-continuum-public-api.onrender.com",
     "calyx_api_host": "orchid-calyx-backend.onrender.com",
@@ -78,6 +85,7 @@ class ApplicationCertificationService:
         self._runtime_identity: str | None = None
         self._runtime_text = ""
         self._candidates: list[dict[str, Any]] = []
+        self._source_under_test: str | None = None
         sha, paths, source_text = self._source_inventory(target, gates)
         self._backend_probes(gates)
         self._runtime_gate(target, gates)
@@ -262,9 +270,14 @@ class ApplicationCertificationService:
             "/api/platform/federation/resolve-species",
         )
         oc_hits = [marker for marker in oc_markers if marker in lower]
+        # Assigned VALUES only: `status: 'pending' | 'live'` is a type, not a state.
         pending_hits = [
-            marker for marker in ("adapter = null", "status: 'pending'", 'status = "pending"', "continuum_base_url = null")
-            if marker in lower
+            label for label, pattern in (
+                ("adapter assigned null", r"\badapter\s*[:=]\s*null\s*[,;}\n]"),
+                ("status assigned 'pending'", r"\bstatus\s*[:=]\s*['\"]pending['\"]\s*[,;}\n]"),
+                ("continuum_base_url assigned null", r"continuum_base_url\s*=\s*null"),
+            )
+            if re.search(pattern, lower)
         ]
         status = GateStatus.PASS if len(oc_hits) >= 2 and not pending_hits else GateStatus.PARTIAL
         gates.append(CertificationGate(
@@ -619,6 +632,7 @@ class ApplicationCertificationService:
         chosen, chosen_sig = max(scored, key=rank) if runtime else scored[0]
         verified = [c["archive"] for c, sig in scored if sig and self._signals_verified(sig)]
         self._source_identity = chosen["identity"]
+        self._source_under_test = chosen["archive"]
         self._source_strings_text = chosen["text"]
 
         def describe(cand: dict[str, Any], sig: dict[str, Any] | None) -> str:
@@ -768,9 +782,26 @@ class ApplicationCertificationService:
         sha: str | None,
         gates: list[CertificationGate],
     ) -> CertificationReport:
+        gates = [g for g in gates if g.observed_evidence != NOT_EXECUTED]
+        present = {g.gate_id for g in gates}
+        for gate_id in REQUIRED_EXTERNAL_GATES:
+            if gate_id not in present:
+                gates.append(CertificationGate(
+                    gate_id=gate_id, status=GateStatus.UNVERIFIED, evidence_type="test",
+                    observed_evidence=NOT_EXECUTED, blocker=f"{gate_id} has no execution evidence.",
+                ))
+        for prefix in REQUIRED_EXTERNAL_PREFIXES:
+            if not any(gate_id.startswith(prefix) for gate_id in present):
+                gates.append(CertificationGate(
+                    gate_id=f"{prefix}suite", status=GateStatus.UNVERIFIED, evidence_type="browser",
+                    observed_evidence=NOT_EXECUTED, blocker=f"No {prefix.rstrip('_')} evidence was executed.",
+                ))
         by_id = {g.gate_id: g for g in gates}
         source_status = self._aggregate(gates, evidence_types={"source", "test", "configuration"})
-        runtime_gates = [g for g in gates if g.gate_id in {"live_runtime_journeys", "runtime_oc_wiring"}]
+        runtime_gates = [
+            g for g in gates
+            if g.gate_id in {"live_runtime_journeys", "runtime_oc_wiring"} or g.gate_id.startswith("journey_")
+        ]
         runtime_status = self._aggregate(runtime_gates) if "live_runtime_journeys" in by_id else GateStatus.UNVERIFIED
         security_gates = [g for g in gates if g.gate_id in {"client_role_security", "runtime_role_security"}]
         security_status = self._aggregate(security_gates) if security_gates else GateStatus.UNVERIFIED
@@ -779,7 +810,7 @@ class ApplicationCertificationService:
             "oc_source_wiring", "oc_species_search", "calyx_federation", "calyx_species_dossier", "calyx_species_atlas",
             "runtime_oc_wiring",
         }])
-        accessibility = GateStatus.UNVERIFIED
+        accessibility = self._aggregate([g for g in gates if g.gate_id.startswith("accessibility_")])
         blockers = [g.blocker for g in gates if g.blocker and g.status in {
             GateStatus.FAIL, GateStatus.BLOCKED, GateStatus.UNVERIFIED, GateStatus.PARTIAL
         }]
@@ -809,7 +840,29 @@ class ApplicationCertificationService:
             accessibility_status=accessibility,
             publish_ready=publish_ready,
             exact_blockers=[b for b in blockers if b],
+            source_under_test=getattr(self, "_source_under_test", None),
         )
+
+    def finalize(
+        self, report: CertificationReport, evidence: list[CertificationGate]
+    ) -> CertificationReport:
+        """Merge out-of-process execution evidence (build, browser, a11y) into a report.
+
+        Evidence replaces a gate of the same id; aggregates and publish_ready are
+        recomputed by the same rules as certify(). Nothing is inferred.
+        """
+        replaced = {g.gate_id for g in evidence}
+        gates = [g for g in report.gates if g.gate_id not in replaced] + list(evidence)
+        target = CertificationTarget(
+            application_id=report.application_id,
+            application_name=report.application_name,
+            source_repository=report.source_repository,
+            source_ref=report.source_ref,
+            runtime_url=report.runtime_url,
+            policy_version=report.policy_version,
+        )
+        self._source_under_test = report.source_under_test
+        return self._report(target, report.source_sha, gates)
 
     @staticmethod
     def _aggregate(

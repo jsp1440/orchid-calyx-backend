@@ -271,7 +271,7 @@ def test_deployed_bundle_saying_integration_not_live_is_not_a_pass():
     report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
     by_id = {g.gate_id: g for g in report.gates}
     assert by_id["runtime_oc_wiring"].status == GateStatus.PARTIAL
-    assert report.runtime_audit_status == GateStatus.PARTIAL
+    assert report.runtime_audit_status not in {GateStatus.PASS}
     assert report.publish_ready != "YES"
 
 
@@ -678,3 +678,127 @@ def test_matching_prose_with_a_divergent_route_set_is_not_verified():
     selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
     assert selection.status == GateStatus.FAIL
     assert "routes 4/6" in selection.observed_evidence
+
+
+def _oc_wiring_gate(source_ts: str):
+    report = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_source_handler(source_ts)))
+    ).certify(EDITH_TARGET)
+    return {g.gate_id: g for g in report.gates}["oc_source_wiring"]
+
+
+_WIRED_SOURCE = (
+    "const a='https://orchid-continuum-public-api.onrender.com';"
+    "const r='/api/platform/federation/resolve-species';const d='/api/platform/species/';\n"
+)
+
+
+def test_pending_type_union_is_not_a_pending_connection():
+    source = _WIRED_SOURCE + (
+        "export const ocConnection: { status: 'pending' | 'live'; adapter: OrchidContinuumAdapter | null } = {\n"
+        "  status: 'live',\n  adapter: liveAdapter,\n};"
+    )
+    assert _oc_wiring_gate(source).status == GateStatus.PASS
+
+
+def test_pending_null_assignment_is_still_detected():
+    source = _WIRED_SOURCE + "export const ocConnection = {\n  status: 'pending',\n  adapter: null,\n};"
+    gate = _oc_wiring_gate(source)
+    assert gate.status == GateStatus.PARTIAL
+    assert "adapter assigned null" in gate.observed_evidence
+    assert "status assigned 'pending'" in gate.observed_evidence
+
+
+def test_required_external_gates_are_unverified_until_executed():
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES)},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    by_id = {g.gate_id: g for g in report.gates}
+    for gate_id in ("app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
+                    "journey_suite", "accessibility_suite"):
+        assert by_id[gate_id].status == GateStatus.UNVERIFIED
+    assert report.accessibility_status == GateStatus.UNVERIFIED
+    assert report.publish_ready != "YES"
+    assert report.source_under_test == "story 9.zip"
+
+
+def _all_green_evidence() -> list:
+    from app.application_certification.models import CertificationGate
+
+    ids = ["app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
+           "journey_homepage", "accessibility_homepage_desktop"]
+    return [CertificationGate(gate_id=i, status=GateStatus.PASS,
+                              evidence_type="browser" if i.startswith(("journey_", "accessibility_")) else "test",
+                              observed_evidence=f"{i} executed") for i in ids]
+
+
+def test_finalize_replaces_placeholders_and_recomputes_without_inventing():
+    service = ApplicationCertificationService(
+        httpx.Client(transport=httpx.MockTransport(_multi_archive_handler(
+            {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES)},
+            _live_bundle(_LIVE_PROSE, ROUTES),
+        )))
+    )
+    report = service.certify(EDITH_TARGET)
+    final = ApplicationCertificationService(httpx.Client()).finalize(report, _all_green_evidence())
+    by_id = {g.gate_id: g for g in final.gates}
+    assert "journey_suite" not in by_id and "accessibility_suite" not in by_id
+    assert by_id["app_build"].observed_evidence == "app_build executed"
+    assert final.accessibility_status == GateStatus.PASS
+    assert final.source_under_test == "story 9.zip"
+    # YES iff every aggregate is PASS: evidence cannot lift a gate it did not cover.
+    aggregates = [final.source_audit_status, final.runtime_audit_status, final.scientific_provenance_status,
+                  final.security_status, final.media_status, final.accessibility_status]
+    assert (final.publish_ready == "YES") == all(a == GateStatus.PASS for a in aggregates)
+
+
+def test_finalize_with_a_failing_journey_cannot_be_publish_ready():
+    from app.application_certification.models import CertificationGate
+
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES)},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    evidence = _all_green_evidence() + [CertificationGate(
+        gate_id="journey_chronicle_ii_chapters", status=GateStatus.FAIL, evidence_type="browser",
+        observed_evidence="4 of 5 chapters rendered")]
+    final = ApplicationCertificationService(httpx.Client()).finalize(report, evidence)
+    assert final.runtime_audit_status == GateStatus.FAIL
+    assert final.publish_ready == "NO"
+
+
+def test_finalize_cli_merges_evidence_files_and_keeps_the_run_identity(tmp_path):
+    import importlib.util
+    import json
+    from datetime import datetime, timezone
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_edith_bramble_certification.py"
+    spec = importlib.util.spec_from_file_location("run_edith_cert_finalize", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    report = _certify(
+        {"story 9.zip": _export(_LIVE_PROSE, wired=True, rpc=True, routes=ROUTES)},
+        _live_bundle(_LIVE_PROSE, ROUTES),
+    )
+    record_path = tmp_path / "run.json"
+    record_path.write_text(json.dumps(module.build_record(
+        report.model_dump(mode="json"), "run-9", "f" * 40, datetime(2026, 10, 1, tzinfo=timezone.utc)
+    )))
+    evidence = tmp_path / "evidence"
+    evidence.mkdir()
+    (evidence / "app-checks.json").write_text(json.dumps([
+        {"gate_id": "app_build", "status": "FAIL", "evidence_type": "test",
+         "observed_evidence": "vite build exited 1"},
+    ]))
+
+    assert module.main(["--finalize", str(record_path), "--evidence-dir", str(evidence)]) == 0
+    merged = json.loads(record_path.read_text())
+    assert merged["certification_run_id"] == "run-9"
+    assert merged["calyx_repository_sha"] == "f" * 40
+    assert merged["evidence_files"] == ["app-checks.json"]
+    assert "app_build" in merged["failed_gates"]
+    assert merged["report"]["source_under_test"] == "story 9.zip"
+    assert merged["publish_ready"] == "NO"
