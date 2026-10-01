@@ -247,6 +247,7 @@ class ApplicationCertificationService:
                 ))
 
     def _runtime_gate(self, target: CertificationTarget, gates: list[CertificationGate]) -> None:
+        """Probe runtime reachability only; browser journey certification is a later gate."""
         runtime = target.runtime_url or target.preview_url
         if runtime is None:
             gates.append(CertificationGate(
