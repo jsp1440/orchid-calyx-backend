@@ -113,7 +113,13 @@ const JOURNEYS = {
     const section = await speciesReady(page);
     const link = section.getByRole('link', { name: /Open Species Dossier/ });
     const before = await link.getAttribute('href');
-    const target = section.locator('ul button[aria-pressed="false"]').first();
+    // Pin the target by position: an aria-pressed="false" locator re-resolves to
+    // a different button once the click flips this one to true.
+    const buttons = section.locator('ul button[aria-pressed]');
+    const pressed = await buttons.evaluateAll((bs) => bs.map((b) => b.getAttribute('aria-pressed')));
+    const index = pressed.indexOf('false');
+    if (index < 0) throw new Error(`no unselected species to click: ${pressed}`);
+    const target = buttons.nth(index);
     const name = (await target.innerText()).trim();
     await target.click();
     await page.waitForFunction(
@@ -182,7 +188,20 @@ async function main() {
           : { ok: true, detail };
       } catch (e) {
         results[name] ??= {};
-        results[name][vpName] = { ok: false, detail: String(e.message || e).split('\n')[0].slice(0, 300) };
+        const state = await page.evaluate(() => {
+          const s = document.querySelector('section[aria-labelledby="featured-genus-title"]');
+          return {
+            url: location.pathname,
+            genus: s?.querySelector('#featured-genus-title')?.textContent?.trim() ?? null,
+            busy: s?.querySelector('ul')?.getAttribute('aria-busy') ?? null,
+            buttons: s ? s.querySelectorAll('ul button[aria-pressed]').length : null,
+            text: (s ?? document.body).innerText.replace(/\s+/g, ' ').slice(0, 160),
+          };
+        }).catch(() => null);
+        results[name][vpName] = {
+          ok: false,
+          detail: `${String(e.message || e).split('\n')[0].slice(0, 200)}; page state ${JSON.stringify(state)}`,
+        };
       } finally {
         await page.close();
       }
@@ -198,7 +217,7 @@ async function main() {
         a11y[pageName] ??= {};
         a11y[pageName][vpName] = {
           ok: severe.length === 0,
-          detail: `serious/critical: ${severe.map((v) => `${v.id}(${v.nodes.length})`).join(', ') || 'none'}; ` +
+          detail: `serious/critical: ${severe.map((v) => `${v.id}(${v.nodes.length}: ${v.nodes.slice(0, 2).map((n) => `${n.target.join(' ')} ${n.html.slice(0, 120)}`).join(' ; ')})`).join(', ') || 'none'}; ` +
             `moderate/minor: ${other.map((v) => `${v.id}(${v.nodes.length})`).join(', ') || 'none'}`,
         };
       } catch (e) {

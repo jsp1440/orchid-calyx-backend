@@ -132,6 +132,21 @@ def main(argv: list[str] | None = None) -> int:
     install_rc, install_out, install_s = run(
         ["npm", "ci", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
     )
+    gates.append(gate(
+        "app_lockfile_sync", "PASS" if install_rc == 0 else "FAIL",
+        f"{identity}: `npm ci --ignore-scripts` exited {install_rc} after {install_s:.0f}s"
+        + ("" if install_rc == 0 else f": {tail(install_out, 8)}"),
+        blocker="package-lock.json does not match package.json, so the build is not reproducible.",
+        action="Regenerate package-lock.json with `npm install` in the application and commit it.",
+    ))
+    install_mode = "npm ci (lockfile)"
+    if install_rc != 0:
+        # The lockfile defect is recorded above; still find out whether the code
+        # builds, but say plainly that this build is not reproducible.
+        install_rc, install_out, install_s = run(
+            ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund"], app, 900
+        )
+        install_mode = "npm install (lockfile out of sync; NOT reproducible)"
     installed = install_rc == 0
     if not installed:
         for gate_id in ("app_build", "app_lint", "app_typecheck"):
@@ -152,7 +167,7 @@ def main(argv: list[str] | None = None) -> int:
             status = "PASS" if rc == 0 else ("BLOCKED" if rc is None else "FAIL")
             gates.append(gate(
                 gate_id, status,
-                f"{identity}: `{' '.join(cmd)}` exited {rc} in {secs:.0f}s; output tail: {tail(out)}",
+                f"{identity} [{install_mode}]: `{' '.join(cmd)}` exited {rc} in {secs:.0f}s; output tail: {tail(out)}",
                 blocker=f"`{' '.join(cmd)}` did not succeed.",
                 action=f"Fix the {gate_id.removeprefix('app_')} errors in the source-under-test, then re-run.",
             ))

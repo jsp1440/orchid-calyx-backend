@@ -715,8 +715,8 @@ def test_required_external_gates_are_unverified_until_executed():
         _live_bundle(_LIVE_PROSE, ROUTES),
     )
     by_id = {g.gate_id: g for g in report.gates}
-    for gate_id in ("app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
-                    "journey_suite", "accessibility_suite"):
+    for gate_id in ("app_lockfile_sync", "app_build", "app_lint", "app_typecheck",
+                    "compiled_asset_correspondence", "journey_suite", "accessibility_suite"):
         assert by_id[gate_id].status == GateStatus.UNVERIFIED
     assert report.accessibility_status == GateStatus.UNVERIFIED
     assert report.publish_ready != "YES"
@@ -726,7 +726,7 @@ def test_required_external_gates_are_unverified_until_executed():
 def _all_green_evidence() -> list:
     from app.application_certification.models import CertificationGate
 
-    ids = ["app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
+    ids = ["app_lockfile_sync", "app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
            "journey_homepage", "accessibility_homepage_desktop"]
     return [CertificationGate(gate_id=i, status=GateStatus.PASS,
                               evidence_type="browser" if i.startswith(("journey_", "accessibility_")) else "test",

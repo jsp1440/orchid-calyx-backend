@@ -33,7 +33,7 @@ ROUTE_MIN_MATCH = 0.98
 # Gates a certification cannot be YES without. Executed out-of-process (hosted
 # build / browser jobs) and ingested via finalize(); absent ones are UNVERIFIED.
 REQUIRED_EXTERNAL_GATES = (
-    "app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
+    "app_lockfile_sync", "app_build", "app_lint", "app_typecheck", "compiled_asset_correspondence",
 )
 REQUIRED_EXTERNAL_PREFIXES = ("journey_", "accessibility_")
 NOT_EXECUTED = "Not executed in this certification run."
