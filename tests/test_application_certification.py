@@ -53,7 +53,9 @@ def test_edith_certification_records_source_sha_and_keeps_runtime_unverified():
         return httpx.Response(404, request=request)
 
     client = httpx.Client(transport=httpx.MockTransport(handler))
-    report = ApplicationCertificationService(client).certify(EDITH_TARGET)
+    report = ApplicationCertificationService(client).certify(
+        EDITH_TARGET.model_copy(update={"runtime_url": None})
+    )
 
     assert report.source_sha == sha
     assert report.runtime_audit_status == GateStatus.UNVERIFIED
