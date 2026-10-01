@@ -4,8 +4,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from app.source_federation.acquisition import AcquisitionRecord, AcquisitionRequest
-from app.source_federation.acquisition_models import AcquisitionLedgerRow
 from app.source_federation.acquisition_ledger import AcquisitionLedger
+from app.source_federation.acquisition_models import AcquisitionLedgerRow
 
 
 def _ledger():
