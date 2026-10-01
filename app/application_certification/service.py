@@ -400,7 +400,8 @@ class ApplicationCertificationService:
         ]
         if not fetched:
             status = GateStatus.UNVERIFIED
-        elif {"oc_public_api_host", "calyx_api_host"} & set(present) and not not_live:
+        elif set(present) == set(markers) and not not_live:
+            # Every canonical host and path: a bare domain string is not wiring.
             status = GateStatus.PASS
         elif present:
             status = GateStatus.PARTIAL

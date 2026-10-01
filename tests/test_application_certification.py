@@ -203,6 +203,14 @@ def test_certification_run_record_binds_run_repo_sha_and_gate_lists():
     assert "| live_runtime_journeys | BLOCKED |" in summary
 
 
+FULL_WIRING = (
+    "const oc='https://orchid-continuum-public-api.onrender.com';"
+    "const calyx='https://orchid-calyx-backend.onrender.com';"
+    "get(oc+'/api/species/search');get(oc+'/images/genus/'+g);"
+    "get(calyx+'/api/platform/federation/resolve-species');get(calyx+'/api/platform/species/'+t);"
+)
+
+
 def _live_handler(federation: dict, bundle_js: str):
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
@@ -244,7 +252,7 @@ def test_federation_http_200_without_resolution_is_a_failure_with_resolver_evide
 def test_deployed_bundle_with_canonical_wiring_passes_runtime_oc_gate():
     handler = _live_handler(
         {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
-        "fetch('https://orchid-continuum-public-api.onrender.com/api/species/search?q='+q)",
+        FULL_WIRING,
     )
     report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
     gate = {g.gate_id: g for g in report.gates}["runtime_oc_wiring"]
@@ -359,3 +367,12 @@ def test_unavailable_source_makes_no_correspondence_claim():
     )
     report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
     assert "source_runtime_correspondence" not in {g.gate_id for g in report.gates}
+
+
+def test_domain_names_alone_are_not_canonical_runtime_wiring():
+    handler = _live_handler(
+        {"status": "resolved", "match_state": "accepted_name", "taxon_id": "101", "explanation": "ok"},
+        "// orchid-continuum-public-api.onrender.com orchid-calyx-backend.onrender.com",
+    )
+    report = ApplicationCertificationService(httpx.Client(transport=httpx.MockTransport(handler))).certify(EDITH_TARGET)
+    assert {g.gate_id: g for g in report.gates}["runtime_oc_wiring"].status == GateStatus.PARTIAL
