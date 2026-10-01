@@ -865,3 +865,48 @@ def test_github_token_is_sent_to_the_github_api_only(monkeypatch):
             assert auth is None, f"token leaked to {url}"
     assert any(u.startswith("https://raw.githubusercontent.com/") for u in seen)
     assert any("deploypad.app" in u for u in seen)
+
+
+def test_structural_agreement_outranks_prose_share_when_nothing_verifies():
+    # Two candidates whose prose both falls short (tree-shaking); the one whose
+    # "not live" copy and role model agree with the build must be chosen even
+    # though the other has a marginally higher prose share.
+    live = _live_bundle(_LIVE_PROSE[:20], ROUTES)
+    stale_files = {"src/App.tsx": "\n".join(
+        [f"const p{i} = '{lit}';" for i, lit in enumerate(_LIVE_PROSE[:20] + _OLD_PROSE[:2])]
+        + ["const a='https://orchid-continuum-public-api.onrender.com';",
+           "const b='https://orchid-calyx-backend.onrender.com';",
+           "get('/api/species/search');get('/images/genus/');",
+           "get('/api/platform/federation/resolve-species');get('/api/platform/species/');",
+           "supabase.rpc('set_user_role', { target: u, new_role: r });",
+           "const copy = 'The Orchid Continuum / Calyx integration is not live.';"]
+        + [f"<Route path=\"{r}\" element={{<X/>}} />" for r in ROUTES])}
+    repaired = _export(_LIVE_PROSE[:20] + _OLD_PROSE[:4], wired=True, rpc=True, routes=ROUTES)
+    report = _certify({"a export 9.zip": _zip(stale_files), "b repaired.zip": repaired}, live)
+    selection = {g.gate_id: g for g in report.gates}["source_candidate_selection"]
+    assert "Source-under-test: b repaired.zip" in selection.observed_evidence, selection.observed_evidence
+
+
+def test_cli_overrides_certify_an_exact_ref_against_a_given_runtime(monkeypatch, tmp_path):
+    import importlib.util
+    from pathlib import Path
+
+    path = Path(__file__).resolve().parents[1] / "scripts" / "run_edith_bramble_certification.py"
+    spec = importlib.util.spec_from_file_location("run_edith_cert_override", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    seen = {}
+
+    class Fake:
+        def certify(self, target):
+            seen["target"] = target
+            raise RuntimeError("stop after capturing the target")
+
+    monkeypatch.setattr(module, "ApplicationCertificationService", Fake)
+    rc = module.main(["--source-ref", "1655b45b2fef3dbbadd478294e4cae1c975dfa1f",
+                      "--runtime-url", "http://127.0.0.1:4173", "--run-label", "edith-candidate",
+                      "--output-dir", str(tmp_path)])
+    assert rc == 2
+    assert seen["target"].source_ref == "1655b45b2fef3dbbadd478294e4cae1c975dfa1f"
+    assert str(seen["target"].runtime_url) == "http://127.0.0.1:4173/"
+    assert seen["target"].source_repository == "jsp1440/edith-bramble-famous-sync"

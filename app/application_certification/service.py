@@ -623,12 +623,17 @@ class ApplicationCertificationService:
             sig = self._correspondence_signals(cand["text"], runtime) if runtime else None
             scored.append((cand, sig))
 
-        def rank(item: tuple[dict[str, Any], dict[str, Any] | None]) -> tuple[int, float]:
+        def rank(item: tuple[dict[str, Any], dict[str, Any] | None]) -> tuple[int, int, float]:
             _, sig = item
             if sig is None:
-                return (0, 0.0)
+                return (0, 0, 0.0)
             hit, total = sig["prose"]
-            return (int(self._signals_verified(sig)), hit / total if total else 0.0)
+            # Structural agreement outranks prose share: prose is lossy under
+            # tree-shaking, a disagreeing role model or "not live" copy is not.
+            agreeing = sum(bool(sig[k]) for k in (
+                "oc_markers_agree", "role_rpc_agree", "role_write_agree", "not_live_agree"
+            ))
+            return (int(self._signals_verified(sig)), agreeing, hit / total if total else 0.0)
 
         chosen, chosen_sig = max(scored, key=rank) if runtime else scored[0]
         verified = [c["archive"] for c, sig in scored if sig and self._signals_verified(sig)]

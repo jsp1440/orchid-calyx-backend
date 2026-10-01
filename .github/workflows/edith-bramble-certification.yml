@@ -103,3 +103,111 @@ jobs:
             evidence/
             repair-validation/
           if-no-files-found: error
+
+  # The same suite against the exact repaired source commit, built and served
+  # on the runner. Separates defects in the exported code from behaviour the
+  # Famous.ai host adds (injected badge/scripts, hosted edge functions).
+  certify-repair-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      PYTHONPATH: .
+      CANDIDATE_URL: http://127.0.0.1:4173
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Resolve pinned repair candidate
+        id: cand
+        run: |
+          python - <<'PY'
+          import json, os
+          c = json.load(open("artifacts/application-certification/edith-bramble/repair-candidate.json"))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              for k in ("source_repository", "source_sha", "archive", "archive_sha256"):
+                  out.write(f"{k}={c[k]}\n")
+          PY
+
+      - name: Build and serve the exact candidate commit
+        env:
+          REPO: ${{ steps.cand.outputs.source_repository }}
+          SHA: ${{ steps.cand.outputs.source_sha }}
+          ARCHIVE: ${{ steps.cand.outputs.archive }}
+          ARCHIVE_SHA256: ${{ steps.cand.outputs.archive_sha256 }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/candidate"
+          cd "$RUNNER_TEMP/candidate"
+          ENCODED=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["ARCHIVE"]))')
+          curl -fsSL -o candidate.zip "https://raw.githubusercontent.com/$REPO/$SHA/$ENCODED"
+          echo "$ARCHIVE_SHA256  candidate.zip" | sha256sum -c -
+          unzip -q candidate.zip -d app
+          cd app
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+          nohup npx --no-install vite preview --host 127.0.0.1 --port 4173 --strictPort > "$RUNNER_TEMP/preview.log" 2>&1 &
+          for i in $(seq 1 30); do curl -fsS "$CANDIDATE_URL/" > /dev/null && break; sleep 1; done
+          curl -fsS "$CANDIDATE_URL/" > /dev/null
+
+      - name: Static certification of the candidate
+        id: cert
+        env:
+          CERT_REPOSITORY_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          CERT_GITHUB_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.cand.outputs.source_sha }}
+        run: |
+          python scripts/run_edith_bramble_certification.py --source-ref "$SHA" \
+            --runtime-url "$CANDIDATE_URL" --run-label edith-candidate \
+            --output-dir artifacts/application-certification/candidate
+
+      - name: Candidate build, lint, typecheck and compiled-asset correspondence
+        if: steps.cert.outputs.source_under_test != ''
+        continue-on-error: true
+        env:
+          SOURCE_REPOSITORY: ${{ steps.cert.outputs.source_repository }}
+          SOURCE_SHA: ${{ steps.cert.outputs.source_sha }}
+          SOURCE_UNDER_TEST: ${{ steps.cert.outputs.source_under_test }}
+        run: |
+          python scripts/edith_app_checks.py \
+            --source-repo "$SOURCE_REPOSITORY" --source-sha "$SOURCE_SHA" \
+            --archive "$SOURCE_UNDER_TEST" --runtime-url "$CANDIDATE_URL" \
+            --workdir "$RUNNER_TEMP/candidate-checks" --out candidate-evidence/app-checks.json
+
+      - name: Candidate browser journeys and accessibility
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/journeys" candidate-evidence
+          cp scripts/edith_runtime_journeys.mjs "$RUNNER_TEMP/journeys/"
+          cd "$RUNNER_TEMP/journeys"
+          npm init -y > /dev/null
+          npm install --no-audit --no-fund playwright@1 @axe-core/playwright@4
+          npx playwright install --with-deps chromium
+          node edith_runtime_journeys.mjs "$CANDIDATE_URL" "$GITHUB_WORKSPACE/candidate-evidence/journeys.json"
+
+      - name: Merge candidate evidence into the candidate record
+        env:
+          RECORD: ${{ steps.cert.outputs.record }}
+        run: |
+          mkdir -p candidate-evidence
+          python scripts/run_edith_bramble_certification.py --finalize "$RECORD" --evidence-dir candidate-evidence
+
+      - name: Persist candidate report and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edith-bramble-repair-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            artifacts/application-certification/candidate/
+            candidate-evidence/
+          if-no-files-found: error

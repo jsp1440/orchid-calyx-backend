@@ -125,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
         help="An existing run record to merge executed evidence into (keeps its run ID).",
     )
     parser.add_argument("--evidence-dir", type=Path, help="Directory of evidence gate JSON files.")
+    parser.add_argument("--source-ref", help="Certify this source commit instead of the registered ref.")
+    parser.add_argument("--runtime-url", help="Certify this runtime instead of the registered one.")
+    parser.add_argument("--run-label", default="edith-cert", help="Run ID prefix (e.g. a candidate run).")
     args = parser.parse_args(argv)
 
     if args.finalize:
@@ -147,9 +150,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     started = datetime.now(timezone.utc)
-    run_id = f"edith-cert-{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    run_id = f"{args.run_label}-{started.strftime('%Y%m%dT%H%M%SZ')}-{uuid.uuid4().hex[:8]}"
+    overrides = {k: v for k, v in (("source_ref", args.source_ref), ("runtime_url", args.runtime_url)) if v}
+    # Validated, not copied: an override must pass the same model rules.
+    target = type(EDITH_TARGET).model_validate({**EDITH_TARGET.model_dump(), **overrides})
     try:
-        report = ApplicationCertificationService().certify(EDITH_TARGET)
+        report = ApplicationCertificationService().certify(target)
     except Exception as exc:  # noqa: BLE001 - report the crash, never a verdict
         print(f"certification produced no report: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 2

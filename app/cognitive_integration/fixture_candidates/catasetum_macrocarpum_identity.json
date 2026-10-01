@@ -1,0 +1,123 @@
+{
+  "fixture_id": "ci-fixture-candidate-catasetum-macrocarpum-identity",
+  "status": "FIXTURE_CANDIDATE",
+  "decision_state": "REVIEW_REQUIRED",
+  "selected_taxon_id": null,
+  "question": "Which production taxon record is the canonical identity for the name 'Catasetum macrocarpum'?",
+  "origin": {
+    "observed_by": "CALYX-APP-CERT-001 Edith Bramble certification (jsp1440/orchid-calyx-backend#1717, #1719)",
+    "first_observed_run": "edith-cert-20261001T080721Z-aacf0807",
+    "probe": "GET https://orchid-calyx-backend.onrender.com/api/platform/federation/resolve-species?name=Catasetum%20macrocarpum",
+    "resolver_response": {
+      "status": "ambiguous",
+      "match_state": "none",
+      "taxon_id": null,
+      "explanation": "Multiple canonical taxa match the supplied identifier; human selection is required."
+    },
+    "resolver_rule": "app/species_dossier/repository.py resolve_name: rows of public.orchid_taxonomy whose display name (authorship stripped) equals the query; more than one exact match is reported as ambiguous, never chosen."
+  },
+  "candidates": [
+    {
+      "identifier_space": "public.orchid_taxonomy (production; the federation resolver's TAXONOMY_TABLE)",
+      "taxon_id": "46599",
+      "full_scientific_name": "Catasetum macrocarpum",
+      "authorship": null,
+      "rank": "species",
+      "taxonomic_status": "recorded_in_orchid_taxonomy_table",
+      "provenance_sources": [
+        "Orchid Continuum taxonomy table"
+      ],
+      "dossier_endpoint": "HTTP 200",
+      "backbone_crosswalk": {
+        "file": "docs/crosswalks/orchid_taxonomy_to_backbone_crosswalk.csv",
+        "row": "public.orchid_taxonomy,46599,public.taxonomy_species,1886,crosswalk_id+canonical_name,1.0,orchid_continuum_taxon_crosswalk,2026-07-15,oc_taxonomy.taxon_crosswalk -> oc_taxonomy.taxa -> public.taxonomy_species,1.0"
+      }
+    },
+    {
+      "identifier_space": "public.orchid_taxonomy (production; the federation resolver's TAXONOMY_TABLE)",
+      "taxon_id": "27265",
+      "full_scientific_name": "Catasetum macrocarpum Rich. ex Kunth",
+      "authorship": "Rich. ex Kunth",
+      "rank": "species",
+      "taxonomic_status": "recorded_in_orchid_taxonomy_table",
+      "provenance_sources": [
+        "Orchid Continuum taxonomy table"
+      ],
+      "dossier_endpoint": "HTTP 200",
+      "backbone_crosswalk": {
+        "file": "docs/crosswalks/orchid_taxonomy_to_backbone_crosswalk.csv",
+        "row": null,
+        "note": "No row with source_identifier 27265 among the file's 10409 data rows."
+      }
+    }
+  ],
+  "registry_evidence": {
+    "file": "docs/crosswalks/canonical_taxon_registry.csv",
+    "last_commit": "3b1c1c2 (2026-08-22)",
+    "matching_row": {
+      "line": 19376,
+      "canonical_id": "19375",
+      "canonical_name": "Catasetum macrocarpum",
+      "scientific_name": "Catasetum macrocarpum Rich. ex Kunth",
+      "authorship": "Rich. ex Kunth",
+      "rank": "species",
+      "status": "accepted",
+      "accepted_canonical_id": null,
+      "authority_mappings_count": 2,
+      "authorities": "GBIF"
+    },
+    "synonyms_pointing_here": [
+      "line 59778: 59777 Catasetum claveringii Lindl. ex Van Geel",
+      "line 59779: 59778 Catasetum costatum Rchb.f.",
+      "line 59780: 59779 Catasetum floribundum Hook.",
+      "line 59781: 59780 Catasetum linguiferum Schltr.",
+      "line 59782: 59781 Catasetum tridentatum Hook.",
+      "line 59783: 59782 Cypripedium cothurnum Vell.",
+      "line 59784: 59783 Paphiopedilum cothurnum (Vell.) Pfitzer"
+    ],
+    "synonyms_note": "All 7 rows whose accepted_canonical_id is 19375 (enumerated with awk over the whole file, not sampled)."
+  },
+  "identifier_space_mismatch": {
+    "summary": "The canonical registry's canonical_id values are a different identifier space from public.orchid_taxonomy ids. The same integers name unrelated taxa there.",
+    "registry_rows_with_the_candidate_numbers": [
+      "line 46600: 46599 Dendrobium flabellum Rchb.f. (synonym -> 10021)",
+      "line 27266: 27265 Acianthera moronae (Luer & Hirtz) Luer (accepted)"
+    ],
+    "consequence": "The registry row 19375 cannot be joined to either production candidate by identifier. Any link is by name string only."
+  },
+  "evidence_supports": [
+    "The name 'Catasetum macrocarpum' with authorship 'Rich. ex Kunth' is recorded as an accepted species in the GBIF-backed canonical registry (canonical_id 19375).",
+    "Production record 27265 carries exactly that full name and authorship string.",
+    "Production record 46599 carries the bare name without authorship and is linked by the backbone crosswalk to public.taxonomy_species 1886 by crosswalk_id+canonical_name.",
+    "Both production records exist, both are rank species, both resolve to a dossier (HTTP 200), and both cite the same provenance source."
+  ],
+  "evidence_does_not_establish": [
+    "That 46599 and 27265 denote the same taxon concept (duplicate records) rather than two distinct concepts sharing a name.",
+    "Which production record is canonical, or whether either should be retired, aliased or merged.",
+    "That a name-string match between 27265 and registry row 19375 is an identity link; the identifier spaces do not join.",
+    "What public.taxonomy_species 1886 denotes; it is not described anywhere in this repository.",
+    "That the registry snapshot is current, or that GBIF acceptance is Orchid Continuum's canonical decision; no other authority (e.g. WFO, WCVP, the Hassler/WorldOrchids release) is consulted here.",
+    "Which records (media, occurrences, literature, dossier sections) attached to either id belong to which concept."
+  ],
+  "unresolved_decision": "A governed taxonomy reviewer must decide the canonical production identity for 'Catasetum macrocarpum' (keep both as distinct concepts, alias one to the other, or retire one), and how dependent records are re-pointed. This is a production taxonomy mutation and an owner/scientific gate.",
+  "why_review_required": [
+    "More than one production record matches; the resolver's own contract reports ambiguity rather than choosing.",
+    "The strongest external evidence (registry row 19375) cannot be joined by identifier to either candidate; it supports a name string, not a record.",
+    "The two available links point in different directions: the authorship string matches 27265, while the only backbone crosswalk link belongs to 46599.",
+    "Selecting, merging or retiring a taxon is irreversible in effect for dependent records and is owner-gated taxonomy activation (AGENTS.md: scientific-authority/taxonomy activation remains owner-gated).",
+    "The scientific constitution forbids silent conflict erasure: unavailable or conflicting evidence must stay visible."
+  ],
+  "expected_reasoning_outcome": {
+    "decision_state": "REVIEW_REQUIRED",
+    "must_preserve_candidates": [
+      "46599",
+      "27265"
+    ],
+    "must_not": [
+      "select a taxon_id",
+      "probe dependent endpoints (atlas) under a guessed identity",
+      "treat the registry canonical_id 19375 as either production id",
+      "mutate production taxonomy"
+    ]
+  }
+}
