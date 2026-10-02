@@ -50,7 +50,11 @@ from .repository import (
     review_order_key,
     validate_free_text,
 )
-from .service import EvidenceFeedbackService
+from .service import (
+    TYPE_SOURCE_MEMBER_CLAIMED,
+    EvidenceFeedbackService,
+    member_snapshot_object_id,
+)
 
 REVIEW_DEFAULT_LIMIT = 25
 REVIEW_MAX_LIMIT = 100
@@ -189,6 +193,8 @@ def _queue_item(case: EvidenceFeedbackCase, duplicate_count: int) -> dict[str, A
         "updated_at": case.updated_at,
         "duplicate_count": duplicate_count,
         "submitter_ref": actor_ref(case.submitter_id),
+        "submitter_role": case.submitter_role,
+        "object_type_source": case.object_type_source,
     }
 
 
@@ -264,13 +270,25 @@ class EvidenceFeedbackReviewService:
     def case_detail(self, case_id: str) -> dict[str, Any]:
         case = self.repository.get_case(case_id)
         events = self.repository.list_events(case.case_id)
+        # A canonical version of the same content supersedes a member's
+        # provisional snapshot; the snapshot is shown only when none exists.
         object_version = self._version_or_none(case.object_id, case.object_version_hash)
+        provisional = False
+        if object_version is None and case.object_type_source == TYPE_SOURCE_MEMBER_CLAIMED:
+            object_version = self._version_or_none(
+                member_snapshot_object_id(case.object_type, case.object_id),
+                case.object_version_hash,
+            )
+            provisional = object_version is not None
         return {
             "case": review_case_dict(case),
             "duplicate_count": sum(1 for e in events if e.get("event") == DUPLICATE_EVENT),
             "events": [_review_event(event) for event in events],
             "object_version": object_version,
             "object_version_available": object_version is not None,
+            # True: the version shown is a member's provisional snapshot, what
+            # the member says they saw, not a canonical registered record.
+            "object_version_provisional": provisional,
             "resulting_object_version": self._version_or_none(
                 case.object_id, case.resulting_version_hash
             ),
