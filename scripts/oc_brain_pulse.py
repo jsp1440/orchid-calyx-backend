@@ -22,6 +22,7 @@ from app.cognitive_integration.executor import CognitiveIntegrationError, execut
 from app.cognitive_integration.improvement_discovery import Deficiency, discover
 from app.cognitive_integration.routes import SUPPORTED_QUESTIONS
 from app.missions.registry import MISSION_TYPES
+from runtime.knowledge_graph.source_registry import SOURCE_QUERIES
 from scripts.oc_product_lanes import LANES_BY_KEY
 
 SCHEMA = "oc.work-discovery.v1"
@@ -33,6 +34,16 @@ MISSION_GAP_LANES = {
     "literature_ingestion_review": "literature",
     "ontology_resolution": "lexicon",
     "evidence_readiness_evaluation": "research-station",
+}
+
+SOURCE_DOMAIN_LANES = {
+    "geography": "atlas",
+    "habitat": "atlas",
+    "elevation": "atlas",
+    "glossary": "lexicon",
+    "evidence": "research-station",
+    "molecular": "research-station",
+    "education": "university-education",
 }
 
 LANE_FOR_DEFICIENCY = {
@@ -151,8 +162,61 @@ def mission_gap_candidates() -> list[dict[str, Any]]:
     return candidates
 
 
+def source_registry_gap_candidates() -> list[dict[str, Any]]:
+    candidates: list[dict[str, Any]] = []
+    for source in SOURCE_QUERIES:
+        if source.enabled or source.domain not in SOURCE_DOMAIN_LANES:
+            continue
+        lane = LANES_BY_KEY[SOURCE_DOMAIN_LANES[source.domain]]
+        reason = source.blocked_reason or source.notes or "source contract disabled fail-closed"
+        fp = hashlib.sha256(
+            f"brain-source-contract-gap\x1f{source.domain}\x1f{source.query_id}\x1f{reason}".encode("utf-8")
+        ).hexdigest()[:16]
+        candidates.append(
+            {
+                "schema": "oc.work-candidate.v1",
+                "source": "brain-source-contract-gap",
+                "title": f"[Brain] resolve blocked {source.domain} source contract",
+                "summary": (
+                    f"Continuous Brain pulse found Knowledge Graph domain {source.domain!r} "
+                    f"disabled fail-closed under query {source.query_id!r}. "
+                    f"Registry evidence: {reason} The task is to identify or verify a "
+                    "citable, rights-compatible source and taxon crosswalk, then prove "
+                    "the projection before enabling it. Absence of a source must remain "
+                    "explicit; do not substitute invented data."
+                ),
+                "lane": lane.key,
+                "lane_name": lane.name,
+                "rank": lane.rank,
+                "analysis_only": False,
+                "fingerprint": fp,
+                "semantic_key": f"brain-source-contract-gap:{source.domain}:{source.query_id}:{reason}",
+                "proposed_remedy": (
+                    "Discover or verify an authoritative source, identifier strategy and "
+                    "taxon crosswalk; retain provenance and disagreements; add a bounded "
+                    "read-only validation before changing enabled state."
+                ),
+                "remedy": {},
+                "capabilities": [],
+                "validation_command": "",
+                "labels": ["oc-queued", lane.priority_label, "oc-discovered", lane.lane_label],
+                "evidence": [
+                    {
+                        "kind": "blocked-source-contract",
+                        "where": "runtime/knowledge_graph/source_registry.py::SOURCE_QUERIES",
+                        "detail": f"{source.domain}/{source.query_id}: {reason}",
+                    }
+                ],
+            }
+        )
+    return candidates
+
+
 def build_report() -> dict[str, Any]:
-    candidates: list[dict[str, Any]] = mission_gap_candidates()
+    candidates: list[dict[str, Any]] = [
+        *mission_gap_candidates(),
+        *source_registry_gap_candidates(),
+    ]
     questions_evaluated: list[str] = []
     errors: list[dict[str, str]] = []
 
@@ -179,10 +243,11 @@ def build_report() -> dict[str, Any]:
         "source": SOURCE,
         "candidate_count": len(candidates),
         "questions_evaluated": questions_evaluated,
-        "sources_evaluated": [SOURCE, MISSION_SOURCE],
+        "sources_evaluated": [SOURCE, MISSION_SOURCE, "brain-source-contract-gap"],
         "observers": {
             "reasoning_gap": {"questions_evaluated": len(questions_evaluated)},
             "mission_capability_gap": {"missions_evaluated": len(MISSION_GAP_LANES)},
+            "source_contract_gap": {"source_domains_evaluated": len(SOURCE_QUERIES)},
         },
         "candidates": candidates,
         "errors": errors,
