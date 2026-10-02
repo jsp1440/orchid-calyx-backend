@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
+from math import isfinite
 
 
 class HealthBand(StrEnum):
@@ -12,6 +14,7 @@ class HealthBand(StrEnum):
     WATCH = "watch"
     DEGRADED = "degraded"
     UNKNOWN = "unknown"
+
 
 class InterventionKind(StrEnum):
     OBSERVE = "observe"
@@ -23,6 +26,7 @@ class InterventionKind(StrEnum):
     REQUEST_OWNER_BUDGET = "request_owner_budget"
     THROTTLE_EXTERNAL_CALLS = "throttle_external_calls"
 
+
 @dataclass(frozen=True)
 class VitalSign:
     name: str
@@ -33,7 +37,7 @@ class VitalSign:
     evidence: tuple[str, ...] = ()
 
     def band(self) -> HealthBand:
-        if self.value is None:
+        if self.value is None or not isfinite(self.value):
             return HealthBand.UNKNOWN
         if self.stale:
             return HealthBand.WATCH
@@ -43,6 +47,7 @@ class VitalSign:
             return HealthBand.DEGRADED
         return HealthBand.HEALTHY
 
+
 @dataclass(frozen=True)
 class Intervention:
     kind: InterventionKind
@@ -51,10 +56,17 @@ class Intervention:
     requires_external_provider: bool = False
     requires_owner_budget: bool = False
 
+
 @dataclass(frozen=True)
 class HomeostasisAssessment:
     status: HealthBand
     interventions: tuple[Intervention, ...]
+
+
+def _usd_decimal(value: float) -> Decimal:
+    """Normalize dollar inputs to the policy's cent precision."""
+    return Decimal(str(value)).quantize(Decimal("0.01"))
+
 
 def _specific_intervention(sign: VitalSign) -> Intervention | None:
     name = sign.name.lower()
@@ -82,17 +94,23 @@ def _specific_intervention(sign: VitalSign) -> Intervention | None:
         )
     return Intervention(InterventionKind.OBSERVE, "Gather evidence for a bounded intervention.", sign.name)
 
+
 def assess_homeostasis(signs: Iterable[VitalSign]) -> HomeostasisAssessment:
     signs = tuple(signs)
     interventions = tuple(i for sign in signs if (i := _specific_intervention(sign)) is not None)
     bands = [sign.band() for sign in signs]
     if any(b is HealthBand.DEGRADED for b in bands):
         status = HealthBand.DEGRADED
-    elif any(b in {HealthBand.WATCH, HealthBand.UNKNOWN} for b in bands):
+    elif any(b is HealthBand.WATCH for b in bands):
+        status = HealthBand.WATCH
+    elif not bands or all(b is HealthBand.UNKNOWN for b in bands):
+        status = HealthBand.UNKNOWN
+    elif any(b is HealthBand.UNKNOWN for b in bands):
         status = HealthBand.WATCH
     else:
         status = HealthBand.HEALTHY
     return HomeostasisAssessment(status=status, interventions=interventions)
+
 
 def escalate_external_request(
     intervention: Intervention,
@@ -112,13 +130,15 @@ def escalate_external_request(
             "Reuse local, cached, piggybacked or free-federation evidence before paid retrieval.",
             intervention.vital_sign,
         )
-    if estimated_cost_usd <= remaining_authorized_budget_usd:
+    estimated_cost = _usd_decimal(estimated_cost_usd)
+    remaining_budget = _usd_decimal(remaining_authorized_budget_usd)
+    if estimated_cost <= remaining_budget:
         return intervention
     return Intervention(
         InterventionKind.REQUEST_OWNER_BUDGET,
         (
-            f"Estimated external cost ${estimated_cost_usd:.2f} exceeds remaining "
-            f"authorized budget ${remaining_authorized_budget_usd:.2f}."
+            f"Estimated external cost ${estimated_cost:.2f} exceeds remaining "
+            f"authorized budget ${remaining_budget:.2f}."
         ),
         intervention.vital_sign,
         requires_external_provider=True,
