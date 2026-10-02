@@ -241,3 +241,12 @@ class PublicationReadinessService:
         result = self.repository.get_readiness(candidate_id)
         if result is None: raise LookupError("READINESS_NOT_FOUND")
         return result
+
+
+def validate_ontology_resolution_mission_payload(payload: Any) -> int:
+    if not isinstance(payload, dict) or set(payload) != {"session_id"}:
+        raise ValueError("INVALID_ONTOLOGY_RESOLUTION_MISSION_PAYLOAD")
+    session_id = payload["session_id"]
+    if not isinstance(session_id, int) or isinstance(session_id, bool) or session_id <= 0:
+        raise ValueError("INVALID_ONTOLOGY_RESOLUTION_MISSION_PAYLOAD")
+    return session_id

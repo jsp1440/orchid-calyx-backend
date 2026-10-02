@@ -176,6 +176,19 @@ class MissionService:
             result = get_import_service().import_batch(registry_ids, "mission_control", mission_id=mission["mission_id"])
             return {**result, "semantic_extraction_performed": False, "ontology_mutated": False,
                     "embeddings_created": False, "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "ontology_resolution":
+            from app.ontology.dependencies import get_resolution_service
+            from app.ontology.services import validate_ontology_resolution_mission_payload
+            session_id = validate_ontology_resolution_mission_payload(mission.get("input_manifest") or {})
+            result = get_resolution_service().resolve_session(session_id, "mission_control")
+            return {
+                "status": "ok",
+                "session_id": result["session_id"],
+                "resolutions": result["resolutions"],
+                "ontology_mutated": True,
+                "canonical_graph_mutated": False,
+                "taxonomy_mutated": False,
+            }
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 
