@@ -1,4 +1,5 @@
 import dataclasses
+import json
 import socket
 from datetime import datetime, timedelta, timezone
 
@@ -84,8 +85,74 @@ def test_expired_lease_can_be_recovered(ledger_engine):
         _request("research_station"),
         worker_id="live-worker",
         now=now + timedelta(seconds=3),
+        on_expired_lease="takeover",
     )
     assert recovered.action == "acquired_lease"
+
+
+@LEDGER_BACKENDS
+def test_expired_lease_defaults_to_operator_review_not_takeover(ledger_engine):
+    # A paid call's outcome is unknown once its lease expired unsettled; by
+    # default no other worker is handed the lease (it could pay again).
+    ledger = _ledger(ledger_engine)
+    now = datetime.now(timezone.utc)
+    dead = ledger.claim(_request(), worker_id="dead-worker", lease_seconds=2, now=now)
+    later = now + timedelta(seconds=3)
+    for module in ("research_station", "matrix", "atlas"):
+        answer = ledger.claim(_request(module), worker_id="live", now=later)
+        assert answer.action == "review_required"
+        assert answer.lease_token is None
+    forced = ledger.claim(
+        dataclasses.replace(_request("atlas"), force_refresh=True),
+        worker_id="live",
+        now=later,
+    )
+    assert forced.action == "review_required"
+    row = _row(ledger)
+    assert row.status == "leased" and row.lease_token == dead.lease_token
+    assert ledger.metrics(now=later)["review_required"] == 1
+    # The original holder may still settle it: nobody else was authorised.
+    ledger.complete(
+        AcquisitionRecord.completed(
+            request=_request(), content=b"late", provenance={"source": "fixture"}
+        ),
+        lease=dead,
+        payload_json="late",
+    )
+    assert ledger.claim(_request("matrix"), worker_id="w", now=later).action == (
+        "cache_hit"
+    )
+
+
+@LEDGER_BACKENDS
+def test_operator_release_reopens_an_expired_lease_exactly_once(ledger_engine):
+    ledger = _ledger(ledger_engine)
+    now = datetime.now(timezone.utc)
+    ledger.claim(_request(), worker_id="dead-worker", lease_seconds=2, now=now)
+    later = now + timedelta(seconds=3)
+    with pytest.raises(ValueError):
+        ledger.release_for_retry(_request().key, operator_id=" ", reason="x")
+    # A live lease is not reviewable.
+    assert not ledger.release_for_retry(
+        _request().key, operator_id="op", reason="early", now=now
+    )
+    assert ledger.release_for_retry(
+        _request().key, operator_id="op-1", reason="confirmed unbilled", now=later
+    )
+    first = ledger.claim(_request("matrix"), worker_id="w1", now=later)
+    second = ledger.claim(_request("atlas"), worker_id="w2", now=later)
+    assert (first.action, second.action) == ("acquired_lease", "in_flight")
+    provenance = json.loads(_row(ledger).provenance_json)
+    assert provenance["released_by"] == "op-1"
+    assert provenance["released_from"] == "leased"
+
+
+@LEDGER_BACKENDS
+def test_unknown_expired_lease_policy_is_refused(ledger_engine):
+    ledger = _ledger(ledger_engine)
+    with pytest.raises(ValueError, match="on_expired_lease"):
+        ledger.claim(_request(), worker_id="w", on_expired_lease="retry")
+    assert ledger.session.query(AcquisitionLedgerRow).count() == 0
 
 
 # --- Timezone normalisation (naive-from-store versus aware-now) -------------
@@ -167,7 +234,13 @@ def test_naive_stored_expired_lease_never_compares_valid(age):
     now = datetime.now(timezone.utc)
     ledger.claim(_request(), worker_id="dead", now=now - timedelta(hours=7))
     _store_naive(ledger, lease_expires_at=_naive_utc(now - age))
-    recovered = ledger.claim(_request("atlas"), worker_id="live", now=now)
+    assert (
+        ledger.claim(_request("atlas"), worker_id="live", now=now).action
+        == "review_required"
+    )
+    recovered = ledger.claim(
+        _request("atlas"), worker_id="live", now=now, on_expired_lease="takeover"
+    )
     assert recovered.action == "acquired_lease"
     assert _row(ledger).lease_holder == "live"
 
@@ -209,7 +282,10 @@ def test_non_utc_caller_offset_does_not_extend_an_expired_lease(ledger_engine):
     now = datetime(2026, 1, 1, 10, 0, tzinfo=_PLUS_FIVE)
     ledger.claim(_request(), worker_id="dead", lease_seconds=2, now=now)
     recovered = ledger.claim(
-        _request("atlas"), worker_id="live", now=now + timedelta(seconds=3)
+        _request("atlas"),
+        worker_id="live",
+        now=now + timedelta(seconds=3),
+        on_expired_lease="takeover",
     )
     assert recovered.action == "acquired_lease"
 
@@ -238,7 +314,10 @@ def test_naive_caller_now_is_treated_as_utc(ledger_engine):
     )
     assert still_leased.action == "in_flight"
     expired = ledger.claim(
-        _request("matrix"), worker_id="w2", now=aware + timedelta(seconds=120)
+        _request("matrix"),
+        worker_id="w2",
+        now=aware + timedelta(seconds=120),
+        on_expired_lease="takeover",
     )
     assert expired.action == "acquired_lease"
 

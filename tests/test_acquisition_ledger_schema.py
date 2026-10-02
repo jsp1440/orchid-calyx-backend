@@ -424,10 +424,17 @@ def test_upgrade_from_pre_fencing_table_adds_lease_token_and_keeps_rows_usable()
         # The completed legacy row is still a zero-fetch cache hit.
         assert ledger.claim(complete, worker_id="new", now=later).action == "cache_hit"
         assert ledger.cached_payload(complete.key) == '{"cached": true}'
+        # An expired legacy lease is an unknown paid outcome: by default it
+        # answers review_required, and is taken over only on explicit request.
+        assert ledger.claim(leased, worker_id="new", now=later).action == (
+            "review_required"
+        )
         # The failed row past its retry window and the expired legacy lease are
         # taken over through the NULL-token compare-and-swap, then fenced.
         for request in (failed, leased):
-            lease = ledger.claim(request, worker_id="new", now=later)
+            lease = ledger.claim(
+                request, worker_id="new", now=later, on_expired_lease="takeover"
+            )
             assert lease.action == "acquired_lease" and lease.lease_token
             assert (
                 ledger.claim(request, worker_id="other", now=later).action
