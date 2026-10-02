@@ -72,6 +72,12 @@ jobs:
 
       - name: Run Portfolio Steward reconciler
         id: reconcile
+        # pipefail: without it the step's status is tee's, so the reconciler's
+        # fail-closed exit (2 = planner_failed, 1 = failed_closed) reads as
+        # success, later steps still run, and the run is reported green. Pinned
+        # explicitly (GitHub's documented bash invocation) so the step cannot
+        # fall back to the default `bash -e {0}`, which has no pipefail.
+        shell: bash --noprofile --norc -eo pipefail {0}
         env:
           PYTHONPATH: ${{ github.workspace }}
         run: |
@@ -147,8 +153,12 @@ jobs:
           echo "Suppressed (dedup): ${{ steps.reconcile.outputs.suppressed_count }}"
           echo "Rejected: ${{ steps.reconcile.outputs.rejected_count }}"
           echo "NO-API mode: ${{ steps.reconcile.outputs.no_api_mode }}"
+          echo "Queue conflicts: ${{ steps.reconcile.outputs.conflict_count }}"
 
           if [ -f "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" ]; then
-            jq '{schema, admitted_count, suppressed_count, bridge_status, no_api_mode}' \
+            jq '{schema, admitted_count, suppressed_count, bridge_status, no_api_mode, conflict_count}' \
+              "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" || true
+            # One line per contradictory issue with the exact relabel that fixes it.
+            jq -r '.conflict_follow_ups[]? | "CONFLICT #\(.issue): \(.relabel_command | join(" "))"' \
               "$RUNNER_TEMP/portfolio-steward/reconcile-report.json" || true
           fi
