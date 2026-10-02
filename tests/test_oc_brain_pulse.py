@@ -1,3 +1,7 @@
+import pytest
+
+import scripts.oc_brain_pulse as brain_pulse
+from app.cognitive_integration.executor import CognitiveIntegrationError
 from scripts.oc_brain_pulse import SOURCE, build_report, fingerprint
 
 
@@ -34,3 +38,31 @@ def test_brain_fingerprint_changes_only_when_material_identity_changes():
     assert base != fingerprint("q2", "missing_evidence", "gap")
     assert base != fingerprint("q", "missing_source", "gap")
     assert base != fingerprint("q", "missing_evidence", "different")
+
+
+def test_brain_pulse_records_cognitive_integration_errors(monkeypatch):
+    monkeypatch.setattr(brain_pulse, "SUPPORTED_QUESTIONS", ("question",))
+
+    def fail_execution(_question):
+        raise CognitiveIntegrationError("reasoning map unavailable")
+
+    monkeypatch.setattr(brain_pulse, "execute", fail_execution)
+
+    report = build_report()
+
+    assert report["questions_evaluated"] == []
+    assert report["errors"] == [
+        {"question": "question", "error": "CognitiveIntegrationError"}
+    ]
+
+
+def test_brain_pulse_does_not_suppress_unexpected_errors(monkeypatch):
+    monkeypatch.setattr(brain_pulse, "SUPPORTED_QUESTIONS", ("question",))
+
+    def fail_execution(_question):
+        raise RuntimeError("unexpected implementation failure")
+
+    monkeypatch.setattr(brain_pulse, "execute", fail_execution)
+
+    with pytest.raises(RuntimeError, match="unexpected implementation failure"):
+        build_report()

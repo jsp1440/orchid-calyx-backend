@@ -18,7 +18,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from app.cognitive_integration.executor import execute
+from app.cognitive_integration.executor import CognitiveIntegrationError, execute
 from app.cognitive_integration.improvement_discovery import Deficiency, discover
 from app.cognitive_integration.routes import SUPPORTED_QUESTIONS
 from scripts.oc_product_lanes import LANES_BY_KEY
@@ -40,7 +40,9 @@ LANE_FOR_DEFICIENCY = {
 
 
 def fingerprint(question: str, deficiency: str, statement: str) -> str:
-    material = "\x1f".join((SOURCE, question.strip(), deficiency.strip(), statement.strip()))
+    material = (
+        f"{SOURCE}\x1f{question.strip()}\x1f{deficiency.strip()}\x1f{statement.strip()}"
+    )
     return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
 
 
@@ -110,7 +112,7 @@ def build_report() -> dict[str, Any]:
                 ):
                     continue
                 candidates.append(candidate_record(question, item))
-        except Exception as exc:  # fail closed per question; preserve the pulse
+        except CognitiveIntegrationError as exc:
             errors.append({"question": question, "error": type(exc).__name__})
 
     candidates.sort(key=lambda row: (int(row["rank"]), str(row["fingerprint"])))
