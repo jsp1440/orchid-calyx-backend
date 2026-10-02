@@ -61,6 +61,14 @@ def parse_args() -> argparse.Namespace:
         help="Firecrawl sitemap handling. Default: include.",
     )
     parser.add_argument(
+        "--discover-source-surfaces",
+        action="store_true",
+        help=(
+            "Run one additional bounded map per source for API/download/DwC-A/"
+            "terms/licence/citation surfaces. Off by default to conserve credits."
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         help="Optional JSON output path. Otherwise prints to stdout.",
@@ -76,13 +84,41 @@ def main() -> int:
     profiles = []
     for name in names:
         source = SOURCES[name]
-        profile = mapper.map_source(
+        taxon_profile = mapper.map_source(
             source_id=source["source_id"],
             root_url=source["root_url"],
             search=source["search"],
             limit=args.limit,
             sitemap=args.sitemap,
             include_subdomains=False,
+        )
+        combined_urls = list(taxon_profile.urls)
+        discovery_passes = ["taxon"]
+        if args.discover_source_surfaces:
+            surfaces = mapper.map_source(
+                source_id=source["source_id"],
+                root_url=source["root_url"],
+                search="api download dataset dwca darwin export bulk terms license licence citation",
+                limit=min(args.limit, 20),
+                sitemap=args.sitemap,
+                include_subdomains=False,
+            )
+            combined_urls.extend(surfaces.urls)
+            discovery_passes.append("source_surfaces")
+
+        from app.federation.firecrawl_mapper import build_source_profile
+
+        profile = build_source_profile(
+            source_id=source["source_id"],
+            root_url=source["root_url"],
+            urls=combined_urls,
+            request_parameters={
+                "search": source["search"],
+                "limit": args.limit,
+                "sitemap": args.sitemap,
+                "include_subdomains": False,
+                "discovery_passes": discovery_passes,
+            },
         )
         profiles.append(profile.to_dict())
 
