@@ -21,10 +21,19 @@ from typing import Any
 from app.cognitive_integration.executor import CognitiveIntegrationError, execute
 from app.cognitive_integration.improvement_discovery import Deficiency, discover
 from app.cognitive_integration.routes import SUPPORTED_QUESTIONS
+from app.missions.registry import MISSION_TYPES
 from scripts.oc_product_lanes import LANES_BY_KEY
 
 SCHEMA = "oc.work-discovery.v1"
 SOURCE = "brain-reasoning-gap"
+MISSION_SOURCE = "brain-mission-capability-gap"
+
+MISSION_GAP_LANES = {
+    "source_registry_refresh": "literature",
+    "literature_ingestion_review": "literature",
+    "ontology_resolution": "lexicon",
+    "evidence_readiness_evaluation": "research-station",
+}
 
 LANE_FOR_DEFICIENCY = {
     Deficiency.MISSING_SOURCE: "literature",
@@ -93,8 +102,57 @@ def candidate_record(question: str, item: Any) -> dict[str, Any]:
     }
 
 
-def build_report() -> dict[str, Any]:
+def mission_gap_candidates() -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
+    for mission_type, lane_key in MISSION_GAP_LANES.items():
+        definition = MISSION_TYPES[mission_type]
+        if definition.handler != "not_implemented_safe_block":
+            continue
+        lane = LANES_BY_KEY[lane_key]
+        fp = hashlib.sha256(
+            f"{MISSION_SOURCE}\x1f{mission_type}\x1f{definition.handler}".encode("utf-8")
+        ).hexdigest()[:16]
+        candidates.append(
+            {
+                "schema": "oc.work-candidate.v1",
+                "source": MISSION_SOURCE,
+                "title": f"[Brain] implement {mission_type.replace('_', ' ')}",
+                "summary": (
+                    f"Continuous Brain pulse found mission capability {mission_type!r} "
+                    "registered with the explicit fail-closed handler "
+                    "'not_implemented_safe_block'. The bounded next step is to "
+                    "implement and validate that existing governed mission contract; "
+                    "do not bypass the safe block or broaden its authority."
+                ),
+                "lane": lane.key,
+                "lane_name": lane.name,
+                "rank": lane.rank,
+                "analysis_only": False,
+                "fingerprint": fp,
+                "semantic_key": f"{MISSION_SOURCE}:{mission_type}:{definition.handler}",
+                "proposed_remedy": (
+                    "Implement the registered mission handler with provider, write-scope, "
+                    "approval and scientific-authority limits preserved; add deterministic "
+                    "tests before the safe block is removed."
+                ),
+                "remedy": {},
+                "capabilities": [],
+                "validation_command": "",
+                "labels": ["oc-queued", lane.priority_label, "oc-discovered", lane.lane_label],
+                "evidence": [
+                    {
+                        "kind": "registered-safe-block",
+                        "where": "app/missions/registry.py::MISSION_TYPES",
+                        "detail": f"{mission_type} -> {definition.handler}",
+                    }
+                ],
+            }
+        )
+    return candidates
+
+
+def build_report() -> dict[str, Any]:
+    candidates: list[dict[str, Any]] = mission_gap_candidates()
     questions_evaluated: list[str] = []
     errors: list[dict[str, str]] = []
 
@@ -121,7 +179,11 @@ def build_report() -> dict[str, Any]:
         "source": SOURCE,
         "candidate_count": len(candidates),
         "questions_evaluated": questions_evaluated,
-        "sources_evaluated": [SOURCE],
+        "sources_evaluated": [SOURCE, MISSION_SOURCE],
+        "observers": {
+            "reasoning_gap": {"questions_evaluated": len(questions_evaluated)},
+            "mission_capability_gap": {"missions_evaluated": len(MISSION_GAP_LANES)},
+        },
         "candidates": candidates,
         "errors": errors,
         "authority": {
