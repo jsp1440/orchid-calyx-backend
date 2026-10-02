@@ -5,6 +5,7 @@ Uses DATABASE_URL intentionally, not app.database.get_database_url(), because
 the target of this audit is the historical Continuum/Neon scientific store.
 No DDL/DML, sampling of scientific rows, or credential output is performed.
 """
+
 from __future__ import annotations
 
 import json

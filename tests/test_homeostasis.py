@@ -6,6 +6,7 @@ from app.calyx_orchestrator.homeostasis import (
     escalate_external_request,
 )
 
+
 def test_healthy_signs_produce_no_interventions():
     assessment = assess_homeostasis([
         VitalSign("taxonomy_freshness_pct", 99.2, minimum=98.0),
@@ -13,6 +14,7 @@ def test_healthy_signs_produce_no_interventions():
     ])
     assert assessment.status is HealthBand.HEALTHY
     assert assessment.interventions == ()
+
 
 def test_knowledge_gap_requests_external_intelligence():
     assessment = assess_homeostasis([
@@ -23,6 +25,7 @@ def test_knowledge_gap_requests_external_intelligence():
     assert intent.kind is InterventionKind.REQUEST_EXTERNAL_INTELLIGENCE
     assert intent.requires_external_provider is True
     assert intent.requires_owner_budget is False
+
 
 def test_external_request_prefers_reuse_before_paid_provider():
     intent = assess_homeostasis([
@@ -38,6 +41,7 @@ def test_external_request_prefers_reuse_before_paid_provider():
     )
     assert routed.kind is InterventionKind.REFILL
 
+
 def test_external_request_asks_owner_when_over_budget():
     intent = assess_homeostasis([
         VitalSign("literature_evidence_coverage_pct", 20.0, minimum=80.0)
@@ -52,6 +56,7 @@ def test_external_request_asks_owner_when_over_budget():
     )
     assert routed.kind is InterventionKind.REQUEST_OWNER_BUDGET
     assert routed.requires_owner_budget is True
+
 
 def test_stale_observation_refreshes_before_other_actions():
     assessment = assess_homeostasis([
