@@ -63,7 +63,7 @@ def fingerprint(question: str, deficiency: str, statement: str) -> str:
     material = (
         f"{SOURCE}\x1f{question.strip()}\x1f{deficiency.strip()}\x1f{statement.strip()}"
     )
-    return hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(material.encode()).hexdigest()[:16]
 
 
 def candidate_record(question: str, item: Any) -> dict[str, Any]:
@@ -121,7 +121,7 @@ def mission_gap_candidates() -> list[dict[str, Any]]:
             continue
         lane = LANES_BY_KEY[lane_key]
         fp = hashlib.sha256(
-            f"{MISSION_SOURCE}\x1f{mission_type}\x1f{definition.handler}".encode("utf-8")
+            f"{MISSION_SOURCE}\x1f{mission_type}\x1f{definition.handler}".encode()
         ).hexdigest()[:16]
         candidates.append(
             {
@@ -170,7 +170,7 @@ def source_registry_gap_candidates() -> list[dict[str, Any]]:
         lane = LANES_BY_KEY[SOURCE_DOMAIN_LANES[source.domain]]
         reason = source.blocked_reason or source.notes or "source contract disabled fail-closed"
         fp = hashlib.sha256(
-            f"brain-source-contract-gap\x1f{source.domain}\x1f{source.query_id}\x1f{reason}".encode("utf-8")
+            f"brain-source-contract-gap\x1f{source.domain}\x1f{source.query_id}\x1f{reason}".encode()
         ).hexdigest()[:16]
         candidates.append(
             {
