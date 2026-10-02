@@ -84,10 +84,13 @@ jobs:
       refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
       provider_blocked: ${{ steps.no_api.outputs.blocked }}
       summary: ${{ steps.plan.outputs.summary }}
+      controller_sha: ${{ steps.controller_revision.outputs.sha }}
+      canonical_integration_run: ${{ steps.controller_revision.outputs.canonical_integration }}
     env:
       GH_TOKEN: ${{ github.token }}
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
+      CONTROLLER_REF: ${{ github.event_name == 'schedule' && 'oc-autonomous-integration' || github.sha }}
       WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
@@ -99,8 +102,24 @@ jobs:
       - name: Checkout controller revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ env.CONTROLLER_REF }}
           fetch-depth: 1
+
+      - name: Record canonical controller revision
+        id: controller_revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          controller_sha=$(git rev-parse HEAD)
+          git fetch origin "$INTEGRATION_BRANCH" --depth=1
+          integration_sha=$(git rev-parse "origin/$INTEGRATION_BRANCH")
+          echo "sha=$controller_sha" >> "$GITHUB_OUTPUT"
+          if [[ "$controller_sha" == "$integration_sha" ]]; then
+            echo "canonical_integration=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "canonical_integration=false" >> "$GITHUB_OUTPUT"
+          fi
+          echo "controller_sha=$controller_sha integration_sha=$integration_sha"
 
       - name: Enforce fail-closed NO-API mode
         id: no_api
@@ -144,6 +163,40 @@ jobs:
         if: steps.discovery_env.outcome == 'success'
         continue-on-error: true
         run: python3 -m pip install --quiet -r requirements.txt
+
+      - name: Run continuous Brain reasoning-gap pulse
+        id: brain_pulse
+        if: steps.controller_revision.outputs.canonical_integration == 'true'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_brain_pulse --output "$RUNNER_TEMP/brain-pulse.json"
+          echo "candidate_count=$(jq -r '.candidate_count' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
+          echo "observer_count=$(jq -r '.observers | length' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
+          echo "error_count=$(jq -r '.errors | length' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
+          jq '{schema, source, candidate_count, questions_evaluated,
+               observers, authority,
+               candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
+            "$RUNNER_TEMP/brain-pulse.json"
+
+      - name: Admit Brain discoveries to the canonical queue
+        id: brain_materialize
+        if: steps.brain_pulse.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/brain-pulse.json" \
+            --max-new 2 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/brain-materialization.json"
+          echo "action_count=$(jq -r '.results | length' "$RUNNER_TEMP/brain-materialization.json")" >> "$GITHUB_OUTPUT"
+          echo "materialize_error_count=$(jq -r '.errors | length' "$RUNNER_TEMP/brain-materialization.json")" >> "$GITHUB_OUTPUT"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/brain-materialization.json")" -eq 0
 
       - name: Discover product work from repository evidence
         id: discovery
@@ -304,7 +357,7 @@ jobs:
           # The edit lane executes only on a run of the integration ref (see the
           # provider_free_workers guard). Any other run leaves edit-mode issues
           # queued and unleased for that run instead of claiming and parking them.
-          if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
+          if [[ "${{ steps.controller_revision.outputs.canonical_integration }}" != "true" ]]; then
             provider_args+=(--defer-edit-mode)
           fi
           python3 scripts/oc_swarm_controller.py \
@@ -373,6 +426,13 @@ jobs:
             echo "- capacity: $(jq -r '.available_capacity' <<<"$PLAN")"
             echo "- selected: $(jq -c '.selected_numbers' <<<"$PLAN")"
             echo "- dependency edges: $(jq -r '.dependency_graph.edge_count' <<<"$PLAN")"
+            echo "- controller SHA: ${{ steps.controller_revision.outputs.sha }}"
+            echo "- canonical integration run: ${{ steps.controller_revision.outputs.canonical_integration }}"
+            echo "- Brain observers: ${{ steps.brain_pulse.outputs.observer_count || '0' }}"
+            echo "- Brain candidates observed: ${{ steps.brain_pulse.outputs.candidate_count || '0' }}"
+            echo "- Brain pulse errors: ${{ steps.brain_pulse.outputs.error_count || '0' }}"
+            echo "- Brain queue actions: ${{ steps.brain_materialize.outputs.action_count || '0' }}"
+            echo "- Brain materialization errors: ${{ steps.brain_materialize.outputs.materialize_error_count || '0' }}"
             echo "- dependency blocked: $(jq -r '.dependency_suppressed | length' <<<"$PLAN")"
             echo "- dependency cycles: $(jq -c '.dependency_graph.cycle_nodes' <<<"$PLAN")"
             echo "- resource conflicts suppressed: $(jq -r '.resource_lock_suppressed | length' <<<"$PLAN")"
@@ -439,7 +499,8 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       ISSUE_NUMBER: ${{ matrix.issue_number }}
       LEASE_COMMENT_ID: ${{ matrix.lease_comment_id }}
-      INTEGRATION_SHA: ${{ github.sha }}
+      INTEGRATION_SHA: ${{ needs.plan.outputs.controller_sha }}
+      CANONICAL_INTEGRATION_RUN: ${{ needs.plan.outputs.canonical_integration_run }}
       # The edit lane's PR base. Pinned like plan/refill: github.ref_name is
       # `main` on schedule/issues runs and `<N>/merge` on pull_request runs.
       INTEGRATION_BRANCH: oc-autonomous-integration
@@ -449,7 +510,7 @@ jobs:
       - name: Checkout controller revision
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ needs.plan.outputs.controller_sha }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -580,8 +641,8 @@ jobs:
             # The lane branches from INTEGRATION_SHA and files against
             # INTEGRATION_BRANCH; both mean the integration head only on a run
             # of that ref. Any other trigger fails closed before any git write.
-            if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then
-              echo "Edit lane runs only on refs/heads/$INTEGRATION_BRANCH (this run: $GITHUB_REF)." >&2
+            if [[ "$CANONICAL_INTEGRATION_RUN" != "true" ]]; then
+              echo "Edit lane runs only against the exact canonical integration head." >&2
               exit 2
             fi
             set +e
