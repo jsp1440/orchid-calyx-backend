@@ -28,8 +28,8 @@ def _protected_locality_event() -> ScientificObservationEvent:
         ),
         source={"source_id": "partner", "source_anchor_id": "sealed-anchor"},
         extensions={
-            "latitude": 19.4326,
-            "longitude": -99.1332,
+            "latitude": 30.7891,
+            "longitude": -45.8912,
             "exact_locality": "sealed ravine",
             "country": "Mexico",
         },
@@ -65,8 +65,8 @@ def test_anomaly_handoff_persists_once_and_stays_sealed_on_replay() -> None:
 
     serialized = json.dumps(task, sort_keys=True)
     assert "sealed ravine" not in serialized
-    assert "19.4326" not in serialized
-    assert "-99.1332" not in serialized
+    assert "30.7891" not in serialized
+    assert "-45.8912" not in serialized
 
     first_projection = first.to_dict()["persisted_review_tasks"]
     second_projection = second.to_dict()["persisted_review_tasks"]

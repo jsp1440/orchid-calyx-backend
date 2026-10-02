@@ -113,16 +113,15 @@ env:
     tests/test_partner_data_disclosure.py
     tests/test_partner_data_model_output_guards.py
     tests/test_partner_data_access_bridge.py
+    tests/test_no_precise_coordinates.py
+    tests/test_legacy_occurrence_api_fail_closed.py
   # PENDING: critical suites added by open pull requests (#1704 per-judge
-  # auth, #1700 precise coordinates / legacy occurrence API). Each is run,
-  # and required to pass, as soon as it exists in the tree; until then it is
-  # reported as a notice. tests/test_critical_suite_coverage.py fails once a
-  # pending file exists, so the pull request that lands it must also move it
+  # auth). Each is run, and required to pass, as soon as it exists in the
+  # tree; until then it is reported as a notice.
+  # tests/test_critical_suite_coverage.py fails once a pending file exists, so the pull request that lands it must also move it
   # into a list above.
   OC_PENDING_CRITICAL_SUITES: >-
     tests/test_judge_auth_blind_judging.py
-    tests/test_no_precise_coordinates.py
-    tests/test_legacy_occurrence_api_fail_closed.py
 
 jobs:
   critical-suites:

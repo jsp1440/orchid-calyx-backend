@@ -403,8 +403,8 @@ def test_07_protected_locality_output_makes_the_candidate_ineligible():
     # The coordinates themselves never reach durable memory: the run record keeps
     # a resolution summary that carries no provenance block at all.
     serialised = repr(memory.runs) + repr(memory.findings) + repr(memory.metrics)
-    assert "-43.1729" not in serialised
-    assert "-22.9068" not in serialised
+    assert "-25.3456" not in serialised
+    assert "-40.2345" not in serialised
 
     # And nothing persisted carries a protected-locality *field*. The violation
     # evidence names the offending paths as text, which is the audit trail, not
