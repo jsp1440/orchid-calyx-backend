@@ -169,6 +169,35 @@ class MissionService:
             return {"status": "ok", "audit": "taxonomy_integrity_read_only", "canonical_graph_mutated": False, "taxonomy_mutated": False}
         if handler == "mission_control_status_report":
             return {"status": "ok", "report": self.repository.telemetry(), "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "source_registry_refresh":
+            from app.source_registry.dependencies import get_scan_service, get_source_repository
+            repository = get_source_repository()
+            scan_service = get_scan_service()
+            sources = [
+                source for source in repository.list_sources()
+                if source.get("source_type") == "GOOGLE_DRIVE" and source.get("status") == "ACTIVE"
+            ]
+            scans = []
+            for source in sources:
+                folder_ids = list((source.get("configuration") or {}).get("folder_ids", []))
+                result = scan_service.scan(str(source["source_id"]), folder_ids)
+                scans.append({
+                    "source_id": str(source["source_id"]),
+                    "discovered": result.discovered,
+                    "processed": result.processed,
+                    "unchanged": result.unchanged,
+                    "duplicates": result.duplicates,
+                    "failed": result.failed,
+                    "duration_ms": result.duration_ms,
+                })
+            return {
+                "status": "ok",
+                "sources_scanned": len(scans),
+                "scans": scans,
+                "metadata_only": True,
+                "canonical_graph_mutated": False,
+                "taxonomy_mutated": False,
+            }
         if handler == "controlled_drive_import":
             from app.document_import.dependencies import get_import_service
             from app.document_import.service import validate_mission_payload

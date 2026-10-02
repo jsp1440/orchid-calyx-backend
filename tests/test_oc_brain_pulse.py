@@ -81,7 +81,7 @@ def test_mission_gap_observer_uses_only_explicit_safe_blocks():
     assert candidates
     assert {candidate["source"] for candidate in candidates} == {MISSION_SOURCE}
     titles = {candidate["title"] for candidate in candidates}
-    assert any("source registry refresh" in title for title in titles)
+    assert all("source registry refresh" not in title for title in titles)
     assert any("literature ingestion review" in title for title in titles)
     for candidate in candidates:
         assert "not_implemented_safe_block" in candidate["summary"]
