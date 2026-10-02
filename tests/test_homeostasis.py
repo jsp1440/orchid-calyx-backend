@@ -64,3 +64,34 @@ def test_stale_observation_refreshes_before_other_actions():
     ])
     assert assessment.status is HealthBand.WATCH
     assert assessment.interventions[0].kind is InterventionKind.REFILL
+
+
+def test_empty_observations_remain_unknown():
+    assessment = assess_homeostasis([])
+    assert assessment.status is HealthBand.UNKNOWN
+
+
+def test_wholly_unknown_observations_remain_unknown():
+    assessment = assess_homeostasis([VitalSign("provider_heartbeat", None)])
+    assert assessment.status is HealthBand.UNKNOWN
+    assert assessment.interventions[0].kind is InterventionKind.OBSERVE
+
+
+def test_non_finite_observations_are_unknown():
+    for value in (float("nan"), float("inf"), float("-inf")):
+        assert VitalSign("provider_heartbeat", value).band() is HealthBand.UNKNOWN
+
+
+def test_equal_rounded_cost_does_not_request_owner_budget():
+    intent = assess_homeostasis([
+        VitalSign("literature_evidence_coverage_pct", 20.0, minimum=80.0)
+    ]).interventions[0]
+    routed = escalate_external_request(
+        intent,
+        local_evidence_exhausted=True,
+        cache_miss=True,
+        free_source_unavailable=True,
+        estimated_cost_usd=sum([0.1, 0.2]),
+        remaining_authorized_budget_usd=0.3,
+    )
+    assert routed.kind is InterventionKind.REQUEST_EXTERNAL_INTELLIGENCE
