@@ -2,7 +2,7 @@ import pytest
 
 import scripts.oc_brain_pulse as brain_pulse
 from app.cognitive_integration.executor import CognitiveIntegrationError
-from scripts.oc_brain_pulse import SOURCE, build_report, fingerprint
+from scripts.oc_brain_pulse import MISSION_SOURCE, SOURCE, build_report, fingerprint, mission_gap_candidates
 
 
 def test_brain_pulse_is_provider_free_and_non_authoritative():
@@ -27,7 +27,7 @@ def test_brain_pulse_emits_deduplicable_governed_candidates():
     for candidate in report["candidates"]:
         assert "oc-queued" in candidate["labels"]
         assert "oc-discovered" in candidate["labels"]
-        assert candidate["source"] == SOURCE
+        assert candidate["source"] in {SOURCE, MISSION_SOURCE}
         assert candidate["validation_command"] == ""
         assert candidate["capabilities"] == []
 
@@ -66,3 +66,17 @@ def test_brain_pulse_does_not_suppress_unexpected_errors(monkeypatch):
 
     with pytest.raises(RuntimeError, match="unexpected implementation failure"):
         build_report()
+
+
+
+def test_mission_gap_observer_uses_only_explicit_safe_blocks():
+    candidates = mission_gap_candidates()
+    assert candidates
+    assert {candidate["source"] for candidate in candidates} == {MISSION_SOURCE}
+    titles = {candidate["title"] for candidate in candidates}
+    assert any("source registry refresh" in title for title in titles)
+    assert any("literature ingestion review" in title for title in titles)
+    for candidate in candidates:
+        assert "not_implemented_safe_block" in candidate["summary"]
+        assert candidate["validation_command"] == ""
+        assert candidate["capabilities"] == []
