@@ -2,7 +2,14 @@ import pytest
 
 import scripts.oc_brain_pulse as brain_pulse
 from app.cognitive_integration.executor import CognitiveIntegrationError
-from scripts.oc_brain_pulse import MISSION_SOURCE, SOURCE, build_report, fingerprint, mission_gap_candidates
+from scripts.oc_brain_pulse import (
+    MISSION_SOURCE,
+    SOURCE,
+    build_report,
+    fingerprint,
+    mission_gap_candidates,
+    source_registry_gap_candidates,
+)
 
 
 def test_brain_pulse_is_provider_free_and_non_authoritative():
@@ -27,7 +34,7 @@ def test_brain_pulse_emits_deduplicable_governed_candidates():
     for candidate in report["candidates"]:
         assert "oc-queued" in candidate["labels"]
         assert "oc-discovered" in candidate["labels"]
-        assert candidate["source"] in {SOURCE, MISSION_SOURCE}
+        assert candidate["source"] in {SOURCE, MISSION_SOURCE, "brain-source-contract-gap"}
         assert candidate["validation_command"] == ""
         assert candidate["capabilities"] == []
 
@@ -80,3 +87,16 @@ def test_mission_gap_observer_uses_only_explicit_safe_blocks():
         assert "not_implemented_safe_block" in candidate["summary"]
         assert candidate["validation_command"] == ""
         assert candidate["capabilities"] == []
+
+
+
+def test_source_registry_observer_queues_only_disabled_explicit_contracts():
+    candidates = source_registry_gap_candidates()
+    assert candidates
+    assert {candidate["source"] for candidate in candidates} == {"brain-source-contract-gap"}
+    titles = {candidate["title"] for candidate in candidates}
+    assert any("habitat" in title for title in titles)
+    assert any("education" in title for title in titles)
+    for candidate in candidates:
+        assert "disabled fail-closed" in candidate["summary"]
+        assert "invented data" in candidate["summary"]
