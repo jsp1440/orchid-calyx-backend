@@ -15,7 +15,6 @@ from datetime import datetime, timezone
 import psycopg
 from psycopg.rows import dict_row
 
-
 SYSTEM_SCHEMAS = {"pg_catalog", "information_schema"}
 
 
