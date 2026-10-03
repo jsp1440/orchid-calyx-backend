@@ -70,7 +70,7 @@ def test_duplicate_fingerprint_and_semantic_duplicate_are_suppressed():
         ],
         reserve_depth=1,
     )
-    assert result["status"] == "queue_empty_healthy"
+    assert result["status"] == "queue_empty_all_candidates_rejected"
     assert {item["reason"] for item in result["rejections"]} == {
         "duplicate_fingerprint",
         "semantic_duplicate",
@@ -80,7 +80,7 @@ def test_duplicate_fingerprint_and_semantic_duplicate_are_suppressed():
 def test_dependency_gating_requires_completed_dependency():
     blocked = candidate("#20", "fp-20", dependencies=["contract-v1"])
     first = plan_refill(snapshot(), [blocked], reserve_depth=1)
-    assert first["status"] == "queue_empty_healthy"
+    assert first["status"] == "queue_empty_all_candidates_rejected"
     assert first["rejections"] == [
         {"source_ref": "#20", "reason": "dependency_blocked"}
     ]
@@ -100,7 +100,7 @@ def test_protected_boundary_exhaustion_parks_truthfully():
         [candidate("#30", "fp-30", protected_boundaries=["production"])],
         reserve_depth=2,
     )
-    assert result["status"] == "queue_empty_healthy"
+    assert result["status"] == "queue_empty_all_candidates_rejected"
     assert result["proposals"] == []
     assert result["rejections"] == [
         {"source_ref": "#30", "reason": "protected_boundary"}
@@ -237,7 +237,7 @@ def test_unauthorized_source_cannot_enter_reserve():
         [candidate("invented", "fp-x", source_kind="freeform")],
         reserve_depth=1,
     )
-    assert result["status"] == "queue_empty_healthy"
+    assert result["status"] == "queue_empty_all_candidates_rejected"
     assert result["rejections"] == [
         {"source_ref": "invented", "reason": "unauthorized_source"}
     ]
@@ -401,3 +401,20 @@ def test_conflicts_alongside_real_reserve_are_reported_without_blocking():
     result = plan_refill(state, [], reserve_depth=2)
     assert result["status"] == "reserve_below_target_no_eligible_candidates"
     assert [c["issue"] for c in result["conflicts"]] == [238]
+
+
+def test_queue_empty_healthy_is_reserved_for_a_genuinely_empty_candidate_set():
+    """Rejected-only candidates are not healthy idle; no candidates at all is."""
+    assert plan_refill(snapshot(), [], reserve_depth=2)["status"] == "queue_empty_healthy"
+
+    rejected = plan_refill(
+        snapshot(),
+        [candidate("#90", "fp-90", dependencies=["never-done"])],
+        reserve_depth=2,
+    )
+    assert rejected["status"] == "queue_empty_all_candidates_rejected"
+    assert rejected["status"] != "queue_empty_healthy"
+    assert rejected["proposals"] == []
+    assert rejected["rejections"] == [
+        {"source_ref": "#90", "reason": "dependency_blocked"}
+    ]
