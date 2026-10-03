@@ -1,0 +1,30 @@
+{
+  "local_root": "./ark-data",
+  "repositories": [
+    {
+      "name": "Orchid-Continuum-Brain",
+      "url": "https://github.com/jsp1440/Orchid-Continuum-Brain.git",
+      "criticality": "P0"
+    },
+    {
+      "name": "orchid-calyx-backend",
+      "url": "https://github.com/jsp1440/orchid-calyx-backend.git",
+      "criticality": "P0"
+    },
+    {
+      "name": "orchid-continuum-frontend",
+      "url": "https://github.com/jsp1440/orchid-continuum-frontend.git",
+      "criticality": "P0"
+    }
+  ],
+  "retention": {
+    "hourly": 24,
+    "daily": 30,
+    "weekly": 12,
+    "monthly": 24
+  },
+  "restore_test": {
+    "git_smoke_each_run": true,
+    "clean_room_full_restore_days": 30
+  }
+}
