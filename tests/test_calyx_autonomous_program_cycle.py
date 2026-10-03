@@ -3,6 +3,9 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
 from app.calyx_orchestrator.autonomy_policy import (
     ProgramAutonomyPolicy,
     program_autonomy_status,
@@ -14,20 +17,17 @@ from app.calyx_orchestrator.executor_registry import (
     RegisteredExecutor,
 )
 from app.calyx_orchestrator.models import utcnow
+from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.database import Base
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session
-
-from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_repository import (
     PersistentProgramRepository,
     ProgramJobSpec,
 )
+from app.database import Base
 from runtime.program_autonomy_worker import run_once
 
 
@@ -479,4 +479,3 @@ def test_run_forever_survives_a_failed_cycle_and_sleeps_before_the_next(monkeypa
     monkeypatch.setattr(worker_module, "run_once", interrupted)
     with pytest.raises(KeyboardInterrupt):
         worker_module.run_forever(policy, sleeper=lambda _s: None)
-
