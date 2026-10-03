@@ -7,9 +7,8 @@ from collections.abc import Callable
 from typing import Any
 
 from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy
-from app.database import get_session_local
-
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
+from app.database import get_session_local
 
 logger = logging.getLogger(__name__)
 
@@ -80,4 +79,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
