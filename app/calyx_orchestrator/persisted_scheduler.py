@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .models import utcnow
 from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
+from .program_retry import in_retry_backoff
 from .scheduler import (
     DependencyScheduler,
     ScheduledDecision,
@@ -44,7 +47,13 @@ def _scheduled_state(status: str) -> ScheduledState:
         raise ValueError(f"UNSUPPORTED_PERSISTED_JOB_STATUS:{status}") from exc
 
 
-def project_persisted_schedule(db: Session, *, owner: str | None = None) -> PersistedSchedule:
+def project_persisted_schedule(
+    db: Session,
+    *,
+    owner: str | None = None,
+    now: datetime | None = None,
+) -> PersistedSchedule:
+    now = now or utcnow()
     program_query = select(CalyxProgram).where(CalyxProgram.status == "running", CalyxProgram.paused.is_(False))
     if owner is not None:
         program_query = program_query.where(CalyxProgram.owner == owner)
@@ -93,6 +102,7 @@ def project_persisted_schedule(db: Session, *, owner: str | None = None) -> Pers
                 outcome=job.outcome,
                 branch=job.branch,
                 mutating=job.mutating,
+                retry_deferred=in_retry_backoff(job.status, job.evidence_json, now),
             )
         )
 
