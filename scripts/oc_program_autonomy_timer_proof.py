@@ -454,7 +454,6 @@ def _supervisor_child(verify_only: bool = False) -> int:
         print("socket guard self-test did not block", file=sys.stderr)
         return 3
 
-    from app.calyx_orchestrator import program_cycle
     from app.calyx_orchestrator.engineering_core import TerminalOutcome
     from app.calyx_orchestrator.executor import (
         ExecutionReceipt,
@@ -466,6 +465,8 @@ def _supervisor_child(verify_only: bool = False) -> int:
         AuthoritativeExecutorRegistry,
         RegisteredExecutor,
     )
+
+    from app.calyx_orchestrator import program_cycle
     from runtime import program_autonomy_worker
 
     worker_id = os.environ.get("CALYX_PROGRAM_AUTONOMY_WORKER_ID", "")
@@ -769,10 +770,9 @@ class Proof:
         return create_engine(dsn, pool_pre_ping=True)
 
     def setup_schema(self) -> str:
+        from app.calyx_orchestrator.schema import ensure_orchestrator_schema
         from sqlalchemy import text
         from sqlalchemy.orm import Session
-
-        from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 
         admin = self._engine(self.dsn)
         with admin.begin() as conn:
@@ -826,9 +826,8 @@ class Proof:
         return self.programs[name]
 
     def jobs(self) -> dict[str, Any]:
-        from sqlalchemy import select
-
         from app.calyx_orchestrator.program_models import CalyxProgramJob
+        from sqlalchemy import select
 
         with self.session() as db:
             rows = db.scalars(select(CalyxProgramJob)).all()
@@ -1242,9 +1241,9 @@ class Proof:
         return True
 
     def duplicate_lease_attempts(self) -> None:
+        from app.calyx_orchestrator.program_models import CalyxProgramJob
         from sqlalchemy import update
 
-        from app.calyx_orchestrator.program_models import CalyxProgramJob
         from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 
         assert self.victim_lease is not None
@@ -2152,3 +2151,4 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+
