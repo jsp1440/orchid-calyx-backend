@@ -153,10 +153,19 @@ def _conflict_follow_ups(
     follow_ups: list[dict[str, Any]] = []
     for item in bridge_result.get("conflict_follow_ups") or []:
         entry = dict(item)
-        command = list(item.get("relabel_command") or [])
+        original_command = list(item.get("relabel_command") or [])
+        command = list(original_command)
         if frontend_repo and command:
             command += ["--repo", frontend_repo]
         entry["relabel_command"] = command
+        body = str(item.get("body") or "")
+        if command != original_command:
+            original_fix = f"`{' '.join(original_command)}`"
+            qualified_fix = f"`{' '.join(command)}`"
+            if original_fix not in body:
+                raise ValueError("CONFLICT_FOLLOW_UP_FIX_COMMAND_MISSING")
+            body = body.replace(original_fix, qualified_fix)
+        entry["body"] = body
         entry["repo"] = frontend_repo or None
         follow_ups.append(entry)
     return follow_ups
@@ -191,6 +200,13 @@ def run_reconciliation(
                     "error": receipt.error,
                 })
 
+    conflict_follow_ups = _conflict_follow_ups(
+        report.bridge_result, frontend_repo
+    )
+    report_dict = report.as_dict()
+    report_dict["bridge_result"] = dict(report.bridge_result)
+    report_dict["bridge_result"]["conflict_follow_ups"] = conflict_follow_ups
+
     return {
         "schema": _SCHEMA,
         "admitted_count": report.admitted_count,
@@ -207,14 +223,12 @@ def run_reconciliation(
         "dispatch_receipts": dispatch_receipts,
         "bridge_status": report.bridge_result.get("status"),
         "conflict_count": len(report.bridge_result.get("conflicts") or []),
-        "conflict_follow_ups": _conflict_follow_ups(
-            report.bridge_result, frontend_repo
-        ),
+        "conflict_follow_ups": conflict_follow_ups,
         "evidence_count": len(report.evidence),
         "executed_count": report.executed_count,
         "canonical_context_schema": report.canonical_context_schema,
         "canonical_context_version": report.canonical_context_version,
-        "report": report.as_dict(),
+        "report": report_dict,
     }
 
 
