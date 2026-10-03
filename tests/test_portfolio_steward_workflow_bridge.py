@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-
 from runtime.portfolio_steward_reconciler import _filter_prepared, _issue_to_leaf
+
 from scripts.oc_portfolio_steward_reconcile import (
     LabelDispatcher,
     LabelDispatchReceipt,
@@ -441,3 +441,4 @@ def test_steward_fails_when_every_queued_issue_is_a_conflict(tmp_path, capsys):
         "gh", "issue", "edit", "400", "--remove-label", "oc-queued",
         "--repo", "jsp1440/orchid-continuum-frontend",
     ]
+
