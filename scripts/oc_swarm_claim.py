@@ -18,8 +18,11 @@ from scripts.oc_budget_denial_route import decide_denial_route
 from scripts.oc_health_contract import evaluate
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 
+#: ``oc-scientific-gate`` holds work awaiting human scientific review. It is
+#: re-checked here exactly like the owner gate: a gate applied between plan and
+#: claim must stop the claim.
 PARKED = {"oc-running", "oc-validating", "oc-blocked", "oc-owner-gate",
-          "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
+          "oc-scientific-gate", "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
 BLOCKER_FINGERPRINT = re.compile(r"^[a-f0-9]{24}$")
 
 

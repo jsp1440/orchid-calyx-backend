@@ -71,7 +71,8 @@ def test_claim_removes_queued_preserves_priority_and_returns_only_confirmed_matr
 
 
 @pytest.mark.parametrize("extra", ["oc-running", "oc-validating", "oc-blocked", "oc-done",
-                                  "oc-owner-gate", "oc-runtime-backoff", "oc-repair-backoff"])
+                                  "oc-owner-gate", "oc-scientific-gate",
+                                  "oc-runtime-backoff", "oc-repair-backoff"])
 def test_conflicting_or_protected_state_never_claims(extra):
     result, api = execute([issue(labels=["oc-queued", extra])])
     assert result["launch_count"] == 0
