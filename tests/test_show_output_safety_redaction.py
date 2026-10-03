@@ -1083,3 +1083,14 @@ def test_round1_list_and_digest_scans_are_linear(size):
         lambda: safety._redact_dict(digest, 0),
     ):
         assert _best_of(build) < BOUND_SECONDS[size]
+
+
+# --- independent checker regression -----------------------------------------------------
+
+
+def test_checker_regression_long_auth_type_with_attached_token():
+    value = f"http --auth-type=bearer -a{SECRET} GET x"
+    out = redact_config_json(json.dumps({"note": value}))
+    assert SECRET not in out
+    assert json.loads(out)["note"].endswith(" GET x")
+    assert redact_config_json(out) == out
