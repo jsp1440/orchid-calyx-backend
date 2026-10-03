@@ -5,8 +5,10 @@ Dependencies are explicit and durable. Issues may declare:
 
     OC-SWARM-DEPENDS-ON: #1201, #1202
 
-A dependency is satisfied only when the referenced issue is closed or carries
-``oc-done``. Missing referenced issues fail closed. Cycles are detected and all
+A dependency is satisfied only when the referenced issue carries ``oc-done`` or
+was closed as completed. An issue closed as ``NOT_PLANNED`` or ``DUPLICATE`` did
+not deliver the work its dependents need, so it keeps them blocked. Missing
+referenced issues fail closed. Cycles are detected and all
 members of a cycle remain blocked. This module is pure and provider-free.
 """
 
@@ -98,11 +100,39 @@ def dependencies(issue: dict) -> list[int]:
     return refs
 
 
+#: GitHub ``stateReason`` values under which a closed issue delivered its work.
+COMPLETED_STATE_REASON = "COMPLETED"
+
+
+def state_reason(issue: dict) -> str | None:
+    """Return the normalised close reason, or None when the snapshot lacks it.
+
+    Accepts the GraphQL/``gh`` spelling (``stateReason: NOT_PLANNED``) and the
+    REST spelling (``state_reason: not_planned``).
+    """
+    raw = issue.get("stateReason")
+    if raw is None:
+        raw = issue.get("state_reason")
+    text = str(raw or "").strip().upper()
+    return text or None
+
+
 def _is_satisfied(issue: dict | None) -> bool:
     if issue is None:
         return False
+    if DONE_LABEL in _labels(issue):
+        return True
     state = str(issue.get("state") or "OPEN").upper()
-    return state == "CLOSED" or DONE_LABEL in _labels(issue)
+    if state != "CLOSED":
+        return False
+    reason = state_reason(issue)
+    # Backward compatibility: snapshots and fixtures that predate the
+    # ``stateReason`` field carry no reason at all. The controller snapshot and
+    # the claim-time re-read now fetch it, so an absent reason only arises from
+    # legacy callers; those keep the previous "closed means done" reading
+    # rather than stranding every dependent. A reason that IS present must be
+    # COMPLETED: NOT_PLANNED or DUPLICATE never unlocks dependents.
+    return reason is None or reason == COMPLETED_STATE_REASON
 
 
 def build_dependency_graph(issues: Iterable[dict]) -> dict[str, Any]:

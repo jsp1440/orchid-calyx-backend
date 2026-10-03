@@ -222,8 +222,10 @@ jobs:
           set -euo pipefail
           # Swarm v4 needs closed dependency issues as well as the open execution
           # portfolio. The canonical scheduler itself still ignores closed work.
+          # stateReason lets the dependency graph refuse to unlock dependents of
+          # an issue closed as NOT_PLANNED or DUPLICATE.
           gh issue list --repo "$REPO" --state all --limit 1000 \
-            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+            --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
 
           # Blocked-work reconciliation reads machine-readable blocker lineage
           # from issue bodies/comments. Fetch comments only for currently blocked

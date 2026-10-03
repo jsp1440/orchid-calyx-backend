@@ -73,8 +73,10 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
     confirmed, skipped, errors = [], [], []
 
     def view(number):
+        # stateReason: a dependency closed as NOT_PLANNED must not unlock work
+        # at claim time any more than it does at plan time.
         return call(["issue", "view", str(number), "--repo", repository,
-                     "--json", "number,title,body,state,labels"])
+                     "--json", "number,title,body,state,stateReason,labels"])
 
     for worker in workers:
         number = worker["issue_number"]
