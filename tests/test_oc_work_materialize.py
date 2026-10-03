@@ -508,6 +508,7 @@ class TestRecurrence:
             ("CLOSED", "COMPLETED", ("oc-discovered", "oc-done", "oc-condition-cleared"),
              "\nOC-AUTO-REQUEUE: false", "auto_requeue_disabled"),
             ("OPEN", None, ("oc-discovered", "oc-owner-gate"), "", "owner_hold"),
+            ("OPEN", None, ("oc-discovered", "oc-scientific-gate"), "", "owner_hold"),
             ("CLOSED", "COMPLETED", ("oc-done", "oc-condition-cleared"), "", "discovered_label_removed"),
             ("CLOSED", None, ("oc-discovered", "oc-condition-cleared"), "", "closure_not_proven_complete"),
         ],

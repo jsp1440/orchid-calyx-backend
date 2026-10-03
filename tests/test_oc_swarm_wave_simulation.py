@@ -418,3 +418,52 @@ def test_full_wave_trace(sim):
     ]
     assert observed == expected, "\n" + trace(sim)
     assert all(not w["recon_errors"] and w["handoff"]["healthy"] for w in sim["waves"]), trace(sim)
+
+
+def test_homeostasis_verdict_is_honest_every_wave(sim):
+    """No wave claims healthy idle while unfinished work exists; gates are recorded precisely.
+
+    Waves 1-3 execute. Wave 4 launches nothing, but the owner-gated Calyx issue and the
+    provider-parked Vision issue are still unfinished, so the verdict must be ``gated``
+    with both gates named and discovery requested -- never healthy idle.
+    """
+    verdicts = [w["plan"]["homeostasis"] for w in sim["waves"]]
+    for verdict in verdicts:
+        assert verdict["healthy_idle"] is False, trace(sim)
+        assert verdict["gates"]["owner_gated"] == [CALYX], trace(sim)
+        assert verdict["gates"]["provider_parked"] == [VISION], trace(sim)
+    assert [v["reason"] for v in verdicts[:3]] == ["executing"] * 3, trace(sim)
+    last = verdicts[-1]
+    assert sim["waves"][-1]["plan"]["launch_count"] == 0, trace(sim)
+    assert (last["status"], last["reason"]) == ("gated", "gated_only"), trace(sim)
+    assert last["discovery_required"] is True, trace(sim)
+    # The Lexicon dependency is recorded while it holds, and released once Literature is done.
+    assert verdicts[0]["gates"]["dependency_blocked"] == [
+        {"issue": LEXICON, "blocked_by": [LITERATURE], "roots": [LITERATURE], "gated": False}
+    ], trace(sim)
+    assert verdicts[1]["gates"]["dependency_blocked"] == [], trace(sim)
+
+
+def test_scientific_gate_isolates_only_its_own_issue(monkeypatch):
+    """A scientific/taxonomic gate parks exactly its issue; every other lane still completes."""
+    import sys
+
+    module = sys.modules[__name__]
+    base = scenario()
+
+    def gated_scenario():
+        rows = [dict(row) for row in base]
+        for row in rows:
+            if row["number"] == ATLAS:
+                row["labels"] = [*row["labels"], {"name": "oc-scientific-gate"}]
+        return rows
+
+    monkeypatch.setattr(module, "scenario", gated_scenario)
+    gated = run_simulation()
+    assert ATLAS not in _ever_confirmed(gated), trace(gated)
+    assert all(w["plan"]["homeostasis"]["gates"]["scientific_gated"] == [ATLAS] for w in gated["waves"]), trace(gated)
+    final = gated["waves"][-1]["labels_after"]
+    for done in (LITERATURE, LEXICON, TAX_A, TAX_B):
+        assert "oc-done" in final[done], trace(gated)
+    assert not set(final[ATLAS]) & {"oc-running", "oc-done", "oc-blocked"}, trace(gated)
+    assert gated["waves"][-1]["plan"]["homeostasis"]["healthy_idle"] is False, trace(gated)

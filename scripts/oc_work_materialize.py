@@ -53,7 +53,7 @@ PAGE_SIZE = 100
 FINGERPRINT_SEARCH_CEILING = 100
 
 #: A discovered issue whose labels are in this set is held by a person.
-OWNER_HOLDS = frozenset({"oc-owner-gate", "blocked-on-owner"})
+OWNER_HOLDS = frozenset({"oc-owner-gate", "blocked-on-owner", "oc-scientific-gate"})
 DONE_LABEL = "oc-done"
 QUEUED_LABEL = "oc-queued"
 NO_REQUEUE = re.compile(r"^OC-AUTO-REQUEUE:\s*false\s*$", re.IGNORECASE | re.MULTILINE)

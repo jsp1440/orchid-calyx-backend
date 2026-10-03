@@ -322,6 +322,19 @@ jobs:
             "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
           mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
+      # Homeostasis evidence: the plan may report healthy idle only when this
+      # pass's discovery demonstrably ran and found nothing. A failed or skipped
+      # discovery attaches nothing, so the verdict stays "unknown, not idle".
+      - name: Attach work-discovery evidence
+        if: steps.discovery.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile discovery "$RUNNER_TEMP/work-discovery.json" \
+            '. + {discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-discovery.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-discovery.json" "$RUNNER_TEMP/swarm-snapshot.json"
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash

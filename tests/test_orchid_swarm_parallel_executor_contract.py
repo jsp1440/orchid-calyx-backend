@@ -138,3 +138,15 @@ def test_snapshot_fetches_state_reason_for_dependency_unlocks():
         if s.get("name") == "Build repository snapshot"
     )
     assert re.search(r"--json [a-zA-Z,]*\bstateReason\b", step["run"])
+
+
+def test_plan_receives_discovery_evidence_only_when_discovery_succeeded():
+    """Healthy idle needs proof this pass's discovery ran; a failed discovery attaches nothing."""
+    plan = _doc()["jobs"]["plan"]
+    names = [s.get("name") for s in plan["steps"]]
+    attach = names.index("Attach work-discovery evidence")
+    assert names.index("Discover product work from repository evidence") < attach
+    assert names.index("Build repository snapshot") < attach < names.index("Plan dependency-aware resource wave")
+    step = plan["steps"][attach]
+    assert step["if"] == "steps.discovery.outcome == 'success'"
+    assert "discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}" in step["run"]
