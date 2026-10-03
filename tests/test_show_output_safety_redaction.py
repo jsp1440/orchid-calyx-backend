@@ -1085,6 +1085,18 @@ def test_round1_list_and_digest_scans_are_linear(size):
         assert _best_of(build) < BOUND_SECONDS[size]
 
 
+def test_checker_regression_secret_label_after_long_gap_fails_closed():
+    value = f"password         auth {SECRET}"
+    _assert_masked_and_idempotent(
+        {"note": value}, {"note": "password         ***"}
+    )
+
+
+def test_checker_regression_empty_password_token_username_masks_before_fallback():
+    value = f"curl -u-admin{SECRET}:"
+    _assert_masked_and_idempotent({"note": value}, {"note": "curl -u***:"})
+
+
 # --- independent checker regression -----------------------------------------------------
 
 
