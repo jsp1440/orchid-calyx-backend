@@ -416,6 +416,7 @@ jobs:
             echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
             echo "- recurred work requeued this pass: ${{ steps.materialize.outputs.requeued_count || '0' }} ${{ steps.materialize.outputs.requeued_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
+            echo "- homeostasis: ${{ steps.plan.outputs.homeostasis_status }} (${{ steps.plan.outputs.homeostasis_reason }}) gates=$(jq -c '.homeostasis.gates // {}' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"
             echo "- main merge: disabled"

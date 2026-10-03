@@ -121,3 +121,20 @@ def test_summary_reports_lane_counts_and_recoveries():
     assert "provider_free_launch_count:" in text
     assert "provider_launch_count:" in text
     assert "stale leases recovered:" in text
+
+
+def test_summary_reports_the_homeostasis_verdict():
+    """Every wave publishes its invariant outcome, including a zero-launch wave."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "steps.plan.outputs.homeostasis_status" in text
+    assert "steps.plan.outputs.homeostasis_reason" in text
+    assert ".homeostasis.gates" in text
+
+
+def test_snapshot_fetches_state_reason_for_dependency_unlocks():
+    """A NOT_PLANNED closure must be visible to the dependency graph."""
+    step = next(
+        s for s in _doc()["jobs"]["plan"]["steps"]
+        if s.get("name") == "Build repository snapshot"
+    )
+    assert re.search(r"--json [a-zA-Z,]*\bstateReason\b", step["run"])
