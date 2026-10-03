@@ -1908,12 +1908,21 @@ class Proof:
                 and len(repairs) == 1
                 and next(iter(repairs))
                 == f"{REPAIR_JOB_PREFIX}{dead.get('program_job_id')}"
-                and repair.get("status") == "waiting"
+                # The follow-up is an explicit owner-action record (#1710 round 1):
+                # blocked for automation, unresolved, never schedulable.
+                and repair.get("status") == "blocked"
+                and repair.get("outcome") is None
+                and repair.get("blocker") == "OWNER_ACTION_REQUIRED:DEAD_LETTER"
                 and repair.get("attempt_count") == 0
+                and repair.get("max_attempts") == 0
                 and downstream.get("outcome") == "BLOCKED"
                 and downstream.get("blocker") == "UPSTREAM_JOB_FAILED",
                 {
                     "repairs": sorted(repairs),
+                    "repair": {
+                        k: repair.get(k)
+                        for k in ("status", "outcome", "blocker", "attempt_count", "max_attempts")
+                    },
                     "downstream": {
                         k: downstream.get(k) for k in ("status", "outcome", "blocker")
                     },
