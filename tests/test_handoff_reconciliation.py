@@ -104,7 +104,9 @@ def test_each_missing_link_is_named(change, link, reason):
 
 def test_stale_checks_with_a_claim_are_incomplete_not_local_claim_only():
     # Some durable chain exists, so the claim is no longer the only thing there.
-    decision = reconcile_handoff(DESKTOP_CLAIM, replace(COMPLETE, checks_head_sha=OTHER))
+    decision = reconcile_handoff(
+        DESKTOP_CLAIM, replace(COMPLETE, checks_head_sha=OTHER)
+    )
 
     assert decision.state is HandoffState.INCOMPLETE
 
@@ -127,7 +129,9 @@ def test_check_outcome_on_the_exact_head_decides_the_state(checks, state):
 
 
 def test_runner_non_execution_is_not_green():
-    decision = reconcile_handoff(None, replace(COMPLETE, checks=CheckState.NOT_EXECUTED))
+    decision = reconcile_handoff(
+        None, replace(COMPLETE, checks=CheckState.NOT_EXECUTED)
+    )
 
     assert decision.state is not HandoffState.DELIVERED
     assert decision.missing is ChainLink.EXECUTED_CHECKS
