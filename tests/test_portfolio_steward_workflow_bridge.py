@@ -396,3 +396,13 @@ def test_steward_fails_when_every_queued_issue_is_a_conflict(tmp_path, capsys):
         "gh", "issue", "edit", "400", "--remove-label", "oc-queued",
         "--repo", "jsp1440/orchid-continuum-frontend",
     ]
+    expected_fix = (
+        "gh issue edit 400 --remove-label oc-queued "
+        "--repo jsp1440/orchid-continuum-frontend"
+    )
+    assert expected_fix in report["conflict_follow_ups"][0]["body"]
+    [nested] = report["report"]["bridge_result"]["conflict_follow_ups"][:1]
+    assert nested["relabel_command"] == report["conflict_follow_ups"][0][
+        "relabel_command"
+    ]
+    assert expected_fix in nested["body"]
