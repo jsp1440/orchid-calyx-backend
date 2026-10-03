@@ -191,6 +191,40 @@ def test_conflict_does_not_mask_a_planner_blocking_violation():
     assert [c["issue"] for c in result["conflicts"]] == [238]
 
 
+def test_running_parked_conflict_with_active_lease_fails_closed():
+    state = snapshot(
+        issue(238, "oc-running", "oc-runtime-backoff"),
+        leases=[
+            {
+                "issue": 238,
+                "id": "lease-238",
+                "owner": "worker-1",
+                "material_fingerprint": "fp-238",
+                "active": True,
+            }
+        ],
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=1)
+
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+    assert "conflict_follow_ups" not in result
+
+
+def test_validating_parked_conflict_fails_closed():
+    state = snapshot(
+        issue(238, "oc-validating", "oc-blocked", head_sha="a" * 40),
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=1)
+
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+
+
 def test_healthy_plan_keeps_its_wire_shape_without_a_conflicts_key():
     result = plan_refill(snapshot(), [candidate("#2", "fp-2")], reserve_depth=1)
     assert "conflicts" not in result

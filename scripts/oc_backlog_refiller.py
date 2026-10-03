@@ -174,9 +174,15 @@ def _split_issue_conflicts(
     conflicts: list[dict[str, Any]] = []
     blocking: list[dict[str, Any]] = []
     for violation in violations:
+        # Only a queued+parked contradiction is safe to isolate by removing
+        # the executable label. Running work can still own an active lease,
+        # and validating work can still own persisted PR/evidence state;
+        # stripping either label here would orphan that durable state.
+        safely_isolatable = set(violation.get("executable") or []) == {"oc-queued"}
         if (
             violation.get("type") in ISSUE_SCOPED_CONFLICT_VIOLATIONS
             and violation.get("issue") is not None
+            and safely_isolatable
         ):
             conflicts.append(violation)
         else:
