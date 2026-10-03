@@ -34,6 +34,28 @@ def gh_api(path: str, *args: str) -> object:
     return json.loads(out) if out.strip() else None
 
 
+def done_issue_list_args(repo: str) -> list[str]:
+    """``gh api`` arguments that list the repository's ``oc-done`` issues.
+
+    ``--method GET`` is required: ``gh api`` switches to POST as soon as a
+    ``-f`` field is present, and POST to ``/issues`` is "create an issue",
+    which the API rejects with 422. With GET the fields become query
+    parameters.
+    """
+    return [
+        f"repos/{repo}/issues",
+        "--method",
+        "GET",
+        "--paginate",
+        "-f",
+        "state=all",
+        "-f",
+        f"labels={DONE_LABEL}",
+        "-f",
+        "per_page=100",
+    ]
+
+
 def sha_on_target(repo: str, target: str):
     cache: dict[str, bool] = {}
 
@@ -89,19 +111,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--summary", default=os.environ.get("GITHUB_STEP_SUMMARY"))
     args = parser.parse_args(argv)
 
-    issues = (
-        gh_api(
-            f"repos/{args.repo}/issues",
-            "--paginate",
-            "-f",
-            "state=all",
-            "-f",
-            f"labels={DONE_LABEL}",
-            "-f",
-            "per_page=100",
-        )
-        or []
-    )
+    issues = gh_api(*done_issue_list_args(args.repo)) or []
     issues = [i for i in issues if "pull_request" not in i]
     on_target = sha_on_target(args.repo, args.target_branch)
     decisions = [decide(observe(args.repo, issue), on_target) for issue in issues]
