@@ -379,6 +379,14 @@ def _mask_spaced_values(text: str) -> str:
         value = _SPACED_VALUE.match(text, match.end())
         if value is None:
             continue
+        if _is_secret_key(value.group(0).strip("\\"'").lstrip("-")):
+            # A second secret label can itself be the apparent value (for example,
+            # ``password         auth value``). Advancing past it would suppress
+            # reprocessing and expose its following credential. The remaining extent
+            # is ambiguous, so fail closed from the second label onward.
+            parts.append(text[position : match.end()])
+            parts.append(REDACTED)
+            return "".join(parts)
         if _SPACED_SEPARATOR.fullmatch(value.group(0)):
             # ``X-Auth-Token : a`` / ``password = a`` / ``password = = a``: mask the
             # word after the separators, keeping the separators themselves.
@@ -527,7 +535,13 @@ def _mask_cli_user_to_end(match: re.Match) -> str:
     value = match.group("value")
     colon = value.find(":")
     user = value[:colon] if colon >= 0 else ""
-    if user and not any(ch.isspace() for ch in user) and "\\" not in user:
+    password = value[colon + 1 :] if colon >= 0 else ""
+    if colon >= 0 and not password.strip("\\"'"):
+        # Empty-password credentials use the username as the secret (API-token
+        # convention). Apply that rule before the unsure-value fallback can preserve
+        # a username that begins with another credential flag.
+        return _mask_cli_user(match)
+    if user and not any(ch.isspace() for ch in user) and "\\\\" not in user:
         return f"{match.group('flag')}{user}:{REDACTED}"
     return f"{match.group('flag')}{REDACTED}"
 
