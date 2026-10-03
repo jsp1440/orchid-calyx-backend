@@ -4,6 +4,9 @@ import json
 from datetime import timedelta
 
 import pytest
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import Session
+
 from app.calyx_orchestrator.engineering_core import (
     AgentRole,
     EngineeringAdmissionPolicy,
@@ -15,15 +18,12 @@ from app.calyx_orchestrator.program_models import (
     CalyxProgramDependency,
     CalyxProgramJob,
 )
-from app.database import Base
-from sqlalchemy import create_engine, select
-from sqlalchemy.orm import Session
-
 from app.calyx_orchestrator.program_repository import (
     PersistentProgramRepository,
     ProgramJobSpec,
 )
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
+from app.database import Base
 
 
 @pytest.fixture()
@@ -601,4 +601,3 @@ def test_failed_attempt_at_ceiling_dead_letters_and_blocks_program(db: Session) 
     db.refresh(program)
     assert program.status == "blocked"
     assert len(_repair_jobs(db, program.program_id)) == 1
-
