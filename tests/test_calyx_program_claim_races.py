@@ -15,9 +15,6 @@ import json
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
-
 from app.calyx_orchestrator.engineering_core import EngineeringAdmissionPolicy
 from app.calyx_orchestrator.models import CalyxJob, utcnow
 from app.calyx_orchestrator.program_models import (
@@ -25,12 +22,15 @@ from app.calyx_orchestrator.program_models import (
     CalyxProgramDependency,
     CalyxProgramJob,
 )
+from app.database import Base
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
 from app.calyx_orchestrator.program_repository import (
     PersistentProgramRepository,
     ProgramJobSpec,
 )
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
-from app.database import Base
 
 TABLES = [
     CalyxJob.__table__,
@@ -189,3 +189,4 @@ def test_release_after_recovery_is_refused_not_double_applied(sessions):
             assert job.status == "queued"
             assert job.attempt_count == 1
             assert job.evidence_json is None
+
