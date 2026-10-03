@@ -142,12 +142,42 @@ def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _conflict_follow_ups(
+    bridge_result: dict[str, Any], frontend_repo: str
+) -> list[dict[str, Any]]:
+    """The planner's one-per-issue conflict follow-ups, with the target repo.
+
+    Report-only: nothing here posts or relabels. The relabel command gains
+    ``--repo`` so it can be run exactly as written.
+    """
+    follow_ups: list[dict[str, Any]] = []
+    for item in bridge_result.get("conflict_follow_ups") or []:
+        entry = dict(item)
+        original_command = list(item.get("relabel_command") or [])
+        command = list(original_command)
+        if frontend_repo and command:
+            command += ["--repo", frontend_repo]
+        entry["relabel_command"] = command
+        body = str(item.get("body") or "")
+        if command != original_command:
+            original_fix = f"`{' '.join(original_command)}`"
+            qualified_fix = f"`{' '.join(command)}`"
+            if original_fix not in body:
+                raise ValueError("CONFLICT_FOLLOW_UP_FIX_COMMAND_MISSING")
+            body = body.replace(original_fix, qualified_fix)
+        entry["body"] = body
+        entry["repo"] = frontend_repo or None
+        follow_ups.append(entry)
+    return follow_ups
+
+
 def run_reconciliation(
     prepared_issues: list[dict[str, Any]],
     all_issues: list[dict[str, Any]],
     *,
     dispatcher: LabelDispatcher | None = None,
     reserve_depth: int = 3,
+    frontend_repo: str = "",
 ) -> dict[str, Any]:
     """Execute one full reconciliation cycle. Injectable dispatcher for testing."""
     snapshot = build_frontend_snapshot(all_issues)
@@ -170,6 +200,13 @@ def run_reconciliation(
                     "error": receipt.error,
                 })
 
+    conflict_follow_ups = _conflict_follow_ups(
+        report.bridge_result, frontend_repo
+    )
+    report_dict = report.as_dict()
+    report_dict["bridge_result"] = dict(report.bridge_result)
+    report_dict["bridge_result"]["conflict_follow_ups"] = conflict_follow_ups
+
     return {
         "schema": _SCHEMA,
         "admitted_count": report.admitted_count,
@@ -185,11 +222,13 @@ def run_reconciliation(
         "provider_launch_authorized": False,
         "dispatch_receipts": dispatch_receipts,
         "bridge_status": report.bridge_result.get("status"),
+        "conflict_count": len(report.bridge_result.get("conflicts") or []),
+        "conflict_follow_ups": conflict_follow_ups,
         "evidence_count": len(report.evidence),
         "executed_count": report.executed_count,
         "canonical_context_schema": report.canonical_context_schema,
         "canonical_context_version": report.canonical_context_version,
-        "report": report.as_dict(),
+        "report": report_dict,
     }
 
 
@@ -199,6 +238,7 @@ def _write_github_output(path: str, result: dict[str, Any]) -> None:
         f"admitted_numbers={json.dumps(result['admitted_numbers'])}",
         f"suppressed_count={result['suppressed_count']}",
         f"rejected_count={result['rejected_count']}",
+        f"conflict_count={result.get('conflict_count', 0)}",
         "no_api_mode=true",
     ]
     with open(path, "a") as fh:
@@ -228,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
             all_issues,
             dispatcher=dispatcher,
             reserve_depth=args.reserve_depth,
+            frontend_repo=args.frontend_repo,
         )
     except Exception as exc:  # noqa: BLE001
         error_result = {
@@ -254,7 +295,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.github_output:
         _write_github_output(args.github_output, result)
 
-    failed_statuses = {"planner_failed", "queue_empty_planner_failed"}
+    # queue_blocked_by_conflicts: every queued issue is contradictory and
+    # nothing could be proposed, so no work can run. That is not healthy.
+    failed_statuses = {
+        "planner_failed",
+        "queue_empty_planner_failed",
+        "queue_blocked_by_conflicts",
+    }
     if result.get("bridge_status") in failed_statuses:
         print(
             f"FAIL-CLOSED: bridge_status={result['bridge_status']}",
