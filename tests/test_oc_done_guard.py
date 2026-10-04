@@ -183,3 +183,54 @@ def test_workflow_is_report_only_on_a_schedule():
     assert "github.event_name == 'workflow_dispatch' && inputs.apply == true" in run
     assert "vars.OC_DONE_GUARD_APPLY == 'true'" in run
     assert "'--apply' || ''" in run
+
+
+# --- the issue listing must be a GET ----------------------------------------
+
+
+def _method_of(argv: list[str]) -> str:
+    """The HTTP method ``gh api`` will use for ``argv`` (per gh's documented rule:
+    an explicit --method/-X wins; otherwise any -f/-F/--field/--raw-field makes
+    the request a POST)."""
+    for flag in ("--method", "-X"):
+        if flag in argv:
+            return argv[argv.index(flag) + 1].upper()
+    if any(arg in {"-f", "-F", "--field", "--raw-field"} for arg in argv):
+        return "POST"
+    return "GET"
+
+
+def test_done_issue_listing_is_a_get_with_query_fields():
+    # Scheduled run 36710517712 failed on every invocation: without --method
+    # the -f fields turned the listing into POST /issues, which returned 422.
+    from scripts.oc_done_guard import done_issue_list_args
+
+    argv = done_issue_list_args("jsp1440/orchid-calyx-backend")
+    assert argv[0] == "repos/jsp1440/orchid-calyx-backend/issues"
+    assert _method_of(argv) == "GET"
+    assert argv[argv.index("--method") + 1] == "GET"
+    assert "--paginate" in argv
+    fields = [argv[i + 1] for i, arg in enumerate(argv) if arg == "-f"]
+    assert fields == ["state=all", "labels=oc-done", "per_page=100"]
+
+
+def test_main_lists_issues_with_the_get_argv(monkeypatch):
+    import scripts.oc_done_guard as guard
+
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, **kwargs):
+        calls.append(list(cmd))
+
+        class Result:
+            stdout = "[]"
+
+        return Result()
+
+    monkeypatch.setattr(guard.subprocess, "run", fake_run)
+    assert guard.main(["--repo", "o/r", "--summary", ""]) == 0
+    listing = next(
+        call for call in calls if call[:3] == ["gh", "api", "repos/o/r/issues"]
+    )
+    assert _method_of(listing[2:]) == "GET"
+    assert listing[2:] == guard.done_issue_list_args("o/r")

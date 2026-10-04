@@ -119,14 +119,116 @@ def test_planner_failure_is_distinct_from_healthy_empty_queue():
 
 
 def test_unhealthy_health_snapshot_fails_closed_without_proposals():
+    # Two executable states on one issue is not an isolatable conflict.
     result = plan_refill(
-        snapshot(issue(40, "oc-queued", "oc-blocked")),
+        snapshot(issue(40, "oc-queued", "oc-validating", head_sha="a" * 40)),
         [candidate("#41", "fp-41")],
         reserve_depth=2,
     )
     assert result["status"] == "planner_failed"
     assert result["proposals"] == []
     assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+
+
+def test_one_executable_parked_conflict_is_skipped_and_others_are_proposed():
+    # Real shape from the scheduled run: #238 carried both oc-queued and a
+    # backoff label, and that single issue failed the whole planner.
+    state = snapshot(
+        issue(238, "oc-queued", "oc-runtime-backoff"),
+        issue(1, "oc-queued"),
+    )
+    result = plan_refill(
+        state,
+        [
+            candidate("#238", "fp-238"),
+            candidate("#2", "fp-2"),
+            candidate("#3", "fp-3"),
+        ],
+        reserve_depth=3,
+    )
+    assert result["status"] == "refill_planned"
+    # The contradictory issue is not counted as executable reserve.
+    assert result["queued_count"] == 1
+    assert result["deficit"] == 2
+    assert [p["source_ref"] for p in result["proposals"]] == ["#2", "#3"]
+    assert {"source_ref": "#238", "reason": "executable_parked_conflict"} in result[
+        "rejections"
+    ]
+    [finding] = result["conflicts"]
+    assert {
+        key: finding[key]
+        for key in ("type", "issue", "executable", "parked", "action", "counted_as_reserve")
+    } == {
+        "type": "executable_parked_conflict",
+        "issue": 238,
+        "executable": ["oc-queued"],
+        "parked": ["oc-runtime-backoff"],
+        "action": "issue_skipped",
+        "counted_as_reserve": False,
+    }
+    # The actionable fix: drop the executable label, keep the parked one.
+    assert finding["relabel"] == {"remove": ["oc-queued"], "add": []}
+    assert finding["relabel_command"] == [
+        "gh", "issue", "edit", "238", "--remove-label", "oc-queued",
+    ]
+    [follow_up] = result["conflict_follow_ups"]
+    assert follow_up["issue"] == 238
+    assert follow_up["kind"] == "issue_comment"
+    assert follow_up["marker"] in follow_up["body"]
+    assert "gh issue edit 238 --remove-label oc-queued" in follow_up["body"]
+
+
+def test_conflict_does_not_mask_a_planner_blocking_violation():
+    state = snapshot(
+        issue(238, "oc-queued", "oc-repair-backoff"),
+        issue(50, "oc-running"),  # running without a lease
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=2)
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert [c["issue"] for c in result["conflicts"]] == [238]
+
+
+def test_running_parked_conflict_with_active_lease_fails_closed():
+    state = snapshot(
+        issue(238, "oc-running", "oc-runtime-backoff"),
+        leases=[
+            {
+                "issue": 238,
+                "id": "lease-238",
+                "owner": "worker-1",
+                "material_fingerprint": "fp-238",
+                "active": True,
+            }
+        ],
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=1)
+
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+    assert "conflict_follow_ups" not in result
+
+
+def test_validating_parked_conflict_fails_closed():
+    state = snapshot(
+        issue(238, "oc-validating", "oc-blocked", head_sha="a" * 40),
+    )
+    result = plan_refill(state, [candidate("#2", "fp-2")], reserve_depth=1)
+
+    assert result["status"] == "queue_empty_planner_failed"
+    assert result["proposals"] == []
+    assert result["rejections"][0]["reason"] == "health_contract_violation"
+    assert "conflicts" not in result
+
+
+def test_healthy_plan_keeps_its_wire_shape_without_a_conflicts_key():
+    result = plan_refill(snapshot(), [candidate("#2", "fp-2")], reserve_depth=1)
+    assert "conflicts" not in result
+    assert result["status"] == "refill_planned"
 
 
 def test_unauthorized_source_cannot_enter_reserve():
@@ -255,3 +357,47 @@ def test_preserves_valid_queue_source_identity_and_rejects_unknown_identity():
     assert result["rejections"] == [
         {"source_ref": "#invented", "reason": "unauthorized_queue_source"}
     ]
+
+
+def test_a_queue_made_only_of_conflicts_is_blocked_not_healthy():
+    # Five contradictory issues and nothing to propose used to report
+    # queue_empty_healthy, a green run with no runnable work at all.
+    parked = ["oc-runtime-backoff", "oc-repair-backoff", "oc-blocked"]
+    state = snapshot(
+        *[issue(300 + n, "oc-queued", parked[n % 3]) for n in range(5)]
+    )
+    result = plan_refill(state, [], reserve_depth=3)
+    assert result["status"] == "queue_blocked_by_conflicts"
+    assert result["queued_count"] == 0
+    assert result["proposals"] == []
+    assert [c["issue"] for c in result["conflicts"]] == [300, 301, 302, 303, 304]
+    follow_ups = result["conflict_follow_ups"]
+    assert [f["issue"] for f in follow_ups] == [300, 301, 302, 303, 304]
+    assert len({f["idempotency_key"] for f in follow_ups}) == 5
+    for finding in result["conflicts"]:
+        assert finding["relabel"]["remove"] == ["oc-queued"]
+        assert finding["parked"] and finding["parked"][0] in parked
+
+
+def test_conflict_follow_ups_are_one_per_issue_and_idempotent():
+    duplicate = issue(238, "oc-queued", "oc-runtime-backoff")
+    state = snapshot(duplicate, dict(duplicate))
+    first = plan_refill(state, [], reserve_depth=1)
+    second = plan_refill(state, [], reserve_depth=1)
+    assert [f["issue"] for f in first["conflict_follow_ups"]] == [238]
+    assert first["conflict_follow_ups"] == second["conflict_follow_ups"]
+    # A different conflict on the same issue is a different follow-up.
+    changed = plan_refill(
+        snapshot(issue(238, "oc-queued", "oc-blocked")), [], reserve_depth=1
+    )
+    assert (
+        changed["conflict_follow_ups"][0]["idempotency_key"]
+        != first["conflict_follow_ups"][0]["idempotency_key"]
+    )
+
+
+def test_conflicts_alongside_real_reserve_are_reported_without_blocking():
+    state = snapshot(issue(1, "oc-queued"), issue(238, "oc-queued", "oc-blocked"))
+    result = plan_refill(state, [], reserve_depth=2)
+    assert result["status"] == "reserve_below_target_no_eligible_candidates"
+    assert [c["issue"] for c in result["conflicts"]] == [238]

@@ -8,6 +8,7 @@ GitHub mutation and must preserve repository governance.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import Any
 
@@ -37,6 +38,16 @@ KNOWLEDGE_GAP_FALSE_AUTHORITY_FIELDS = {
     "taxonomy_mutation",
     "sensitive_locality_disclosure",
 }
+# Health violations that describe one contradictory issue rather than the
+# control plane as a whole. Such an issue is skipped and reported as a
+# structured conflict finding; it does not fail the whole planner. Every other
+# violation still fails the planner closed.
+ISSUE_SCOPED_CONFLICT_VIOLATIONS = frozenset({"executable_parked_conflict"})
+CONFLICT_FOLLOW_UP_SCHEMA = "oc.queue-conflict-follow-up.v1"
+# A reserve whose only queued issues are contradictory is not healthy: nothing
+# in it can run. Callers must treat this status as a failure.
+QUEUE_BLOCKED_BY_CONFLICTS = "queue_blocked_by_conflicts"
+
 PROTECTED_BOUNDARIES = {
     "production",
     "scientific",
@@ -156,6 +167,101 @@ def _candidate_reason(
     return None
 
 
+def _split_issue_conflicts(
+    violations: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Separate isolatable per-issue conflicts from planner-blocking violations."""
+    conflicts: list[dict[str, Any]] = []
+    blocking: list[dict[str, Any]] = []
+    for violation in violations:
+        # Only a queued+parked contradiction is safe to isolate by removing
+        # the executable label. Running work can still own an active lease,
+        # and validating work can still own persisted PR/evidence state;
+        # stripping either label here would orphan that durable state.
+        safely_isolatable = set(violation.get("executable") or []) == {"oc-queued"}
+        if (
+            violation.get("type") in ISSUE_SCOPED_CONFLICT_VIOLATIONS
+            and violation.get("issue") is not None
+            and safely_isolatable
+        ):
+            conflicts.append(violation)
+        else:
+            blocking.append(violation)
+    return conflicts, blocking
+
+
+def _conflict_finding(violation: dict[str, Any]) -> dict[str, Any]:
+    """A contradictory issue, with the exact relabel that resolves it.
+
+    Resolution is fail-closed: the parked label (backoff or blocked) was set by
+    a failure path and wins, so the executable labels are removed. Re-queueing
+    is left to that label's own governed exit path; removing the parked label
+    instead would re-admit failed work without its retry or review.
+    """
+    issue = violation["issue"]
+    executable = sorted(str(label) for label in violation.get("executable") or [])
+    parked = sorted(str(label) for label in violation.get("parked") or [])
+    command = ["gh", "issue", "edit", str(issue)]
+    for label in executable:
+        command += ["--remove-label", label]
+    return {
+        "type": violation["type"],
+        "issue": issue,
+        "executable": executable,
+        "parked": parked,
+        "anomaly": "queue_backoff_contradiction",
+        "action": "issue_skipped",
+        "counted_as_reserve": False,
+        "relabel": {"remove": executable, "add": []},
+        "relabel_command": command,
+        "resolution": (
+            f"Remove {', '.join(executable)} from #{issue}; keep {', '.join(parked)}. "
+            "The parked state was set by a failure path and must exit through it."
+        ),
+    }
+
+
+def _conflict_follow_up(finding: dict[str, Any]) -> dict[str, Any]:
+    """One idempotent issue-comment payload for one conflict.
+
+    The key is derived only from the issue and its conflicting labels, so the
+    same unresolved conflict always yields the same key and a poster can skip
+    an issue that already carries the marker comment.
+    """
+    material = json.dumps(
+        [finding["issue"], finding["executable"], finding["parked"]],
+        separators=(",", ":"),
+    )
+    key = hashlib.sha256(f"{CONFLICT_FOLLOW_UP_SCHEMA}|{material}".encode()).hexdigest()
+    marker = f"<!-- oc-queue-conflict:{key} -->"
+    labels = ", ".join(f"`{label}`" for label in finding["executable"] + finding["parked"])
+    body = (
+        f"{marker}\n"
+        f"[OC-QUEUE-CONFLICT] #{finding['issue']} carries both executable and parked "
+        f"labels ({labels}). The refill planner skipped it and did not count it as "
+        "reserve.\n\n"
+        f"Fix: `{' '.join(finding['relabel_command'])}`\n\n"
+        f"{finding['resolution']}"
+    )
+    return {
+        "schema": CONFLICT_FOLLOW_UP_SCHEMA,
+        "kind": "issue_comment",
+        "issue": finding["issue"],
+        "idempotency_key": key,
+        "marker": marker,
+        "relabel": finding["relabel"],
+        "relabel_command": finding["relabel_command"],
+        "body": body,
+    }
+
+
+def _source_issue_number(candidate: dict[str, Any]) -> Any:
+    ref = str(candidate.get("source_ref") or "")
+    if ref.startswith("#") and ref[1:].isdigit():
+        return int(ref[1:])
+    return None
+
+
 def plan_refill(
     snapshot: dict[str, Any],
     candidates: list[dict[str, Any]],
@@ -173,7 +279,16 @@ def plan_refill(
         raise ValueError("reserve_depth must be >= 0")
 
     health = evaluate(snapshot)
-    queued_count = health["counts"]["queued"]
+    conflicts, blocking = _split_issue_conflicts(health["violations"])
+    conflict_issues = {violation["issue"] for violation in conflicts}
+    # A contradictory issue is not executable reserve: the scheduler parks it.
+    queued_count = len(
+        [
+            ident
+            for ident in health["issues"]["queued"]
+            if ident not in conflict_issues
+        ]
+    )
     deficit = max(reserve_depth - queued_count, 0)
 
     result: dict[str, Any] = {
@@ -185,8 +300,19 @@ def plan_refill(
         "proposals": [],
         "rejections": [],
     }
+    if conflicts:
+        # Present only when there is something to report, so a healthy plan
+        # keeps the exact wire shape consumers (and the frontend fixture) pin.
+        findings: dict[Any, dict[str, Any]] = {}
+        for violation in conflicts:
+            findings.setdefault(violation["issue"], _conflict_finding(violation))
+        result["conflicts"] = list(findings.values())
+        # Exactly one follow-up per conflicting issue.
+        result["conflict_follow_ups"] = [
+            _conflict_follow_up(finding) for finding in findings.values()
+        ]
 
-    if not health["healthy"]:
+    if blocking:
         result["status"] = (
             "queue_empty_planner_failed" if queued_count == 0 else "planner_failed"
         )
@@ -226,6 +352,14 @@ def plan_refill(
     )
 
     for candidate in ordered:
+        if _source_issue_number(candidate) in conflict_issues:
+            result["rejections"].append(
+                {
+                    "source_ref": candidate.get("source_ref"),
+                    "reason": "executable_parked_conflict",
+                }
+            )
+            continue
         reason = _candidate_reason(
             candidate,
             completed,
@@ -274,6 +408,8 @@ def plan_refill(
 
     if result["proposals"]:
         result["status"] = "refill_planned"
+    elif queued_count == 0 and conflicts:
+        result["status"] = QUEUE_BLOCKED_BY_CONFLICTS
     elif queued_count == 0:
         result["status"] = "queue_empty_healthy"
     else:

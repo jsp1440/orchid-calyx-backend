@@ -145,6 +145,34 @@ jobs:
         continue-on-error: true
         run: python3 -m pip install --quiet -r requirements.txt
 
+      - name: Run continuous Brain reasoning-gap pulse
+        id: brain_pulse
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_brain_pulse --output "$RUNNER_TEMP/brain-pulse.json"
+          jq '{schema, source, candidate_count, questions_evaluated,
+               authority,
+               candidates: [.candidates[] | {lane, rank, fingerprint, title}]}' \
+            "$RUNNER_TEMP/brain-pulse.json"
+
+      - name: Admit Brain discoveries to the canonical queue
+        id: brain_materialize
+        if: steps.brain_pulse.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/brain-pulse.json" \
+            --max-new 2 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/brain-materialization.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/brain-materialization.json")" -eq 0
+
       - name: Discover product work from repository evidence
         id: discovery
         continue-on-error: true

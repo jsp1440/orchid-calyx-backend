@@ -197,8 +197,48 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
         budget_fingerprint=str(snapshot.get("budget_fingerprint") or "") or None,
     )
     results = _BLOCKED_RECONCILER.reconcile(issues, world)
-    observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)
-    return _BLOCKED_RECONCILER.to_report(results, observations=observations)
+
+    # A historical provider-budget denial must not remain a permanent blocker
+    # after the issue's current machine-readable contract proves that the work
+    # is provider-free. Budget state governs provider calls, not deterministic
+    # work. Releasing the stale budget hold does NOT assert that an executor
+    # exists: the normal unstaffed/lane-refusal path below still withdraws
+    # provider-free work that no deterministic worker can execute, preventing
+    # accidental fallback to a paid provider.
+    issue_by_number = {
+        int(issue["number"]): issue
+        for issue in issues
+        if issue.get("number") is not None
+    }
+    repaired_results = []
+    for result in results:
+        issue = issue_by_number.get(result.issue_number)
+        is_budget_hold = (
+            result.disposition is _BLOCKED_RECONCILER.Disposition.HOLD
+            and str(result.blocker or "").lower().startswith("budget:")
+        )
+        if issue is not None and is_budget_hold and is_provider_free(issue):
+            repaired_results.append(
+                _BLOCKED_RECONCILER.Reconciliation(
+                    result.issue_number,
+                    _BLOCKED_RECONCILER.Disposition.RELEASE,
+                    (
+                        "the recorded provider-budget blocker no longer applies: "
+                        "the current task contract is provider-free; executor "
+                        "availability is evaluated separately"
+                    ),
+                    blocker=result.blocker,
+                )
+            )
+        else:
+            repaired_results.append(result)
+
+    observations = _BLOCKED_RECONCILER.observation_requests(
+        issues, repaired_results, world
+    )
+    return _BLOCKED_RECONCILER.to_report(
+        repaired_results, observations=observations
+    )
 
 
 def _strip_queue_label(issue: dict) -> dict:

@@ -1,0 +1,49 @@
+{
+  "schema": "oc.homeostasis.v1",
+  "purpose": "Keep Orchid Continuum in healthy dynamic equilibrium by converting observed drift into bounded corrective intents.",
+  "authority": {
+    "grants_execution_authority": false,
+    "scheduler_remains_authoritative": true,
+    "provider_governor_remains_authoritative": true,
+    "owner_approval_required_for_budget_expansion": true
+  },
+  "organism_model": {
+    "genome": "GitHub code, schemas, migrations, tests and governed instructions",
+    "living_memory": "Neon/PostgreSQL scientific state, provenance, queues, observations and durable state",
+    "metabolism": "Render workers, schedulers, leases, queues, compute and provider budgets",
+    "membrane": "Federation adapters, authentication, provenance/licensing checks, caches, rate limits and provider gates",
+    "nervous_system": "Brain/Calyx sensing, reasoning, planning and prioritization",
+    "circulation": "shared queues, completion receipts, evidence ledgers and module handoffs",
+    "immune_system": "validation, anomaly detection, quarantine, security and provenance enforcement"
+  },
+  "resource_policy_order": [
+    "local_authoritative_state",
+    "existing_cached_evidence",
+    "piggyback_existing_acquisition",
+    "free_or_already_authorized_federation",
+    "authorized_external_budget",
+    "owner_budget_request"
+  ],
+  "invariants": {
+    "reuse_paid_acquisitions": true,
+    "budget_denial_must_not_idle_provider_free_work": true,
+    "provider_free_work_continues_when_safe": true,
+    "idle_requires_observation": true
+  },
+  "minimum_vital_signs": [
+    "taxonomy_freshness",
+    "provenance_completeness",
+    "scientific_evidence_coverage",
+    "knowledge_conflict_backlog",
+    "duplicate_or_orphan_rate",
+    "failed_job_rate",
+    "dead_letter_backlog",
+    "unprocessed_evidence_age",
+    "module_availability",
+    "autonomy_heartbeat",
+    "database_integrity",
+    "external_source_freshness",
+    "external_budget_utilization"
+  ],
+  "idle_definition": "No corrective intervention is required and monitored vital signs are within policy; idle never means unobserved."
+}
