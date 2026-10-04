@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app import member_auth, rate_limit
-from app.evidence_feedback import routes
+from app.evidence_feedback import ObjectType, routes
 from app.main import app
 from app.security import create_owner_session_token
 from tests.evidence_feedback_stores import STORES, make_store
