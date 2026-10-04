@@ -298,6 +298,45 @@ def test_blocked_reconciliation_holds_unknown_and_owner_gated_work():
     assert by_number[201]["release_authorized"] is False
 
 
+def test_provider_free_task_is_released_from_stale_provider_budget_hold():
+    fingerprint = "a" * 24
+    snapshot = {
+        "issues": [
+            {
+                "number": 1742,
+                "state": "OPEN",
+                "labels": ["oc-blocked", "oc-p0"],
+                "body": (
+                    "OC-SWARM-CAPABILITY: taxonomy-resolution\n"
+                    "OC-SWARM-CAPABILITY: geospatial-context\n"
+                    "OC-SWARM-CAPABILITY: locality-redaction\n"
+                    "OC-SWARM-CAPABILITY: provenance-assembly\n"
+                    "OC-SWARM-CAPABILITY: schema-validation\n"
+                    "OC-SWARM-CAPABILITY: test-execution"
+                ),
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + fingerprint}],
+            }
+        ],
+        "budget_fingerprints": {"1742": fingerprint},
+    }
+
+    report = swarm.blocked_reconciliation_report(snapshot)
+    row = report["results"][0]
+    assert row["issue_number"] == 1742
+    assert row["disposition"] == "release"
+    assert row["release_authorized"] is True
+    assert report["release_numbers"] == [1742]
+
+    # Releasing a provider budget hold does not invent an executor. Once the
+    # release applier changes oc-blocked -> oc-queued, this task is deliberately
+    # unstaffed and cannot fall through to the paid lane.
+    queued = dict(snapshot)
+    queued["issues"] = [dict(snapshot["issues"][0], labels=["oc-queued", "oc-p0"])]
+    assert swarm.is_provider_free(queued["issues"][0]) is True
+    assert swarm.is_lane_executable(queued["issues"][0]) is False
+    assert swarm.unstaffed_numbers(queued) == [1742]
+
+
 def test_blocked_budget_observations_are_scoped_by_issue_number():
     snapshot = {
         "issues": [

@@ -330,3 +330,79 @@ def test_refill_snapshot_omits_validating_records_without_exact_head_metadata():
     numbers = {row["number"] for row in snapshot["issues"]}
     assert 999 not in numbers
     assert 1000 in numbers
+
+
+def test_one_parked_conflict_in_frontend_state_does_not_fail_the_planner():
+    # #238 carries both oc-queued and oc-runtime-backoff. Before the fix this
+    # one issue returned bridge_status=planner_failed and admitted nothing.
+    conflicted = {
+        "number": 238,
+        "title": "P2 conflicted-lane — carries queued and backoff at once",
+        "labels": [{"name": "oc-queued"}, {"name": "oc-runtime-backoff"}],
+        "createdAt": "2026-07-01T00:00:00Z",
+    }
+    result = run_reconciliation(
+        [_ISSUE_660, _ISSUE_1264],
+        [conflicted, _ISSUE_660, _ISSUE_1264],
+        reserve_depth=3,
+    )
+    assert result["bridge_status"] == "refill_planned"
+    assert sorted(result["admitted_numbers"]) == [660, 1264]
+    conflicts = result["report"]["bridge_result"]["conflicts"]
+    assert [(c["type"], c["issue"]) for c in conflicts] == [
+        ("executable_parked_conflict", 238)
+    ]
+
+
+def test_steward_fails_when_every_queued_issue_is_a_conflict(tmp_path, capsys):
+    # Five contradictory issues and nothing prepared: previously
+    # queue_empty_healthy and exit 0. It must fail the step (exit 2), and each
+    # conflict must carry its exact, repo-qualified fix.
+    import json as _json
+
+    from scripts.oc_portfolio_steward_reconcile import main
+
+    conflicted = [
+        {
+            "number": 400 + n,
+            "title": f"P2 conflicted lane {n} — queued and parked at once",
+            "labels": [{"name": "oc-queued"}, {"name": "oc-runtime-backoff"}],
+            "createdAt": "2026-07-01T00:00:00Z",
+        }
+        for n in range(5)
+    ]
+    prepared = tmp_path / "prepared.json"
+    everything = tmp_path / "all.json"
+    output = tmp_path / "github_output"
+    prepared.write_text("[]")
+    everything.write_text(_json.dumps(conflicted))
+    code = main(
+        [
+            "--prepared-issues", str(prepared),
+            "--all-issues", str(everything),
+            "--frontend-repo", "jsp1440/orchid-continuum-frontend",
+            "--github-output", str(output),
+        ]
+    )
+    captured = capsys.readouterr()
+    report = _json.loads(captured.out)
+    assert code == 2
+    assert "queue_blocked_by_conflicts" in captured.err
+    assert report["bridge_status"] == "queue_blocked_by_conflicts"
+    assert report["conflict_count"] == 5
+    assert "conflict_count=5" in output.read_text()
+    assert [f["issue"] for f in report["conflict_follow_ups"]] == [400, 401, 402, 403, 404]
+    assert report["conflict_follow_ups"][0]["relabel_command"] == [
+        "gh", "issue", "edit", "400", "--remove-label", "oc-queued",
+        "--repo", "jsp1440/orchid-continuum-frontend",
+    ]
+    expected_fix = (
+        "gh issue edit 400 --remove-label oc-queued "
+        "--repo jsp1440/orchid-continuum-frontend"
+    )
+    assert expected_fix in report["conflict_follow_ups"][0]["body"]
+    [nested] = report["report"]["bridge_result"]["conflict_follow_ups"][:1]
+    assert nested["relabel_command"] == report["conflict_follow_ups"][0][
+        "relabel_command"
+    ]
+    assert expected_fix in nested["body"]

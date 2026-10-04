@@ -418,9 +418,12 @@ def test_flagging_is_decided_by_the_member_view_screens():
     ):
         assert module.screen_categories(text) == [], text
         assert matrix_member_views.screened_text(text) == text
-    # Scanner-side folds, reported as limitations of the reused screen.
+    # Scanner-side folds, reported as limitations of the reused screen. The member
+    # screen withholds lower-case MGRS itself since #1708; the scanner's fold is kept
+    # and still reports it.
+    assert matrix_member_views.screened_text(MGRS_LOWER) == matrix_member_views.WITHHELD
+    assert matrix_member_views.screened_text(DECIMAL_PAIR) == DECIMAL_PAIR
     for text in (MGRS_LOWER, DECIMAL_PAIR):
-        assert matrix_member_views.screened_text(text) == text
         assert module.screen_categories(text) == ["coordinates"], text
     source = SCRIPT.read_text(encoding="utf-8")
     # No locality screen of its own: the only local patterns are the two folds

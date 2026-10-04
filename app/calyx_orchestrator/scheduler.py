@@ -29,6 +29,9 @@ class ScheduledJob:
     outcome: str | None = None
     branch: str | None = None
     mutating: bool = False
+    # A queued job whose previous attempt failed and whose retry backoff has
+    # not elapsed. It is not runnable and consumes no capacity.
+    retry_deferred: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,6 +140,15 @@ class DependencyScheduler:
                     critical_path_depth=depths[job.job_key],
                     blocked_by=(),
                     code="ALREADY_RUNNING",
+                )
+            elif job.retry_deferred:
+                preliminary[job.job_key] = ScheduledDecision(
+                    job_key=job.job_key,
+                    runnable=False,
+                    rank=None,
+                    critical_path_depth=depths[job.job_key],
+                    blocked_by=(),
+                    code="RETRY_BACKOFF",
                 )
             elif failed_parent:
                 preliminary[job.job_key] = ScheduledDecision(

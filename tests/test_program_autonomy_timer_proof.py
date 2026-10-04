@@ -53,11 +53,22 @@ REQUIRED_FULL_ASSERTIONS = {
     "harness_never_invoked_the_cycle",
 }
 
-# The claim UPDATE's compare-and-set guard (PersistentProgramWorker.claim).
+# The claim UPDATE's compare-and-set guard (PersistentProgramWorker.claim):
+# status/outcome plus the attempt_count/evidence_json fence added in #1710.
+# The control removes all of it, leaving only the primary key.
 CLAIM_GUARD = """            filters = [
                 CalyxProgramJob.program_job_id == candidate.program_job_id,
                 CalyxProgramJob.status == "queued",
                 CalyxProgramJob.outcome.is_(None),
+                # Compare-and-swap on what was evaluated. Any claim, failed
+                # attempt or backoff written since then changes these, so a
+                # concurrent worker's fresh backoff cannot be claimed through.
+                CalyxProgramJob.attempt_count == observed_attempts,
+                (
+                    CalyxProgramJob.evidence_json.is_(None)
+                    if observed_evidence is None
+                    else CalyxProgramJob.evidence_json == observed_evidence
+                ),
             ]
 """
 CLAIM_GUARD_REMOVED = """            filters = [

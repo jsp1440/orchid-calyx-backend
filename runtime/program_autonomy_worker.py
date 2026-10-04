@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Callable
 from typing import Any
@@ -8,6 +9,8 @@ from typing import Any
 from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.database import get_session_local
+
+logger = logging.getLogger(__name__)
 
 
 def run_once(policy: ProgramAutonomyPolicy | None = None) -> dict[str, Any]:
@@ -44,7 +47,18 @@ def run_forever(
         raise PermissionError("PROGRAM_AUTONOMY_NOT_AUTHORIZED")
 
     while True:
-        result = run_once(active_policy)
+        try:
+            result = run_once(active_policy)
+        except Exception as exc:  # one bad cycle must not end the loop
+            # Logged with its traceback, reported to on_cycle, then the loop
+            # sleeps and continues. BaseException (KeyboardInterrupt,
+            # SystemExit) still stops the worker.
+            logger.exception("program autonomy cycle failed")
+            result = {
+                "executed": False,
+                "reason": "cycle_failed",
+                "error": {"exception_type": type(exc).__name__},
+            }
         if on_cycle is not None:
             on_cycle(result)
         sleeper(active_policy.poll_seconds)
