@@ -108,12 +108,29 @@ class DurableObservation:
     remaining_gap_recorded: bool = False
 
     def __post_init__(self) -> None:
+        for name in ("branch", "branch_head_sha", "pr_head_sha", "checks_head_sha"):
+            if type(getattr(self, name)) is not str:
+                raise TypeError(f"{name.upper()}_MUST_BE_STR")
+        for name in ("issue_number", "pr_number"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or value <= 0):
+                error = f"{name.upper()}_MUST_BE_POSITIVE_INT_OR_NONE"
+                if type(value) is not int:
+                    raise TypeError(error)
+                raise ValueError(error)
+        for name in ("pr_is_draft", "remaining_gap_recorded"):
+            if type(getattr(self, name)) is not bool:
+                raise TypeError(f"{name.upper()}_MUST_BE_BOOL")
+        if not isinstance(self.checks, CheckState):
+            raise TypeError("CHECKS_MUST_BE_CHECK_STATE")
         for name in ("branch_head_sha", "pr_head_sha", "checks_head_sha"):
             value = getattr(self, name)
             if value and not _FULL_SHA.fullmatch(value):
                 raise ValueError(f"HEAD_SHA_MUST_BE_40_HEX: {name}={value!r}")
+        if type(self.commits_ahead_of_base) is not int:
+            raise TypeError("COMMITS_AHEAD_MUST_BE_NON_NEGATIVE_INT")
         if self.commits_ahead_of_base < 0:
-            raise ValueError("COMMITS_AHEAD_MUST_BE_NON_NEGATIVE")
+            raise ValueError("COMMITS_AHEAD_MUST_BE_NON_NEGATIVE_INT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,6 +228,8 @@ def reconcile_handoff(
             head_sha=head,
             claimed_branch_observed=claimed_branch_observed,
         )
+    if observed.checks is not CheckState.PASSED:
+        raise ValueError("UNHANDLED_CHECK_STATE")
     if not observed.remaining_gap_recorded:
         return HandoffDecision(
             state=HandoffState.INCOMPLETE,

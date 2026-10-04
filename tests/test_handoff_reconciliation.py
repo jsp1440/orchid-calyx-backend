@@ -160,3 +160,43 @@ def test_abbreviated_or_symbolic_heads_are_refused(field, value):
 def test_negative_commit_count_is_refused():
     with pytest.raises(ValueError, match="COMMITS_AHEAD_MUST_BE_NON_NEGATIVE"):
         DurableObservation(commits_ahead_of_base=-1)
+
+
+@pytest.mark.parametrize(
+    "value", ["failed", "pending", "not_executed", "not_run", None, object()]
+)
+def test_raw_or_unknown_check_states_are_refused(value):
+    with pytest.raises(TypeError, match="CHECKS_MUST_BE_CHECK_STATE"):
+        DurableObservation(checks=value)
+
+
+@pytest.mark.parametrize("field", ["pr_is_draft", "remaining_gap_recorded"])
+@pytest.mark.parametrize("value", ["false", 0, 1, None])
+def test_non_boolean_gate_values_are_refused(field, value):
+    with pytest.raises(TypeError, match=f"{field.upper()}_MUST_BE_BOOL"):
+        DurableObservation(**{field: value})
+
+
+@pytest.mark.parametrize("field", ["issue_number", "pr_number"])
+@pytest.mark.parametrize("value", [True, False, 0, -1, "1757", 1.5])
+def test_non_positive_or_non_integer_identifiers_are_refused(field, value):
+    error = f"{field.upper()}_MUST_BE_POSITIVE_INT_OR_NONE"
+    with pytest.raises((TypeError, ValueError), match=error):
+        DurableObservation(**{field: value})
+
+
+@pytest.mark.parametrize("value", [True, False, -1, "1", 1.5])
+def test_commit_count_requires_a_non_negative_integer(value):
+    with pytest.raises(
+        (TypeError, ValueError), match="COMMITS_AHEAD_MUST_BE_NON_NEGATIVE_INT"
+    ):
+        DurableObservation(commits_ahead_of_base=value)
+
+
+@pytest.mark.parametrize(
+    "field", ["branch", "branch_head_sha", "pr_head_sha", "checks_head_sha"]
+)
+@pytest.mark.parametrize("value", [None, True, 123])
+def test_observation_text_fields_require_strings(field, value):
+    with pytest.raises(TypeError, match=f"{field.upper()}_MUST_BE_STR"):
+        DurableObservation(**{field: value})
