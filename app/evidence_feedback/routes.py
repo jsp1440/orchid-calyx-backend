@@ -16,6 +16,7 @@ another member's identity, text or case.
 from __future__ import annotations
 
 import logging
+import math
 import os
 import unicodedata
 from threading import Lock
@@ -97,6 +98,12 @@ def has_format_characters(value: str) -> bool:
     return any(unicodedata.category(char) == "Cf" for char in value)
 
 
+def has_lone_surrogate(value: str) -> bool:
+    """True when ``value`` cannot be encoded as valid UTF-8 text."""
+
+    return any(unicodedata.category(char) == "Cs" for char in value)
+
+
 def _member_payload_problem(payload: dict[str, Any]) -> str | None:
     """Why a member snapshot is refused, walking it iteratively (never recursing)."""
 
@@ -107,15 +114,23 @@ def _member_payload_problem(payload: dict[str, Any]) -> str | None:
             if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
                 return "OBJECT_PAYLOAD_TOO_DEEP"
             for key, item in value.items():
-                if isinstance(key, str) and has_format_characters(key):
-                    return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+                if isinstance(key, str):
+                    if has_format_characters(key):
+                        return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+                    if has_lone_surrogate(key):
+                        return "OBJECT_PAYLOAD_INVALID_UNICODE"
                 stack.append((item, depth + 1))
         elif isinstance(value, list):
             if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
                 return "OBJECT_PAYLOAD_TOO_DEEP"
             stack.extend((item, depth + 1) for item in value)
-        elif isinstance(value, str) and has_format_characters(value):
-            return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+        elif isinstance(value, str):
+            if has_format_characters(value):
+                return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+            if has_lone_surrogate(value):
+                return "OBJECT_PAYLOAD_INVALID_UNICODE"
+        elif isinstance(value, float) and not math.isfinite(value):
+            return "OBJECT_PAYLOAD_NON_FINITE_NUMBER"
     return None
 
 

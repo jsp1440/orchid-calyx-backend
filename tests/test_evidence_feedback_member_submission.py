@@ -904,6 +904,48 @@ def test_member_snapshot_with_format_characters_is_refused(
     assert file_store.files_written() == []
 
 
+@pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+def test_member_snapshot_with_non_finite_number_is_refused(
+    store, client, supabase, literal
+):
+    response = client.post(
+        f"{BASE}/objects",
+        content=(
+            '{"object_id":"lexicon:labellum","object_type":"lexicon",'
+            f'"payload":{{"value":{literal}}}}}'
+        ),
+        headers={**MEMBER_A, "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "OBJECT_PAYLOAD_NON_FINITE_NUMBER"}
+    assert store.repository().list_object_versions("lexicon:labellum") == []
+    store.restart()
+    assert store.repository().list_object_versions("lexicon:labellum") == []
+
+
+@pytest.mark.parametrize(
+    "payload_fragment",
+    ['"value":"\\ud800"', '"\\ud800":"value"'],
+    ids=["value", "key"],
+)
+def test_member_snapshot_with_lone_surrogate_is_refused(
+    store, client, supabase, payload_fragment
+):
+    response = client.post(
+        f"{BASE}/objects",
+        content=(
+            '{"object_id":"lexicon:labellum","object_type":"lexicon",'
+            f'"payload":{{{payload_fragment}}}}}'
+        ),
+        headers={**MEMBER_A, "Content-Type": "application/json"},
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"] == {"code": "OBJECT_PAYLOAD_INVALID_UNICODE"}
+    assert store.repository().list_object_versions("lexicon:labellum") == []
+    store.restart()
+    assert store.repository().list_object_versions("lexicon:labellum") == []
+
+
 def test_member_snapshot_nesting_is_capped(file_store, client, supabase):
     def nested(depth):
         value: dict = {"leaf": 1}
