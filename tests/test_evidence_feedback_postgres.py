@@ -30,7 +30,7 @@ from app.evidence_feedback.repository import (
     EvidenceFeedbackRepositoryError,
     EvidenceFeedbackStoreUnavailable,
 )
-from app.security import verify_owner_or_api_key
+from app.member_auth import owner_or_member_write
 from tests.evidence_feedback_stores import make_store
 
 pytestmark = pytest.mark.requires_postgres
@@ -224,7 +224,7 @@ def test_http_case_survives_process_restart_and_writes_no_files(store):
     def client() -> TestClient:
         app = FastAPI()
         app.include_router(routes.router)
-        app.dependency_overrides[verify_owner_or_api_key] = lambda: {"actor": "member-1"}
+        app.dependency_overrides[owner_or_member_write] = lambda: {"actor": "member-1"}
         return TestClient(app)
 
     before = client()
@@ -283,7 +283,7 @@ def test_database_lost_after_startup_answers_503_not_a_file_fallback(store):
     def client() -> TestClient:
         app = FastAPI()
         app.include_router(routes.router)
-        app.dependency_overrides[verify_owner_or_api_key] = lambda: {"actor": "member-1"}
+        app.dependency_overrides[owner_or_member_write] = lambda: {"actor": "member-1"}
         return TestClient(app)
 
     live = client()

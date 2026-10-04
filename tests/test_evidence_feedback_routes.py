@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.evidence_feedback.routes import router
-from app.security import verify_owner_or_api_key
+from app.member_auth import owner_or_member_write
 from tests.evidence_feedback_stores import STORES, make_store
 
 
@@ -19,7 +19,7 @@ def client_for(store, actor="member-1", *, restart=False):
         store.restart()
     app = FastAPI()
     app.include_router(router)
-    app.dependency_overrides[verify_owner_or_api_key] = lambda: {
+    app.dependency_overrides[owner_or_member_write] = lambda: {
         "actor": actor,
         "auth_type": "test",
     }

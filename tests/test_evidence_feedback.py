@@ -334,3 +334,11 @@ def test_payload_round_trip_keeps_its_content_hash(store):
     assert content_hash(persisted.payload) == version.version_hash
     again = store.repository().save_object_version(persisted)
     assert again == version
+
+
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_canonical_json_rejects_non_finite_numbers(value):
+    from app.evidence_feedback.models import canonical_json
+
+    with pytest.raises(ValueError, match="Out of range float values"):
+        canonical_json({"value": value})

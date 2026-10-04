@@ -62,7 +62,13 @@ class ReviewLane(str, Enum):
 
 
 def canonical_json(value: Any) -> str:
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    )
 
 
 def content_hash(value: Any) -> str:
@@ -101,6 +107,12 @@ class EvidenceObjectVersion:
     payload: dict[str, Any]
     created_at: str
     previous_version_hash: str | None = None
+    # Who FIRST registered this snapshot: "owner", "api_key" or "member". A
+    # member-registered snapshot is what the member says they saw, not verified
+    # content. ``None`` means unrecorded (versions stored before this field, and
+    # versions written by the trivial-correction path). Not part of the version
+    # identity: re-registration returns the original record unchanged.
+    registered_by_role: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -110,6 +122,7 @@ class EvidenceObjectVersion:
             "payload": self.payload,
             "created_at": self.created_at,
             "previous_version_hash": self.previous_version_hash,
+            "registered_by_role": self.registered_by_role,
         }
 
     @classmethod
@@ -121,6 +134,7 @@ class EvidenceObjectVersion:
             payload=dict(value["payload"]),
             created_at=str(value["created_at"]),
             previous_version_hash=value.get("previous_version_hash"),
+            registered_by_role=value.get("registered_by_role"),
         )
 
 
@@ -149,6 +163,14 @@ class EvidenceFeedbackCase:
     resolution: str | None = None
     resulting_version_hash: str | None = None
     reviewer_id: str | None = None
+    # Who submitted: "owner_session", "api_key" or "member" (a role, never an
+    # identity); ``None`` for cases stored before this field.
+    submitter_role: str | None = None
+    # Where ``object_type`` came from: "registered" (a canonical, owner- or
+    # API-key-registered version) or "member_claimed" (a member's provisional
+    # snapshot, whose type is only the member's claim and never decides a
+    # deterministic path). ``None`` for cases stored before this field.
+    object_type_source: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -175,6 +197,8 @@ class EvidenceFeedbackCase:
             "resolution": self.resolution,
             "resulting_version_hash": self.resulting_version_hash,
             "reviewer_id": self.reviewer_id,
+            "submitter_role": self.submitter_role,
+            "object_type_source": self.object_type_source,
         }
 
     @classmethod
@@ -203,4 +227,6 @@ class EvidenceFeedbackCase:
             resolution=value.get("resolution"),
             resulting_version_hash=value.get("resulting_version_hash"),
             reviewer_id=value.get("reviewer_id"),
+            submitter_role=value.get("submitter_role"),
+            object_type_source=value.get("object_type_source"),
         )
