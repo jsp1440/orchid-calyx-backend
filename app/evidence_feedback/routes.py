@@ -1,20 +1,41 @@
-"""Authenticated HTTP surface for contextual evidence feedback."""
+"""Authenticated HTTP surface for contextual evidence feedback.
+
+Owner decision (Release 1 ledger): "Members submit, owner reviews". A verified
+member session may register the object snapshot they saw (``POST /objects``),
+submit feedback on it (``POST /cases``) and read the status of their OWN case
+(``GET /cases/{case_id}``). The member path is default-deny
+(``owner_or_member_write``), off unless ``OC_MEMBER_FEEDBACK_ENABLED`` is on, and
+rate limited per member subject. ``accept-trivial`` and the whole review router
+stay owner-only.
+
+Members receive receipts, never case records: a duplicate of another person's
+report answers ``created: false`` with no case id, so no member ever sees
+another member's identity, text or case.
+"""
 
 from __future__ import annotations
 
 import logging
+import math
 import os
+import unicodedata
 from threading import Lock
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.member_auth import owner_session_only
+from app.member_auth import (
+    member_readable,
+    member_writable,
+    owner_or_member_write,
+    owner_session_only,
+    principal_role,
+)
 from app.persistence.state_repository import configured_database_url
-from app.security import verify_owner_or_api_key
+from app.rate_limit import enforce_member_write_rate_limit
 
-from .models import CaseStatus, FeedbackClass, ObjectType
+from .models import CaseStatus, FeedbackClass, ObjectType, canonical_json
 from .repository import (
     EvidenceFeedbackRepository,
     EvidenceFeedbackRepositoryError,
@@ -28,7 +49,7 @@ from .review import (
     InvalidCaseTransition,
     ReviewDecision,
 )
-from .service import EvidenceFeedbackService
+from .service import EvidenceFeedbackService, SubmissionResult
 
 if TYPE_CHECKING:
     from .postgres_repository import PostgresEvidenceFeedbackRepository
@@ -38,10 +59,79 @@ logger = logging.getLogger(__name__)
 # Every product router is mounted under ``/api``. The owner session cookie is
 # scoped to ``path=/api/``, so a browser only sends it to routes below that
 # prefix; the frontend client (src/lib/evidenceFeedback.ts) calls
-# ``/api/evidence-feedback``. Auth stays owner session or backend API key.
+# ``/api/evidence-feedback``. Auth is owner session or backend API key; a
+# verified member only on the routes marked below (``owner_or_member_write``).
 EVIDENCE_FEEDBACK_PREFIX = "/api/evidence-feedback"
-router = APIRouter(prefix=EVIDENCE_FEEDBACK_PREFIX, tags=["evidence-feedback"])
-Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
+router = APIRouter(
+    prefix=EVIDENCE_FEEDBACK_PREFIX,
+    tags=["evidence-feedback"],
+    dependencies=[Depends(owner_or_member_write)],
+)
+Auth = Annotated[dict, Depends(owner_or_member_write)]
+
+MEMBER_ROLE = "member"
+# A member snapshot is what the member says they saw; bound its size so an
+# authenticated member cannot grow the store with arbitrary documents.
+MEMBER_OBJECT_PAYLOAD_MAX_BYTES = 64 * 1024
+MEMBER_OBJECTS_RATE_FAMILY = "evidence-feedback-objects"
+MEMBER_CASES_RATE_FAMILY = "evidence-feedback-cases"
+# Status a member sees when their text duplicates someone else's report: an
+# identical report already exists and is with the owner; nothing about it is
+# disclosed.
+MEMBER_DUPLICATE_STATUS = "already_reported"
+# ``registered_by_role`` values on stored object snapshots (owner review shows
+# them). A role, never an identity; any other principal records ``None``.
+REGISTERED_BY_ROLE = {"owner": "owner_session", "api_key": "api_key", "member": "member"}
+# Deepest object/array nesting accepted in a member snapshot.
+MEMBER_OBJECT_PAYLOAD_MAX_DEPTH = 64
+
+
+def has_format_characters(value: str) -> bool:
+    """True when ``value`` holds a Unicode format control (category Cf).
+
+    Bidirectional overrides/isolates (U+202A-U+202E, U+2066-U+2069) and
+    zero-width characters (U+200B-U+200D, U+FEFF) make text display
+    differently from what it contains, so a reviewer could read something
+    other than what was submitted.
+    """
+
+    return any(unicodedata.category(char) == "Cf" for char in value)
+
+
+def has_lone_surrogate(value: str) -> bool:
+    """True when ``value`` cannot be encoded as valid UTF-8 text."""
+
+    return any(unicodedata.category(char) == "Cs" for char in value)
+
+
+def _member_payload_problem(payload: dict[str, Any]) -> str | None:
+    """Why a member snapshot is refused, walking it iteratively (never recursing)."""
+
+    stack: list[tuple[Any, int]] = [(payload, 1)]
+    while stack:
+        value, depth = stack.pop()
+        if isinstance(value, dict):
+            if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
+                return "OBJECT_PAYLOAD_TOO_DEEP"
+            for key, item in value.items():
+                if isinstance(key, str):
+                    if has_format_characters(key):
+                        return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+                    if has_lone_surrogate(key):
+                        return "OBJECT_PAYLOAD_INVALID_UNICODE"
+                stack.append((item, depth + 1))
+        elif isinstance(value, list):
+            if depth > MEMBER_OBJECT_PAYLOAD_MAX_DEPTH:
+                return "OBJECT_PAYLOAD_TOO_DEEP"
+            stack.extend((item, depth + 1) for item in value)
+        elif isinstance(value, str):
+            if has_format_characters(value):
+                return "OBJECT_PAYLOAD_FORMAT_CHARACTERS"
+            if has_lone_surrogate(value):
+                return "OBJECT_PAYLOAD_INVALID_UNICODE"
+        elif isinstance(value, float) and not math.isfinite(value):
+            return "OBJECT_PAYLOAD_NON_FINITE_NUMBER"
+    return None
 
 
 class EvidenceObjectIn(BaseModel):
@@ -81,6 +171,17 @@ def _subject(auth: dict) -> str:
             detail={"code": "AUTHENTICATED_SUBJECT_REQUIRED"},
         )
     return subject
+
+
+def _is_member(auth: dict) -> bool:
+    return principal_role(auth) == MEMBER_ROLE
+
+
+def _submitter_id(auth: dict) -> str:
+    """The stored submitter identity; member subjects live in their own namespace."""
+
+    subject = _subject(auth)
+    return f"member:{subject}" if _is_member(auth) else subject
 
 
 FEEDBACK_ROOT_ENV = "CALYX_EVIDENCE_FEEDBACK_ROOT"
@@ -188,23 +289,92 @@ def _translate(exc: Exception) -> None:
 
 
 @router.post("/objects", status_code=201)
+@member_writable
 def register_object(payload: EvidenceObjectIn, auth: Auth):
-    _subject(auth)
+    subject = _submitter_id(auth)
+    member = _is_member(auth)
+    if member:
+        enforce_member_write_rate_limit(MEMBER_OBJECTS_RATE_FAMILY, subject)
+        # Version lineage is a governance claim; a member registers a snapshot only.
+        if payload.previous_version_hash is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "MEMBER_LINEAGE_CLAIM_NOT_ACCEPTED"},
+            )
+        problem = _member_payload_problem(payload.payload)
+        if problem is not None:
+            raise HTTPException(status_code=422, detail={"code": problem})
+        size = len(canonical_json(payload.payload).encode("utf-8"))
+        if size > MEMBER_OBJECT_PAYLOAD_MAX_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail={"code": "OBJECT_PAYLOAD_TOO_LARGE"},
+            )
+        try:
+            version, _provisional = _service().register_member_snapshot(
+                object_id=payload.object_id,
+                object_type=payload.object_type,
+                payload=payload.payload,
+            )
+        except Exception as exc:
+            _translate(exc)
+            raise
+        # The content hash the member's case will bind to, under the id the
+        # member used; nothing about who registered it first, or when.
+        return {
+            "object_id": payload.object_id.strip(),
+            "object_type": payload.object_type.value,
+            "version_hash": version.version_hash,
+        }
     try:
-        return _service().register_object(
+        version = _service().register_object(
             object_id=payload.object_id,
             object_type=payload.object_type,
             payload=payload.payload,
             previous_version_hash=payload.previous_version_hash,
-        ).to_dict()
+            registered_by_role=REGISTERED_BY_ROLE.get(principal_role(auth)),
+        )
     except Exception as exc:
         _translate(exc)
         raise
+    return version.to_dict()
+
+
+def _member_receipt(result: SubmissionResult, submitter_id: str) -> dict[str, Any]:
+    """What a member learns about their submission: never another person's case."""
+
+    own = result.case.submitter_id is not None and result.case.submitter_id == submitter_id
+    return {
+        "created": bool(result.created),
+        "case_id": result.case.case_id if own else None,
+        "status": result.case.status.value if own else MEMBER_DUPLICATE_STATUS,
+    }
 
 
 @router.post("/cases", status_code=201)
+@member_writable
 def submit_case(payload: EvidenceFeedbackIn, auth: Auth):
-    submitter_id = _subject(auth)
+    submitter_id = _submitter_id(auth)
+    member = _is_member(auth)
+    if member:
+        enforce_member_write_rate_limit(MEMBER_CASES_RATE_FAMILY, submitter_id)
+        # A partner source routes a case to partner review: an owner decision.
+        if payload.source_partner_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail={"code": "MEMBER_SOURCE_PARTNER_NOT_ACCEPTED"},
+            )
+        for text in (
+            payload.statement,
+            payload.page_context,
+            payload.proposed_replacement,
+            payload.citation,
+        ):
+            if text is not None and has_format_characters(text):
+                raise HTTPException(
+                    status_code=422,
+                    detail={"code": "MEMBER_TEXT_FORMAT_CHARACTERS"},
+                )
     try:
         result = _service().submit(
             object_id=payload.object_id,
@@ -219,26 +389,38 @@ def submit_case(payload: EvidenceFeedbackIn, auth: Auth):
             source_partner_id=payload.source_partner_id,
             defect_kind=payload.defect_kind,
             severity=payload.severity,
+            submitter_role=REGISTERED_BY_ROLE.get(principal_role(auth)),
         )
-        return {
-            "created": result.created,
-            "duplicate_of": result.duplicate_of,
-            "case": result.case.to_dict(),
-        }
     except Exception as exc:
         _translate(exc)
         raise
+    if member:
+        return _member_receipt(result, submitter_id)
+    return {
+        "created": result.created,
+        "duplicate_of": result.duplicate_of,
+        "case": result.case.to_dict(),
+    }
 
 
 @router.get("/cases/{case_id}")
+@member_readable
 def get_case_status(case_id: str, auth: Auth):
-    submitter_id = _subject(auth)
+    submitter_id = _submitter_id(auth)
     try:
         return _service().status_for_submitter(
             case_id=case_id,
             submitter_id=submitter_id,
         )
     except Exception as exc:
+        # A member cannot tell someone else's case from a missing one: case ids
+        # derive from the reported text, so a 403/404 split would let a member
+        # probe whether anyone had reported a given text.
+        if _is_member(auth) and (
+            isinstance(exc, PermissionError)
+            or (isinstance(exc, EvidenceFeedbackRepositoryError) and str(exc) == "CASE_NOT_FOUND")
+        ):
+            raise HTTPException(status_code=404, detail={"code": "CASE_NOT_FOUND"}) from exc
         _translate(exc)
         raise
 

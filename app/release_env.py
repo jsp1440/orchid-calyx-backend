@@ -171,6 +171,27 @@ RELEASE1_ENV: tuple[EnvVariable, ...] = (
         "Kill switch for member read access; only `1/true/yes/on` enable it once set (app/member_auth.py).",
         "Unset keeps member reads on; any other set value turns them off and members fall back to owner-path 401s.",
     ),
+    EnvVariable(
+        "OC_MEMBER_FEEDBACK_ENABLED",
+        OPTIONAL,
+        "unset = disabled",
+        "Kill switch for member evidence-feedback submission; only `1/true/yes/on` enable it, and member reads must also be on (app/member_auth.py).",
+        "Members get 403 `MEMBER_FEEDBACK_DISABLED` on the three member feedback routes, before any Supabase call; owner and API-key feedback are unaffected.",
+    ),
+    EnvVariable(
+        "OC_MEMBER_FEEDBACK_RATE_LIMIT",
+        OPTIONAL,
+        "`20`",
+        "Member feedback writes allowed per member per window per route (app/rate_limit.py; keyed on the member subject, not the IP); `0` disables the brake, a non-integer uses the default.",
+        "Default limit.",
+    ),
+    EnvVariable(
+        "OC_MEMBER_FEEDBACK_RATE_WINDOW_SECONDS",
+        OPTIONAL,
+        "`600`",
+        "Window for OC_MEMBER_FEEDBACK_RATE_LIMIT (minimum 1); a non-integer uses the default.",
+        "Default window.",
+    ),
     # --- evidence feedback -----------------------------------------------------
     EnvVariable(
         "CALYX_EVIDENCE_FEEDBACK_ACTOR_REF_SECRET",
