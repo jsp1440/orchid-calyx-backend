@@ -131,7 +131,7 @@ def coding_dispatch_record(
     if names & SCIENTIFIC_GATE_LABELS:
         state, gate = "scientific_gated", "oc-scientific-gate"
     elif names & OWNER_GATE_LABELS:
-        state, gate = "owner_gated", sorted(names & OWNER_GATE_LABELS)[0]
+        state, gate = "owner_gated", min(names & OWNER_GATE_LABELS)
     elif dependency_blocked:
         state, gate = "dependency_blocked", "unfinished-dependency"
     elif provider_blocked:

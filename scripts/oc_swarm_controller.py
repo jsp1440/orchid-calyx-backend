@@ -843,7 +843,9 @@ def build_swarm_plan(
             continue
         try:
             routing = route_task(original)
-        except Exception:  # unknown capability: the router already fails closed
+        except _ROUTING.CapabilityUnknown:
+            routing = None
+        if routing is None:
             continue
         if not _CODING.needs_coding_executor(routing):
             continue
