@@ -155,13 +155,13 @@ def test_ten_cycle_loop_composes_discovery_dispatch_lifecycle_calyx_and_replenis
     for n in range(6, 11):
         _, receipt = _cycle(world, n, coding_available=True)
         assert owner not in receipt["launched"] and sci not in receipt["launched"]
-    # Once the replenished work is drained the loop must say so honestly: an
-    # empty queue is "replenish" (discovery required), never healthy idle. Only
-    # cycles 1, 4, 5 and 6 did work; the proof does not pretend all ten did.
+    # Once the replenished work is drained only the human-gated issues remain, so
+    # the loop must say "gated_only", never healthy idle. Only cycles 1, 4, 5 and
+    # 6 did work; the proof does not pretend all ten did.
     productive = [r["cycle"] for r in world.receipts if r["launched"]]
     assert productive == [1, 4, 5, 6]
     for r in world.receipts[6:]:
-        assert r["homeostasis"] == "queue_empty" and r["healthy_idle"] is False
+        assert r["homeostasis"] == "gated_only" and r["healthy_idle"] is False
 
     # A second Calyx pass proposes nothing new: idempotent, no duplicate work.
     again = calyx_pipeline.run(artifact, known_fingerprints=world.known_fingerprints)
