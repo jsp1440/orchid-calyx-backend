@@ -121,3 +121,32 @@ def test_summary_reports_lane_counts_and_recoveries():
     assert "provider_free_launch_count:" in text
     assert "provider_launch_count:" in text
     assert "stale leases recovered:" in text
+
+
+def test_summary_reports_the_homeostasis_verdict():
+    """Every wave publishes its invariant outcome, including a zero-launch wave."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "steps.plan.outputs.homeostasis_status" in text
+    assert "steps.plan.outputs.homeostasis_reason" in text
+    assert ".homeostasis.gates" in text
+
+
+def test_snapshot_fetches_state_reason_for_dependency_unlocks():
+    """A NOT_PLANNED closure must be visible to the dependency graph."""
+    step = next(
+        s for s in _doc()["jobs"]["plan"]["steps"]
+        if s.get("name") == "Build repository snapshot"
+    )
+    assert re.search(r"--json [a-zA-Z,]*\bstateReason\b", step["run"])
+
+
+def test_plan_receives_discovery_evidence_only_when_discovery_succeeded():
+    """Healthy idle needs proof this pass's discovery ran; a failed discovery attaches nothing."""
+    plan = _doc()["jobs"]["plan"]
+    names = [s.get("name") for s in plan["steps"]]
+    attach = names.index("Attach work-discovery evidence")
+    assert names.index("Discover product work from repository evidence") < attach
+    assert names.index("Build repository snapshot") < attach < names.index("Plan dependency-aware resource wave")
+    step = plan["steps"][attach]
+    assert step["if"] == "steps.discovery.outcome == 'success'"
+    assert "discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}" in step["run"]

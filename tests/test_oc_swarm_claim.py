@@ -71,7 +71,8 @@ def test_claim_removes_queued_preserves_priority_and_returns_only_confirmed_matr
 
 
 @pytest.mark.parametrize("extra", ["oc-running", "oc-validating", "oc-blocked", "oc-done",
-                                  "oc-owner-gate", "oc-runtime-backoff", "oc-repair-backoff"])
+                                  "oc-owner-gate", "oc-scientific-gate",
+                                  "oc-runtime-backoff", "oc-repair-backoff"])
 def test_conflicting_or_protected_state_never_claims(extra):
     result, api = execute([issue(labels=["oc-queued", extra])])
     assert result["launch_count"] == 0
@@ -101,6 +102,29 @@ def test_dependency_reopened_after_plan_never_claims():
 def test_still_satisfied_dependency_can_claim():
     result, _ = execute([issue(body="OC-SWARM-DEPENDS-ON: #9"), issue(9, state="CLOSED", labels=[])])
     assert result["launch_count"] == 1
+
+
+def test_dependency_closed_not_planned_after_plan_never_claims():
+    rows = [issue(body="OC-SWARM-DEPENDS-ON: #9"), issue(9, state="CLOSED", labels=[])]
+    api = GitHub(rows)
+    api.rows[9]["stateReason"] = "NOT_PLANNED"
+    result, _ = execute(rows, api)
+    assert result["skipped"] == [{"issue": 1, "reason": "dependency_changed_since_plan"}]
+    assert not api.edits
+
+
+def test_claim_rereads_state_reason_for_dependencies():
+    seen = []
+    rows = [issue(body="OC-SWARM-DEPENDS-ON: #9"), issue(9, state="CLOSED", labels=[])]
+    api = GitHub(rows)
+
+    def call(args, payload=None):
+        seen.append(args)
+        return api(args, payload)
+
+    execute(rows, call)
+    views = [a for a in seen if a[:2] == ["issue", "view"]]
+    assert views and all("stateReason" in a[a.index("--json") + 1] for a in views)
 
 
 def test_unknown_receipt_write_outcome_never_dispatches_or_retries():

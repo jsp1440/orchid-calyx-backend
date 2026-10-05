@@ -222,8 +222,10 @@ jobs:
           set -euo pipefail
           # Swarm v4 needs closed dependency issues as well as the open execution
           # portfolio. The canonical scheduler itself still ignores closed work.
+          # stateReason lets the dependency graph refuse to unlock dependents of
+          # an issue closed as NOT_PLANNED or DUPLICATE.
           gh issue list --repo "$REPO" --state all --limit 1000 \
-            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+            --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
 
           # Blocked-work reconciliation reads machine-readable blocker lineage
           # from issue bodies/comments. Fetch comments only for currently blocked
@@ -320,6 +322,19 @@ jobs:
             "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
           mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
+      # Homeostasis evidence: the plan may report healthy idle only when this
+      # pass's discovery demonstrably ran and found nothing. A failed or skipped
+      # discovery attaches nothing, so the verdict stays "unknown, not idle".
+      - name: Attach work-discovery evidence
+        if: steps.discovery.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile discovery "$RUNNER_TEMP/work-discovery.json" \
+            '. + {discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-discovery.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-discovery.json" "$RUNNER_TEMP/swarm-snapshot.json"
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash
@@ -414,6 +429,7 @@ jobs:
             echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
             echo "- recurred work requeued this pass: ${{ steps.materialize.outputs.requeued_count || '0' }} ${{ steps.materialize.outputs.requeued_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
+            echo "- homeostasis: ${{ steps.plan.outputs.homeostasis_status }} (${{ steps.plan.outputs.homeostasis_reason }}) gates=$(jq -c '.homeostasis.gates // {}' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"
             echo "- main merge: disabled"

@@ -359,6 +359,295 @@ def _provider_free_snapshot(snapshot: dict) -> dict:
     return filtered
 
 
+# --------------------------------------------------------------------------
+# Homeostasis invariant
+#
+# Every wave must end in exactly one honest, machine-readable outcome. A wave
+# that launches nothing is never silently "fine": it is either saturated,
+# out of work (replenish), held by named gates, waiting on named upstream work,
+# missing an executor, contending for a lock -- or it is a violation of the
+# work-conservation invariant, which is never healthy.
+# --------------------------------------------------------------------------
+
+#: Mirrors oc_portfolio_scheduler.OWNER_GATE plus the legacy owner hold that
+#: oc_blocked_reconcile and oc_blocked_release_apply also honour.
+OWNER_GATE_LABELS = frozenset({"oc-owner-gate", "blocked-on-owner"})
+#: Mirrors oc_portfolio_scheduler.SCIENTIFIC_GATE.
+SCIENTIFIC_GATE_LABELS = frozenset({"oc-scientific-gate"})
+#: Labels that mark an open issue as unfinished portfolio work.
+_PORTFOLIO_LABELS = frozenset(
+    {
+        "oc-queued",
+        "oc-running",
+        "oc-validating",
+        "oc-repair",
+        "oc-blocked",
+        "oc-runtime-backoff",
+        "oc-repair-backoff",
+    }
+) | OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS
+
+#: Reason -> status. Reasons are mutually exclusive; see classify_wave_outcome.
+HOMEOSTASIS_STATUS = {
+    "invariant_violation": "violation",
+    "executing": "executing",
+    "capacity_full": "saturated",
+    "queue_empty": "replenish",
+    "gated_only": "gated",
+    "dependency_blocked": "waiting",
+    "lane_refused": "capability_gap",
+    "lock_contended": "waiting",
+    "held_other": "waiting",
+}
+
+
+def _names(issue: dict) -> set[str]:
+    return {
+        label if isinstance(label, str) else str(label.get("name"))
+        for label in issue.get("labels") or []
+    }
+
+
+def _is_open(issue: dict) -> bool:
+    return str(issue.get("state") or "OPEN").upper() == "OPEN"
+
+
+def _discovery_evidence(snapshot: dict) -> tuple[bool | None, int | None]:
+    """Read optional discovery evidence; absent evidence is unknown, never "ran".
+
+    A caller that ran work discovery for this pass may attach
+    ``{"discovery": {"ran": true, "candidate_count": <int>}}`` to the snapshot.
+    Without it the plan cannot know discovery ran and never reports healthy
+    idle.
+    """
+    raw = snapshot.get("discovery")
+    if not isinstance(raw, dict) or raw.get("ran") is not True:
+        return None, None
+    count = raw.get("candidate_count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        return None, None
+    return True, count
+
+
+def classify_wave_outcome(
+    snapshot: dict,
+    *,
+    selected_numbers: list[int],
+    capacity: int,
+    active_count: int,
+    ready_numbers: list[int],
+    dependency_suppressed: list[dict],
+    dependency_status: dict,
+    lock_suppressed: list[dict],
+    lane_refused: list[int],
+    provider_parked: list[int],
+    edit_deferred: list[int],
+) -> dict:
+    """Classify one wave against the homeostasis invariant. Pure.
+
+    Classifies only from data the plan already holds: the ORIGINAL snapshot's
+    labels and states, the dependency graph status, the lock selector's
+    suppression list, and the issues this pass withdrew from candidacy.
+
+    Precedence (first match wins):
+
+    1. ``invariant_violation`` -- capacity remained after selection while a
+       dependency-ready, lane-executable candidate the lock selector did not
+       refuse went unselected. Checked first because work conservation is the
+       invariant; a partially filled wave that strands admissible work is as
+       much a violation as an empty one, and must never be masked by
+       ``executing``.
+    2. ``executing`` -- at least one worker was selected.
+    3. ``capacity_full`` -- no capacity: active workers are the reason nothing
+       launched, which is healthy saturation.
+    4. ``queue_empty`` -- no open ``oc-queued`` issue at all. The immediate queue
+       is empty, so discovery must replenish it; gated work, if any, is still
+       recorded under ``gates``. Healthy idle only when there is no unfinished
+       portfolio work AND discovery evidence says it ran and found nothing.
+    5. ``gated_only`` -- every waiting queued issue is held by an owner,
+       scientific or provider gate, directly or through a dependency chain
+       whose every unsatisfied root is so gated.
+    6. ``dependency_blocked`` / 7. ``lane_refused`` / 8. ``lock_contended`` --
+       ordered by how far upstream the hold sits: a dependency holds the work
+       itself, a lane refusal holds its executor, a lock conflict holds only
+       this instant's schedule.
+    9. ``held_other`` -- queued work held only by durable-PR lineage,
+       stabilization, edit-lane deferral or a contradictory parked label. Named
+       honestly rather than forced into a reason that is not true.
+    """
+    issues = {
+        int(issue["number"]): issue
+        for issue in snapshot.get("issues") or []
+        if issue.get("number") is not None
+    }
+    selected = {int(n) for n in selected_numbers}
+    lock_held = {int(item["issue_number"]) for item in lock_suppressed}
+    lane_refused_set = {int(n) for n in lane_refused}
+    provider_parked_set = {int(n) for n in provider_parked}
+
+    open_issues = {n: i for n, i in issues.items() if _is_open(i)}
+    queued = sorted(n for n, i in open_issues.items() if "oc-queued" in _names(i))
+    owner_gated = sorted(
+        n for n, i in open_issues.items() if _names(i) & OWNER_GATE_LABELS
+    )
+    scientific_gated = sorted(
+        n for n, i in open_issues.items() if _names(i) & SCIENTIFIC_GATE_LABELS
+    )
+    unfinished = sorted(
+        n for n, i in open_issues.items() if _names(i) & _PORTFOLIO_LABELS
+    )
+    gate_roots = set(owner_gated) | set(scientific_gated) | provider_parked_set
+
+    def roots(number: int, seen: frozenset[int] = frozenset()) -> tuple[set[int], bool]:
+        """Unsatisfied root dependencies of ``number``; flag False if any is ungated."""
+        row = dependency_status.get(number) or dependency_status.get(str(number)) or {}
+        if row.get("cycle") or row.get("missing") or row.get("error"):
+            return set(), False
+        found: set[int] = set()
+        all_gated = True
+        for dep in row.get("unsatisfied") or []:
+            dep = int(dep)
+            if dep in gate_roots:
+                found.add(dep)
+                continue
+            if dep in seen:
+                return found, False
+            dep_row = dependency_status.get(dep) or dependency_status.get(str(dep)) or {}
+            if dep_row.get("unsatisfied") and not (
+                dep_row.get("missing") or dep_row.get("cycle")
+            ):
+                sub, gated = roots(dep, seen | {number})
+                found |= sub
+                all_gated = all_gated and gated
+            else:
+                # Open ungated work, a closed-not-completed issue, or unknown.
+                found.add(dep)
+                all_gated = False
+        return found, all_gated and bool(found)
+
+    dependency_blocked = []
+    dep_gate_held: set[int] = set()
+    dep_ungated: set[int] = set()
+    for item in dependency_suppressed:
+        number = int(item["issue_number"])
+        blocked_by = sorted(
+            {int(n) for n in item.get("unsatisfied") or []}
+            | {int(n) for n in item.get("missing") or []}
+        )
+        record: dict[str, Any] = {"issue": number, "blocked_by": blocked_by}
+        if item.get("reason") == "dependency-cycle":
+            record["cycle"] = True
+        if item.get("reason") == "dependency-status-missing":
+            record["status_missing"] = True
+        root_set, gated = roots(number)
+        record["roots"] = sorted(root_set)
+        record["gated"] = gated
+        dependency_blocked.append(record)
+        (dep_gate_held if gated else dep_ungated).add(number)
+
+    waiting = [n for n in queued if n not in selected]
+    direct_gated = set(owner_gated) | set(scientific_gated) | provider_parked_set
+    ready_unselected = [
+        int(n) for n in ready_numbers if int(n) not in selected and int(n) not in lock_held
+    ]
+    spare = max(0, int(capacity) - len(selected))
+
+    if spare > 0 and ready_unselected:
+        reason = "invariant_violation"
+    elif selected:
+        reason = "executing"
+    elif int(capacity) <= 0:
+        reason = "capacity_full"
+    elif not queued:
+        reason = "queue_empty"
+    elif all(n in direct_gated or n in dep_gate_held for n in waiting):
+        reason = "gated_only"
+    elif dep_ungated:
+        reason = "dependency_blocked"
+    elif lane_refused_set & set(waiting):
+        reason = "lane_refused"
+    elif lock_held:
+        reason = "lock_contended"
+    else:
+        reason = "held_other"
+
+    discovery_ran, discovery_count = _discovery_evidence(snapshot)
+    healthy_idle = (
+        reason == "queue_empty"
+        and not unfinished
+        and active_count == 0
+        and discovery_ran is True
+        and discovery_count == 0
+    )
+    status = "idle" if healthy_idle else HOMEOSTASIS_STATUS[reason]
+    discovery_required = (
+        reason in {"queue_empty", "gated_only", "lane_refused"} and not healthy_idle
+    )
+
+    return {
+        "schema": "oc.swarm-homeostasis.v1",
+        "status": status,
+        "reason": reason,
+        "healthy_idle": healthy_idle,
+        "discovery_required": discovery_required,
+        "gates": {
+            "owner_gated": owner_gated,
+            "provider_parked": sorted(provider_parked_set),
+            "scientific_gated": scientific_gated,
+            "dependency_blocked": dependency_blocked,
+            "lane_refused": sorted(lane_refused_set),
+            "lock_contended": sorted(lock_held),
+        },
+        "evidence": {
+            "queued_open": len(queued),
+            "waiting": len(waiting),
+            "selected": len(selected),
+            "capacity": int(capacity),
+            "spare_capacity": spare,
+            "active_workers": int(active_count),
+            "ready_unselected_lock_free": sorted(ready_unselected),
+            "unfinished_open": len(unfinished),
+            "owner_gated": len(owner_gated),
+            "scientific_gated": len(scientific_gated),
+            "provider_parked": len(provider_parked_set),
+            "dependency_blocked": len(dependency_blocked),
+            "dependency_gate_held": len(dep_gate_held),
+            "lane_refused": len(lane_refused_set),
+            "lock_contended": len(lock_held),
+            "edit_deferred": len(edit_deferred),
+            "discovery_ran": discovery_ran,
+            "discovery_candidate_count": discovery_count,
+        },
+    }
+
+
+def provider_parked_numbers(snapshot: dict) -> list[int]:
+    """Queued issues provider-free-only mode withdraws because they need a provider.
+
+    Same predicate as ``_provider_free_snapshot`` (the planning view), restricted
+    to work that was otherwise eligible: open, ``oc-queued``, carrying no label
+    that already holds it outside the portfolio, and not provider-free (provider
+    free work nothing can execute is a lane refusal, not a provider park).
+    """
+    held = {"oc-blocked", "oc-done", "oc-runtime-backoff", "oc-repair-backoff"}
+    held |= OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS
+    numbers = []
+    for issue in snapshot.get("issues") or []:
+        if issue.get("number") is None or str(issue.get("state") or "").upper() != "OPEN":
+            continue
+        names = _names(issue)
+        if "oc-queued" not in names or names & held:
+            continue
+        if is_lane_executable(issue):
+            continue
+        if "firecrawl-acquisition" in route_task(issue).blocking_provider_capabilities:
+            continue
+        if is_provider_free(issue):
+            continue
+        numbers.append(int(issue["number"]))
+    return sorted(numbers)
+
+
 def build_swarm_plan(
     snapshot: dict,
     *,
@@ -494,6 +783,27 @@ def build_swarm_plan(
     waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
+    # Provider-free-only mode withdraws non-executable work before the unstaffed
+    # pass sees it, so lane refusals are re-derived from the original snapshot
+    # for the invariant record. ``unstaffed_numbers`` in the plan keeps its
+    # existing meaning.
+    homeostasis_lane_refused = set(unstaffed) | (
+        set(unstaffed_numbers(snapshot)) - deferred_edit
+    )
+    homeostasis = classify_wave_outcome(
+        snapshot,
+        selected_numbers=[worker["issue_number"] for worker in workers],
+        capacity=capacity,
+        active_count=active_count,
+        ready_numbers=[int(issue["number"]) for issue, _, _ in candidates],
+        dependency_suppressed=dependency_suppressed,
+        dependency_status=graph.get("status") or {},
+        lock_suppressed=lock_suppressed,
+        lane_refused=sorted(homeostasis_lane_refused),
+        provider_parked=provider_parked_numbers(snapshot) if provider_free_only else [],
+        edit_deferred=sorted(deferred_edit),
+    )
+
     return {
         "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
@@ -527,6 +837,7 @@ def build_swarm_plan(
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
+        "homeostasis": homeostasis,
         "edit_mode_deferred_numbers": sorted(deferred_edit),
         "generated_at": plan.get("generated_at"),
         "safety": {
@@ -572,6 +883,9 @@ def _write_github_output(path: str, plan: dict) -> None:
         handle.write(f"provider_launch_count={plan['provider_launch_count']}\n")
         handle.write(f"selected_numbers={json.dumps(plan['selected_numbers'], separators=(',', ':'))}\n")
         handle.write(f"refill_recommended={str(plan['refill_recommended']).lower()}\n")
+        homeostasis = plan.get("homeostasis") or {}
+        handle.write(f"homeostasis_status={homeostasis.get('status', 'unknown')}\n")
+        handle.write(f"homeostasis_reason={homeostasis.get('reason', 'unknown')}\n")
         handle.write(f"summary={summary}\n")
 
 

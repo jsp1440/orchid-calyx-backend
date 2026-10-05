@@ -88,10 +88,16 @@ BLOCKED = "oc-blocked"
 RUNTIME_BACKOFF = "oc-runtime-backoff"
 REPAIR_BACKOFF = "oc-repair-backoff"
 OWNER_GATE = "oc-owner-gate"
+#: Held for human scientific review (scientific authority, taxonomy activation,
+#: governed publication). Distinct from the owner gate so the controller can
+#: report scientific holds separately; like it, never an execution candidate.
+SCIENTIFIC_GATE = "oc-scientific-gate"
 DONE = "oc-done"
 
 #: Labels that hold an issue outside the execution portfolio entirely.
-NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF, REPAIR_BACKOFF)
+NON_EXECUTABLE_LABELS = (
+    BLOCKED, OWNER_GATE, SCIENTIFIC_GATE, DONE, RUNTIME_BACKOFF, REPAIR_BACKOFF
+)
 
 PRIORITY_LABELS = tuple(f"oc-p{level}" for level in range(LOWEST_PRIORITY + 1))
 
