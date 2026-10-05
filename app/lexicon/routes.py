@@ -42,6 +42,30 @@ def _definition_map(rows: list[dict[str, Any]]) -> dict[str, str]:
     return mapped
 
 
+def _valid_citation_identifier(scheme: str, value: str) -> bool:
+    if scheme == "doi":
+        suffix = value.partition("/")[2]
+        return (
+            bool(re.fullmatch(r"10\.\d{4,9}/[-._;()/A-Z0-9]+", value, re.IGNORECASE))
+            and "://" not in value
+            and "file:" not in value.casefold()
+            and "\\" not in value
+            and "/" not in suffix
+        )
+    if scheme == "pmid":
+        return bool(re.fullmatch(r"[0-9]+", value))
+    if scheme == "isbn":
+        compact = value.replace("-", "").replace(" ", "")
+        return (
+            bool(re.fullmatch(r"[0-9]{9}[0-9Xx]", compact))
+            if len(compact) == 10
+            else len(compact) == 13
+            and compact.startswith(("978", "979"))
+            and bool(re.fullmatch(r"[0-9]{13}", compact))
+        )
+    return False
+
+
 def _citation_identity(provenance: Any) -> dict[str, Any] | None:
     if not isinstance(provenance, dict):
         return None
@@ -49,20 +73,25 @@ def _citation_identity(provenance: Any) -> dict[str, Any] | None:
     identity: dict[str, Any] = {}
     raw_identifiers = provenance.get("identifiers")
     if isinstance(raw_identifiers, list):
-        identifiers = [
-            {"scheme": scheme, "value": value}
-            for item in raw_identifiers
-            if isinstance(item, dict)
-            and (scheme := str(item.get("scheme") or "").casefold())
-            in {"doi", "pmid", "isbn"}
-            and isinstance((value := item.get("value")), str)
-            and value.strip()
-        ]
+        identifiers = []
+        for item in raw_identifiers:
+            if not isinstance(item, dict):
+                continue
+            scheme = str(item.get("scheme") or "").casefold()
+            value = item.get("value")
+            if (
+                scheme in {"doi", "pmid", "isbn"}
+                and isinstance(value, str)
+                and _valid_citation_identifier(scheme, value)
+            ):
+                identifiers.append({"scheme": scheme, "value": value})
         if identifiers:
             identity["identifiers"] = identifiers
 
     evidence_id = provenance.get("evidence_id")
-    if isinstance(evidence_id, str) and evidence_id.strip():
+    if isinstance(evidence_id, str) and re.fullmatch(
+        r"evidence-[1-9][0-9]*", evidence_id
+    ):
         identity["evidence_id"] = evidence_id
 
     for key in ("source_hash", "excerpt_hash"):
@@ -78,8 +107,19 @@ def _citation_identity(provenance: Any) -> dict[str, Any] | None:
     ):
         identity["confidence"] = confidence
 
-    if "uncertainty" in provenance:
-        identity["uncertainty"] = provenance["uncertainty"]
+    uncertainty = provenance.get("uncertainty")
+    if isinstance(uncertainty, str) and uncertainty.upper() in {
+        "UNKNOWN",
+        "UNAVAILABLE",
+        "WITHHELD",
+        "ABSENT",
+        "CONTRADICTORY",
+        "REJECTED",
+        "SUPERSEDED",
+        "PROVISIONAL",
+        "VERIFIED",
+    }:
+        identity["uncertainty"] = uncertainty.upper()
 
     return identity or None
 

@@ -33,7 +33,7 @@ The legacy Famous Supabase-style scientific write path is not canonical and must
 - Preserved definition versions and source/review provenance where available.
 - Added capability contract linking lexicon, Botanical Language, Vision-Lexicon, Literature, Knowledge Graph, and Calyx.
 - Added focused regression tests for Famous-shape mapping and governance boundaries.
-- Definition versions retain the existing display citation list and expose source-provided DOI, PMID, or ISBN identifiers plus exact evidence IDs/hashes, confidence, and uncertainty as `citation_identity`. Missing identity is not synthesized; non-bibliographic identifiers and private storage locations are not projected.
+- Definition versions retain the existing display citation list and expose source-provided, format-checked DOI (single-segment suffix only), PMID, and ISBN identifiers, canonical Literature `evidence-N` IDs, SHA-256 evidence hashes, bounded confidence, and only recognized evidence-state uncertainty as `citation_identity`. Missing identity is not synthesized; multi-segment DOI values, free-form uncertainty, non-bibliographic identifiers, and private storage locations are not projected.
 
 ## Frontend integration contract
 
