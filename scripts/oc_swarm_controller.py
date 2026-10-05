@@ -442,6 +442,7 @@ def classify_wave_outcome(
     lane_refused: list[int],
     provider_parked: list[int],
     edit_deferred: list[int],
+    lane_refusal_reasons: list[dict] | None = None,
 ) -> dict:
     """Classify one wave against the homeostasis invariant. Pure.
 
@@ -596,6 +597,14 @@ def classify_wave_outcome(
             "scientific_gated": scientific_gated,
             "dependency_blocked": dependency_blocked,
             "lane_refused": sorted(lane_refused_set),
+            "lane_refusal_reasons": sorted(
+                (
+                    {"issue": int(row["issue"]), "reason": str(row["reason"])}
+                    for row in lane_refusal_reasons or []
+                    if int(row["issue"]) in lane_refused_set
+                ),
+                key=lambda row: row["issue"],
+            ),
             "lock_contended": sorted(lock_held),
         },
         "evidence": {
@@ -790,6 +799,12 @@ def build_swarm_plan(
     homeostasis_lane_refused = set(unstaffed) | (
         set(unstaffed_numbers(snapshot)) - deferred_edit
     )
+    original_index = _issue_index(snapshot)
+    lane_refusal_reasons = [
+        {"issue": number, "reason": lane_refusal(original_index[number])["reason"]}
+        for number in sorted(homeostasis_lane_refused)
+        if number in original_index
+    ]
     homeostasis = classify_wave_outcome(
         snapshot,
         selected_numbers=[worker["issue_number"] for worker in workers],
@@ -802,6 +817,7 @@ def build_swarm_plan(
         lane_refused=sorted(homeostasis_lane_refused),
         provider_parked=provider_parked_numbers(snapshot) if provider_free_only else [],
         edit_deferred=sorted(deferred_edit),
+        lane_refusal_reasons=lane_refusal_reasons,
     )
 
     return {
