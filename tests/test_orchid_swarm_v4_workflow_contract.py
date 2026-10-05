@@ -162,6 +162,14 @@ def test_v4_summary_reports_the_intake_outcome_not_its_conclusion():
     assert "steps.discovery.outcome }} materialize=${{ steps.materialize.outcome" in text
 
 
+def test_v4_summary_does_not_report_missing_brain_outputs_as_zero():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "Brain pulse outcome: ${{ steps.brain_pulse.outcome }}" in text
+    assert "Brain materialization outcome: ${{ steps.brain_materialize.outcome }}" in text
+    assert "steps.brain_pulse.outputs.error_count || 'unavailable'" in text
+    assert "steps.brain_materialize.outputs.materialize_error_count || 'unavailable'" in text
+
+
 def test_v4_provisions_the_environment_discovery_reads_before_reading_it():
     """The undeclared-import source asks what is installed, not what it guesses.
 
