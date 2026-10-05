@@ -188,6 +188,16 @@ _COMMANDS = (
         ),
     ),
     ValidationCommand(
+        command_id="calyx-product-advisory",
+        argv=("python3", "-m", "scripts.oc_brain_pulse", "--verify-calyx-product"),
+        summary="Re-evaluate the real University module with the deterministic Calyx advisory pipeline.",
+        proves=(
+            "the University module artifact produces a passing Calyx maker-side receipt "
+            "and either an actionable human-review-gated advisory or an explicit no-action "
+            "result on this exact revision"
+        ),
+    ),
+    ValidationCommand(
         command_id="control-plane-compiles",
         argv=("python3", "-m", "compileall", "-q", "scripts", "runtime/swarm"),
         summary="Byte-compile the control-plane Python sources.",

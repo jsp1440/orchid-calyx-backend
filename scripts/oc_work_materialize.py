@@ -493,6 +493,21 @@ def issue_body(candidate: dict[str, Any]) -> str:
         ]
     for capability in candidate.get("capabilities") or []:
         lines.append(f"OC-SWARM-CAPABILITY: {capability}")
+    if candidate.get("source") == "calyx-product-advisory":
+        lines += [
+            "## Calyx evaluation",
+            "",
+            (
+                "This finding was derived from the real University module by the "
+                "provider-free Calyx evaluator. The deterministic validation lane "
+                "re-runs that evaluation and parks a persistent finding for human "
+                "review; it does not implement the recommendation or change science."
+            ),
+            "",
+            "OC-SWARM-PROVIDER-FREE: validate",
+            "OC-SWARM-VALIDATE: calyx-product-advisory",
+            "OC-SWARM-DISPOSITION: owner-gate",
+        ]
     mechanical = is_mechanically_remediable(candidate)
     if command and mechanical:
         # The remedy is one line the evidence determines and a registered

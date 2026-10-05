@@ -125,6 +125,28 @@ def test_v4_fills_its_own_queue_before_it_plans_a_wave():
     assert names.index("File discovered work into the canonical queue") < names.index(
         "Build repository snapshot"
     )
+    assert "Admit Calyx product findings without Brain candidate starvation" in names
+    assert names.index(
+        "Admit Calyx product findings without Brain candidate starvation"
+    ) < names.index("Build repository snapshot")
+    calyx_materialize = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Admit Calyx product findings without Brain candidate starvation"
+    )
+    assert "--report \"$RUNNER_TEMP/calyx-product-pulse.json\"" in calyx_materialize["run"]
+    assert "--max-new 1" in calyx_materialize["run"]
+
+
+def test_v4_logs_calyx_receipt_from_the_product_section():
+    import yaml
+
+    steps = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))["jobs"]["plan"]["steps"]
+    pulse = next(step for step in steps if step.get("id") == "brain_pulse")
+
+    assert "calyx_product: (.calyx_product |" in pulse["run"]
+    assert "finding_kinds, candidate_count, receipt" in pulse["run"]
 
 
 def test_v4_intake_is_bounded_and_cannot_stop_the_controller():
