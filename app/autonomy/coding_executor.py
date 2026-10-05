@@ -3,10 +3,10 @@
 The controller used to meet engineering work whose declared capabilities say
 what to build but name nobody who can build it (``open-ended-code-authoring``)
 and withdraw it as ``lane_refused``. That is an honest refusal for the
-deterministic worker, but it left the work with no route at all: the paid
+deterministic worker, but it left code-authoring work with no route: the paid
 completion lane (``orchid-completion-lane.yml``, a governed Claude Code
-executor) never saw it, and a wave that launched nothing looked like a
-capability gap in the factory instead of what it usually is, a provider gate.
+executor) never saw it. A missing deterministic executor is still a capability
+gap, not evidence that a provider is unavailable.
 
 This module is the pure decision layer. It never calls a provider, never opens
 a branch and never writes to GitHub. It answers three questions:
@@ -18,8 +18,10 @@ a branch and never writes to GitHub. It answers three questions:
   (:func:`advance`)? Receipts carry a checksum so a state can be inspected, not
   merely asserted.
 
-Nothing here fakes an executor. When no coding executor is authorised the record
-says ``provider_blocked`` and the work stays visible.
+Nothing here fakes an executor. Code-authoring work remains ``provider_blocked``
+when no coding executor is authorised. An unsupported deterministic executor
+remains ``capability_gap`` even when providers are authorised. These are planning
+records, not evidence that work ran.
 """
 
 from __future__ import annotations
@@ -104,14 +106,20 @@ def needs_coding_executor(routing: Any) -> bool:
 
     ``routing`` is :class:`app.provider_reservoir.routing.TaskRouting`. A task a
     deterministic executor already runs, one whose acquisition lane owns it, and
-    one that declares no work at all are all excluded: none of them is waiting
-    for code to be authored.
+    one that declares no work at all are all excluded. An explicit deterministic
+    executor marker is not a request for open-ended code authoring, even when
+    the named executor is unsupported.
     """
     if getattr(routing, "lane_executable", False):
         return False
     if "firecrawl-acquisition" in getattr(routing, "blocking_provider_capabilities", ()):
         return False
-    return bool(getattr(routing, "has_deterministic_work", False))
+    if getattr(routing, "provider_free_task", None):
+        return False
+    return bool(
+        getattr(routing, "deterministic_capabilities", ())
+        or _CODE_AUTHORING in getattr(routing, "blocking_provider_capabilities", ())
+    )
 
 
 def coding_dispatch_record(
@@ -125,15 +133,25 @@ def coding_dispatch_record(
 
     Gates are checked in a fixed order so the record is deterministic. A human
     gate outranks a provider gate: lifting the provider gate must not release
-    work a person is holding.
+    work a person is holding. Provider availability cannot repair a capability
+    mismatch or make an inapplicable coding route dispatchable.
     """
     names = _label_names(issue)
+    needs_executor = needs_coding_executor(routing)
     if names & SCIENTIFIC_GATE_LABELS:
         state, gate = "scientific_gated", "oc-scientific-gate"
     elif names & OWNER_GATE_LABELS:
         state, gate = "owner_gated", min(names & OWNER_GATE_LABELS)
     elif dependency_blocked:
         state, gate = "dependency_blocked", "unfinished-dependency"
+    elif not needs_executor:
+        state = "capability_gap"
+        gate = (
+            "unsupported-deterministic-executor"
+            if getattr(routing, "provider_free_task", None)
+            and not getattr(routing, "lane_executable", False)
+            else "coding-executor-not-applicable"
+        )
     elif provider_blocked:
         state, gate = "provider_blocked", "no-authorised-coding-executor"
     else:
@@ -141,8 +159,9 @@ def coding_dispatch_record(
     return {
         "schema": SCHEMA,
         "issue_number": int(issue.get("number") or 0),
-        "needs_coding_executor": needs_coding_executor(routing),
-        "capability": _CODE_AUTHORING,
+        "needs_coding_executor": needs_executor,
+        "capability": _CODE_AUTHORING if needs_executor else None,
+        "declared_executor": getattr(routing, "provider_free_task", None),
         "declared_deterministic_capabilities": list(
             getattr(routing, "deterministic_capabilities", [])
         ),
@@ -150,6 +169,7 @@ def coding_dispatch_record(
         "gate": gate,
         "dispatchable": state == "queued",
         "executor": "orchid-completion-lane" if state == "queued" else None,
+        "provider_called": False,
     }
 
 
