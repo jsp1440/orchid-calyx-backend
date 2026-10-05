@@ -343,6 +343,10 @@ jobs:
           provider_args=()
           if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
             provider_args+=(--provider-free-only)
+          else
+            # Providers are authorised: code-authoring work routes to the
+            # governed completion lane instead of being withdrawn as unstaffed.
+            provider_args+=(--coding-executor)
           fi
           # The edit lane executes only on a run of the integration ref (see the
           # provider_free_workers guard). Any other run leaves edit-mode issues

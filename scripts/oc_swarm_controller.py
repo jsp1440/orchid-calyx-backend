@@ -41,6 +41,17 @@ _ROUTING = _load_routing()
 PROVIDER_FREE_MARKER = _ROUTING.PROVIDER_FREE_MARKER
 
 
+def _load_coding_executor():
+    """Import the coding-executor decision layer (pure; no provider calls)."""
+    _load_routing()  # puts the repository root on sys.path
+    from app.autonomy import coding_executor
+
+    return coding_executor
+
+
+_CODING = _load_coding_executor()
+
+
 def _load_sibling(module_name: str, filename: str):
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, filename)
@@ -663,12 +674,21 @@ def build_swarm_plan(
     worker_slots: int = DEFAULT_WORKER_SLOTS,
     provider_free_only: bool = False,
     defer_edit_mode: bool = False,
+    coding_executor_available: bool = False,
 ) -> dict:
     """Return a dependency- and resource-aware worker matrix.
+
+    ``coding_executor_available`` is true only when providers are authorised for
+    this run. Work whose own task is authoring code (declared capabilities, no
+    named deterministic executor) is then routed to the governed completion lane
+    instead of being withdrawn as ``lane_refused``. It is never true in
+    ``provider_free_only`` mode; that combination is rejected, not guessed at.
 
     ``defer_edit_mode`` is set by runs that are not on the integration ref: the
     edit lane cannot execute there, so its issues stay queued for a run that can.
     """
+    if coding_executor_available and provider_free_only:
+        raise ValueError("coding executor cannot be available in provider-free-only mode")
     slots = _bounded_slots(worker_slots)
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
@@ -690,6 +710,10 @@ def build_swarm_plan(
     # Work nothing can execute is withdrawn from candidacy before selection, so
     # it cannot take a lane or hold a resource lock away from work that can run.
     unstaffed = set(unstaffed_numbers(planning_snapshot))
+    # With an authorised coding executor this work has a lane: it stays in
+    # candidacy and is dispatched as provider work, not withdrawn.
+    coding_routed = set(unstaffed) if coding_executor_available else set()
+    unstaffed -= coding_routed
     if unstaffed:
         planning_snapshot = dict(planning_snapshot)
         planning_snapshot["issues"] = [
@@ -796,15 +820,41 @@ def build_swarm_plan(
     # pass sees it, so lane refusals are re-derived from the original snapshot
     # for the invariant record. ``unstaffed_numbers`` in the plan keeps its
     # existing meaning.
-    homeostasis_lane_refused = set(unstaffed) | (
-        set(unstaffed_numbers(snapshot)) - deferred_edit
-    )
+    homeostasis_lane_refused = (
+        set(unstaffed) | (set(unstaffed_numbers(snapshot)) - deferred_edit)
+    ) - coding_routed
     original_index = _issue_index(snapshot)
     lane_refusal_reasons = [
         {"issue": number, "reason": lane_refusal(original_index[number])["reason"]}
         for number in sorted(homeostasis_lane_refused)
         if number in original_index
     ]
+    dependency_blocked_numbers = {
+        int(row["issue_number"]) for row in dependency_suppressed if "issue_number" in row
+    }
+    coding_dispatch = []
+    for number in sorted(original_index):
+        original = original_index[number]
+        if str(original.get("state") or "").upper() != "OPEN":
+            continue
+        if "oc-queued" not in _names(original) and not (
+            _names(original) & (OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS)
+        ):
+            continue
+        try:
+            routing = route_task(original)
+        except Exception:  # unknown capability: the router already fails closed
+            continue
+        if not _CODING.needs_coding_executor(routing):
+            continue
+        coding_dispatch.append(
+            _CODING.coding_dispatch_record(
+                original,
+                routing,
+                provider_blocked=not coding_executor_available,
+                dependency_blocked=number in dependency_blocked_numbers,
+            )
+        )
     homeostasis = classify_wave_outcome(
         snapshot,
         selected_numbers=[worker["issue_number"] for worker in workers],
@@ -819,6 +869,15 @@ def build_swarm_plan(
         edit_deferred=sorted(deferred_edit),
         lane_refusal_reasons=lane_refusal_reasons,
     )
+
+    # The refusal above says no deterministic executor exists. For work that is
+    # code authoring, name the actual gate: there is no authorised coding
+    # executor this run, which is a provider gate, not a gap in the factory.
+    provider_gated_coding = sorted(
+        row["issue_number"] for row in coding_dispatch if row["state"] == "provider_blocked"
+    )
+    if provider_gated_coding:
+        homeostasis["gates"]["coding_executor_blocked"] = provider_gated_coding
 
     return {
         "schema": "oc.swarm-plan.v4",
@@ -854,6 +913,8 @@ def build_swarm_plan(
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
         "homeostasis": homeostasis,
+        "coding_executor_available": bool(coding_executor_available),
+        "coding_dispatch": coding_dispatch,
         "edit_mode_deferred_numbers": sorted(deferred_edit),
         "generated_at": plan.get("generated_at"),
         "safety": {
@@ -915,6 +976,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="leave edit-mode issues queued (runs not on the integration ref)",
     )
+    parser.add_argument(
+        "--coding-executor",
+        action="store_true",
+        help="providers are authorised: route code-authoring work to the completion lane",
+    )
     parser.add_argument("--github-output", help="optional GITHUB_OUTPUT path")
     args = parser.parse_args(argv)
 
@@ -929,6 +995,7 @@ def main(argv: list[str] | None = None) -> int:
         worker_slots=args.worker_slots,
         provider_free_only=args.provider_free_only,
         defer_edit_mode=args.defer_edit_mode,
+        coding_executor_available=args.coding_executor,
     )
     if args.github_output:
         _write_github_output(args.github_output, plan)
