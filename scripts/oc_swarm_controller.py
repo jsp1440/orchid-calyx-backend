@@ -52,6 +52,17 @@ def _load_coding_executor():
 _CODING = _load_coding_executor()
 
 
+def _load_module_lanes():
+    """Import the pure module-lane registry (read-only reporting layer)."""
+    _load_routing()  # puts the repository root on sys.path
+    from app.autonomy import module_lanes
+
+    return module_lanes
+
+
+_MODULE_LANES = _load_module_lanes()
+
+
 def _load_sibling(module_name: str, filename: str):
     here = os.path.dirname(os.path.abspath(__file__))
     path = os.path.join(here, filename)
@@ -816,6 +827,18 @@ def build_swarm_plan(
     waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
+    # Per-module lane state, computed from each lane's own issues. Read-only: it
+    # reports which lanes are executing, replenishable, gated or unstaffed so one
+    # blocked module is visible as exactly that and never as a global idle.
+    module_lanes = _MODULE_LANES.lane_report(
+        snapshot.get("issues") or [],
+        dependency_blocked=[
+            int(row["issue_number"]) for row in dependency_suppressed if "issue_number" in row
+        ],
+        provider_gated=provider_parked_numbers(snapshot) if provider_free_only else [],
+        capability_gap=unstaffed_numbers(snapshot),
+    )
+
     # Provider-free-only mode withdraws non-executable work before the unstaffed
     # pass sees it, so lane refusals are re-derived from the original snapshot
     # for the invariant record. ``unstaffed_numbers`` in the plan keeps its
@@ -914,6 +937,7 @@ def build_swarm_plan(
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
+        "module_lanes": module_lanes,
         "homeostasis": homeostasis,
         "coding_executor_available": bool(coding_executor_available),
         "coding_dispatch": coding_dispatch,
