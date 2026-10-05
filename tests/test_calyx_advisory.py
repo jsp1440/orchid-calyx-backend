@@ -21,7 +21,9 @@ from app.calyx_advisory.presentations import (
     core_fingerprint,
     verify_presentation,
 )
+from app.calyx_advisory.product_artifact import from_university_module
 from app.calyx_advisory.registry import COMPETENCIES, covered_kinds
+from app.university.ai_data_science import AppliedAIDataScienceService
 
 FIXTURE = Path(__file__).parent / "fixtures" / "calyx_advisory" / "contested_pollination.json"
 
@@ -279,3 +281,29 @@ def test_acceptance_pipeline_end_to_end_is_provider_free_and_honest(artifact):
     # Second pass with the fingerprints already known proposes nothing new.
     again = pipeline.run(artifact, known_fingerprints=frozenset(receipt["candidate_fingerprints"]))
     assert again["candidates"] == []
+
+
+def test_acceptance_pipeline_evaluates_the_real_university_module():
+    module = AppliedAIDataScienceService.module()
+    artifact = from_university_module(module)
+    result = pipeline.run(artifact)
+
+    assert artifact["artifact_id"] == f"university-module:{module['module_id']}@{module['module_version']}"
+    assert artifact["source_module"]["path"] == "app/university/ai_data_science.py"
+    assert result["receipt"]["passed"] is True
+    assert result["receipt"]["independent"] is False
+    assert [finding["kind"] for finding in result["advisory"]["findings"]] == [
+        "accessibility_gap"
+    ]
+    assert len(result["candidates"]) == 1
+    assert result["candidates"][0]["finding_kind"] == "accessibility_gap"
+    assert "reading_level:undeclared" in result["candidates"][0]["evidence"]
+
+
+def test_acceptance_pipeline_preserves_no_action_for_a_complete_module_record():
+    module = {**AppliedAIDataScienceService.module(), "reading_level": "grade-10"}
+    result = pipeline.run(from_university_module(module))
+
+    assert [finding["kind"] for finding in result["advisory"]["findings"]] == ["no_action"]
+    assert result["candidates"] == []
+    assert result["receipt"]["passed"] is True
