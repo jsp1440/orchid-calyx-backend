@@ -46,6 +46,78 @@ def test_code_authoring_needs_a_coding_executor_but_executable_work_does_not():
     assert not ce.needs_coding_executor(routing_module.route_task(undeclared))
 
 
+@pytest.mark.parametrize("provider_blocked", [True, False])
+@pytest.mark.parametrize("declare_capabilities", [True, False])
+def test_unsupported_executor_is_a_capability_gap_not_a_provider_gate(
+    provider_blocked, declare_capabilities,
+):
+    body = "OC-SWARM-PROVIDER-FREE: rebuild-the-graph"
+    if declare_capabilities:
+        body += "\nOC-SWARM-CAPABILITY: taxonomy-resolution"
+    issue = _issue(10, "oc-queued", body=body)
+    routing = routing_module.route_task(issue)
+    assert routing.lane_executable is False
+    assert ce.needs_coding_executor(routing) is False
+    record = ce.coding_dispatch_record(issue, routing, provider_blocked=provider_blocked)
+    assert record["state"] == "capability_gap"
+    assert record["gate"] == "unsupported-deterministic-executor"
+    assert record["declared_executor"] == "rebuild-the-graph"
+    assert record["capability"] is None
+    assert record["dispatchable"] is False
+    assert record["executor"] is None
+    assert record["provider_called"] is False
+
+
+@pytest.mark.parametrize("body", [EXECUTABLE_BODY, "no capability stated"])
+@pytest.mark.parametrize("provider_blocked", [True, False])
+def test_inapplicable_coding_routes_cannot_be_dispatched(body, provider_blocked):
+    issue = _issue(10, "oc-queued", body=body)
+    record = ce.coding_dispatch_record(
+        issue, routing_module.route_task(issue), provider_blocked=provider_blocked,
+    )
+    assert record["state"] == "capability_gap"
+    assert record["gate"] == "coding-executor-not-applicable"
+    assert record["needs_coding_executor"] is False
+    assert record["dispatchable"] is False
+    assert record["executor"] is None
+
+
+@pytest.mark.parametrize("provider_blocked", [True, False])
+def test_explicit_code_authoring_preserves_the_provider_requirement(provider_blocked):
+    issue = _issue(10, "oc-queued", body="OC-SWARM-CAPABILITY: open-ended-code-authoring")
+    routing = routing_module.route_task(issue)
+    assert routing.provider_free is False
+    assert ce.needs_coding_executor(routing) is True
+    record = ce.coding_dispatch_record(issue, routing, provider_blocked=provider_blocked)
+    assert record["state"] == ("provider_blocked" if provider_blocked else "queued")
+    assert record["gate"] == ("no-authorised-coding-executor" if provider_blocked else None)
+    assert record["capability"] == "open-ended-code-authoring"
+    assert record["dispatchable"] is not provider_blocked
+    assert record["executor"] == (None if provider_blocked else "orchid-completion-lane")
+    assert record["provider_called"] is False
+
+
+@pytest.mark.parametrize(
+    ("labels", "dependency_blocked", "state"),
+    [
+        (["oc-owner-gate"], False, "owner_gated"),
+        (["oc-scientific-gate", "oc-owner-gate"], False, "scientific_gated"),
+        ([], True, "dependency_blocked"),
+    ],
+)
+def test_capability_gap_does_not_override_human_or_dependency_holds(
+    labels, dependency_blocked, state,
+):
+    issue = _issue(10, *labels, body="OC-SWARM-PROVIDER-FREE: rebuild-the-graph")
+    record = ce.coding_dispatch_record(
+        issue, routing_module.route_task(issue),
+        provider_blocked=True, dependency_blocked=dependency_blocked,
+    )
+    assert record["state"] == state
+    assert record["needs_coding_executor"] is False
+    assert record["dispatchable"] is False
+
+
 @pytest.mark.parametrize(
     ("labels", "blocked", "dependency", "state"),
     [
@@ -171,6 +243,28 @@ def test_failure_requires_a_reason_and_can_requeue():
 
 
 # ---- controller integration ----------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "options", [{}, {"coding_executor_available": True}, {"provider_free_only": True}],
+)
+def test_unsupported_executor_is_not_routed_to_paid_work_or_reported_as_idle(options):
+    issue = _issue(
+        10, "oc-queued",
+        body="OC-SWARM-PROVIDER-FREE: rebuild-the-graph\n" + CODE_AUTHORING_BODY,
+    )
+    plan = _plan([issue], **options)
+    assert plan["launch_count"] == 0
+    assert plan["provider_launch_count"] == 0
+    assert plan["provider_free_launch_count"] == 0
+    assert plan["homeostasis"]["gates"]["lane_refused"] == [10]
+    [record] = plan["coding_dispatch"]
+    assert record["state"] == "capability_gap"
+    assert record["gate"] == "unsupported-deterministic-executor"
+    assert record["dispatchable"] is False
+    assert record["provider_called"] is False
+    assert record["executor"] is None
+    assert plan["homeostasis"]["healthy_idle"] is False
 
 
 def test_without_an_authorised_executor_code_authoring_is_provider_blocked_not_idle():

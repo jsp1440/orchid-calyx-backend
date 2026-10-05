@@ -281,9 +281,10 @@ def _strip_queue_label(issue: dict) -> dict:
 
 
 def unstaffed_numbers(snapshot: dict) -> list[int]:
-    """Open queued issues that need no provider and that no executor implements.
+    """Open queued issues that neither lane can execute under their contract.
 
-    These are the ones that belong to neither lane. Leaving them in candidacy
+    An unsupported named deterministic executor cannot fall back to a provider,
+    even if other declared capabilities require one. Leaving it in candidacy
     is not harmless: they sort by priority like anything else, and a resource
     claim they can never use is still exclusive. A P0 task nothing can run will
     take the lane and the ``control-plane`` lock and hold both against a P4 task
@@ -300,9 +301,13 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
         }
         if "oc-queued" not in names:
             continue
-        if is_lane_executable(issue):
+        try:
+            routing = route_task(issue)
+        except _ROUTING.CapabilityUnknown:
             continue
-        if not is_provider_free(issue):
+        if routing.lane_executable:
+            continue
+        if not routing.provider_free and not routing.provider_free_task:
             # Genuinely needs a provider: the governed completion lane owns it.
             continue
         if issue.get("number") is not None:
@@ -694,6 +699,7 @@ def build_swarm_plan(
     named deterministic executor) is then routed to the governed completion lane
     instead of being withdrawn as ``lane_refused``. It is never true in
     ``provider_free_only`` mode; that combination is rejected, not guessed at.
+    Unsupported named executors remain capability gaps in either mode.
 
     ``defer_edit_mode`` is set by runs that are not on the integration ref: the
     edit lane cannot execute there, so its issues stay queued for a run that can.
@@ -721,9 +727,15 @@ def build_swarm_plan(
     # Work nothing can execute is withdrawn from candidacy before selection, so
     # it cannot take a lane or hold a resource lock away from work that can run.
     unstaffed = set(unstaffed_numbers(planning_snapshot))
-    # With an authorised coding executor this work has a lane: it stays in
-    # candidacy and is dispatched as provider work, not withdrawn.
-    coding_routed = set(unstaffed) if coding_executor_available else set()
+    # Authorisation supplies a code-authoring lane, not a missing deterministic
+    # executor. Only work that actually needs code authoring can be rerouted.
+    coding_routed = {
+        int(issue["number"])
+        for issue in planning_snapshot.get("issues") or []
+        if coding_executor_available
+        and int(issue.get("number") or 0) in unstaffed
+        and _CODING.needs_coding_executor(route_task(issue))
+    }
     unstaffed -= coding_routed
     if unstaffed:
         planning_snapshot = dict(planning_snapshot)
@@ -870,7 +882,8 @@ def build_swarm_plan(
             routing = None
         if routing is None:
             continue
-        if not _CODING.needs_coding_executor(routing):
+        unsupported_executor = bool(routing.provider_free_task) and not routing.lane_executable
+        if not _CODING.needs_coding_executor(routing) and not unsupported_executor:
             continue
         coding_dispatch.append(
             _CODING.coding_dispatch_record(

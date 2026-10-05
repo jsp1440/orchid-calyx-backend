@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "oc_swarm_controller", ROOT / "scripts" / "oc_swarm_controller.py"
@@ -528,6 +530,57 @@ def _plan(issues, **kwargs):
     snapshot = {"issues": issues, "now": "2026-10-01T00:00:00Z"}
     snapshot.update(kwargs.pop("extra", {}))
     return swarm.build_swarm_plan(snapshot, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "options", [{"coding_executor_available": True}, {"provider_free_only": True}],
+)
+@pytest.mark.parametrize(
+    "capabilities", ["", UNSTAFFED, "OC-SWARM-CAPABILITY: open-ended-code-authoring"],
+)
+def test_unsupported_executor_never_spends_a_slot_or_routes_to_a_provider(
+    options, capabilities,
+):
+    body = "OC-SWARM-PROVIDER-FREE: rebuild-the-graph"
+    if capabilities:
+        body += "\n" + capabilities
+    unsupported = _row(10, "oc-queued", "oc-p0", body=body, writes="shared")
+    supported = _row(11, "oc-queued", "oc-p4", writes="shared")
+    plan = _plan([unsupported, supported], worker_slots=1, **options)
+    assert plan["selected_numbers"] == [11]
+    assert plan["launch_count"] == plan["provider_free_launch_count"] == 1
+    assert plan["provider_launch_count"] == 0
+    assert plan["provider_matrix"] == {"include": []}
+    assert [worker["issue_number"] for worker in plan["provider_free_workers"]] == [11]
+    [record] = plan["coding_dispatch"]
+    assert record["issue_number"] == 10
+    assert record["state"] == "capability_gap"
+    assert record["gate"] == "unsupported-deterministic-executor"
+    assert record["declared_executor"] == "rebuild-the-graph"
+    assert record["needs_coding_executor"] is False
+    assert record["dispatchable"] is False
+    assert record["provider_called"] is False
+    assert record["executor"] is None
+    assert plan["homeostasis"]["gates"]["lane_refused"] == [10]
+    assert "rebuild-the-graph" in plan["homeostasis"]["gates"]["lane_refusal_reasons"][0]["reason"]
+    assert plan["homeostasis"]["healthy_idle"] is False
+    assert plan["safety"]["provider_calls_in_planner"] is False
+
+
+@pytest.mark.parametrize(
+    "options", [{"coding_executor_available": True}, {"provider_free_only": True}],
+)
+def test_open_ended_code_authoring_keeps_its_provider_gate(options):
+    issue = _row(10, "oc-queued", body="OC-SWARM-CAPABILITY: open-ended-code-authoring")
+    plan = _plan([issue], **options)
+    authorised = options.get("coding_executor_available", False)
+    assert plan["provider_free_launch_count"] == 0
+    assert plan["provider_launch_count"] == int(authorised)
+    [record] = plan["coding_dispatch"]
+    assert record["state"] == ("queued" if authorised else "provider_blocked")
+    assert record["capability"] == "open-ended-code-authoring"
+    assert record["dispatchable"] is authorised
+    assert record["provider_called"] is False
 
 
 def test_empty_queue_is_replenish_never_healthy_idle():
