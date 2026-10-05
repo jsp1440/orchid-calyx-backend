@@ -22,7 +22,10 @@ rejected one stays suppressed, and one still in flight is left alone.
 
 Bounded by construction: at most ``--max-new`` queue insertions per pass --
 new issues and requeued lineages together -- highest lane rank first, and
-dry-run unless ``--apply`` is passed.
+dry-run unless ``--apply`` is passed. A combined Brain pulse reserves one
+additional Calyx insertion (zero when ``--max-new=0``), independently of the
+Brain bound. This routing lives in the Python entrypoint already invoked by
+the default-branch scheduled controller, not in integration-only workflow YAML.
 """
 
 from __future__ import annotations
@@ -622,6 +625,62 @@ def plan(
     if max_new < 0 or max_cleared < 0:
         raise ValueError("bounds must not be negative")
 
+    if report.get("source") == "brain-reasoning-gap" and "calyx_product" in report:
+        from scripts.oc_brain_pulse import calyx_product_materialization_report
+
+        brain_report = {
+            **report,
+            "candidates": [
+                candidate
+                for candidate in report.get("candidates") or []
+                if candidate.get("source") != CALYX_PRODUCT_SOURCE
+            ],
+            "sources_evaluated": [
+                source
+                for source in report.get("sources_evaluated") or []
+                if source != CALYX_PRODUCT_SOURCE
+            ],
+        }
+        del brain_report["calyx_product"]
+        calyx_plan: dict[str, Any]
+        try:
+            calyx_report = calyx_product_materialization_report(report)
+            calyx_plan = plan(
+                calyx_report, index, max_new=min(1, max_new),
+                search=search, max_cleared=min(1, max_cleared),
+            )
+        except CalyxProductReportBlocked as exc:
+            calyx_plan = {
+                "actions": [], "skipped": [], "errors": exc.errors,
+                "status": "blocked",
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            calyx_plan = {
+                "actions": [], "skipped": [], "status": "blocked",
+                "errors": [{
+                    "source": CALYX_PRODUCT_SOURCE,
+                    "code": "CALYX_PRODUCT_REPORT_INVALID",
+                    "error_type": type(exc).__name__,
+                }],
+            }
+        brain_plan = plan(
+            brain_report, index, max_new=max_new, search=search,
+            max_cleared=max_cleared,
+        )
+        actions = [*calyx_plan["actions"], *brain_plan["actions"]]
+        return {
+            **brain_plan,
+            "action_count": len(actions),
+            "actions": actions,
+            "skipped": [*calyx_plan["skipped"], *brain_plan["skipped"]],
+            "errors": calyx_plan.get("errors", []),
+            "calyx_product": {
+                "status": calyx_plan.get("status", "ready"),
+                "action_count": len(calyx_plan["actions"]),
+                "errors": calyx_plan.get("errors", []),
+            },
+        }
+
     actions: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     present: set[str] = set()
@@ -747,7 +806,7 @@ def apply_plan(
         raise ValueError("invalid materialization plan")
 
     results: list[dict[str, Any]] = []
-    errors: list[dict[str, Any]] = []
+    errors: list[dict[str, Any]] = list(materialization.get("errors") or [])
     for action in materialization.get("actions") or []:
         fingerprint = action.get("fingerprint")
         if dry_run:
@@ -821,6 +880,7 @@ def apply_plan(
         "cleared_count": sum(row["outcome"] == "marked_cleared" for row in results),
         "results": results,
         "errors": errors,
+        "calyx_product": materialization.get("calyx_product"),
         "safety": {"provider_calls": False, "merge": False, "deploy": False},
     }
 
@@ -877,7 +937,7 @@ def main(argv: list[str] | None = None) -> int:
             handle.write("requeued_numbers=" + json.dumps(requeued, separators=(",", ":")) + "\n")
     json.dump(outcome, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
-    return 0
+    return 2 if outcome["errors"] else 0
 
 
 if __name__ == "__main__":

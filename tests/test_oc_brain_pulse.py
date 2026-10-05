@@ -138,9 +138,10 @@ def test_calyx_product_is_materializable_even_when_brain_candidates_fill_the_cap
         product_report, {}, max_new=1
     )
 
-    assert calyx_candidate["fingerprint"] not in {
+    assert calyx_candidate["fingerprint"] in {
         action["fingerprint"] for action in ordinary_plan["actions"]
     }
+    assert len(ordinary_plan["actions"]) == 3
     assert [action["fingerprint"] for action in reserved_plan["actions"]] == [
         calyx_candidate["fingerprint"]
     ]
