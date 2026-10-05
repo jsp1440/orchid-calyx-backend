@@ -83,8 +83,13 @@ def test_inapplicable_coding_routes_cannot_be_dispatched(body, provider_blocked)
 
 
 @pytest.mark.parametrize("provider_blocked", [True, False])
-def test_explicit_code_authoring_preserves_the_provider_requirement(provider_blocked):
-    issue = _issue(10, "oc-queued", body="OC-SWARM-CAPABILITY: open-ended-code-authoring")
+@pytest.mark.parametrize("executor_marker", ["", "OC-SWARM-PROVIDER-FREE: rebuild-the-graph\n"])
+def test_explicit_code_authoring_preserves_the_provider_requirement(
+    provider_blocked, executor_marker,
+):
+    issue = _issue(
+        10, "oc-queued", body=executor_marker + "OC-SWARM-CAPABILITY: open-ended-code-authoring",
+    )
     routing = routing_module.route_task(issue)
     assert routing.provider_free is False
     assert ce.needs_coding_executor(routing) is True

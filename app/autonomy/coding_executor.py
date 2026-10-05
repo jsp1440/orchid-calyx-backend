@@ -20,8 +20,9 @@ a branch and never writes to GitHub. It answers three questions:
 
 Nothing here fakes an executor. Code-authoring work remains ``provider_blocked``
 when no coding executor is authorised. An unsupported deterministic executor
-remains ``capability_gap`` even when providers are authorised. These are planning
-records, not evidence that work ran.
+alone remains ``capability_gap`` even when providers are authorised; an explicit
+blocking code-authoring capability may use the authorised coding route instead.
+These are planning records, not evidence that work ran.
 """
 
 from __future__ import annotations
@@ -107,19 +108,19 @@ def needs_coding_executor(routing: Any) -> bool:
     ``routing`` is :class:`app.provider_reservoir.routing.TaskRouting`. A task a
     deterministic executor already runs, one whose acquisition lane owns it, and
     one that declares no work at all are all excluded. An explicit deterministic
-    executor marker is not a request for open-ended code authoring, even when
-    the named executor is unsupported.
+    executor marker alone is not a request for open-ended code authoring.
+    An explicit blocking code-authoring capability still needs a coding executor
+    when the named deterministic executor is unsupported.
     """
     if getattr(routing, "lane_executable", False):
         return False
     if "firecrawl-acquisition" in getattr(routing, "blocking_provider_capabilities", ()):
         return False
+    if _CODE_AUTHORING in getattr(routing, "blocking_provider_capabilities", ()):
+        return True
     if getattr(routing, "provider_free_task", None):
         return False
-    return bool(
-        getattr(routing, "deterministic_capabilities", ())
-        or _CODE_AUTHORING in getattr(routing, "blocking_provider_capabilities", ())
-    )
+    return bool(getattr(routing, "deterministic_capabilities", ()))
 
 
 def coding_dispatch_record(

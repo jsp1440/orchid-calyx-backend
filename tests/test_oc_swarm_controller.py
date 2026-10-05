@@ -536,7 +536,7 @@ def _plan(issues, **kwargs):
     "options", [{"coding_executor_available": True}, {"provider_free_only": True}],
 )
 @pytest.mark.parametrize(
-    "capabilities", ["", UNSTAFFED, "OC-SWARM-CAPABILITY: open-ended-code-authoring"],
+    "capabilities", ["", UNSTAFFED],
 )
 def test_unsupported_executor_never_spends_a_slot_or_routes_to_a_provider(
     options, capabilities,
@@ -581,6 +581,36 @@ def test_open_ended_code_authoring_keeps_its_provider_gate(options):
     assert record["capability"] == "open-ended-code-authoring"
     assert record["dispatchable"] is authorised
     assert record["provider_called"] is False
+
+
+@pytest.mark.parametrize(
+    "options", [{}, {"coding_executor_available": True}, {"provider_free_only": True}],
+)
+def test_explicit_code_authoring_is_not_suppressed_by_unsupported_executor(options):
+    body = (
+        "OC-SWARM-PROVIDER-FREE: rebuild-the-graph\n"
+        "OC-SWARM-CAPABILITY: open-ended-code-authoring"
+    )
+    issue = _row(10, "oc-queued", "oc-p0", body=body, writes="shared")
+    supported = _row(11, "oc-queued", "oc-p4", writes="shared")
+    plan = _plan([issue, supported], worker_slots=1, **options)
+    authorised = options.get("coding_executor_available", False)
+    assert plan["selected_numbers"] == ([10] if authorised else [11])
+    assert plan["provider_launch_count"] == int(authorised)
+    assert plan["provider_free_launch_count"] == int(not authorised)
+    assert [row["issue_number"] for row in plan["provider_matrix"]["include"]] == (
+        [10] if authorised else []
+    )
+    assert all(row["issue_number"] != 10 for row in plan["provider_free_workers"])
+    [record] = plan["coding_dispatch"]
+    assert record["needs_coding_executor"] is True
+    assert record["state"] == ("queued" if authorised else "provider_blocked")
+    assert record["gate"] == (None if authorised else "no-authorised-coding-executor")
+    assert record["dispatchable"] is authorised
+    assert record["executor"] == ("orchid-completion-lane" if authorised else None)
+    assert record["provider_called"] is False
+    assert plan["homeostasis"]["healthy_idle"] is False
+    assert plan["safety"]["provider_calls_in_planner"] is False
 
 
 def test_empty_queue_is_replenish_never_healthy_idle():
