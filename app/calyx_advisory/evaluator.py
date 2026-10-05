@@ -10,10 +10,10 @@ from .contract import (
     FINDING_KINDS,
     PROHIBITED_ACTIONS,
     UNCERTAIN_STATES,
+    ContractViolation,
     checksum,
     contains_locality_key,
     validate_advisory,
-    ContractViolation,
 )
 from .presentations import AUDIENCES
 

@@ -10,7 +10,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from app.cognitive_integration.improvement_discovery import Deficiency, ImprovementCandidate
+from app.cognitive_integration.improvement_discovery import (
+    Deficiency,
+    ImprovementCandidate,
+)
 
 from .contract import PROHIBITED_ACTIONS, ContractViolation, checksum, validate_advisory
 
