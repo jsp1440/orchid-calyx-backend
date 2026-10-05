@@ -48,6 +48,74 @@ def test_definition_priority_and_famous_shape():
     assert entry["source_system"] == "oc_concepts"
 
 
+def test_definition_version_exposes_source_provided_citation_and_evidence_identity():
+    concept = {
+        "concept_id": "11111111-1111-1111-1111-111111111111",
+        "status": "ACTIVE",
+        "review_state": "APPROVED",
+    }
+    definitions = [
+        {
+            "definition_id": "d1",
+            "definition_type": "GLOSSARY",
+            "text": "A source-grounded definition.",
+            "review_state": "APPROVED",
+            "provenance": {
+                "citation": "Example orchid study",
+                "identifiers": [
+                    {"scheme": "doi", "value": "10.1234/example"},
+                    {"scheme": "pmid", "value": "12345678"},
+                    {"scheme": "uri", "value": "https://example.org/private"},
+                    {"scheme": "other", "value": "local-id"},
+                ],
+                "evidence_id": "evidence-1",
+                "source_hash": "a" * 64,
+                "excerpt_hash": "b" * 64,
+                "confidence": 0.72,
+                "uncertainty": "Interpretation remains provisional.",
+                "storage_uri": "file:///private/source.pdf",
+            },
+        }
+    ]
+
+    entry = _entry_payload(concept, [], definitions)
+
+    assert entry["definition_versions"][0]["sources"] == ["Example orchid study"]
+    assert entry["definition_versions"][0]["citation_identity"] == {
+        "identifiers": [
+            {"scheme": "doi", "value": "10.1234/example"},
+            {"scheme": "pmid", "value": "12345678"},
+        ],
+        "evidence_id": "evidence-1",
+        "source_hash": "a" * 64,
+        "excerpt_hash": "b" * 64,
+        "confidence": 0.72,
+        "uncertainty": "Interpretation remains provisional.",
+    }
+
+
+def test_definition_version_does_not_synthesize_missing_citation_identity():
+    concept = {
+        "concept_id": "11111111-1111-1111-1111-111111111111",
+        "status": "ACTIVE",
+        "review_state": "APPROVED",
+    }
+    definitions = [
+        {
+            "definition_id": "d1",
+            "definition_type": "GLOSSARY",
+            "text": "A definition with display-only provenance.",
+            "review_state": "APPROVED",
+            "provenance": {"citation": "Unresolved source"},
+        }
+    ]
+
+    entry = _entry_payload(concept, [], definitions)
+
+    assert entry["definition_versions"][0]["sources"] == ["Unresolved source"]
+    assert entry["definition_versions"][0]["citation_identity"] is None
+
+
 def test_capabilities_preserve_governance_boundaries():
     result = lexicon_capabilities()
     assert result["source_ui"] == "Famous AI Illustrated Orchid Lexicon"

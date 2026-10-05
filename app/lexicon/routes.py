@@ -42,6 +42,48 @@ def _definition_map(rows: list[dict[str, Any]]) -> dict[str, str]:
     return mapped
 
 
+def _citation_identity(provenance: Any) -> dict[str, Any] | None:
+    if not isinstance(provenance, dict):
+        return None
+
+    identity: dict[str, Any] = {}
+    raw_identifiers = provenance.get("identifiers")
+    if isinstance(raw_identifiers, list):
+        identifiers = [
+            {"scheme": scheme, "value": value}
+            for item in raw_identifiers
+            if isinstance(item, dict)
+            and (scheme := str(item.get("scheme") or "").casefold())
+            in {"doi", "pmid", "isbn"}
+            and isinstance((value := item.get("value")), str)
+            and value.strip()
+        ]
+        if identifiers:
+            identity["identifiers"] = identifiers
+
+    evidence_id = provenance.get("evidence_id")
+    if isinstance(evidence_id, str) and evidence_id.strip():
+        identity["evidence_id"] = evidence_id
+
+    for key in ("source_hash", "excerpt_hash"):
+        value = provenance.get(key)
+        if isinstance(value, str) and re.fullmatch(r"[0-9a-fA-F]{64}", value):
+            identity[key] = value
+
+    confidence = provenance.get("confidence")
+    if (
+        isinstance(confidence, (int, float))
+        and not isinstance(confidence, bool)
+        and 0 <= confidence <= 1
+    ):
+        identity["confidence"] = confidence
+
+    if "uncertainty" in provenance:
+        identity["uncertainty"] = provenance["uncertainty"]
+
+    return identity or None
+
+
 def _entry_payload(
     concept: dict[str, Any],
     labels: list[dict[str, Any]],
@@ -109,6 +151,7 @@ def _entry_payload(
                 "sources": [str((row.get("provenance") or {}).get("citation"))]
                 if (row.get("provenance") or {}).get("citation")
                 else [],
+                "citation_identity": _citation_identity(row.get("provenance")),
             }
             for row in definitions
         ],

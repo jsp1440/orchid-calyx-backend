@@ -33,12 +33,15 @@ The legacy Famous Supabase-style scientific write path is not canonical and must
 - Preserved definition versions and source/review provenance where available.
 - Added capability contract linking lexicon, Botanical Language, Vision-Lexicon, Literature, Knowledge Graph, and Calyx.
 - Added focused regression tests for Famous-shape mapping and governance boundaries.
+- Definition versions retain the existing display citation list and expose source-provided DOI, PMID, or ISBN identifiers plus exact evidence IDs/hashes, confidence, and uncertainty as `citation_identity`. Missing identity is not synthesized; non-bibliographic identifiers and private storage locations are not projected.
 
 ## Frontend integration contract
 
 The canonical frontend migration preserves the Famous illustrated lexicon experience under `/lexicon/*`, but reads canonical concepts first. Famous migration records are deterministic fallback content, superseded by canonical records on slug collision.
 
 Ask Calyx uses the server-owned conversation API and may invoke governed Brain missions for scientific turns.
+
+`GET /api/lexicon` and `/api/lexicon/entries/{slug}` expose `definition_versions[].citation_identity` to the Famous Lexicon frontend and other Lexicon API consumers, allowing citations and exact literature evidence to be correlated without treating confidence as verification or changing review/publication state.
 
 ## Remaining release gates
 
