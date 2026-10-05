@@ -295,6 +295,7 @@ def calyx_product_operation() -> dict[str, Any]:
         )
 
     return {
+        "status": "ready",
         "artifact_id": artifact["artifact_id"],
         "artifact_checksum": receipt["artifact_checksum"],
         "advisory_checksum": receipt["advisory_checksum"],
@@ -307,6 +308,26 @@ def calyx_product_operation() -> dict[str, Any]:
 
 def calyx_product_materialization_report(report: dict[str, Any]) -> dict[str, Any]:
     """Reserve the bounded product-admission pass for Calyx findings only."""
+    operation = report.get("calyx_product")
+    if not isinstance(operation, dict) or operation.get("status") != "ready":
+        error = (
+            operation.get("error")
+            if isinstance(operation, dict)
+            else {"code": "CALYX_PRODUCT_RESULT_UNAVAILABLE", "detail": ""}
+        )
+        if not isinstance(error, dict):
+            error = {
+                "code": "CALYX_PRODUCT_FAILURE_REPORTED",
+                "detail": str(error),
+            }
+        return {
+            "schema": SCHEMA,
+            "source": CALYX_PRODUCT_SOURCE,
+            "status": "blocked",
+            "errors": [{"source": CALYX_PRODUCT_SOURCE, **error}],
+            "authority": report["authority"],
+        }
+
     candidates = [
         candidate
         for candidate in report.get("candidates") or []
@@ -315,9 +336,12 @@ def calyx_product_materialization_report(report: dict[str, Any]) -> dict[str, An
     return {
         "schema": SCHEMA,
         "source": CALYX_PRODUCT_SOURCE,
+        "status": "ready",
+        "outcome": "actionable" if candidates else "no_action",
         "sources_evaluated": [CALYX_PRODUCT_SOURCE],
         "candidate_count": len(candidates),
         "candidates": candidates,
+        "receipt": operation["receipt"],
         "authority": report["authority"],
     }
 
@@ -327,10 +351,25 @@ def build_report() -> dict[str, Any]:
         *mission_gap_candidates(),
         *source_registry_gap_candidates(),
     ]
-    calyx_product = calyx_product_operation()
-    candidates.extend(calyx_product["candidates"])
-    questions_evaluated: list[str] = []
     errors: list[dict[str, str]] = []
+    try:
+        calyx_product = calyx_product_operation()
+        candidates.extend(calyx_product["candidates"])
+    except Exception as exc:  # noqa: BLE001 - isolate this independent advisory lane
+        error = {
+            "code": type(exc).__name__,
+            "detail": str(exc),
+        }
+        calyx_product = {"status": "blocked", "error": error}
+        errors.append(
+            {
+                "source": CALYX_PRODUCT_SOURCE,
+                "error": error["code"],
+                "detail": error["detail"],
+            }
+        )
+
+    questions_evaluated: list[str] = []
 
     for question in SUPPORTED_QUESTIONS:
         try:
@@ -359,7 +398,11 @@ def build_report() -> dict[str, Any]:
             SOURCE,
             MISSION_SOURCE,
             "brain-source-contract-gap",
-            CALYX_PRODUCT_SOURCE,
+            *(
+                [CALYX_PRODUCT_SOURCE]
+                if calyx_product["status"] == "ready"
+                else []
+            ),
         ],
         "observers": {
             "reasoning_gap": {"questions_evaluated": len(questions_evaluated)},
@@ -413,17 +456,32 @@ def main() -> int:
         return 0 if verification["passed"] else 1
 
     report = build_report()
+    if args.calyx_product_output:
+        try:
+            calyx_report = calyx_product_materialization_report(report)
+            args.calyx_product_output.write_text(
+                json.dumps(calyx_report, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            error = {
+                "code": type(exc).__name__,
+                "detail": str(exc),
+            }
+            report["calyx_product"] = {"status": "blocked", "error": error}
+            report["errors"].append(
+                {
+                    "source": CALYX_PRODUCT_SOURCE,
+                    "error": error["code"],
+                    "detail": error["detail"],
+                }
+            )
+
     rendered = json.dumps(report, sort_keys=True, indent=2)
     if args.output:
         args.output.write_text(rendered + "\n", encoding="utf-8")
     else:
         print(rendered)
-    if args.calyx_product_output:
-        calyx_report = calyx_product_materialization_report(report)
-        args.calyx_product_output.write_text(
-            json.dumps(calyx_report, sort_keys=True, indent=2) + "\n",
-            encoding="utf-8",
-        )
     return 0
 
 

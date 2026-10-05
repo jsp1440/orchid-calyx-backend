@@ -91,8 +91,65 @@ REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 #: about the blast radius of a discoverer defect, not about throughput: the next
 #: pulse files the next few.
 DEFAULT_MAX_NEW = 3
+CALYX_PRODUCT_SOURCE = "calyx-product-advisory"
 
 Transport = Callable[[list[str], dict | None], Any]
+
+
+class CalyxProductReportBlocked(ValueError):
+    """A Calyx-only report is explicitly blocked or lacks a passing receipt."""
+
+    def __init__(self, errors: list[dict[str, Any]]) -> None:
+        super().__init__("CALYX_PRODUCT_REPORT_BLOCKED")
+        self.errors = errors
+
+
+def _validate_calyx_product_report(report: dict[str, Any]) -> None:
+    if report.get("source") != CALYX_PRODUCT_SOURCE:
+        return
+
+    errors = report.get("errors")
+    if report.get("status") != "ready":
+        raise CalyxProductReportBlocked(
+            errors
+            if isinstance(errors, list) and errors
+            else [
+                {
+                    "source": CALYX_PRODUCT_SOURCE,
+                    "code": "CALYX_PRODUCT_REPORT_NOT_READY",
+                }
+            ]
+        )
+
+    candidates = report.get("candidates")
+    receipt = report.get("receipt")
+    outcome = report.get("outcome")
+    sources_evaluated = report.get("sources_evaluated")
+    valid_outcome = (
+        outcome == "actionable" and isinstance(candidates, list) and bool(candidates)
+    ) or (outcome == "no_action" and candidates == [])
+    if (
+        not isinstance(candidates, list)
+        or report.get("candidate_count") != len(candidates)
+        or not valid_outcome
+        or any(
+            not isinstance(candidate, dict)
+            or candidate.get("source") != CALYX_PRODUCT_SOURCE
+            for candidate in candidates
+        )
+        or not isinstance(sources_evaluated, list)
+        or CALYX_PRODUCT_SOURCE not in sources_evaluated
+        or not isinstance(receipt, dict)
+        or receipt.get("passed") is not True
+    ):
+        raise CalyxProductReportBlocked(
+            [
+                {
+                    "source": CALYX_PRODUCT_SOURCE,
+                    "code": "CALYX_PRODUCT_REPORT_INVALID",
+                }
+            ]
+        )
 
 
 def github(args: list[str], payload: dict | None = None) -> Any:
@@ -559,6 +616,7 @@ def plan(
     Candidates arrive ranked. Ties keep the discoverer's order rather than being
     re-sorted here, so two passes over one repository state file the same work.
     """
+    _validate_calyx_product_report(report)
     if report.get("schema") != "oc.work-discovery.v1":
         raise ValueError("unrecognised discovery report")
     if max_new < 0 or max_cleared < 0:
@@ -778,6 +836,23 @@ def main(argv: list[str] | None = None) -> int:
 
     with open(args.report, encoding="utf-8") as handle:
         report = json.load(handle)
+    try:
+        _validate_calyx_product_report(report)
+    except CalyxProductReportBlocked as exc:
+        json.dump(
+            {
+                "schema": "oc.work-materialization-report.v1",
+                "source": CALYX_PRODUCT_SOURCE,
+                "status": "blocked",
+                "errors": exc.errors,
+            },
+            sys.stdout,
+            indent=2,
+            sort_keys=True,
+        )
+        sys.stdout.write("\n")
+        return 2
+
     if args.apply:
         # Not caught: an incomplete read must stop the pass, not shrink it.
         index: Index = scan_discovered_issues(args.repository, call=github)

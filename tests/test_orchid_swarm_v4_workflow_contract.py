@@ -135,8 +135,11 @@ def test_v4_fills_its_own_queue_before_it_plans_a_wave():
         if step.get("name")
         == "Admit Calyx product findings without Brain candidate starvation"
     )
+    assert calyx_materialize.get("continue-on-error") is True
     assert "--report \"$RUNNER_TEMP/calyx-product-pulse.json\"" in calyx_materialize["run"]
     assert "--max-new 1" in calyx_materialize["run"]
+    brain_materialize = next(step for step in steps if step.get("id") == "brain_materialize")
+    assert "steps.brain_pulse.outcome == 'success'" in brain_materialize["if"]
 
 
 def test_v4_logs_calyx_receipt_from_the_product_section():
@@ -146,7 +149,11 @@ def test_v4_logs_calyx_receipt_from_the_product_section():
     pulse = next(step for step in steps if step.get("id") == "brain_pulse")
 
     assert "calyx_product: (.calyx_product |" in pulse["run"]
+    assert "status, error, artifact_id, artifact_checksum" in pulse["run"]
     assert "finding_kinds, candidate_count, receipt" in pulse["run"]
+    summary = next(step for step in steps if step.get("name") == "Publish swarm summary")
+    assert "outcome=" in summary["run"]
+    assert "reason=" in summary["run"]
 
 
 def test_v4_intake_is_bounded_and_cannot_stop_the_controller():

@@ -26,6 +26,7 @@ from scripts.oc_brain_pulse import (
 )
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+SYNTHETIC_INTEGRATION_REF = "synthetic-test-fixture-not-an-observed-sha"
 
 
 def _product_only_report(monkeypatch):
@@ -215,10 +216,11 @@ def test_calyx_finding_runs_through_materialization_validation_and_owner_settlem
         issue,
         lease_comment=lease,
         changed_files=[],
-        integration_sha="5d294d13f870fd316f02cc787d1e0178308aedbb",
+        integration_sha=SYNTHETIC_INTEGRATION_REF,
         validation=validation,
     )
     assert receipt["mode"] == "validate"
+    assert receipt["integration_sha"] == SYNTHETIC_INTEGRATION_REF
     assert receipt["disposition"] == "owner-gate"
     assert receipt["validation"]["passed"] is True
     assert receipt["safety"]["provider_calls"] is False
@@ -260,11 +262,102 @@ def test_brain_pulse_writes_a_separate_calyx_materialization_report(tmp_path, mo
     product = json.loads(product_path.read_text(encoding="utf-8"))
     assert pulse["calyx_product"]["receipt"]["passed"] is True
     assert product["source"] == CALYX_PRODUCT_SOURCE
+    assert product["status"] == "ready"
     assert product["sources_evaluated"] == [CALYX_PRODUCT_SOURCE]
     assert product["candidate_count"] == len(product["candidates"])
+    assert product["receipt"]["passed"] is True
     assert all(
         candidate["source"] == CALYX_PRODUCT_SOURCE for candidate in product["candidates"]
     )
+
+
+def test_calyx_failure_blocks_only_calyx_and_preserves_brain_materialization(
+    tmp_path, monkeypatch, capsys
+):
+    brain_candidate = mission_gap_candidates()[0]
+    pulse_path = tmp_path / "brain-pulse.json"
+    product_path = tmp_path / "calyx-product-pulse.json"
+    monkeypatch.setattr(brain_pulse, "mission_gap_candidates", lambda: [brain_candidate])
+    monkeypatch.setattr(brain_pulse, "source_registry_gap_candidates", list)
+    monkeypatch.setattr(brain_pulse, "SUPPORTED_QUESTIONS", ())
+
+    def fail_calyx():
+        raise RuntimeError("CALYX_PRODUCT_RECEIPT_FAILED")
+
+    monkeypatch.setattr(brain_pulse, "calyx_product_operation", fail_calyx)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "oc_brain_pulse",
+            "--output",
+            str(pulse_path),
+            "--calyx-product-output",
+            str(product_path),
+        ],
+    )
+
+    assert main() == 0
+    pulse = json.loads(pulse_path.read_text(encoding="utf-8"))
+    product = json.loads(product_path.read_text(encoding="utf-8"))
+
+    assert pulse["calyx_product"] == {
+        "status": "blocked",
+        "error": {
+            "code": "RuntimeError",
+            "detail": "CALYX_PRODUCT_RECEIPT_FAILED",
+        },
+    }
+    assert {
+        "source": CALYX_PRODUCT_SOURCE,
+        "error": "RuntimeError",
+        "detail": "CALYX_PRODUCT_RECEIPT_FAILED",
+    } in pulse["errors"]
+    assert CALYX_PRODUCT_SOURCE not in pulse["sources_evaluated"]
+    assert pulse["candidates"] == [brain_candidate]
+    assert product["status"] == "blocked"
+    assert "candidate_count" not in product
+    assert "candidates" not in product
+    assert product["errors"] == [
+        {
+            "source": CALYX_PRODUCT_SOURCE,
+            "code": "RuntimeError",
+            "detail": "CALYX_PRODUCT_RECEIPT_FAILED",
+        }
+    ]
+
+    brain_plan = oc_work_materialize.plan(pulse, {}, max_new=1)
+    assert [action["fingerprint"] for action in brain_plan["actions"]] == [
+        brain_candidate["fingerprint"]
+    ]
+    with pytest.raises(
+        oc_work_materialize.CalyxProductReportBlocked,
+        match="CALYX_PRODUCT_REPORT_BLOCKED",
+    ):
+        oc_work_materialize.plan(product, {}, max_new=1)
+
+    product_report_path = tmp_path / "blocked-calyx-product.json"
+    product_report_path.write_text(json.dumps(product), encoding="utf-8")
+
+    def unexpected_github_call(*_args, **_kwargs):
+        raise AssertionError("blocked Calyx materialization must not contact GitHub")
+
+    monkeypatch.setattr(oc_work_materialize, "github", unexpected_github_call)
+    assert (
+        oc_work_materialize.main(
+            [
+                "--repository",
+                "jsp1440/orchid-calyx-backend",
+                "--report",
+                str(product_report_path),
+                "--apply",
+            ]
+        )
+        == 2
+    )
+    refusal = json.loads(capsys.readouterr().out)
+    assert refusal["status"] == "blocked"
+    assert refusal["source"] == CALYX_PRODUCT_SOURCE
+    assert refusal["errors"] == product["errors"]
 
 
 def test_mission_gap_observer_uses_only_explicit_safe_blocks():
