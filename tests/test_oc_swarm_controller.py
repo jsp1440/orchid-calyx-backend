@@ -699,3 +699,62 @@ def test_github_output_carries_the_homeostasis_verdict(tmp_path):
     text = output.read_text(encoding="utf-8")
     assert "homeostasis_status=replenish\n" in text
     assert "homeostasis_reason=queue_empty\n" in text
+
+
+# --- Brain #205: a refused lane is named, with its reason, in every mode -------
+
+# The declaration of backend #1742: provider-free domain capabilities only, so
+# nothing in the lane is an executor for it.
+ISSUE_1742_BODY = "\n".join(
+    f"OC-SWARM-CAPABILITY: {name}"
+    for name in (
+        "taxonomy-resolution",
+        "geospatial-context",
+        "locality-redaction",
+        "provenance-assembly",
+        "schema-validation",
+        "test-execution",
+    )
+)
+
+
+def test_unstaffed_issue_1742_is_named_with_its_reason_in_both_modes():
+    for provider_free_only in (False, True):
+        plan = _plan(
+            [_row(1742, "oc-queued", "oc-p0", body=ISSUE_1742_BODY)],
+            worker_slots=8,
+            provider_free_only=provider_free_only,
+        )
+        verdict = plan["homeostasis"]
+        assert plan["launch_count"] == 0 and plan["selected_numbers"] == [], provider_free_only
+        # Never reported as healthy idle: a precise capability gap instead.
+        assert verdict["reason"] == "lane_refused", provider_free_only
+        assert verdict["status"] == "capability_gap"
+        assert verdict["healthy_idle"] is False
+        assert verdict["gates"]["lane_refused"] == [1742]
+        (refusal,) = verdict["gates"]["lane_refusal_reasons"]
+        assert refusal["issue"] == 1742
+        assert "open-ended-code-authoring" in refusal["reason"]
+        assert "not an executor" in refusal["reason"]
+
+
+def test_refusal_reasons_cover_only_refused_issues_and_unrelated_work_still_runs():
+    for provider_free_only in (False, True):
+        plan = _plan(
+            [
+                _row(1742, "oc-queued", "oc-p0", body=ISSUE_1742_BODY),
+                _row(900, "oc-queued"),
+            ],
+            worker_slots=8,
+            provider_free_only=provider_free_only,
+        )
+        assert plan["selected_numbers"] == [900], provider_free_only
+        gates = plan["homeostasis"]["gates"]
+        assert gates["lane_refused"] == [1742]
+        assert [row["issue"] for row in gates["lane_refusal_reasons"]] == [1742]
+
+
+def test_a_fully_staffed_wave_carries_no_refusal_reasons():
+    plan = _plan([_row(900, "oc-queued")], worker_slots=8)
+    assert plan["homeostasis"]["gates"]["lane_refused"] == []
+    assert plan["homeostasis"]["gates"]["lane_refusal_reasons"] == []
