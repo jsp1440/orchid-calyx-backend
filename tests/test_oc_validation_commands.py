@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 from scripts.oc_validation_commands import VALIDATION_COMMANDS, resolve
 
@@ -75,3 +76,28 @@ def test_bounded_lane_runtime_proof_command_executes() -> None:
 
     assert result.returncode == 0, result.stdout + result.stderr
     assert "7 passed" in result.stdout
+
+
+def test_calyx_product_advisory_is_fixed_and_provider_free() -> None:
+    command = VALIDATION_COMMANDS["calyx-product-advisory"]
+
+    assert command.argv == ("python3", "-m", "scripts.oc_brain_pulse", "--verify-calyx-product")
+    assert "University module artifact" in command.proves
+    assert "explicit no-action" in command.proves
+    assert resolve(["calyx-product-advisory"]) == [command]
+
+
+def test_calyx_product_advisory_command_executes() -> None:
+    """Run the exact registered command used by the provider-free worker."""
+    command = VALIDATION_COMMANDS["calyx-product-advisory"]
+    result = subprocess.run(
+        (sys.executable, *command.argv[1:]),
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert '"candidate_count": 1' in result.stdout
+    assert '"independent": false' in result.stdout
