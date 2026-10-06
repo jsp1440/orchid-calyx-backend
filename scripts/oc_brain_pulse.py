@@ -18,16 +18,23 @@ import json
 from pathlib import Path
 from typing import Any
 
+from app.calyx_advisory import pipeline as calyx_pipeline
+from app.calyx_advisory.product_artifact import (
+    UNIVERSITY_MODULE_PATH,
+    from_university_module,
+)
 from app.cognitive_integration.executor import CognitiveIntegrationError, execute
 from app.cognitive_integration.improvement_discovery import Deficiency, discover
 from app.cognitive_integration.routes import SUPPORTED_QUESTIONS
 from app.missions.registry import MISSION_TYPES
+from app.university.ai_data_science import AppliedAIDataScienceService
 from runtime.knowledge_graph.source_registry import SOURCE_QUERIES
-from scripts.oc_product_lanes import LANES_BY_KEY
+from scripts.oc_product_lanes import LANES_BY_KEY, lane_for_path
 
 SCHEMA = "oc.work-discovery.v1"
 SOURCE = "brain-reasoning-gap"
 MISSION_SOURCE = "brain-mission-capability-gap"
+CALYX_PRODUCT_SOURCE = "calyx-product-advisory"
 
 MISSION_GAP_LANES = {
     "source_registry_refresh": "literature",
@@ -212,13 +219,157 @@ def source_registry_gap_candidates() -> list[dict[str, Any]]:
     return candidates
 
 
+def calyx_product_operation() -> dict[str, Any]:
+    """Evaluate the current real University module and route findings to its lane."""
+    module = AppliedAIDataScienceService.module()
+    artifact = from_university_module(module)
+    result = calyx_pipeline.run(artifact)
+    receipt = result["receipt"]
+    if not receipt["passed"]:
+        raise RuntimeError("CALYX_PRODUCT_RECEIPT_FAILED")
+
+    lane = lane_for_path(UNIVERSITY_MODULE_PATH)
+    if lane is None:
+        raise RuntimeError("CALYX_PRODUCT_MODULE_LANE_UNBOUND")
+
+    candidates: list[dict[str, Any]] = []
+    for finding in result["candidates"]:
+        advisory_route = finding["target_module"]
+        evidence = [
+            {
+                "kind": "university-module-artifact",
+                "where": UNIVERSITY_MODULE_PATH,
+                "detail": (
+                    f"{module['module_id']}@{module['module_version']}; "
+                    f"artifact_sha256={receipt['artifact_checksum']}"
+                ),
+            },
+            {
+                "kind": "calyx-advisory-finding",
+                "where": "app/calyx_advisory/evaluator.py",
+                "detail": f"{finding['finding_kind']}: {finding['statement']}",
+            },
+            {
+                "kind": "registered-product-lane",
+                "where": "scripts/oc_product_lanes.py::lane_for_path",
+                "detail": f"{UNIVERSITY_MODULE_PATH} -> {lane.key}",
+            },
+        ]
+        candidates.append(
+            {
+                "schema": "oc.work-candidate.v1",
+                "source": CALYX_PRODUCT_SOURCE,
+                "title": f"[Calyx] {finding['finding_kind'].replace('_', ' ')}: {module['title']}",
+                "summary": (
+                    "The provider-free Calyx pipeline evaluated the current University "
+                    f"module artifact {module['module_id']}@{module['module_version']}. "
+                    f"Finding: {finding['statement']} "
+                    f"Bounded next step: {finding['bounded_next_step']} "
+                    "This is a presentation-only product advisory; it makes no scientific "
+                    "claim and does not authorize publication or deployment."
+                ),
+                "lane": lane.key,
+                "lane_name": lane.name,
+                "rank": lane.rank,
+                "analysis_only": False,
+                "fingerprint": finding["fingerprint"],
+                "semantic_key": (
+                    f"{CALYX_PRODUCT_SOURCE}:{artifact['artifact_id']}:"
+                    f"{finding['fingerprint']}"
+                ),
+                "proposed_remedy": finding["bounded_next_step"],
+                "remedy": {},
+                "capabilities": [],
+                "validation_command": "",
+                "labels": [
+                    "oc-queued",
+                    lane.priority_label,
+                    "oc-discovered",
+                    lane.lane_label,
+                ],
+                "evidence": evidence,
+                "advisory_target_module": advisory_route,
+                "requires_human_review": finding["requires_human_review"],
+                "scientific_effect": "none",
+            }
+        )
+
+    return {
+        "status": "ready",
+        "artifact_id": artifact["artifact_id"],
+        "artifact_checksum": receipt["artifact_checksum"],
+        "advisory_checksum": receipt["advisory_checksum"],
+        "finding_kinds": [item["kind"] for item in result["advisory"]["findings"]],
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "receipt": receipt,
+    }
+
+
+def calyx_product_materialization_report(report: dict[str, Any]) -> dict[str, Any]:
+    """Reserve the bounded product-admission pass for Calyx findings only."""
+    operation = report.get("calyx_product")
+    if not isinstance(operation, dict) or operation.get("status") != "ready":
+        error = (
+            operation.get("error")
+            if isinstance(operation, dict)
+            else {"code": "CALYX_PRODUCT_RESULT_UNAVAILABLE", "detail": ""}
+        )
+        if not isinstance(error, dict):
+            error = {
+                "code": "CALYX_PRODUCT_FAILURE_REPORTED",
+                "detail": str(error),
+            }
+        return {
+            "schema": SCHEMA,
+            "source": CALYX_PRODUCT_SOURCE,
+            "status": "blocked",
+            "errors": [{"source": CALYX_PRODUCT_SOURCE, **error}],
+            "authority": report["authority"],
+        }
+
+    candidates = [
+        candidate
+        for candidate in report.get("candidates") or []
+        if candidate.get("source") == CALYX_PRODUCT_SOURCE
+    ]
+    return {
+        "schema": SCHEMA,
+        "source": CALYX_PRODUCT_SOURCE,
+        "status": "ready",
+        "outcome": "actionable" if candidates else "no_action",
+        "sources_evaluated": [CALYX_PRODUCT_SOURCE],
+        "candidate_count": len(candidates),
+        "candidates": candidates,
+        "receipt": operation["receipt"],
+        "authority": report["authority"],
+    }
+
+
 def build_report() -> dict[str, Any]:
     candidates: list[dict[str, Any]] = [
         *mission_gap_candidates(),
         *source_registry_gap_candidates(),
     ]
-    questions_evaluated: list[str] = []
     errors: list[dict[str, str]] = []
+    try:
+        calyx_product = calyx_product_operation()
+        candidates.extend(calyx_product["candidates"])
+    except Exception as exc:  # noqa: BLE001 - isolate this independent advisory lane
+        error = {
+            "code": type(exc).__name__,
+            "detail": str(exc),
+        }
+        calyx_product = {"status": "blocked", "error": error}
+        errors.append(
+            {
+                "source": CALYX_PRODUCT_SOURCE,
+                "error": error["code"],
+                "detail": error["detail"],
+            }
+        )
+
+    questions_evaluated: list[str] = []
 
     for question in SUPPORTED_QUESTIONS:
         try:
@@ -243,11 +394,23 @@ def build_report() -> dict[str, Any]:
         "source": SOURCE,
         "candidate_count": len(candidates),
         "questions_evaluated": questions_evaluated,
-        "sources_evaluated": [SOURCE, MISSION_SOURCE, "brain-source-contract-gap"],
+        "sources_evaluated": [
+            SOURCE,
+            MISSION_SOURCE,
+            "brain-source-contract-gap",
+            *(
+                [CALYX_PRODUCT_SOURCE]
+                if calyx_product["status"] == "ready"
+                else []
+            ),
+        ],
         "observers": {
             "reasoning_gap": {"questions_evaluated": len(questions_evaluated)},
             "mission_capability_gap": {"missions_evaluated": len(MISSION_GAP_LANES)},
             "source_contract_gap": {"source_domains_evaluated": len(SOURCE_QUERIES)},
+        },
+        "calyx_product": {
+            key: value for key, value in calyx_product.items() if key != "candidates"
         },
         "candidates": candidates,
         "errors": errors,
@@ -264,8 +427,56 @@ def build_report() -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--calyx-product-output", type=Path)
+    parser.add_argument("--verify-calyx-product", action="store_true")
     args = parser.parse_args()
+    if args.verify_calyx_product:
+        if args.output or args.calyx_product_output:
+            parser.error("--verify-calyx-product cannot be combined with output paths")
+        product = calyx_product_operation()
+        outcome = (
+            "actionable"
+            if product["candidate_count"] > 0
+            else "no_action"
+            if product["finding_kinds"] == ["no_action"]
+            else "invalid"
+        )
+        verification = {
+            "schema": "calyx_product_operation_validation.v1",
+            "artifact_id": product["artifact_id"],
+            "artifact_checksum": product["artifact_checksum"],
+            "advisory_checksum": product["advisory_checksum"],
+            "finding_kinds": product["finding_kinds"],
+            "candidate_count": product["candidate_count"],
+            "outcome": outcome,
+            "receipt": product["receipt"],
+            "passed": product["receipt"]["passed"] and outcome != "invalid",
+        }
+        print(json.dumps(verification, sort_keys=True))
+        return 0 if verification["passed"] else 1
+
     report = build_report()
+    if args.calyx_product_output:
+        try:
+            calyx_report = calyx_product_materialization_report(report)
+            args.calyx_product_output.write_text(
+                json.dumps(calyx_report, sort_keys=True, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except (KeyError, OSError, TypeError, ValueError) as exc:
+            error = {
+                "code": type(exc).__name__,
+                "detail": str(exc),
+            }
+            report["calyx_product"] = {"status": "blocked", "error": error}
+            report["errors"].append(
+                {
+                    "source": CALYX_PRODUCT_SOURCE,
+                    "error": error["code"],
+                    "detail": error["detail"],
+                }
+            )
+
     rendered = json.dumps(report, sort_keys=True, indent=2)
     if args.output:
         args.output.write_text(rendered + "\n", encoding="utf-8")
