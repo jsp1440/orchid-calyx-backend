@@ -335,6 +335,32 @@ jobs:
             "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-discovery.json"
           mv "$RUNNER_TEMP/swarm-snapshot.with-discovery.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
+      # NO_API_MODE=false is necessary but not sufficient for paid execution: the
+      # governor also requires the paid-execution switch, a provider allowlist
+      # and budgets. The coding executor is admitted to planning only on the
+      # governor's own verdict, so unauthorised coding work cannot take a slot or
+      # a lock ahead of deterministic work. An error or a missing output is a
+      # denial.
+      - name: Verify governor authorization before admitting the coding executor
+        id: coding_governor
+        if: steps.no_api.outputs.blocked == 'false'
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "0"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD: ${{ vars.OC_GOVERNOR_INTERACTIVE_ESTIMATED_COST_USD || '2.00' }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+        run: python3 scripts/swarm_governor_precheck.py
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash
@@ -343,9 +369,9 @@ jobs:
           provider_args=()
           if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
             provider_args+=(--provider-free-only)
-          else
-            # Providers are authorised: code-authoring work routes to the
-            # governed completion lane instead of being withdrawn as unstaffed.
+          elif [[ "${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then
+            # The governor authorised paid execution: code-authoring work routes
+            # to the governed completion lane instead of being withdrawn.
             provider_args+=(--coding-executor)
           fi
           # The edit lane executes only on a run of the integration ref (see the
