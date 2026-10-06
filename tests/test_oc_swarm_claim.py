@@ -234,8 +234,10 @@ def test_workflow_dispatches_confirmed_matrix_and_retains_partial_failure_eviden
 def test_confirmed_claims_keep_lane_classification_and_split_matrices():
     rows = [issue(), issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")]
     plan = {"workers": [
-        {"issue_number": 1, "reads": [], "writes": ["control-plane"], "dependencies": [], "provider_free": False},
-        {"issue_number": 2, "reads": [], "writes": ["literature"], "dependencies": [], "provider_free": True},
+        {"issue_number": 1, "reads": [], "writes": ["control-plane"], "dependencies": [],
+         "provider_free": False, "lane_executable": False},
+        {"issue_number": 2, "reads": [], "writes": ["literature"], "dependencies": [],
+         "provider_free": True, "lane_executable": True},
     ]}
     api = GitHub(rows)
     result = claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
@@ -255,3 +257,61 @@ def test_zero_plan_emits_empty_split_matrices():
     assert result["provider_matrix"] == {"include": []}
     assert result["provider_free_launch_count"] == 0
     assert result["provider_launch_count"] == 0
+
+
+@pytest.mark.parametrize("authorised", [False, True])
+@pytest.mark.parametrize(
+    "coding_body",
+    [
+        "OC-SWARM-CAPABILITY: taxonomy-resolution",
+        "OC-SWARM-PROVIDER-FREE: missing-executor",
+        (
+            "OC-SWARM-PROVIDER-FREE: missing-executor\n"
+            "OC-SWARM-CAPABILITY: open-ended-code-authoring"
+        ),
+    ],
+)
+def test_planner_claim_worker_handoff_preserves_execution_lane(authorised, coding_body):
+    import importlib.util
+
+    from scripts.oc_swarm_provider_free_worker import execution_plan
+
+    spec = importlib.util.spec_from_file_location(
+        "claim_controller", Path(__file__).parents[1] / "scripts" / "oc_swarm_controller.py",
+    )
+    controller = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(controller)
+    rows = [
+        issue(1, body=coding_body + "\nOC-SWARM-WRITES: shared", labels=["oc-queued", "oc-p0"]),
+        issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-WRITES: shared"),
+    ]
+    plan = controller.build_swarm_plan(
+        {"issues": rows, "now": "2026-10-01T00:00:00Z"}, worker_slots=1,
+        coding_executor_available=authorised, provider_free_only=not authorised,
+    )
+    coding_selected = authorised and (
+        "missing-executor" not in coding_body or "open-ended-code-authoring" in coding_body
+    )
+    assert plan["selected_numbers"] == ([1] if coding_selected else [2])
+    api = GitHub(rows)
+    handoff = claim_workers(
+        plan, {"issues": rows}, repository="owner/repo", run_id=123, call=api,
+    )
+    assert handoff["healthy"] and handoff["launch_count"] == 1
+    assert handoff["provider_matrix"]["include"] == [
+        row for row in handoff["confirmed"] if not row["lane_executable"]
+    ]
+    assert handoff["provider_launch_count"] == plan["provider_launch_count"] == int(coding_selected)
+    assert handoff["provider_free_launch_count"] == plan["provider_free_launch_count"] == int(
+        not coding_selected
+    )
+    for worker in handoff["provider_free_matrix"]["include"]:
+        assert execution_plan(api.rows[worker["issue_number"]])["supported"] is True
+    if coding_selected:
+        [worker] = handoff["provider_matrix"]["include"]
+        assert worker["issue_number"] == 1
+        assert execution_plan(api.rows[1])["supported"] is False
+        assert verify_worker_claim(
+            api.rows[1], api.comments[0], repository="owner/repo",
+            run_id=123, run_attempt=1, comment_id=worker["lease_comment_id"],
+        )

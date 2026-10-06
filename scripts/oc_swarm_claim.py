@@ -148,11 +148,11 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             errors.append({"issue": number, "phase": phase, "reason": "claim_unconfirmed"})
 
     # The confirmed claims keep the planner's lane classification so the
-    # workflow can hand provider-free work to the deterministic worker job and
-    # provider-dependent work to the governed completion lane independently.
-    provider_free = [w for w in confirmed if w.get("provider_free")]
+    # workflow hands executable deterministic work to that worker, rather than
+    # confusing provider-free capabilities with an implemented executor.
+    provider_free = [w for w in confirmed if w.get("lane_executable")]
     acquisition = [w for w in confirmed if w.get("acquisition")]
-    provider = [w for w in confirmed if not w.get("provider_free") and not w.get("acquisition")]
+    provider = [w for w in confirmed if not w.get("lane_executable") and not w.get("acquisition")]
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),
