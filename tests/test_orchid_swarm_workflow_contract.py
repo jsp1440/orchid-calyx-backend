@@ -65,6 +65,42 @@ def test_no_api_mode_dispatches_only_provider_free_workers():
     assert '--files-json "$files_json"' in text
 
 
+def test_coding_executor_requires_governor_admission_before_planning_and_claims():
+    text = WORKFLOW.read_text(encoding="utf-8")
+    governor_start = text.index("      - name: Check governor admission before selecting coding work")
+    plan_start = text.index("      - name: Plan dependency-aware resource wave")
+    claim_start = text.index("      - name: Claim selected worker leases")
+    assert governor_start < plan_start < claim_start
+    governor = text[governor_start:plan_start]
+    assert "id: coding_governor" in governor
+    assert "steps.budget_ledger.outcome == 'success'" in governor
+    assert "python3 scripts/swarm_governor_precheck.py" in governor
+    assert "DEFAULT_ESTIMATED_COST_USD" in governor
+    assert "print(max(costs))" in governor
+    assert 'OC_GOVERNOR_RETRY_COUNT: "1"' in governor
+    for key in (
+        "NO_API_MODE", "OC_GOVERNOR_PAID_EXECUTION_ENABLED",
+        "OC_GOVERNOR_EMERGENCY_KILL_SWITCH", "OC_GOVERNOR_PROVIDER_ALLOWLIST",
+        "OC_GOVERNOR_PER_RUN_BUDGET_USD", "OC_GOVERNOR_DAILY_BUDGET_USD",
+        "OC_GOVERNOR_MONTHLY_BUDGET_USD", "OC_GOVERNOR_MAX_RETRIES",
+    ):
+        assert f"{key}: ${{{{ vars.{key} }}}}" in governor
+    assert 'OC_GOVERNOR_DAILY_SPEND_USD:?missing daily spend observation' in governor
+    assert 'OC_GOVERNOR_MONTHLY_SPEND_USD:?missing monthly spend observation' in governor
+    plan = text[plan_start:claim_start]
+    guard = (
+        'if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && '
+        '"${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then'
+    )
+    assert guard in plan
+    assert plan.index(guard) < plan.index("provider_args+=(--coding-executor)")
+    assert "else\n            provider_args+=(--provider-free-only)" in plan
+    assert (
+        "provider_blocked: ${{ steps.no_api.outputs.blocked == 'true' || "
+        "steps.coding_governor.outputs.authorized != 'true' }}"
+    ) in text
+
+
 def test_every_launched_wave_gets_one_bounded_refill_attempt():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "needs.plan.outputs.launch_count != '0'" in text

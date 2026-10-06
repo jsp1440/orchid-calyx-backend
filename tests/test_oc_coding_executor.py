@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import os
 from pathlib import Path
 
 import pytest
@@ -312,6 +313,77 @@ def test_a_blocked_coding_lane_does_not_stop_executable_work():
 def test_coding_executor_and_provider_free_only_are_mutually_exclusive():
     with pytest.raises(ValueError):
         _plan([], provider_free_only=True, coding_executor_available=True)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "reason", "authorised"),
+    [
+        ({}, "AUTHORIZED", True),
+        ({"NO_API_MODE": "true"}, "BLOCKED_NO_API_MODE", False),
+        ({"OC_GOVERNOR_PAID_EXECUTION_ENABLED": "false"}, "BLOCKED_PAID_EXECUTION_DISABLED", False),
+        ({"OC_GOVERNOR_EMERGENCY_KILL_SWITCH": "true"}, "BLOCKED_KILL_SWITCH", False),
+        ({"OC_GOVERNOR_PROVIDER_ALLOWLIST": "openai"}, "BLOCKED_PROVIDER_NOT_ALLOWED", False),
+        ({"OC_GOVERNOR_MAX_RETRIES": "0"}, "BLOCKED_RETRY_LIMIT_EXCEEDED", False),
+        ({"OC_GOVERNOR_PER_RUN_BUDGET_USD": "1"}, "BLOCKED_PER_RUN_BUDGET_EXCEEDED", False),
+        ({"OC_GOVERNOR_DAILY_SPEND_USD": "10"}, "BLOCKED_DAILY_BUDGET_EXCEEDED", False),
+        ({"OC_GOVERNOR_MONTHLY_SPEND_USD": "100"}, "BLOCKED_MONTHLY_BUDGET_EXCEEDED", False),
+    ],
+)
+def test_governor_preflight_controls_coding_selection_before_shared_locks(
+    monkeypatch, tmp_path, overrides, reason, authorised,
+):
+    from scripts import swarm_governor_precheck
+
+    for name in list(os.environ):
+        if name.startswith("OC_GOVERNOR_") or name in {"NO_API_MODE", "GITHUB_OUTPUT"}:
+            monkeypatch.delenv(name)
+    env = {
+        "NO_API_MODE": "false",
+        "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+        "OC_GOVERNOR_PROVIDER": "anthropic",
+        "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+        "OC_GOVERNOR_RETRY_COUNT": "1",
+        "OC_GOVERNOR_MAX_RETRIES": "1",
+        "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "2",
+        "OC_GOVERNOR_PER_RUN_BUDGET_USD": "3",
+        "OC_GOVERNOR_DAILY_BUDGET_USD": "10",
+        "OC_GOVERNOR_MONTHLY_BUDGET_USD": "100",
+        "OC_GOVERNOR_DAILY_SPEND_USD": "0",
+        "OC_GOVERNOR_MONTHLY_SPEND_USD": "0",
+        **overrides,
+    }
+    output = tmp_path / "governor-output"
+    for key, value in {**env, "GITHUB_OUTPUT": str(output)}.items():
+        monkeypatch.setenv(key, value)
+    swarm_governor_precheck.main()
+    decision = dict(line.split("=", 1) for line in output.read_text().splitlines())
+    assert decision["reason"] == reason
+    assert decision["authorized"] == str(authorised).lower()
+    coding = _issue(
+        10, "oc-queued",
+        body=(
+            "OC-SWARM-PROVIDER-FREE: rebuild-the-graph\n"
+            "OC-SWARM-CAPABILITY: open-ended-code-authoring\nOC-SWARM-WRITES: shared"
+        ),
+    )
+    deterministic = _issue(
+        11, "oc-queued", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-WRITES: shared",
+    )
+    plan = _plan(
+        [coding, deterministic], worker_slots=1,
+        coding_executor_available=authorised, provider_free_only=not authorised,
+    )
+    assert plan["selected_numbers"] == ([10] if authorised else [11])
+    assert plan["provider_launch_count"] == int(authorised)
+    assert plan["provider_free_launch_count"] == int(not authorised)
+    assert [row["issue_number"] for row in plan["provider_matrix"]["include"]] == (
+        [10] if authorised else []
+    )
+    [record] = plan["coding_dispatch"]
+    assert record["dispatchable"] is authorised
+    assert record["state"] == ("queued" if authorised else "provider_blocked")
+    assert record["provider_called"] is False
+    assert plan["homeostasis"]["healthy_idle"] is False
 
 
 def test_cli_flag_reaches_the_plan(tmp_path):
