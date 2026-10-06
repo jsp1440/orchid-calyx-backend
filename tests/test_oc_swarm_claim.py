@@ -46,7 +46,8 @@ class GitHub:
 
 def execute(rows, api=None):
     plan = {"workers": [{"issue_number": row["number"], "reads": [], "writes": ["control-plane"],
-                         "dependencies": [9] if row.get("body") else []}
+                         "dependencies": [9] if row.get("body") else [],
+                         "provider_free": False, "lane_executable": False, "acquisition": False}
                         for row in rows if row["number"] != 9]}
     api = api or GitHub(rows)
     return claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
@@ -235,9 +236,9 @@ def test_confirmed_claims_keep_lane_classification_and_split_matrices():
     rows = [issue(), issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")]
     plan = {"workers": [
         {"issue_number": 1, "reads": [], "writes": ["control-plane"], "dependencies": [],
-         "provider_free": False, "lane_executable": False},
+         "provider_free": False, "lane_executable": False, "acquisition": False},
         {"issue_number": 2, "reads": [], "writes": ["literature"], "dependencies": [],
-         "provider_free": True, "lane_executable": True},
+         "provider_free": True, "lane_executable": True, "acquisition": False},
     ]}
     api = GitHub(rows)
     result = claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
@@ -257,6 +258,51 @@ def test_zero_plan_emits_empty_split_matrices():
     assert result["provider_matrix"] == {"include": []}
     assert result["provider_free_launch_count"] == 0
     assert result["provider_launch_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "update",
+    [
+        {"lane_executable": None}, {"lane_executable": "false"},
+        {"lane_executable": 0}, {"lane_executable": 1},
+        {"lane_executable": False}, {"provider_free": False},
+        {"provider_free": "true"}, {"provider_free": None}, {"provider_free": 1},
+        {"acquisition": True}, {"acquisition": "false"}, {"acquisition": 0},
+        {"acquisition": None}, {"remove": "lane_executable"},
+        {"remove": "provider_free"}, {"remove": "acquisition"},
+    ],
+)
+def test_invalid_execution_classification_refuses_entire_plan_before_github(update):
+    rows = [issue(1, body="OC-SWARM-PROVIDER-FREE: reconcile"), issue(2)]
+    worker = {
+        "issue_number": 1, "reads": [], "writes": ["shared"], "dependencies": [],
+        "provider_free": True, "lane_executable": True, "acquisition": False,
+    }
+    worker.update({key: value for key, value in update.items() if key != "remove"})
+    if "remove" in update:
+        worker.pop(update["remove"])
+    valid = {
+        "issue_number": 2, "reads": [], "writes": ["other"], "dependencies": [],
+        "provider_free": False, "lane_executable": False, "acquisition": False,
+    }
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append(args)
+        raise AssertionError("invalid plan must not call GitHub")
+
+    result = claim_workers(
+        {"workers": [valid, worker]}, {"issues": rows},
+        repository="owner/repo", run_id=123, call=forbidden,
+    )
+    assert result["healthy"] is False
+    assert result["planned_count"] == 2 and result["launch_count"] == 0
+    assert result["errors"] == [{
+        "issue": 1, "phase": "plan_validation", "reason": "invalid_execution_classification",
+    }]
+    assert result["confirmed"] == [] and calls == []
+    for key in ("matrix", "provider_matrix", "provider_free_matrix", "acquisition_matrix"):
+        assert result[key] == {"include": []}
 
 
 @pytest.mark.parametrize("authorised", [False, True])
