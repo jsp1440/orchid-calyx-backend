@@ -6,8 +6,9 @@ Run it instead of ``app.main:app`` when a society only needs show management::
 
 It mounts the show, entry, award, judging, volunteer, feedback and tile routers
 and nothing from the scientific or agent-automation layers, so it starts
-without their dependencies and background loops. Authentication is unchanged:
-every ``/api`` route still requires ``X-API-Key`` (``CALYX_API_KEY``).
+without their dependencies and background loops. Every ``/api`` route requires
+the owner key ``X-API-Key`` (``CALYX_API_KEY``) except ``/api/judge-portal/*``,
+which takes a per-judge bearer credential instead (``app/judge_auth.py``).
 
 ``CALYX_SHOW_CREATE_TABLES=1`` creates the show tables on startup for a local
 SQLite rehearsal. It is off by default; production schema changes stay with the
@@ -26,6 +27,8 @@ from app.routers import (
     awards,
     entries,
     feedback,
+    judge_admin,
+    judge_portal,
     judging,
     show_day,
     shows,
@@ -39,6 +42,8 @@ SHOW_ROUTERS = (
     awards.router,
     judging.router,
     show_day.router,
+    judge_admin.router,
+    judge_portal.router,
     volunteer_ops.router,
     feedback.router,
     tiles.router,
@@ -68,6 +73,9 @@ SHOW_TABLES = tuple(
         models.Scorecard,
         models.ScorecardAuditLog,
         models.ScoreSubmission,
+        models.JudgeCredential,
+        models.JudgeActionAudit,
+        models.ShowOwnerAudit,
     )
 )
 

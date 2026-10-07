@@ -88,6 +88,8 @@ env:
     tests/test_show_output_safety_timing.py
     tests/test_show_day_judging_lock.py
     tests/test_show_day_phase1.py
+    tests/test_judge_auth_blind_judging.py
+    tests/test_judge_scoring_races_postgres.py
     tests/test_calyx_core_owner_only_show_management.py
     tests/test_calyx_100_l2_all_domain_authorization.py
     tests/test_calyx_108_owner_authorization.py
@@ -113,14 +115,13 @@ env:
     tests/test_partner_data_disclosure.py
     tests/test_partner_data_model_output_guards.py
     tests/test_partner_data_access_bridge.py
-  # PENDING: critical suites added by open pull requests (#1704 per-judge
-  # auth, #1700 precise coordinates / legacy occurrence API). Each is run,
+  # PENDING: critical suites added by open pull requests (#1700 precise
+  # coordinates / legacy occurrence API). Each is run,
   # and required to pass, as soon as it exists in the tree; until then it is
   # reported as a notice. tests/test_critical_suite_coverage.py fails once a
   # pending file exists, so the pull request that lands it must also move it
   # into a list above.
   OC_PENDING_CRITICAL_SUITES: >-
-    tests/test_judge_auth_blind_judging.py
     tests/test_no_precise_coordinates.py
     tests/test_legacy_occurrence_api_fail_closed.py
 
@@ -199,6 +200,8 @@ jobs:
       # Disposable service-container credentials, not a secret.
       TEST_DATABASE_URL: postgresql://occritical:occritical_test_only@localhost:5432/oc_critical
       DATABASE_URL: postgresql://occritical:occritical_test_only@localhost:5432/oc_critical
+      # Judge scoring race proofs (tests/test_judge_scoring_races_postgres.py).
+      SHOW_JUDGING_TEST_POSTGRES_URL: postgresql://occritical:occritical_test_only@localhost:5432/oc_critical
       # Fail, never skip, if the database is unusable (tests/conftest.py).
       OC_REQUIRE_POSTGRES: "1"
     steps:
@@ -233,3 +236,9 @@ jobs:
           done
           python -m pytest -q -p no:cacheprovider -rA -m requires_postgres \
             "${ledger[@]}" "${security[@]}" "${privacy[@]}" "${pending[@]}"
+      # Judge scoring row-lock races (#1704). The file reads its own variable
+      # (set for this job above) so no other job's database is touched; with
+      # OC_REQUIRE_POSTGRES set it fails instead of skipping when the database
+      # is missing or unusable.
+      - name: Judge scoring race proofs (PostgreSQL row locks)
+        run: python -m pytest -q -p no:cacheprovider -rA tests/test_judge_scoring_races_postgres.py
