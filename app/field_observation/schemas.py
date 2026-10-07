@@ -9,7 +9,8 @@ Locality is fail-closed. The contract carries only a governed
 ``locality_visibility`` class (the same three classes the Field Journal client
 offers) and rejects any payload key that names a coordinate, locality, or
 site, at any nesting depth, through the shared guard in
-``app.calyx_flywheel.locality``. Coordinate upload needs a DataPolicy consent
+``app.calyx_flywheel.locality``. Exact capture coordinates remain on the
+field device in the Saturday MVP; coordinate upload needs a DataPolicy consent
 path that does not exist yet, so the backend refuses to store coordinates
 rather than storing them "for later".
 """
@@ -33,6 +34,8 @@ KNOWLEDGE_GRAPH_PUBLICATION = "blocked_pending_human_scientific_review"
 HYPOTHESES_PATH_TEMPLATE = "/api/field-observations/{observation_id}/hypotheses"
 
 LocalityVisibility = Literal["private", "research_restricted", "public"]
+IdentificationStatus = Literal["unresolved", "observer_hint_unresolved"]
+MediaKind = Literal["photo", "video"]
 
 
 class EpistemicCertaintyLabel(str, Enum):
@@ -67,6 +70,17 @@ def _reject_email_like(value: str | None, *, field: str) -> str | None:
     return value
 
 
+def _bounded_text(value: str | None, *, field: str, max_length: int = 2000) -> str | None:
+    if value is None:
+        return None
+    text = " ".join(str(value).split())
+    if not text:
+        return None
+    if len(text) > max_length:
+        raise ValueError(f"{field} must be at most {max_length} characters")
+    return text
+
+
 class MediaDescriptor(BaseModel):
     """Metadata the Field Journal client keeps for an attachment. No bytes, no URL."""
 
@@ -81,6 +95,7 @@ class FieldObservationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     observed_at: datetime
+    device_captured_at: datetime | None = None
     note: str = Field(min_length=1, max_length=5000)
     taxon_hint: str | None = Field(
         default=None,
@@ -89,6 +104,13 @@ class FieldObservationCreate(BaseModel):
     )
     epistemic_certainty: EpistemicCertaintyLabel = EpistemicCertaintyLabel.POSSIBLE
     locality_visibility: LocalityVisibility = "private"
+    habitat: str | None = Field(default=None, max_length=1000)
+    substrate: str | None = Field(default=None, max_length=500)
+    ecological_notes: str | None = Field(default=None, max_length=3000)
+    associated_organisms: list[str] = Field(default_factory=list, max_length=50)
+    pollinator_observations: str | None = Field(default=None, max_length=2000)
+    mycorrhizal_observations: str | None = Field(default=None, max_length=2000)
+    phenology: str | None = Field(default=None, max_length=500)
     media: list[MediaDescriptor] = Field(default_factory=list, max_length=20)
     client_draft_id: str | None = Field(
         default=None,
@@ -97,6 +119,16 @@ class FieldObservationCreate(BaseModel):
         description="The Field Journal's local draft id; makes upload idempotent per observer.",
     )
 
+    @field_validator("associated_organisms")
+    @classmethod
+    def _bounded_organisms(cls, values: list[str]) -> list[str]:
+        cleaned: list[str] = []
+        for value in values:
+            text = _bounded_text(value, field="associated_organisms", max_length=240)
+            if text:
+                cleaned.append(text)
+        return cleaned[:50]
+
     @model_validator(mode="before")
     @classmethod
     def _no_protected_locality(cls, values: Any) -> Any:
@@ -104,7 +136,7 @@ class FieldObservationCreate(BaseModel):
 
 
 class PhotoAttachRequest(BaseModel):
-    """Provenance for a photo already held by the storage layer."""
+    """Provenance for a photo or video already held by the storage layer."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -113,6 +145,7 @@ class PhotoAttachRequest(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
         description="SHA-256 hex digest of the original bytes.",
     )
+    media_kind: MediaKind = "photo"
     photographer_subject: str | None = Field(default=None, min_length=1, max_length=120)
     captured_at: datetime | None = None
     license: str | None = Field(default=None, max_length=200)
@@ -155,6 +188,7 @@ class PhotoOut(BaseModel):
     observation_id: str
     storage_key: str
     content_hash: str
+    media_kind: MediaKind = "photo"
     photographer_subject: str | None
     captured_at: datetime | None
     license: str | None
@@ -166,14 +200,23 @@ class FieldObservationOut(BaseModel):
     id: str
     observer_subject: str
     observed_at: datetime
+    device_captured_at: datetime | None = None
     note: str
     taxon_hint: str | None
+    identification_status: IdentificationStatus
     epistemic_certainty: EpistemicCertaintyLabel
     curation_state: ObservationCurationState
     curation_reason: str | None = None
     curated_by: str | None = None
     curated_at: datetime | None = None
     locality_visibility: LocalityVisibility
+    habitat: str | None = None
+    substrate: str | None = None
+    ecological_notes: str | None = None
+    associated_organisms: list[str] = Field(default_factory=list)
+    pollinator_observations: str | None = None
+    mycorrhizal_observations: str | None = None
+    phenology: str | None = None
     media: list[MediaDescriptor]
     photo_count: int
     client_draft_id: str | None
