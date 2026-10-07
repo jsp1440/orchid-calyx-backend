@@ -96,6 +96,8 @@ def build_controlled_snapshot(
             raise ValueError(f"controlled issue #{number} lacks the controlled-test title prefix")
         if [value.lower() for value in CONTROLLED_MARKER.findall(body)] != ["true"]:
             raise ValueError(f"controlled issue #{number} lacks the explicit controlled-test marker")
+        if "oc-r1-controlled-test" not in labels:
+            raise ValueError(f"controlled issue #{number} lacks the isolating test label")
         if labels & PARKED or (("oc-queued" in labels) == ("oc-done" in labels)):
             raise ValueError(f"controlled issue #{number} is not exclusively queued")
         lane, how = assign_lane(issue)

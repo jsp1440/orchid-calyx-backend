@@ -25,7 +25,7 @@ def _issue(number: int, lane: str, *, dependency: int | None = None) -> dict:
             "OC-SWARM-VALIDATE: control-plane-compiles"
             f"{dependency_marker}"
         ),
-        "labels": ["oc-queued"],
+        "labels": ["oc-queued", "oc-r1-controlled-test"],
         "state": "OPEN",
     }
 
@@ -54,7 +54,14 @@ def test_controlled_snapshot_contains_only_explicit_independent_test_lanes() -> 
     [
         (lambda issue: issue.update(title="uncontrolled title"), "title prefix"),
         (lambda issue: issue.update(body=issue["body"].replace("OC-R1-CONTROLLED-TEST: true\n", "")), "marker"),
-        (lambda issue: issue.update(labels=["oc-running"]), "exclusively queued"),
+        (
+            lambda issue: issue.update(labels=["oc-running", "oc-r1-controlled-test"]),
+            "exclusively queued",
+        ),
+        (
+            lambda issue: issue.update(labels=["oc-queued"]),
+            "isolating test label",
+        ),
         (
             lambda issue: issue.update(body=issue["body"].replace("control-plane-compiles", "arbitrary-shell")),
             "registered control-plane-compiles",
@@ -101,8 +108,9 @@ def test_controlled_snapshot_rejects_duplicate_or_missing_targets() -> None:
 
 def test_controlled_snapshot_keeps_completed_dependencies_for_refill() -> None:
     completed = _issue(10, "literature")
-    completed["labels"] = ["oc-done"]
+    completed["labels"] = ["oc-done", "oc-r1-controlled-test"]
     dependent = _issue(12, "infrastructure-federation", dependency=10)
+    dependent["labels"].append("oc-r1-controlled-test")
 
     isolated = build_controlled_snapshot(
         {"issues": [completed, _issue(11, "frontend-ux"), dependent]},
@@ -132,11 +140,13 @@ def test_controlled_snapshot_plans_two_lanes_then_dependency_refill() -> None:
     assert [row["issue_number"] for row in plan["dependency_suppressed"]] == [12]
 
     completed_first = _issue(10, "literature")
-    completed_first["labels"] = ["oc-done"]
+    completed_first["labels"] = ["oc-done", "oc-r1-controlled-test"]
     completed_second = _issue(11, "frontend-ux")
-    completed_second["labels"] = ["oc-done"]
+    completed_second["labels"] = ["oc-done", "oc-r1-controlled-test"]
+    refill_issue = _issue(12, "infrastructure-federation", dependency=10)
+    refill_issue["labels"].append("oc-r1-controlled-test")
     refilled = build_controlled_snapshot(
-        {"issues": [completed_first, completed_second, _issue(12, "infrastructure-federation", dependency=10)]},
+        {"issues": [completed_first, completed_second, refill_issue]},
         [10, 11, 12],
     )
     refill_plan = build_swarm_plan(refilled, worker_slots=2, provider_free_only=True)

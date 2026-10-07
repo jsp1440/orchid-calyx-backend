@@ -221,6 +221,9 @@ def test_controlled_lifecycle_is_branch_scoped_and_cannot_touch_the_global_queue
     controlled = "controlled_issue_numbers"
     assert controlled in document[True]["workflow_dispatch"]["inputs"]
     assert controlled in document[True]["workflow_call"]["inputs"]
+    concurrency = document["concurrency"]["group"]
+    assert "orchid-swarm-controlled-" in concurrency
+    assert "orchid-swarm-controller-" in concurrency
 
     plan = document["jobs"]["plan"]
     steps = plan["steps"]
@@ -248,6 +251,7 @@ def test_controlled_lifecycle_is_branch_scoped_and_cannot_touch_the_global_queue
     assert "gh issue view" in snapshot
     assert "oc_swarm_controlled_snapshot" in snapshot
     assert "--state all" in snapshot  # remains confined to the normal, unfiltered branch
+    assert 'index("oc-r1-controlled-test") == null' in snapshot
     planning = by_name["Plan dependency-aware resource wave"]["run"]
     assert 'provider_args+=(--provider-free-only)' in planning
     assert 'if [[ -n "$CONTROLLED_ISSUE_NUMBERS" ]]' in planning

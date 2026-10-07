@@ -66,7 +66,7 @@ on:
     types: [closed]
 
 concurrency:
-  group: orchid-swarm-controller-${{ github.repository }}
+  group: ${{ inputs.controlled_issue_numbers != '' && format('orchid-swarm-controlled-{0}', github.repository) || format('orchid-swarm-controller-{0}', github.repository) }}
   cancel-in-progress: false
 
 permissions:
@@ -298,6 +298,8 @@ jobs:
             # an issue closed as NOT_PLANNED or DUPLICATE.
             gh issue list --repo "$REPO" --state all --limit 1000 \
               --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
+            jq 'map(select([.labels[].name] | index("oc-r1-controlled-test") == null))' \
+              "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-global.json"
 
             # Blocked-work reconciliation reads machine-readable blocker lineage
             # from issue bodies/comments. Fetch comments only for currently blocked
@@ -334,7 +336,7 @@ jobs:
                      then . + {comments: ($blocked_issue.comments // [])}
                      else .
                      end)' \
-              "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
+              "$RUNNER_TEMP/issues-global.json" > "$RUNNER_TEMP/issues-enriched.json"
 
             gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
               --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
