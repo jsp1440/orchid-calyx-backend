@@ -33,12 +33,18 @@ class TestRegistry:
         an executor the worker did not have. A command registry that names a
         missing test file is the same mistake one layer down.
         """
+        import importlib.util
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
         for command in registry.VALIDATION_COMMANDS.values():
-            for part in command.argv:
-                if part.startswith(("tests/", "scripts")):
+            for index, part in enumerate(command.argv):
+                if part == "-m":
+                    module_name = command.argv[index + 1]
+                    assert importlib.util.find_spec(module_name) is not None, (
+                        f"{command.command_id} names missing module {module_name}"
+                    )
+                elif part.startswith(("tests/", "scripts/")):
                     assert (root / part).exists(), f"{command.command_id} names {part}"
 
     def test_an_unknown_identifier_fails_closed(self) -> None:
