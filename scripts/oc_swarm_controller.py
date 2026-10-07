@@ -41,6 +41,17 @@ _ROUTING = _load_routing()
 PROVIDER_FREE_MARKER = _ROUTING.PROVIDER_FREE_MARKER
 
 
+def _load_module_lanes():
+    """Import the pure module-lane registry (read-only reporting layer)."""
+    _load_routing()  # puts the repository root on sys.path
+    from app.autonomy import module_lanes
+
+    return module_lanes
+
+
+_MODULE_LANES = _load_module_lanes()
+
+
 def _load_coding_executor():
     """Import the coding-executor decision layer (pure; no provider calls)."""
     _load_routing()  # puts the repository root on sys.path
@@ -894,7 +905,7 @@ def build_swarm_plan(
     if provider_gated_coding:
         homeostasis["gates"]["coding_executor_blocked"] = provider_gated_coding
 
-    return {
+    result = {
         "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
         "effective_worker_slots": slots,
@@ -951,6 +962,8 @@ def build_swarm_plan(
             "blocked_reconciliation_mutates": False,
         },
     }
+    result["module_lanes"] = _MODULE_LANES.report_from_plan(snapshot, result)
+    return result
 
 
 def _write_github_output(path: str, plan: dict) -> None:
