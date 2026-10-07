@@ -148,5 +148,8 @@ def test_plan_receives_discovery_evidence_only_when_discovery_succeeded():
     assert names.index("Discover product work from repository evidence") < attach
     assert names.index("Build repository snapshot") < attach < names.index("Plan dependency-aware resource wave")
     step = plan["steps"][attach]
-    assert step["if"] == "steps.discovery.outcome == 'success'"
+    assert (
+        step["if"]
+        == "steps.discovery.outcome == 'success' && env.CONTROLLED_ISSUE_NUMBERS == ''"
+    )
     assert "discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}" in step["run"]

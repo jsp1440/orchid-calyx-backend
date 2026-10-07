@@ -212,3 +212,45 @@ def test_v4_provisions_the_environment_discovery_reads_before_reading_it():
     # Provisioning is best-effort: a slow index must cost the wave its new
     # import findings, never the wave.
     assert install.get("continue-on-error") is True
+
+
+def test_controlled_lifecycle_is_branch_scoped_and_cannot_touch_the_global_queue():
+    import yaml
+
+    document = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
+    controlled = "controlled_issue_numbers"
+    assert controlled in document[True]["workflow_dispatch"]["inputs"]
+    assert controlled in document[True]["workflow_call"]["inputs"]
+
+    plan = document["jobs"]["plan"]
+    steps = plan["steps"]
+    by_name = {step.get("name"): step for step in steps}
+    boundary = by_name["Validate controlled-test scope"]
+    assert "GITHUB_EVENT_NAME" in boundary["run"]
+    assert "refs/heads/r1-controlled-integration-20261006" in boundary["run"]
+    assert "env.CONTROLLED_ISSUE_NUMBERS != ''" in boundary["if"]
+
+    for name in (
+        "Reconcile retired provider backoff into governed queue",
+        "Run continuous Brain reasoning-gap pulse",
+        "Admit Calyx product findings without Brain candidate starvation",
+        "Admit Brain discoveries to the canonical queue",
+        "Discover product work from repository evidence",
+        "File discovered work into the canonical queue",
+        "Reconcile stale execution leases",
+        "Read governed spend ledger for blocked-work observation",
+        "Observe current governed budget conditions",
+        "Apply demonstrably cleared blocked-work releases",
+    ):
+        assert "env.CONTROLLED_ISSUE_NUMBERS == ''" in by_name[name]["if"]
+
+    snapshot = by_name["Build repository snapshot"]["run"]
+    assert "gh issue view" in snapshot
+    assert "oc_swarm_controlled_snapshot" in snapshot
+    assert "--state all" in snapshot  # remains confined to the normal, unfiltered branch
+    planning = by_name["Plan dependency-aware resource wave"]["run"]
+    assert 'provider_args+=(--provider-free-only)' in planning
+    assert 'if [[ -n "$CONTROLLED_ISSUE_NUMBERS" ]]' in planning
+
+    refill = document["jobs"]["refill"]["steps"][0]["run"]
+    assert 'refill_args+=(-f controlled_issue_numbers="$CONTROLLED_ISSUE_NUMBERS")' in refill

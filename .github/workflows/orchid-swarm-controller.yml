@@ -18,6 +18,11 @@ on:
         required: false
         default: "4"
         type: string
+      controlled_issue_numbers:
+        description: "Temporary-branch-only allowlist for controlled provider-free R1 validation (2-3 issue numbers)"
+        required: false
+        default: ""
+        type: string
   workflow_call:
     inputs:
       worker_slots:
@@ -31,6 +36,10 @@ on:
       max_waves:
         required: false
         default: "4"
+        type: string
+      controlled_issue_numbers:
+        required: false
+        default: ""
         type: string
   schedule:
     - cron: "*/5 * * * *"
@@ -91,6 +100,7 @@ jobs:
       WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
+      CONTROLLED_ISSUE_NUMBERS: ${{ inputs.controlled_issue_numbers || '' }}
     steps:
       # Trusted controls are pinned to the exact revision that triggered this
       # controller run. On the canonical dispatch (`--ref oc-autonomous-integration`)
@@ -108,8 +118,19 @@ jobs:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
         run: python3 scripts/oc_no_api_guard.py
 
+      - name: Validate controlled-test scope
+        if: env.CONTROLLED_ISSUE_NUMBERS != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_EVENT_NAME" != "workflow_dispatch" \
+            || "$GITHUB_REF" != "refs/heads/r1-controlled-integration-20261006" ]]; then
+            echo "Controlled execution is allowed only by manual dispatch on the temporary R1 branch." >&2
+            exit 2
+          fi
+
       - name: Reconcile retired provider backoff into governed queue
-        if: steps.no_api.outputs.blocked == 'true'
+        if: steps.no_api.outputs.blocked == 'true' && env.CONTROLLED_ISSUE_NUMBERS == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -147,6 +168,7 @@ jobs:
 
       - name: Run continuous Brain reasoning-gap pulse
         id: brain_pulse
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         shell: bash
         run: |
@@ -164,7 +186,7 @@ jobs:
 
       - name: Admit Calyx product findings without Brain candidate starvation
         id: calyx_product_materialize
-        if: steps.brain_pulse.outcome == 'success'
+        if: steps.brain_pulse.outcome == 'success' && env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         shell: bash
         run: |
@@ -180,7 +202,7 @@ jobs:
 
       - name: Admit Brain discoveries to the canonical queue
         id: brain_materialize
-        if: steps.brain_pulse.outcome == 'success'
+        if: steps.brain_pulse.outcome == 'success' && env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         shell: bash
         run: |
@@ -196,6 +218,7 @@ jobs:
 
       - name: Discover product work from repository evidence
         id: discovery
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         shell: bash
         run: |
@@ -208,7 +231,7 @@ jobs:
 
       - name: File discovered work into the canonical queue
         id: materialize
-        if: steps.discovery.outcome == 'success'
+        if: steps.discovery.outcome == 'success' && env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         shell: bash
         run: |
@@ -224,6 +247,7 @@ jobs:
 
       - name: Reconcile stale execution leases
         id: leases
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -241,59 +265,88 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Swarm v4 needs closed dependency issues as well as the open execution
-          # portfolio. The canonical scheduler itself still ignores closed work.
-          # stateReason lets the dependency graph refuse to unlock dependents of
-          # an issue closed as NOT_PLANNED or DUPLICATE.
-          gh issue list --repo "$REPO" --state all --limit 1000 \
-            --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
+          if [[ -n "$CONTROLLED_ISSUE_NUMBERS" ]]; then
+            [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" \
+              && "$GITHUB_REF" == "refs/heads/r1-controlled-integration-20261006" ]]
+            IFS=',' read -r -a requested <<< "$CONTROLLED_ISSUE_NUMBERS"
+            (( ${#requested[@]} >= 2 && ${#requested[@]} <= 3 )) || {
+              echo "Controlled mode requires two or three issue numbers." >&2
+              exit 2
+            }
+            issue_files=()
+            for raw_number in "${requested[@]}"; do
+              number="${raw_number//[[:space:]]/}"
+              [[ "$number" =~ ^[1-9][0-9]*$ ]] || {
+                echo "Invalid controlled issue number." >&2
+                exit 2
+              }
+              issue_file="$RUNNER_TEMP/controlled-issue-$number.json"
+              gh issue view "$number" --repo "$REPO" \
+                --json number,title,body,labels,state,stateReason > "$issue_file"
+              issue_files+=("$issue_file")
+            done
+            jq -s '{issues: ., pull_requests: []}' "${issue_files[@]}" \
+              > "$RUNNER_TEMP/controlled-snapshot.json"
+            python3 -m scripts.oc_swarm_controlled_snapshot \
+              --input "$RUNNER_TEMP/controlled-snapshot.json" \
+              --issue-numbers "$CONTROLLED_ISSUE_NUMBERS" \
+              --output "$RUNNER_TEMP/swarm-snapshot.json"
+          else
+            # Swarm v4 needs closed dependency issues as well as the open execution
+            # portfolio. The canonical scheduler itself still ignores closed work.
+            # stateReason lets the dependency graph refuse to unlock dependents of
+            # an issue closed as NOT_PLANNED or DUPLICATE.
+            gh issue list --repo "$REPO" --state all --limit 1000 \
+              --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
 
-          # Blocked-work reconciliation reads machine-readable blocker lineage
-          # from issue bodies/comments. Fetch comments only for currently blocked
-          # issues. The REST endpoint supplies numeric comment IDs and its
-          # deterministic order; failures become an empty comment set so the
-          # reconciler holds the issue instead of releasing on incomplete state.
-          blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
-          gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
-            --json number --jq '.[].number' > "$blocked_numbers"
-          echo '[]' > "$RUNNER_TEMP/blocked-comments.json"
-          while read -r issue_number; do
-            [[ -n "$issue_number" ]] || continue
-            comments_file="$RUNNER_TEMP/comments-$issue_number.json"
-            if gh api --paginate \
-              "repos/$REPO/issues/$issue_number/comments?per_page=100" \
-              --jq '.[] | {id: .id, body: .body}' | jq -s '.' > "$comments_file"; then
-              :
-            else
-              echo '[]' > "$comments_file"
-              echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
-            fi
-            jq --argjson number "$issue_number" --slurpfile comments "$comments_file" \
-              '. + [{number: $number, comments: ($comments[0] // [])}]' \
-              "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
-            mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
-          done < "$blocked_numbers"
+            # Blocked-work reconciliation reads machine-readable blocker lineage
+            # from issue bodies/comments. Fetch comments only for currently blocked
+            # issues. The REST endpoint supplies numeric comment IDs and its
+            # deterministic order; failures become an empty comment set so the
+            # reconciler holds the issue instead of releasing on incomplete state.
+            blocked_numbers="$RUNNER_TEMP/blocked-issue-numbers.txt"
+            gh issue list --repo "$REPO" --state open --label oc-blocked --limit 200 \
+              --json number --jq '.[].number' > "$blocked_numbers"
+            echo '[]' > "$RUNNER_TEMP/blocked-comments.json"
+            while read -r issue_number; do
+              [[ -n "$issue_number" ]] || continue
+              comments_file="$RUNNER_TEMP/comments-$issue_number.json"
+              if gh api --paginate \
+                "repos/$REPO/issues/$issue_number/comments?per_page=100" \
+                --jq '.[] | {id: .id, body: .body}' | jq -s '.' > "$comments_file"; then
+                :
+              else
+                echo '[]' > "$comments_file"
+                echo "Could not read comments for blocked issue #$issue_number; holding it fail-closed." >&2
+              fi
+              jq --argjson number "$issue_number" --slurpfile comments "$comments_file" \
+                '. + [{number: $number, comments: ($comments[0] // [])}]' \
+                "$RUNNER_TEMP/blocked-comments.json" > "$RUNNER_TEMP/blocked-comments.next.json"
+              mv "$RUNNER_TEMP/blocked-comments.next.json" "$RUNNER_TEMP/blocked-comments.json"
+            done < "$blocked_numbers"
 
-          jq \
-            --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
-            'INDEX($blocked[0][]; (.number|tostring)) as $idx
-             | map(. as $issue
-                 | ($idx[($issue.number|tostring)] // null) as $blocked_issue
-                 | if $blocked_issue
-                   then . + {comments: ($blocked_issue.comments // [])}
-                   else .
-                   end)' \
-            "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
+            jq \
+              --slurpfile blocked "$RUNNER_TEMP/blocked-comments.json" \
+              'INDEX($blocked[0][]; (.number|tostring)) as $idx
+               | map(. as $issue
+                   | ($idx[($issue.number|tostring)] // null) as $blocked_issue
+                   | if $blocked_issue
+                     then . + {comments: ($blocked_issue.comments // [])}
+                     else .
+                     end)' \
+              "$RUNNER_TEMP/issues.json" > "$RUNNER_TEMP/issues-enriched.json"
 
-          gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
-            --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
-          jq -n \
-            --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
-            --slurpfile prs "$RUNNER_TEMP/prs.json" \
-            '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+            gh pr list --repo "$REPO" --state all --base "$INTEGRATION_BRANCH" --limit 500 \
+              --json number,title,body,headRefName,headRefOid,mergeStateStatus,isDraft,state,mergedAt > "$RUNNER_TEMP/prs.json"
+            jq -n \
+              --slurpfile issues "$RUNNER_TEMP/issues-enriched.json" \
+              --slurpfile prs "$RUNNER_TEMP/prs.json" \
+              '{issues: $issues[0], pull_requests: $prs[0]}' > "$RUNNER_TEMP/swarm-snapshot.json"
+          fi
 
       - name: Read governed spend ledger for blocked-work observation
         id: budget_ledger
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
@@ -306,6 +359,7 @@ jobs:
 
       - name: Observe current governed budget conditions
         id: budget_observation
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         continue-on-error: true
         env:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
@@ -335,6 +389,7 @@ jobs:
             --output "$RUNNER_TEMP/budget-observation.json"
 
       - name: Attach issue-specific budget observations
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -347,7 +402,7 @@ jobs:
       # pass's discovery demonstrably ran and found nothing. A failed or skipped
       # discovery attaches nothing, so the verdict stays "unknown, not idle".
       - name: Attach work-discovery evidence
-        if: steps.discovery.outcome == 'success'
+        if: steps.discovery.outcome == 'success' && env.CONTROLLED_ISSUE_NUMBERS == ''
         shell: bash
         run: |
           set -euo pipefail
@@ -358,7 +413,7 @@ jobs:
 
       - name: Check governor admission before selecting coding work
         id: coding_governor
-        if: steps.no_api.outputs.blocked == 'false' && steps.budget_ledger.outcome == 'success'
+        if: env.CONTROLLED_ISSUE_NUMBERS == '' && steps.no_api.outputs.blocked == 'false' && steps.budget_ledger.outcome == 'success'
         continue-on-error: true
         env:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
@@ -405,7 +460,9 @@ jobs:
         run: |
           set -euo pipefail
           provider_args=()
-          if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then
+          if [[ -n "$CONTROLLED_ISSUE_NUMBERS" ]]; then
+            provider_args+=(--provider-free-only)
+          elif [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then
             provider_args+=(--coding-executor)
           else
             provider_args+=(--provider-free-only)
@@ -424,6 +481,7 @@ jobs:
             | tee "$RUNNER_TEMP/swarm-plan.json"
 
       - name: Apply demonstrably cleared blocked-work releases
+        if: env.CONTROLLED_ISSUE_NUMBERS == ''
         shell: bash
         env:
           CONTROLLER_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
@@ -860,6 +918,7 @@ jobs:
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
       WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      CONTROLLED_ISSUE_NUMBERS: ${{ inputs.controlled_issue_numbers || '' }}
     steps:
       - name: Dispatch bounded refill wave
         shell: bash
@@ -879,10 +938,15 @@ jobs:
           if [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             refill_ref="$GITHUB_REF_NAME"
           fi
+          refill_args=()
+          if [[ -n "$CONTROLLED_ISSUE_NUMBERS" ]]; then
+            refill_args+=(-f controlled_issue_numbers="$CONTROLLED_ISSUE_NUMBERS")
+          fi
           gh workflow run orchid-swarm-controller.yml \
             --repo "$REPO" \
             --ref "$refill_ref" \
             -f worker_slots="$WORKER_SLOTS" \
             -f wave="$next" \
-            -f max_waves="$MAX_WAVES"
+            -f max_waves="$MAX_WAVES" \
+            "${refill_args[@]}"
           echo "Dispatched bounded refill wave $next/$maximum on $refill_ref." >> "$GITHUB_STEP_SUMMARY"
