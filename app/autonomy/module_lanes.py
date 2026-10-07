@@ -222,3 +222,35 @@ def lane_report(
         },
         "unassigned_unfinished": lanes[UNASSIGNED]["unfinished"],
     }
+
+
+def report_from_plan(snapshot: Mapping[str, Any], plan: Mapping[str, Any]) -> dict[str, Any]:
+    """Observe canonical admission output without re-routing or authorizing it.
+
+    Selection is planning evidence only. Running state still comes from issue
+    labels in the supplied snapshot, not workers, matrices or coding receipts.
+    """
+    gates = plan["homeostasis"]["gates"]
+    report = lane_report(
+        snapshot.get("issues") or [],
+        dependency_blocked=[row["issue"] for row in gates.get("dependency_blocked", [])],
+        provider_gated=gates.get("provider_parked", []),
+        capability_gap=gates.get("lane_refused", []),
+        lane_refusals=[
+            {"issue_number": row["issue"], "reason": row["reason"]}
+            for row in gates.get("lane_refusal_reasons", [])
+        ],
+        coding_dispatch=plan.get("coding_dispatch", []),
+    )
+    selected = set(plan["selected_numbers"])
+    for lane in report["lanes"].values():
+        lane["planned"] = []
+    for issue in snapshot.get("issues") or []:
+        number = int(issue["number"])
+        if number in selected:
+            key, _ = assign_lane(issue)
+            report["lanes"][key]["planned"].append(number)
+    for lane in report["lanes"].values():
+        lane["planned"].sort()
+    report["evidence_category"] = "planning_and_issue_labels"
+    return report

@@ -803,23 +803,6 @@ def build_swarm_plan(
     waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
-    # Per-module lane state, computed from each lane's own issues. Read-only: it
-    # reports which lanes are executing, replenishable, gated or unstaffed so one
-    # blocked module is visible as exactly that and never as a global idle.
-    module_capability_gaps = set(unstaffed_numbers(snapshot))
-    module_lanes = _MODULE_LANES.lane_report(
-        snapshot.get("issues") or [],
-        dependency_blocked=[
-            int(row["issue_number"]) for row in dependency_suppressed if "issue_number" in row
-        ],
-        provider_gated=provider_parked_numbers(snapshot) if provider_free_only else [],
-        capability_gap=module_capability_gaps,
-        lane_refusals=[
-            lane_refusal(issue) for issue in snapshot.get("issues") or []
-            if int(issue.get("number") or 0) in module_capability_gaps
-        ],
-    )
-
     # Provider-free-only mode withdraws non-executable work before the unstaffed
     # pass sees it, so lane refusals are re-derived from the original snapshot
     # for the invariant record. ``unstaffed_numbers`` in the plan keeps its
@@ -848,7 +831,7 @@ def build_swarm_plan(
         lane_refusal_reasons=lane_refusal_reasons,
     )
 
-    return {
+    result = {
         "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
         "effective_worker_slots": slots,
@@ -881,7 +864,6 @@ def build_swarm_plan(
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
-        "module_lanes": module_lanes,
         "homeostasis": homeostasis,
         "edit_mode_deferred_numbers": sorted(deferred_edit),
         "generated_at": plan.get("generated_at"),
@@ -904,6 +886,8 @@ def build_swarm_plan(
             "blocked_reconciliation_mutates": False,
         },
     }
+    result["module_lanes"] = _MODULE_LANES.report_from_plan(snapshot, result)
+    return result
 
 
 def _write_github_output(path: str, plan: dict) -> None:

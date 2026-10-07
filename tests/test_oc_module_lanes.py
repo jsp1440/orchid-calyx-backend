@@ -201,3 +201,94 @@ def test_queued_dispatch_cannot_release_a_refusal_or_owner_gate():
     assert report["lanes"]["taxonomy"]["state"] == "gated"
     assert report["lanes"]["literature"]["state"] == "capability_gap"
     assert all(lane["running"] == [] for lane in report["lanes"].values())
+
+
+def test_completed_plan_adapter_reports_selection_not_execution():
+    from copy import deepcopy
+
+    swarm = _controller()
+    snapshot = {
+        "now": "2026-10-01T00:00:00Z",
+        "issues": [
+            _issue(1, "literature", "oc-queued", body=EXEC.format(w="lit")),
+            _issue(2, "taxonomy", "oc-queued", body=UNSTAFFED.format(w="lit")),
+        ],
+    }
+    original = deepcopy(snapshot)
+    plan = swarm.build_swarm_plan(snapshot, provider_free_only=True)
+    assert snapshot == original
+    report = plan["module_lanes"]
+    assert report == ml.report_from_plan(snapshot, plan)
+    assert report["evidence_category"] == "planning_and_issue_labels"
+    assert report["lanes"]["literature"]["planned"] == [1]
+    assert report["lanes"]["literature"]["running"] == []
+    assert report["lanes"]["taxonomy"]["planned"] == []
+    assert report["lanes"]["taxonomy"]["state"] == "capability_gap"
+    assert report["lanes"]["taxonomy"]["refusal_reasons"]
+    assert plan["provider_launch_count"] == 0
+    assert plan["homeostasis"]["healthy_idle"] is False
+
+
+def test_dependency_and_resource_holds_are_not_capability_refusals():
+    swarm = _controller()
+    snapshot = {
+        "now": "2026-10-01T00:00:00Z",
+        "issues": [
+            _issue(1, "literature", "oc-queued", body=EXEC.format(w="shared")),
+            _issue(2, "taxonomy", "oc-queued", body=EXEC.format(w="shared")),
+            _issue(3, "pollinator", "oc-queued",
+                   body=EXEC.format(w="pollinator") + "\nOC-SWARM-DEPENDS-ON: #4"),
+            _issue(4, "mycorrhiza", "oc-queued", "oc-owner-gate", body=EXEC.format(w="fungi")),
+        ],
+    }
+    plan = swarm.build_swarm_plan(snapshot)
+    lanes = plan["module_lanes"]["lanes"]
+    assert plan["selected_numbers"] == [1]
+    assert plan["resource_lock_suppressed"]
+    assert lanes["taxonomy"]["state"] == "replenishable"
+    assert lanes["taxonomy"]["planned"] == []
+    assert lanes["pollinator"]["gates"] == {"dependency_blocked": [3]}
+    assert lanes["mycorrhiza"]["gates"] == {"owner_gated": [4]}
+    assert all(lane["capability_gap"] == [] for lane in lanes.values())
+
+
+@pytest.mark.parametrize("label", ["oc-owner-gate", "oc-scientific-gate"])
+def test_adapter_keeps_original_human_gates_and_unrelated_work(label):
+    swarm = _controller()
+    snapshot = {
+        "now": "2026-10-01T00:00:00Z",
+        "issues": [
+            _issue(1, "taxonomy", "oc-queued", label, body=UNSTAFFED.format(w="shared")),
+            _issue(2, "literature", "oc-queued", body=EXEC.format(w="shared")),
+        ],
+    }
+    plan = swarm.build_swarm_plan(snapshot, provider_free_only=True)
+    lanes = plan["module_lanes"]["lanes"]
+    assert plan["selected_numbers"] == [2]
+    assert lanes["taxonomy"]["gates"] == {
+        "owner_gated" if label == "oc-owner-gate" else "scientific_gated": [1]
+    }
+    assert lanes["literature"]["planned"] == [2]
+    assert plan["provider_launch_count"] == 0
+
+
+def test_live_adapter_reports_two_planned_lanes_with_provider_gate_isolated():
+    swarm = _controller()
+    snapshot = {
+        "now": "2026-10-01T00:00:00Z",
+        "issues": [
+            _issue(1, "literature", "oc-queued", body=EXEC.format(w="literature")),
+            _issue(2, "atlas-geography-environment", "oc-queued", body=EXEC.format(w="atlas")),
+            _issue(3, "taxonomy", "oc-queued",
+                   body="OC-SWARM-CAPABILITY: open-ended-code-authoring\nOC-SWARM-WRITES: literature"),
+        ],
+    }
+    plan = swarm.build_swarm_plan(snapshot, provider_free_only=True)
+    lanes = plan["module_lanes"]["lanes"]
+    assert plan["selected_numbers"] == [1, 2]
+    assert lanes["literature"]["planned"] == [1]
+    assert lanes["atlas-geography-environment"]["planned"] == [2]
+    assert lanes["taxonomy"]["gates"] == {"provider_blocked": [3]}
+    assert lanes["taxonomy"]["planned"] == []
+    assert plan["provider_launch_count"] == 0
+    assert all(lane["running"] == [] for lane in lanes.values())

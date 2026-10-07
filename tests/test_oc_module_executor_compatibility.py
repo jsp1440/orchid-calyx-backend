@@ -92,14 +92,12 @@ def test_exact_executor_plan_claim_and_module_report(monkeypatch, authorised, ca
         provider_free_only=not authorised,
     )
     before = deepcopy(plan)
-    report = module_lanes.lane_report(
-        issues, capability_gap=plan["unstaffed_numbers"],
-        lane_refusals=plan["lane_refusals"], coding_dispatch=plan["coding_dispatch"],
-    )
+    report = module_lanes.report_from_plan(snapshot, plan)
     assert plan == before
     [dispatch] = plan["coding_dispatch"]
     coding_selected = authorised and capability != "OC-SWARM-PROVIDER-FREE: missing-executor"
     assert plan["selected_numbers"] == ([1] if coding_selected else [2])
+    assert report["evidence_category"] == "planning_and_issue_labels"
     taxonomy = report["lanes"]["taxonomy"]
     if coding_selected:
         assert taxonomy["state"] == "replenishable"
@@ -121,3 +119,47 @@ def test_exact_executor_plan_claim_and_module_report(monkeypatch, authorised, ca
     assert handoff["provider_free_launch_count"] == int(not coding_selected)
     assert len(api.comments) == handoff["launch_count"] == 1
     assert dispatch["provider_called"] is False
+    failed_api = MockGitHub(issues)
+
+    def fail_receipt(args, payload=None):
+        if args[:3] == ["api", "--method", "POST"]:
+            raise subprocess.TimeoutExpired("mock receipt write", 30)
+        return failed_api(args, payload)
+
+    failed_handoff = claim.claim_workers(
+        plan, snapshot, repository="owner/repo", run_id=124, run_attempt=1, call=fail_receipt,
+    )
+    assert failed_handoff["healthy"] is False
+    assert failed_handoff["confirmed"] == []
+    assert failed_handoff["launch_count"] == 0
+    assert failed_handoff["provider_launch_count"] == 0
+    assert failed_handoff["provider_free_launch_count"] == 0
+    assert failed_api.comments == []
+    assert module_lanes.report_from_plan(snapshot, plan) == report
+    claimed_snapshot = {"issues": list(api.issues.values()), "now": snapshot["now"]}
+    after_claim = controller.build_swarm_plan(
+        claimed_snapshot, worker_slots=1, coding_executor_available=authorised,
+        provider_free_only=not authorised,
+    )
+    claimed_report = module_lanes.report_from_plan(claimed_snapshot, after_claim)
+    selected_lane = "taxonomy" if coding_selected else "literature"
+    assert claimed_report["lanes"][selected_lane]["running"] == plan["selected_numbers"]
+    assert claimed_report["lanes"][selected_lane]["planned"] == []
+    assert claimed_report["lanes"][selected_lane]["state"] == "executing"
+    # Synthetic settlement labels are not worker completion/certification evidence.
+    api.issues[plan["selected_numbers"][0]]["labels"] = ["oc-done", f"oc-lane:{selected_lane}"]
+    api.issues[3] = {
+        "number": 3, "state": "OPEN", "title": "Next independent literature fixture",
+        "labels": ["oc-queued", "oc-lane:literature"],
+        "body": "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-WRITES: literature",
+    }
+    continued_snapshot = {"issues": list(api.issues.values()), "now": snapshot["now"]}
+    continued_plan = controller.build_swarm_plan(
+        continued_snapshot, worker_slots=1, coding_executor_available=authorised,
+        provider_free_only=not authorised,
+    )
+    continued_report = module_lanes.report_from_plan(continued_snapshot, continued_plan)
+    assert continued_report["lanes"]["literature"]["state"] == "replenishable"
+    assert continued_report["lanes"]["literature"]["next_mission"] in (2, 3)
+    assert continued_plan["provider_launch_count"] == 0
+    assert continued_plan["provider_free_launch_count"] == 1
