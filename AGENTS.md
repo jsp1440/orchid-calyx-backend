@@ -2,8 +2,6 @@
 
 These rules apply to every coding-agent session in this repository.
 
-Read `docs/continuity/CURRENT_STATE.yaml` first at startup, then `docs/AGENT-OPERATING-MEMORY.md`. The continuity manifest is a compact orientation layer, not higher authority than repository truth. Verify mutable facts required by the task, but do not perform a broad repository audit merely to reconstruct history already represented in the continuity layer unless it is stale, contradictory, incomplete for the task, or contradicted by repository evidence.
-
 Read `docs/AGENT-OPERATING-MEMORY.md` at startup. It contains durable corrections learned from repeated convergence failures and applies to every coding agent. Current repository truth and explicit owner decisions outrank stale memory.
 
 ## Mission
