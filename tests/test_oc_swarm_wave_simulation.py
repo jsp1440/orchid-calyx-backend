@@ -37,17 +37,20 @@ from __future__ import annotations
 import importlib.util
 import json
 import re
+import shutil
+import sys
 from pathlib import Path
 
 import pytest
 
+from scripts import oc_provider_free_validate as validator
 from scripts.oc_swarm_claim import claim_workers, verify_worker_claim
 from scripts.oc_swarm_lease_reconcile import (
     MAX_AUTOMATIC_RECOVERIES,
     RECOVERY_PREFIX,
     reconcile,
 )
-from scripts.oc_swarm_provider_free_worker import build_receipt
+from scripts.oc_swarm_provider_free_worker import build_receipt, execution_plan
 from scripts.oc_swarm_settlement import settle_worker
 from tests.swarm_wave_github_fake import FakeGitHub, ReconcileTransport
 
@@ -180,6 +183,192 @@ def _execute_worker(fake: FakeGitHub, worker: dict, *, run_id: int) -> str:
     settle_worker(result=result, repository=REPO, issue_number=number, run_id=run_id,
                   run_attempt=1, comment_id=comment_id, call=fake)
     return result["disposition"]
+
+
+def test_actual_local_validation_claim_settlement_and_refill(tmp_path):
+    """Real compile commands; simulated GitHub leases, not product completion.
+
+    Each command validates an isolated source copy. The failure is deliberately
+    injected into that copy, never the checkout. No registry or paid executor
+    is loaded, and settlement mutates only FakeGitHub.
+    """
+    first, independent, dependent, failing, refused = range(201, 206)
+
+    def validation_issue(number, writes, *, depends=None):
+        body = _body(writes=writes, depends=depends).replace(
+            "OC-SWARM-PROVIDER-FREE: reconcile",
+            "OC-SWARM-PROVIDER-FREE: validate",
+        )
+        return _issue(
+            number,
+            f"Local compile validation fixture {number}",
+            body + "\nOC-SWARM-VALIDATE: control-plane-compiles",
+            ["oc-queued", "oc-p1"],
+            number - 200,
+        )
+
+    fake = FakeGitHub(
+        [
+            validation_issue(first, "literature"),
+            validation_issue(independent, "atlas"),
+            validation_issue(dependent, "lexicon", depends=f"#{first}"),
+            validation_issue(failing, "research-station"),
+            _issue(
+                refused,
+                "Unsupported local executor fixture",
+                "OC-SWARM-PROVIDER-FREE: unsupported-local-executor\n"
+                "OC-SWARM-WRITES: literature",
+                ["oc-queued", "oc-p0"],
+                5,
+            ),
+        ],
+        repository=REPO,
+    )
+    executions = []
+    evidence_by_issue = {}
+    waves = []
+    for wave, expected in enumerate(
+        ({first, independent, failing}, {dependent}), start=1
+    ):
+        run_id = RUN_BASE + 100 + wave
+        snapshot = fake.snapshot()
+        plan = controller.build_swarm_plan(
+            snapshot, worker_slots=3, provider_free_only=True
+        )
+        assert set(plan["selected_numbers"]) == expected
+        assert plan["provider_launch_count"] == 0
+        assert execution_plan(fake.rows[refused])["supported"] is False
+        assert refused in plan["homeostasis"]["gates"]["lane_refused"]
+        assert any(
+            row["issue"] == refused and row["reason"]
+            for row in plan["homeostasis"]["gates"]["lane_refusal_reasons"]
+        )
+        assert plan["homeostasis"]["status"] != "idle"
+        handoff = claim_workers(
+            plan, snapshot, repository=REPO, run_id=run_id, call=fake
+        )
+        assert handoff["healthy"]
+        assert handoff["provider_launch_count"] == 0
+        assert {
+            row["issue_number"] for row in handoff["provider_free_matrix"]["include"]
+        } == expected
+        before = (len(fake.edits), sum(map(len, fake.comments.values())))
+        duplicate = claim_workers(
+            plan, snapshot, repository=REPO, run_id=run_id + 500, call=fake
+        )
+        assert duplicate["launch_count"] == 0
+        assert before == (len(fake.edits), sum(map(len, fake.comments.values())))
+
+        for worker in handoff["provider_free_matrix"]["include"]:
+            number = worker["issue_number"]
+            comment_id = worker["lease_comment_id"]
+            issue = fake.rows[number]
+            comment = fake(
+                [
+                    "api",
+                    "--method",
+                    "GET",
+                    f"repos/{REPO}/issues/comments/{comment_id}",
+                ]
+            )
+            identity = {
+                "repository": REPO,
+                "run_id": run_id,
+                "run_attempt": 1,
+                "comment_id": comment_id,
+            }
+            verify_worker_claim(issue, comment, **identity)
+            with pytest.raises(ValueError):
+                verify_worker_claim(
+                    issue, comment, **{**identity, "run_id": run_id + 1}
+                )
+            workspace = tmp_path / str(number)
+            for source in (Path("scripts"), Path("runtime") / "swarm"):
+                shutil.copytree(
+                    ROOT / source,
+                    workspace / source,
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+                )
+            if number == failing:
+                (workspace / "scripts" / "invalid_fixture.py").write_text(
+                    "def invalid(:\n", encoding="utf-8"
+                )
+
+            def real_runner(argv, cwd, timeout, number=number):
+                # Only replace the registry's Python executable with the
+                # running interpreter; arguments and command stay canonical.
+                assert argv == (
+                    "python3",
+                    "-m",
+                    "compileall",
+                    "-q",
+                    "scripts",
+                    "runtime/swarm",
+                )
+                assert Path(cwd).is_relative_to(tmp_path)
+                executions.append((number, cwd, sys.executable))
+                return validator._default_runner(
+                    (sys.executable, *argv[1:]), cwd, timeout
+                )
+
+            worker_plan = execution_plan(issue)
+            assert worker_plan["supported"]
+            assert worker_plan["mode"] == "validate"
+            evidence = validator.run_validation(
+                worker_plan["commands"],
+                cwd=str(workspace),
+                timeout=30,
+                runner=real_runner,
+            )
+            evidence_by_issue[number] = evidence
+            assert evidence["command_count"] == 1
+            assert evidence["passed"] is (number != failing)
+            command = evidence["results"][0]
+            assert command["runner_error"] is None
+            assert command["timed_out"] is False
+            assert command["exit_code"] == (1 if number == failing else 0)
+            assert command["output_digest"].startswith("sha256:")
+            if number == failing:
+                assert "SyntaxError" in command["output_tail"]
+            result = build_receipt(
+                issue,
+                lease_comment=comment["body"],
+                changed_files=[],
+                integration_sha=INTEGRATION_SHA,
+                validation=evidence,
+            )
+            assert result["validation"] == evidence
+            assert result["disposition"] == ("blocked" if number == failing else "done")
+            before = (len(fake.edits), sum(map(len, fake.comments.values())))
+            with pytest.raises(ValueError):
+                settle_worker(
+                    result=result,
+                    issue_number=number,
+                    call=fake,
+                    **{**identity, "run_id": run_id + 1},
+                )
+            assert before == (len(fake.edits), sum(map(len, fake.comments.values())))
+            settled = settle_worker(
+                result=result, issue_number=number, call=fake, **identity
+            )
+            assert settled["validation"] == evidence
+            assert "oc-running" not in fake.labels(number)
+            assert ("oc-blocked" if number == failing else "oc-done") in fake.labels(
+                number
+            )
+        waves.append(plan)
+
+    assert len(executions) == 4
+    assert set(evidence_by_issue) == {first, independent, dependent, failing}
+    assert "oc-done" not in fake.labels(failing)
+    assert "oc-queued" in fake.labels(refused)
+    final = controller.build_swarm_plan(
+        fake.snapshot(), worker_slots=3, provider_free_only=True
+    )
+    assert final["selected_numbers"] == []
+    assert refused in final["homeostasis"]["gates"]["lane_refused"]
+    assert final["homeostasis"]["status"] != "idle"
+    assert waves[0]["refill_recommended"]
 
 
 def run_simulation() -> dict:

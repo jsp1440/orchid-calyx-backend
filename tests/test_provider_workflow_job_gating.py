@@ -38,8 +38,20 @@ def test_every_provider_capable_job_is_gated_before_initialization():
 
 def test_swarm_routes_no_api_work_only_to_deterministic_worker():
     text = (WORKFLOWS / "orchid-swarm-controller.yml").read_text(encoding="utf-8")
-    assert "provider_blocked: ${{ steps.no_api.outputs.blocked }}" in text
-    assert "--provider-free-only" in text
+    # NO-API, governor denial, and an absent governor result (ledger failure
+    # skips the step) all block the provider lane; only an explicit "true"
+    # authorization under NO-API "false" opens it.
+    assert (
+        "provider_blocked: ${{ steps.no_api.outputs.blocked == 'true' || "
+        "steps.coding_governor.outputs.authorized != 'true' }}"
+    ) in text
+    assert (
+        'if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && '
+        '"${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then\n'
+        "            provider_args+=(--coding-executor)\n"
+        "          else\n"
+        "            provider_args+=(--provider-free-only)"
+    ) in text
     assert "needs.plan.outputs.provider_blocked == 'false'" in text
     assert "needs.plan.outputs.provider_blocked == 'true'" in text
     assert "oc_swarm_provider_free_worker.py" in text

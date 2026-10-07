@@ -37,7 +37,7 @@ def claimed():
     transport = GitHubTransport()
     # Capability syntax is the registered canonical work-packet declaration.
     transport.issue["body"] = "OC-SWARM-CAPABILITY: firecrawl-acquisition\nOC-SWARM-WRITES: literature"
-    worker = {"issue_number": 42, "reads": [], "writes": ["literature"], "dependencies": [], "provider_free": False, "acquisition": True}
+    worker = {"issue_number": 42, "reads": [], "writes": ["literature"], "dependencies": [], "provider_free": False, "lane_executable": False, "acquisition": True}
     result = claim_workers({"workers": [worker]}, {"issues": [deepcopy(transport.issue)]}, repository=REPO, run_id=123, call=transport)
     assert result["provider_matrix"] == {"include": []}
     assert result["acquisition_launch_count"] == 1

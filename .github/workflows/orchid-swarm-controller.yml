@@ -82,7 +82,7 @@ jobs:
       recovered_count: ${{ steps.leases.outputs.recovered_count }}
       selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
       refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
-      provider_blocked: ${{ steps.no_api.outputs.blocked }}
+      provider_blocked: ${{ steps.no_api.outputs.blocked == 'true' || steps.coding_governor.outputs.authorized != 'true' }}
       summary: ${{ steps.plan.outputs.summary }}
     env:
       GH_TOKEN: ${{ github.token }}
@@ -356,13 +356,58 @@ jobs:
             "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-discovery.json"
           mv "$RUNNER_TEMP/swarm-snapshot.with-discovery.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
+      - name: Check governor admission before selecting coding work
+        id: coding_governor
+        if: steps.no_api.outputs.blocked == 'false' && steps.budget_ledger.outcome == 'success'
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "1"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+          OC_CLAUDE_CHEAP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_CHEAP_ESTIMATED_COST_USD }}
+          OC_CLAUDE_STANDARD_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_STANDARD_ESTIMATED_COST_USD }}
+          OC_CLAUDE_DEEP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_DEEP_ESTIMATED_COST_USD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Before issue selection, conservatively cover every tier and repair.
+          # Per-worker route/ledger checks still run before any provider call.
+          : "${OC_GOVERNOR_DAILY_SPEND_USD:?missing daily spend observation}"
+          : "${OC_GOVERNOR_MONTHLY_SPEND_USD:?missing monthly spend observation}"
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD="$(python3 - <<'PY'
+          import os
+          from decimal import Decimal
+          from scripts.oc_model_router import DEFAULT_ESTIMATED_COST_USD
+          costs = [
+              Decimal(os.environ.get(f"OC_CLAUDE_{tier.upper()}_ESTIMATED_COST_USD") or default)
+              for tier, default in DEFAULT_ESTIMATED_COST_USD.items()
+          ]
+          if any(not cost.is_finite() or cost < 0 for cost in costs):
+              raise ValueError("invalid coding admission cost")
+          print(max(costs))
+          PY
+          )"
+          export OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD
+          python3 scripts/swarm_governor_precheck.py
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash
         run: |
           set -euo pipefail
           provider_args=()
-          if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
+          if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then
+            provider_args+=(--coding-executor)
+          else
             provider_args+=(--provider-free-only)
           fi
           # The edit lane executes only on a run of the integration ref (see the
