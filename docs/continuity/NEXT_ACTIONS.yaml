@@ -1,0 +1,46 @@
+schema: oc_continuity_next_actions.v1
+repository: jsp1440/orchid-calyx-backend
+basis_head: 4cd307e3f9276c717691dac95875150e292263f6
+
+selection_rule: "Choose the smallest executable action that advances the requested lane without reopening settled discovery."
+
+actions:
+  - id: continuity_integrate
+    priority: 1
+    state: candidate
+    action: "Independently review this continuity-layer change, run documentation/schema sanity checks, and integrate to oc-autonomous-integration only if policy permits."
+    done_when:
+      - continuity files are internally consistent
+      - startup rule does not weaken AGENTS.md or security boundaries
+      - no secrets, prompts, protected localities, or fabricated validation claims are present
+      - independent acceptance applies to the exact candidate head
+
+  - id: continuity_automation
+    priority: 2
+    state: deferred_until_continuity_integrated
+    action: "Add a deterministic validator/updater for continuity manifests so stale SHA/evidence relationships fail closed."
+    done_when:
+      - schema validation is deterministic and provider-free
+      - exact-head evidence cannot be attached to a different head
+      - stale/contradictory records are reported, not silently rewritten
+
+  - id: cross_repo_continuity
+    priority: 3
+    state: deferred
+    action: "Define a minimal frontend/backend shared handoff without copying repository-specific truth between repos."
+    done_when:
+      - each repository remains authoritative for its own state
+      - cross-repo dependencies use explicit refs and provenance
+
+handoff_template:
+  required_fields:
+    - repository
+    - branch
+    - exact_head
+    - objective
+    - changed_paths
+    - tests_or_checks_run
+    - exact_results
+    - independent_acceptance
+    - unresolved_gate
+    - next_smallest_safe_action
