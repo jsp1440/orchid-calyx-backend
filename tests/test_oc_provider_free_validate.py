@@ -18,6 +18,33 @@ from scripts import oc_provider_free_validate as executor
 from scripts import oc_validation_commands as registry
 
 
+#: Top-level packages that live in this repository. A ``-m`` target outside this set
+#: (``pytest``, ``compileall``) is an installed or standard-library module, not ours.
+PROJECT_PACKAGES = frozenset({"scripts", "app", "runtime", "tests"})
+
+
+def missing_registry_targets(commands, root) -> list[str]:
+    """Registry arguments that name a file, directory or module that does not exist.
+
+    A part after ``-m`` is a dotted module name, not a path: ``scripts.oc_brain_pulse``
+    is checked as ``scripts/oc_brain_pulse.py`` (or a package), never as a file with a
+    dot in its name. Modules outside this repository (``pytest``) are not checked. Every
+    other part keeps the original path rule.
+    """
+    missing: list[str] = []
+    for command in commands:
+        argv = tuple(command.argv)
+        for index, part in enumerate(argv):
+            if index and argv[index - 1] == "-m" and part.split(".")[0] in PROJECT_PACKAGES:
+                module = root.joinpath(*part.split("."))
+                if not (module.with_suffix(".py").exists() or (module / "__init__.py").exists()):
+                    missing.append(f"{command.command_id} names module {part}")
+            elif part.startswith(("tests/", "scripts")):
+                if not (root / part).exists():
+                    missing.append(f"{command.command_id} names {part}")
+    return missing
+
+
 class TestRegistry:
     def test_every_registered_command_has_an_argument_vector(self) -> None:
         assert registry.VALIDATION_COMMANDS
@@ -36,10 +63,8 @@ class TestRegistry:
         from pathlib import Path
 
         root = Path(__file__).resolve().parents[1]
-        for command in registry.VALIDATION_COMMANDS.values():
-            for part in command.argv:
-                if part.startswith(("tests/", "scripts")):
-                    assert (root / part).exists(), f"{command.command_id} names {part}"
+        missing = missing_registry_targets(registry.VALIDATION_COMMANDS.values(), root)
+        assert not missing, missing
 
     def test_an_unknown_identifier_fails_closed(self) -> None:
         with pytest.raises(registry.UnknownValidationCommand, match="no validation command"):
@@ -172,3 +197,38 @@ class TestTheLaneCannotSpend:
         evidence = executor.run_validation(["control-plane-compiles"], runner=pass_all)
         assert evidence["safety"]["provider_calls"] is False
         assert evidence["safety"]["credentials_visible_to_commands"] is False
+
+
+class TestRegistryTargetCheck:
+    """The registry guard itself: it must accept modules and still catch missing targets."""
+
+    @staticmethod
+    def _command(*argv: str):
+        from types import SimpleNamespace
+
+        return SimpleNamespace(command_id="fixture", argv=argv)
+
+    def test_an_existing_module_after_dash_m_is_accepted(self, tmp_path) -> None:
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "present.py").write_text("")
+        command = self._command("python3", "-m", "scripts.present", "--flag")
+        assert missing_registry_targets([command], tmp_path) == []
+
+    def test_a_missing_module_after_dash_m_is_reported(self, tmp_path) -> None:
+        (tmp_path / "scripts").mkdir()
+        command = self._command("python3", "-m", "scripts.absent")
+        assert missing_registry_targets([command], tmp_path) == [
+            "fixture names module scripts.absent"
+        ]
+
+    def test_a_missing_path_is_still_reported(self, tmp_path) -> None:
+        command = self._command("python3", "-m", "pytest", "tests/test_absent.py")
+        assert missing_registry_targets([command], tmp_path) == [
+            "fixture names tests/test_absent.py"
+        ]
+
+    def test_a_dotted_module_is_not_mistaken_for_a_missing_path(self, tmp_path) -> None:
+        # The regression: "scripts.x" starts with "scripts" but is not a path.
+        (tmp_path / "scripts").mkdir()
+        (tmp_path / "scripts" / "x.py").write_text("")
+        assert missing_registry_targets([self._command("python3", "-m", "scripts.x")], tmp_path) == []
