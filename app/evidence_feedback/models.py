@@ -79,6 +79,7 @@ def feedback_fingerprint(
     *,
     object_id: str,
     object_version_hash: str,
+    object_type: ObjectType,
     feedback_class: FeedbackClass,
     statement: str,
     proposed_replacement: str | None,
@@ -87,6 +88,10 @@ def feedback_fingerprint(
     payload = {
         "object_id": object_id.strip(),
         "object_version_hash": object_version_hash.strip().casefold(),
+        # The type is part of duplicate identity. This is essential for provisional
+        # member snapshots: the same object id/content may be claimed under two
+        # different types, which can route to materially different review lanes.
+        "object_type": object_type.value,
         "feedback_class": feedback_class.value,
         "statement": " ".join(statement.split()).casefold(),
         "proposed_replacement": (

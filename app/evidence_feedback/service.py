@@ -208,6 +208,7 @@ class EvidenceFeedbackService:
         fingerprint = feedback_fingerprint(
             object_id=object_id,
             object_version_hash=object_version_hash,
+            object_type=object_type,
             feedback_class=feedback_class,
             statement=statement,
             proposed_replacement=proposed_replacement,
