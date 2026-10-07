@@ -96,7 +96,8 @@ def admit(transport=None, *, body=None):
         "dependencies": [],
         "lane_executable": routing.lane_executable,
         "provider_free": routing.provider_free,
-        "acquisition": "firecrawl-acquisition" in routing.blocking_provider_capabilities,
+        "acquisition": "firecrawl-acquisition"
+        in routing.blocking_provider_capabilities,
     }
     result = claims.claim_workers(
         {"workers": [worker]},

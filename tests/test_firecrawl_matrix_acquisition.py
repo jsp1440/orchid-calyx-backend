@@ -330,6 +330,8 @@ async def test_canonical_worker_rechecks_real_claim_contract_before_acquisition(
         "reads": ["taxonomy"],
         "writes": ["literature"],
         "provider_free": False,
+        "lane_executable": False,
+        "acquisition": True,
     }
     claimed = claim_workers(
         {"workers": [worker]},
