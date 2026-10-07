@@ -302,3 +302,88 @@ def test_live_adapter_reports_two_planned_lanes_with_provider_gate_isolated():
     assert lanes["taxonomy"]["planned"] == []
     assert plan["provider_launch_count"] == 0
     assert all(lane["running"] == [] for lane in lanes.values())
+
+
+# ---- Codex review findings on a857e71 -------------------------------------------
+
+
+def test_every_established_product_lane_key_has_an_explicit_decision():
+    """``oc-lane:<key>`` is the label work discovery files under. A new product lane must
+    be mapped (or deliberately left unmapped) here, never dropped by accident."""
+    from scripts import oc_product_lanes
+
+    product_keys = {lane.key for lane in oc_product_lanes.PRODUCT_LANES}
+    decided = set(ml.PRODUCT_LANE_ALIASES) | set(ml.PRODUCT_LANE_UNMAPPED)
+    assert product_keys == decided
+    assert not set(ml.PRODUCT_LANE_ALIASES) & set(ml.PRODUCT_LANE_UNMAPPED)
+    assert set(ml.PRODUCT_LANE_ALIASES.values()) <= set(ml.LANES_BY_KEY)
+
+
+@pytest.mark.parametrize(
+    ("label", "lane"),
+    [
+        ("atlas", "atlas-geography-environment"),
+        ("interaction-graph", "interaction-knowledge-graph"),
+        ("literature", "literature"),
+        ("matrix-id", "matrix-id"),
+        ("research-station", "research-station"),
+        ("university-education", "university-education"),
+    ],
+)
+def test_established_product_lane_labels_map_to_their_module_lane(label, lane):
+    assert ml.assign_lane(_issue(1, label)) == (lane, "declared")
+    report = ml.lane_report([_issue(1, label, "oc-queued")])
+    assert report["lanes"][lane]["replenishable"] == [1]
+    assert report["unassigned_unfinished"] == 0
+
+
+def test_product_lane_keys_with_no_single_module_lane_stay_unassigned_but_visible():
+    issues = [
+        _issue(1, "calyx", "oc-queued"),
+        _issue(2, "calyx", "oc-queued"),
+        _issue(3, "lexicon", "oc-queued"),
+        _issue(4, "no-such-lane", "oc-queued"),
+    ]
+    for issue in issues:
+        assert ml.assign_lane(issue) == (ml.UNASSIGNED, "none")
+    report = ml.lane_report(issues)
+    assert report["unassigned_unfinished"] == 4
+    # Not silently lost: grouped by the key each issue declared.
+    assert report["unassigned_by_declared_key"] == {"calyx": 2, "lexicon": 1, "no-such-lane": 1}
+
+
+def test_a_title_keyword_never_overrides_a_declared_product_key():
+    issue = _issue(1, "calyx", "oc-queued", title="Atlas elevation work")
+    assert ml.assign_lane(issue) == (ml.UNASSIGNED, "none")
+
+
+def test_only_oc_running_makes_a_lane_executing():
+    running = ml.lane_report([_issue(1, "literature", "oc-running")])
+    assert running["lanes"]["literature"]["state"] == "executing"
+    assert running["lanes"]["literature"]["running"] == [1]
+
+
+def test_queued_repair_work_is_replenishable_not_executing():
+    report = ml.lane_report([_issue(1, "literature", "oc-queued", "oc-repair")])
+    lane = report["lanes"]["literature"]
+    assert lane["state"] == "replenishable"
+    assert lane["running"] == []
+    assert lane["next_mission"] == 1
+
+
+def test_validating_work_holds_no_execution_lane_and_is_not_reported_empty():
+    report = ml.lane_report([_issue(1, "literature", "oc-validating")])
+    lane = report["lanes"]["literature"]
+    assert lane["state"] == "validating"
+    assert lane["running"] == [] and lane["validating"] == [1]
+    assert report["summary"]["validating"] == ["literature"]
+    assert report["summary"]["executing"] == []
+
+
+def test_validating_work_does_not_hide_a_queued_mission_in_the_same_lane():
+    report = ml.lane_report(
+        [_issue(1, "literature", "oc-validating"), _issue(2, "literature", "oc-queued")]
+    )
+    lane = report["lanes"]["literature"]
+    assert lane["state"] == "replenishable" and lane["next_mission"] == 2
+    assert lane["validating"] == [1]

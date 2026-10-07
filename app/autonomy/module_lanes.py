@@ -70,8 +70,29 @@ LANES_BY_KEY: dict[str, ModuleLane] = {lane.key: lane for lane in MODULE_LANES}
 
 REQUIRED_LANE_KEYS: tuple[str, ...] = tuple(LANES_BY_KEY)
 
+#: ``oc-lane:<key>`` is also the label work discovery files under
+#: (``scripts/oc_product_lanes.py``), so issues arrive carrying those keys. A key is
+#: translated only where it names one module lane unambiguously. The rest are known
+#: product-lane keys with no single module lane; they stay ``unassigned`` (never
+#: guessed) but are counted by declared key so they are visible, not silently lost.
+PRODUCT_LANE_ALIASES: dict[str, str] = {
+    "literature": "literature",
+    "matrix-id": "matrix-id",
+    "research-station": "research-station",
+    "university-education": "university-education",
+    "atlas": "atlas-geography-environment",
+    "interaction-graph": "interaction-knowledge-graph",
+}
+PRODUCT_LANE_UNMAPPED: frozenset[str] = frozenset(
+    {"calyx", "lexicon", "vision-lab", "improvement-discovery", "platform"}
+)
+
 _DONE = frozenset({"oc-done"})
-_RUNNING = frozenset({"oc-running", "oc-validating", "oc-repair"})
+#: Only ``oc-running`` is an execution lease. The portfolio scheduler counts nothing
+#: else against capacity: ``oc-validating`` never consumes a lane, and an
+#: ``oc-queued`` + ``oc-repair`` issue is eligible repair work, not running work.
+_RUNNING = frozenset({"oc-running"})
+_VALIDATING = frozenset({"oc-validating"})
 _HELD = frozenset({"oc-blocked", "oc-runtime-backoff", "oc-repair-backoff"})
 
 
@@ -86,21 +107,30 @@ def _is_open(issue: Mapping[str, Any]) -> bool:
     return str(issue.get("state") or "OPEN").upper() == "OPEN"
 
 
+def declared_keys(issue: Mapping[str, Any]) -> list[str]:
+    """Every lane key the issue declares, by ``oc-lane:`` label or body marker."""
+    declared = sorted(
+        name[len(LANE_LABEL_PREFIX):] for name in _names(issue) if name.startswith(LANE_LABEL_PREFIX)
+    )
+    declared += [m.lower() for m in _MARKER.findall(str(issue.get("body") or ""))]
+    return declared
+
+
 def assign_lane(issue: Mapping[str, Any]) -> tuple[str, str]:
     """Return ``(lane_key, how)``; ``how`` is ``declared``, ``inferred`` or ``none``.
 
     An explicit declaration that names no registered lane fails closed to
     ``unassigned``; it is never re-inferred from the title, because the author
-    said something specific and wrong, not nothing.
+    said something specific and wrong, not nothing. Established product-lane keys
+    are translated through ``PRODUCT_LANE_ALIASES`` where the match is unambiguous.
     """
-    declared = sorted(
-        name[len(LANE_LABEL_PREFIX):] for name in _names(issue) if name.startswith(LANE_LABEL_PREFIX)
-    )
-    declared += [m.lower() for m in _MARKER.findall(str(issue.get("body") or ""))]
-    if declared:
-        distinct = set(declared)
-        if len(distinct) == 1 and next(iter(distinct)) in LANES_BY_KEY:
-            return next(iter(distinct)), "declared"
+    distinct = set(declared_keys(issue))
+    if distinct:
+        if len(distinct) == 1:
+            key = next(iter(distinct))
+            key = PRODUCT_LANE_ALIASES.get(key, key)
+            if key in LANES_BY_KEY:
+                return key, "declared"
         return UNASSIGNED, "none"
     title = f" {str(issue.get('title') or '').lower()} "
     hits = {
@@ -140,7 +170,8 @@ def lane_report(
     Lane state, in order: ``executing`` (work is running), ``replenishable`` (an
     ungated queued mission exists), ``gated`` (unfinished work exists but every
     item carries a named gate), ``capability_gap`` (only unstaffed work remains),
-    ``empty`` (nothing unfinished: discovery should replenish). ``empty`` is
+    ``validating`` (only work in ``oc-validating`` remains, which holds no execution
+    lane), ``empty`` (nothing unfinished: discovery should replenish). ``empty`` is
     never reported healthy here; whether idle is healthy is the controller's
     homeostasis verdict, which also needs discovery evidence.
 
@@ -173,7 +204,9 @@ def lane_report(
         lane, how = assign_lane(issue)
         number = int(issue.get("number") or 0)
         row = {"number": number, "how": how, "gate": None, "running": bool(names & _RUNNING),
-               "queued": "oc-queued" in names, "gap": number in gap}
+               "validating": bool(names & _VALIDATING) and not names & _RUNNING,
+               "queued": "oc-queued" in names, "gap": number in gap,
+               "declared": declared_keys(issue)}
         row["gate"] = _gate_for(issue, dependency_blocked=number in dep, provider_gated=number in prov)
         if row["gate"] is None:
             row["gate"] = coding_gates.get(number)
@@ -189,6 +222,7 @@ def lane_report(
             if r["gate"]:
                 gated.setdefault(r["gate"], []).append(r["number"])
         gaps = [r["number"] for r in rows if r["gap"] and not r["gate"]]
+        validating = [r["number"] for r in rows if r["validating"]]
         if running:
             state = "executing"
         elif replenishable:
@@ -197,6 +231,8 @@ def lane_report(
             state = "gated"
         elif gaps:
             state = "capability_gap"
+        elif validating:
+            state = "validating"
         else:
             state = "empty"
         lanes[key] = {
@@ -206,6 +242,7 @@ def lane_report(
             "replenishable": sorted(replenishable),
             "gates": {gate: sorted(nums) for gate, nums in sorted(gated.items())},
             "capability_gap": sorted(gaps),
+            "validating": sorted(validating),
             "refusal_reasons": [
                 {"issue": r["number"], "reason": reasons[r["number"]]}
                 for r in sorted(rows, key=lambda r: r["number"])
@@ -218,10 +255,22 @@ def lane_report(
         "lanes": lanes,
         "summary": {
             state: sorted(k for k, v in lanes.items() if k != UNASSIGNED and v["state"] == state)
-            for state in ("executing", "replenishable", "gated", "capability_gap", "empty")
+            for state in (
+                "executing", "replenishable", "gated", "capability_gap", "validating", "empty"
+            )
         },
         "unassigned_unfinished": lanes[UNASSIGNED]["unfinished"],
+        "unassigned_by_declared_key": _declared_counts(buckets[UNASSIGNED]),
     }
+
+
+def _declared_counts(rows: Iterable[Mapping[str, Any]]) -> dict[str, int]:
+    """Unassigned work grouped by the lane key it declared, so it stays visible."""
+    counts: dict[str, int] = {}
+    for row in rows:
+        for key in sorted(set(row["declared"])):
+            counts[key] = counts.get(key, 0) + 1
+    return dict(sorted(counts.items()))
 
 
 def report_from_plan(snapshot: Mapping[str, Any], plan: Mapping[str, Any]) -> dict[str, Any]:
