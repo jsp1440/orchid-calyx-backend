@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 
+from app.provider_reservoir.routing import is_lane_executable, is_provider_free
 from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_budget_blocker import is_budget_denial
 from scripts.oc_budget_denial_route import decide_denial_route
@@ -80,6 +81,19 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
         number = worker["issue_number"]
         phase = "precheck"
         try:
+            planned_issue = original.get(number)
+            if planned_issue is None:
+                skipped.append(
+                    {"issue": number, "reason": "issue_missing_from_plan_snapshot"}
+                )
+                continue
+            if worker.get("lane_executable") is not is_lane_executable(
+                planned_issue
+            ) or worker.get("provider_free") is not is_provider_free(planned_issue):
+                skipped.append(
+                    {"issue": number, "reason": "execution_contract_changed"}
+                )
+                continue
             current = view(number)
             labels = _labels(current)
             if (current["number"] != number or current["state"].upper() != "OPEN"

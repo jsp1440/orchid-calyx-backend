@@ -41,6 +41,37 @@ OPTIONAL_MARKER = re.compile(
     r"^OC-SWARM-PROVIDER-OPTIONAL:\s*(?P<name>[a-z0-9][a-z0-9-]*)\s*$",
     re.IGNORECASE | re.MULTILINE,
 )
+DISPOSITION_MARKER = re.compile(
+    r"^OC-SWARM-DISPOSITION:\s*(?P<name>\S+)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+VALIDATION_MARKER = re.compile(
+    r"^OC-SWARM-VALIDATE:\s*(?P<name>[a-z0-9][a-z0-9-]*)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+WRITE_SCOPE_MARKER = re.compile(
+    r"^OC-SWARM-WRITES:\s*(?P<scopes>.+?)\s*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+DISCOVERY_FINGERPRINT_MARKER = re.compile(
+    r"^OC-DISCOVERY-FINGERPRINT:\s*(?P<fingerprint>[a-f0-9]{16})\s*$",
+    re.MULTILINE,
+)
+ALLOWED_DISPOSITIONS = frozenset({"blocked", "done", "owner-gate"})
+MAX_VALIDATION_COMMANDS = 6
+# Kept in sync with scripts/oc_validation_commands.py by the routing tests.
+# Unknown or newly added commands fail closed until both execution and
+# admission recognize them.
+DETERMINISTIC_VALIDATION_COMMANDS = frozenset(
+    {
+        "control-plane-tests",
+        "provider-routing-tests",
+        "health-contract-tests",
+        "calyx-async-acceptance",
+        "production-runtime-imports",
+        "control-plane-compiles",
+    }
+)
 
 #: Executors the deterministic lane actually implements, by task name.
 #:
@@ -67,6 +98,55 @@ OPTIONAL_MARKER = re.compile(
 DETERMINISTIC_EXECUTORS = frozenset({"reconcile", "validate", "edit"})
 
 
+def executor_contract_refusal(task: str, body: str) -> str | None:
+    """Return why a deterministic executor request is not safe to dispatch."""
+    modes = [
+        match.group("task").lower()
+        for match in PROVIDER_FREE_MARKER.finditer(body or "")
+    ]
+    if len(modes) != 1 or modes[0] != task:
+        return "exactly one matching OC-SWARM-PROVIDER-FREE marker is required"
+
+    dispositions = [
+        match.group("name").lower() for match in DISPOSITION_MARKER.finditer(body or "")
+    ]
+    if len(dispositions) != 1 or dispositions[0] not in ALLOWED_DISPOSITIONS:
+        return "exactly one supported OC-SWARM-DISPOSITION marker is required"
+
+    commands = [
+        match.group("name").lower() for match in VALIDATION_MARKER.finditer(body or "")
+    ]
+    if task == "reconcile":
+        if commands:
+            return "reconcile executor does not accept validation commands"
+        return None
+
+    if not commands:
+        return f"{task} executor requires a registered OC-SWARM-VALIDATE command"
+    if len(commands) > MAX_VALIDATION_COMMANDS:
+        return f"at most {MAX_VALIDATION_COMMANDS} validation commands may be declared"
+    unknown = sorted(set(commands) - DETERMINISTIC_VALIDATION_COMMANDS)
+    if unknown:
+        return f"unregistered validation command(s): {', '.join(unknown)}"
+
+    if task == "edit":
+        if len(commands) != 1:
+            return "edit executor requires exactly one validation command"
+        fingerprints = [
+            match.group("fingerprint")
+            for match in DISCOVERY_FINGERPRINT_MARKER.finditer(body or "")
+        ]
+        if len(fingerprints) != 1:
+            return "edit executor requires exactly one discovery fingerprint"
+        write_scopes = [
+            [scope.strip().lower() for scope in match.group("scopes").split(",")]
+            for match in WRITE_SCOPE_MARKER.finditer(body or "")
+        ]
+        if write_scopes != [["repo-global"]]:
+            return "edit executor requires the sole repo-global write scope"
+    return None
+
+
 @dataclass(frozen=True)
 class TaskRouting:
     """Where a task's work goes, split by what each part actually needs."""
@@ -77,6 +157,7 @@ class TaskRouting:
     blocking_provider_capabilities: list[str]
     optional_provider_capabilities: list[str]
     reasons: list[str] = field(default_factory=list)
+    executor_contract_error: str | None = None
 
     @property
     def has_deterministic_work(self) -> bool:
@@ -120,7 +201,10 @@ class TaskRouting:
         So admission requires a named executor that exists. A capability list
         alone says what to build, not who can build it.
         """
-        return self.executable_task is not None
+        return (
+            self.executable_task is not None
+            and self.executor_contract_error is None
+        )
 
     @property
     def unexecutable_reason(self) -> str | None:
@@ -132,6 +216,8 @@ class TaskRouting:
         """
         if self.lane_executable:
             return None
+        if self.executable_task is not None:
+            return self.executor_contract_error
         if self.provider_free_task:
             return (
                 f"no deterministic executor named {self.provider_free_task!r} exists; "
@@ -190,6 +276,11 @@ def route_task(issue: dict) -> TaskRouting:
         reasons.append(f"blocking-provider-capabilities={len(blocking)}")
     if not declared and not provider_free_task:
         reasons.append("undeclared: no capability stated, so no lane is inferred")
+    contract_error = (
+        executor_contract_refusal(provider_free_task, body)
+        if provider_free_task in DETERMINISTIC_EXECUTORS
+        else None
+    )
 
     return TaskRouting(
         issue_number=number,
@@ -198,6 +289,7 @@ def route_task(issue: dict) -> TaskRouting:
         blocking_provider_capabilities=sorted(blocking),
         optional_provider_capabilities=sorted(optional),
         reasons=reasons,
+        executor_contract_error=contract_error,
     )
 
 

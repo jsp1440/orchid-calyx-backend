@@ -5,13 +5,20 @@ from pathlib import Path
 
 import pytest
 
+from app.provider_reservoir.routing import is_lane_executable, is_provider_free
 from scripts.oc_swarm_claim import claim_workers, github, verify_worker_claim
 from scripts.oc_swarm_write_set_verifier import parse_lease_claim
 
 
 def issue(number=1, **updates):
-    return {"number": number, "title": "Bounded repository work", "body": "",
-            "state": "OPEN", "labels": ["oc-queued", "oc-p4"], **updates}
+    return {
+        "number": number,
+        "title": "Bounded repository work",
+        "body": "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done",
+        "state": "OPEN",
+        "labels": ["oc-queued", "oc-p4"],
+        **updates,
+    }
 
 
 class GitHub:
@@ -45,12 +52,29 @@ class GitHub:
 
 
 def execute(rows, api=None):
-    plan = {"workers": [{"issue_number": row["number"], "reads": [], "writes": ["control-plane"],
-                         "dependencies": [9] if row.get("body") else []}
-                        for row in rows if row["number"] != 9]}
+    plan = {
+        "workers": [
+            {
+                "issue_number": row["number"],
+                "reads": [],
+                "writes": ["control-plane"],
+                "dependencies": [9] if "OC-SWARM-DEPENDS-ON" in row.get("body", "") else [],
+                "lane_executable": is_lane_executable(row),
+                "provider_free": is_provider_free(row),
+            }
+            for row in rows
+            if row["number"] != 9
+        ]
+    }
     api = api or GitHub(rows)
-    return claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
-                         run_attempt=2, call=api), api
+    return claim_workers(
+        plan,
+        {"issues": rows},
+        repository="owner/repo",
+        run_id=123,
+        run_attempt=2,
+        call=api,
+    ), api
 
 
 def test_claim_removes_queued_preserves_priority_and_returns_only_confirmed_matrix():
@@ -90,7 +114,16 @@ def test_plan_to_claim_races_fail_closed(update):
 
 
 def test_dependency_reopened_after_plan_never_claims():
-    rows = [issue(body="OC-SWARM-DEPENDS-ON: #9"), issue(9, state="CLOSED", labels=[])]
+    rows = [
+        issue(
+            body=(
+                "OC-SWARM-PROVIDER-FREE: reconcile\n"
+                "OC-SWARM-DISPOSITION: done\n"
+                "OC-SWARM-DEPENDS-ON: #9"
+            )
+        ),
+        issue(9, state="CLOSED", labels=[]),
+    ]
     api = GitHub(rows)
     api.rows[9]["state"] = "OPEN"
     result, _ = execute(rows, api)
@@ -99,8 +132,57 @@ def test_dependency_reopened_after_plan_never_claims():
 
 
 def test_still_satisfied_dependency_can_claim():
-    result, _ = execute([issue(body="OC-SWARM-DEPENDS-ON: #9"), issue(9, state="CLOSED", labels=[])])
+    result, _ = execute(
+        [
+            issue(
+                body=(
+                    "OC-SWARM-PROVIDER-FREE: reconcile\n"
+                    "OC-SWARM-DISPOSITION: done\n"
+                    "OC-SWARM-DEPENDS-ON: #9"
+                )
+            ),
+            issue(9, state="CLOSED", labels=[]),
+        ]
+    )
     assert result["launch_count"] == 1
+
+
+def test_claim_refuses_a_malformed_executor_contract_before_github_mutation():
+    malformed = issue(
+        body=(
+            "OC-SWARM-PROVIDER-FREE: edit\n"
+            "OC-SWARM-DISPOSITION: done\n"
+            "OC-SWARM-VALIDATE: control-plane-compiles"
+        )
+    )
+    plan = {
+        "workers": [
+            {
+                "issue_number": malformed["number"],
+                "reads": [],
+                "writes": ["repo-global"],
+                "dependencies": [],
+                "lane_executable": True,
+                "provider_free": True,
+            }
+        ]
+    }
+    api = GitHub([malformed])
+
+    result = claim_workers(
+        plan,
+        {"issues": [malformed]},
+        repository="owner/repo",
+        run_id=123,
+        run_attempt=2,
+        call=api,
+    )
+
+    assert result["launch_count"] == 0
+    assert result["skipped"] == [
+        {"issue": malformed["number"], "reason": "execution_contract_changed"}
+    ]
+    assert not api.edits and not api.comments
 
 
 def test_unknown_receipt_write_outcome_never_dispatches_or_retries():
@@ -208,11 +290,30 @@ def test_workflow_dispatches_confirmed_matrix_and_retains_partial_failure_eviden
 
 
 def test_confirmed_claims_keep_lane_classification_and_split_matrices():
-    rows = [issue(), issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")]
-    plan = {"workers": [
-        {"issue_number": 1, "reads": [], "writes": ["control-plane"], "dependencies": [], "provider_free": False},
-        {"issue_number": 2, "reads": [], "writes": ["literature"], "dependencies": [], "provider_free": True},
-    ]}
+    rows = [
+        issue(1, body="OC-SWARM-CAPABILITY: open-ended-code-authoring"),
+        issue(2, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"),
+    ]
+    plan = {
+        "workers": [
+            {
+                "issue_number": 1,
+                "reads": [],
+                "writes": ["control-plane"],
+                "dependencies": [],
+                "lane_executable": False,
+                "provider_free": False,
+            },
+            {
+                "issue_number": 2,
+                "reads": [],
+                "writes": ["literature"],
+                "dependencies": [],
+                "lane_executable": True,
+                "provider_free": True,
+            },
+        ]
+    }
     api = GitHub(rows)
     result = claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=123,
                            run_attempt=1, call=api)

@@ -34,6 +34,12 @@ import re
 import sys
 from typing import Any
 
+REPOSITORY_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if REPOSITORY_ROOT not in sys.path:
+    sys.path.insert(0, REPOSITORY_ROOT)
+
+from app.provider_reservoir.routing import executor_contract_refusal
+
 MODE = re.compile(
     r"^OC-SWARM-PROVIDER-FREE:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
 )
@@ -73,11 +79,19 @@ def execution_plan(issue: dict[str, Any]) -> dict[str, Any]:
     body = str(issue.get("body") or "")
     mode_match = MODE.search(body)
     mode = mode_match.group(1).lower() if mode_match else ""
+    supported = mode in SUPPORTED_MODES
+    refusal_reason = (
+        executor_contract_refusal(mode, body)
+        if supported
+        else f"unsupported provider-free executor: {mode or 'missing'}"
+    )
     return {
         "schema": "oc.provider-free-execution-plan.v1",
         "issue_number": int(issue.get("number") or 0),
-        "mode": mode if mode in SUPPORTED_MODES else "",
-        "supported": mode in SUPPORTED_MODES,
+        "mode": mode if supported else "",
+        "supported": supported,
+        "dispatchable": supported and refusal_reason is None,
+        "refusal_reason": refusal_reason,
         "commands": declared_validation_commands(body),
     }
 
@@ -105,6 +119,9 @@ def build_receipt(
     edit: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     body = str(issue.get("body") or "")
+    plan = execution_plan(issue)
+    if not plan["dispatchable"]:
+        raise ValueError(str(plan["refusal_reason"]))
     mode_match = MODE.search(body)
     disposition_match = DISPOSITION.search(body)
     if not mode_match or mode_match.group(1).lower() not in SUPPORTED_MODES:

@@ -608,6 +608,11 @@ jobs:
           python3 scripts/oc_swarm_provider_free_worker.py \
             --plan --issue-json "$issue" > "$RUNNER_TEMP/provider-free-plan.json"
           mode=$(jq -r '.mode' "$RUNNER_TEMP/provider-free-plan.json")
+          dispatchable=$(jq -r '.dispatchable' "$RUNNER_TEMP/provider-free-plan.json")
+          if [[ "$dispatchable" != "true" ]]; then
+            echo "Provider-free execution contract refused: $(jq -r '.refusal_reason' "$RUNNER_TEMP/provider-free-plan.json")" >&2
+            exit 2
+          fi
 
           validation_args=()
           if [[ "$mode" == "validate" ]]; then
