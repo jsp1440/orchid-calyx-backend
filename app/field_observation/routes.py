@@ -216,7 +216,10 @@ async def upload_original_media(
             storage_key=stored.storage_key,
             content_hash=stored.sha256,
             media_kind=kind,
-            photographer_subject=subject,
+            # Owner sessions may identify a person by email. The existing media
+            # contract intentionally stores only opaque subject tokens; the
+            # parent observation already carries the observer identity.
+            photographer_subject=subject if "@" not in subject else None,
             captured_at=_parse_captured_at(captured_at),
             license=None,
             provenance={
