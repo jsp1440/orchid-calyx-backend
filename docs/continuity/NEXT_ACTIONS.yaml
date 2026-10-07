@@ -1,12 +1,21 @@
 schema: oc_continuity_next_actions.v1
 repository: jsp1440/orchid-calyx-backend
-basis_head: 4cd307e3f9276c717691dac95875150e292263f6
+basis_head: b8d66f87214c1325fa2f8033e3ae6573b9a0bee9
 
 selection_rule: "Choose the smallest executable action that advances the requested lane without reopening settled discovery."
 
 actions:
-  - id: continuity_integrate
+  - id: coding_executor_authorization
     priority: 1
+    state: blocked
+    action: "Owner/authorized operator must bind or authorize a suitable provider-free executor for queued issue #1742's open-ended-code-authoring lane without expanding paid-provider authority; alternatively, maintainers must select already-defined safe work fitting an existing deterministic executor. Stop implementation at this boundary; do not manufacture tasks, retry unchanged discovery, or declare self-continuation proved."
+    done_when:
+      - suitable executor capability and authorization are evidenced for the selected work
+      - paid-provider authority remains unchanged
+      - a subsequent real run demonstrates useful-work continuation with exact-head evidence rather than planning alone
+
+  - id: continuity_integrate
+    priority: 2
     state: candidate
     action: "Independently review this continuity-layer change, run documentation/schema sanity checks, and integrate to oc-autonomous-integration only if policy permits."
     done_when:
@@ -16,7 +25,7 @@ actions:
       - independent acceptance applies to the exact candidate head
 
   - id: continuity_automation
-    priority: 2
+    priority: 3
     state: deferred_until_continuity_integrated
     action: "Add a deterministic validator/updater for continuity manifests so stale SHA/evidence relationships fail closed."
     done_when:
@@ -25,7 +34,7 @@ actions:
       - stale/contradictory records are reported, not silently rewritten
 
   - id: cross_repo_continuity
-    priority: 3
+    priority: 4
     state: deferred
     action: "Define a minimal frontend/backend shared handoff without copying repository-specific truth between repos."
     done_when:
