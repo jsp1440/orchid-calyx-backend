@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 import pytest
 
+from app.provider_reservoir.routing import is_lane_executable, is_provider_free
 from scripts import oc_control_plane_health as health
 from scripts import oc_swarm_claim as claims
 
@@ -93,6 +94,8 @@ def admit(transport=None, *, body=None):
         "reads": [],
         "writes": ["control-plane"],
         "dependencies": [],
+        "lane_executable": is_lane_executable(transport.issue),
+        "provider_free": is_provider_free(transport.issue),
     }
     result = claims.claim_workers(
         {"workers": [worker]},
