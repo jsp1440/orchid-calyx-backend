@@ -406,3 +406,38 @@ def test_steward_fails_when_every_queued_issue_is_a_conflict(tmp_path, capsys):
         "relabel_command"
     ]
     assert expected_fix in nested["body"]
+
+
+def test_running_frontend_issue_does_not_fail_the_scan_for_unobserved_leases():
+    # Brain #206 / run 37131188915: frontend #797 was `oc-running` (a worker was
+    # executing it) while the steward, which never reads the frontend ledger,
+    # reported it as "running with 0 leases" and returned planner_failed.
+    running = {
+        "number": 797,
+        "title": "P2 actively-running lane",
+        "labels": [{"name": "oc-running"}],
+        "createdAt": "2026-07-01T00:00:00Z",
+    }
+    snapshot = build_frontend_snapshot([running])
+    assert snapshot["lease_evidence_observed"] is False
+
+    result = run_reconciliation(
+        [_ISSUE_660, _ISSUE_1264], [running, _ISSUE_660, _ISSUE_1264], reserve_depth=3
+    )
+    assert result["bridge_status"] == "refill_planned"
+    assert sorted(result["admitted_numbers"]) == [660, 1264]
+
+
+def test_running_issue_with_a_parked_label_still_fails_the_scan_closed():
+    # Unobserved leases must not become a way to hide a real contradiction.
+    contradictory = {
+        "number": 797,
+        "title": "P2 running and parked at once",
+        "labels": [{"name": "oc-running"}, {"name": "oc-runtime-backoff"}],
+        "createdAt": "2026-07-01T00:00:00Z",
+    }
+    result = run_reconciliation(
+        [_ISSUE_660], [contradictory, _ISSUE_660], reserve_depth=3
+    )
+    assert result["bridge_status"] in {"planner_failed", "queue_empty_planner_failed"}
+    assert result["admitted_numbers"] == []

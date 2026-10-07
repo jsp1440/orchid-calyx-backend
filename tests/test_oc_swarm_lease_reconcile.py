@@ -189,6 +189,13 @@ def test_running_beside_parked_state_removes_only_the_stale_label():
     assert t.issues[1]["labels"] == ["oc-validating"]
 
 
+def test_running_beside_scientific_gate_is_parked_not_requeued():
+    t = Transport([issue(labels=("oc-running", "oc-scientific-gate"))])
+    decision = run(t)["recovered"][0]
+    assert decision["reason"] == "running_label_beside_parked_state" and decision["target"] is None
+    assert t.issues[1]["labels"] == ["oc-scientific-gate"]
+
+
 def test_write_failure_is_recorded_without_receipt_or_retry():
     t = Transport([issue()], comments={1: [claim_comment()]}, runs={555: "completed"})
     t.fail_edit = True

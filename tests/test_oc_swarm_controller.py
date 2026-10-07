@@ -500,3 +500,202 @@ def test_edit_mode_marker_matches_the_worker_parser():
     for body in (validate_first, edit_first, "OC-SWARM-PROVIDER-FREE: EDIT"):
         planned = module.execution_plan({"number": 1, "body": body})["mode"]
         assert swarm.is_edit_mode({"body": body}) is (planned == "edit")
+
+
+# ---------------------------------------------------------------------------
+# Homeostasis invariant. These use the REAL scheduler, dependency graph and
+# lock selector so the verdict is classified from the data the live plan has.
+# ---------------------------------------------------------------------------
+
+EXECUTABLE = "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+UNSTAFFED = "OC-SWARM-CAPABILITY: taxonomy-resolution"
+
+
+def _row(number, *labels, body=EXECUTABLE, writes=None, state="OPEN", **extra):
+    resource = writes or f"module-{number}"
+    return {
+        "number": number,
+        "title": f"P2 bounded work {number}",
+        "body": f"{body}\nOC-SWARM-WRITES: {resource}",
+        "labels": list(labels),
+        "state": state,
+        "createdAt": "2026-09-01T00:00:00Z",
+        **extra,
+    }
+
+
+def _plan(issues, **kwargs):
+    snapshot = {"issues": issues, "now": "2026-10-01T00:00:00Z"}
+    snapshot.update(kwargs.pop("extra", {}))
+    return swarm.build_swarm_plan(snapshot, **kwargs)
+
+
+def test_empty_queue_is_replenish_never_healthy_idle():
+    plan = _plan([_row(1, "oc-done", state="CLOSED")])
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["status"] == "replenish"
+    assert verdict["healthy_idle"] is False
+    assert verdict["discovery_required"] is True
+    # Discovery evidence is absent, so the plan cannot claim discovery ran.
+    assert verdict["evidence"]["discovery_ran"] is None
+
+
+def test_healthy_idle_requires_no_unfinished_work_and_empty_discovery():
+    ran_empty = {"discovery": {"ran": True, "candidate_count": 0}}
+    verdict = _plan([_row(1, "oc-done", state="CLOSED")], extra=ran_empty)["homeostasis"]
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["healthy_idle"] is True
+    assert verdict["status"] == "idle"
+    assert verdict["discovery_required"] is False
+
+    # Discovery found candidates: not idle, they still have to be filed.
+    found = {"discovery": {"ran": True, "candidate_count": 2}}
+    verdict = _plan([], extra=found)["homeostasis"]
+    assert verdict["healthy_idle"] is False and verdict["status"] == "replenish"
+
+    # Unfinished gated work exists: an empty immediate queue is not idle.
+    verdict = _plan([_row(5, "oc-owner-gate")], extra=ran_empty)["homeostasis"]
+    assert verdict["healthy_idle"] is False
+    assert verdict["gates"]["owner_gated"] == [5]
+
+
+def test_work_blocked_only_behind_an_owner_gate_is_gated_and_recorded():
+    issues = [
+        _row(10, "oc-owner-gate"),
+        _row(20, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #10"),
+        # Transitively held: 30 -> 20 -> 10 (owner gate).
+        _row(30, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #20"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "gated_only"
+    assert verdict["status"] == "gated"
+    assert verdict["healthy_idle"] is False
+    assert verdict["discovery_required"] is True
+    assert verdict["gates"]["owner_gated"] == [10]
+    blocked = {row["issue"]: row for row in verdict["gates"]["dependency_blocked"]}
+    assert blocked[20]["blocked_by"] == [10] and blocked[20]["gated"] is True
+    assert blocked[30]["blocked_by"] == [20] and blocked[30]["roots"] == [10]
+    assert blocked[30]["gated"] is True
+
+
+def test_provider_only_queue_under_no_api_mode_records_provider_parks():
+    issues = [
+        _row(40, "oc-queued", body="Needs a model provider."),
+        _row(41, "oc-queued", body="Also needs a model provider."),
+    ]
+    plan = _plan(issues, provider_free_only=True)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["gates"]["provider_parked"] == [40, 41]
+    assert verdict["reason"] == "gated_only"
+    assert verdict["status"] == "gated"
+    # With providers available the same work is not parked at all.
+    assert _plan(issues)["homeostasis"]["gates"]["provider_parked"] == []
+
+
+def test_one_blocked_module_does_not_stall_a_free_module():
+    issues = [
+        _row(10, "oc-owner-gate"),
+        _row(20, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #10"),
+        _row(21, "oc-queued"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["selected_numbers"] == [21]
+    assert verdict["reason"] == "executing"
+    assert verdict["status"] == "executing"
+    assert [row["issue"] for row in verdict["gates"]["dependency_blocked"]] == [20]
+
+
+def test_scientific_gate_is_never_admitted_and_never_stalls_others():
+    issues = [
+        # Highest priority and writing the same module: if it were admitted it
+        # would take the slot and the lock away from #51.
+        _row(50, "oc-queued", "oc-scientific-gate", "oc-p0", writes="taxonomy"),
+        _row(51, "oc-queued", "oc-p3", writes="taxonomy"),
+    ]
+    plan = _plan(issues, worker_slots=1)
+    verdict = plan["homeostasis"]
+    assert plan["selected_numbers"] == [51]
+    assert 50 not in plan["selected_numbers"]
+    assert verdict["gates"]["scientific_gated"] == [50]
+    assert verdict["reason"] == "executing"
+
+    alone = _plan([issues[0]])
+    assert alone["launch_count"] == 0
+    assert alone["homeostasis"]["reason"] == "gated_only"
+    assert alone["homeostasis"]["gates"]["scientific_gated"] == [50]
+
+
+def test_admissible_work_left_unselected_is_an_invariant_violation(monkeypatch):
+    real = swarm._load_sibling
+
+    class SelectNothing:
+        held_locks = staticmethod(lambda rows: [])
+
+        @staticmethod
+        def select_with_resource_locks(candidates, *, active_locks, capacity):
+            list(candidates)
+            return [], []
+
+    def loader(name, filename):
+        if filename == "oc_swarm_resource_locks.py":
+            return SelectNothing
+        return real(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = _plan([_row(60, "oc-queued")])
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "invariant_violation"
+    assert verdict["status"] == "violation"
+    assert verdict["healthy_idle"] is False
+    assert verdict["evidence"]["ready_unselected_lock_free"] == [60]
+
+
+def test_not_planned_dependency_keeps_dependents_blocked_in_the_plan():
+    issues = [
+        _row(70, state="CLOSED", stateReason="NOT_PLANNED"),
+        _row(71, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #70"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "dependency_blocked"
+    assert verdict["status"] == "waiting"
+    row = verdict["gates"]["dependency_blocked"][0]
+    assert row["issue"] == 71 and row["blocked_by"] == [70] and row["gated"] is False
+
+    issues[0]["stateReason"] = "COMPLETED"
+    assert _plan(issues)["selected_numbers"] == [71]
+
+
+def test_saturation_lock_contention_and_lane_refusal_are_named():
+    running = _row(80, "oc-running", writes="atlas")
+    waiting = _row(81, "oc-queued", writes="atlas")
+    assert _plan([running, waiting], worker_slots=1)["homeostasis"]["reason"] == "capacity_full"
+
+    verdict = _plan([running, waiting], worker_slots=4)["homeostasis"]
+    assert verdict["reason"] == "lock_contended"
+    assert verdict["gates"]["lock_contended"] == [81]
+
+    unstaffed = _row(82, "oc-queued", body=UNSTAFFED)
+    for mode in (False, True):
+        verdict = _plan([unstaffed], provider_free_only=mode)["homeostasis"]
+        assert verdict["reason"] == "lane_refused", mode
+        assert verdict["status"] == "capability_gap"
+        assert verdict["gates"]["lane_refused"] == [82]
+        assert verdict["discovery_required"] is True
+
+
+def test_github_output_carries_the_homeostasis_verdict(tmp_path):
+    plan = _plan([])
+    output = tmp_path / "output"
+    swarm._write_github_output(str(output), plan)
+    text = output.read_text(encoding="utf-8")
+    assert "homeostasis_status=replenish\n" in text
+    assert "homeostasis_reason=queue_empty\n" in text

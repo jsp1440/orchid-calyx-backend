@@ -48,7 +48,7 @@ QUEUED = "oc-queued"
 VALIDATING = "oc-validating"
 BLOCKED = "oc-blocked"
 #: Labels that already park or settle an issue; oc-running beside them is stale.
-PARKED = frozenset({"oc-done", VALIDATING, BLOCKED, "oc-owner-gate",
+PARKED = frozenset({"oc-done", VALIDATING, BLOCKED, "oc-owner-gate", "oc-scientific-gate",
                     "oc-runtime-backoff", "oc-repair-backoff"})
 #: Manual/legacy leases (no Swarm receipt) expire after one day. Owner-declared
 #: local continuations in this repository have used the same horizon.

@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from scripts import oc_brain_pulse as brain_pulse
 from scripts import oc_work_materialize as materialize
 
 REPO = "jsp1440/orchid-calyx-backend"
@@ -508,6 +509,7 @@ class TestRecurrence:
             ("CLOSED", "COMPLETED", ("oc-discovered", "oc-done", "oc-condition-cleared"),
              "\nOC-AUTO-REQUEUE: false", "auto_requeue_disabled"),
             ("OPEN", None, ("oc-discovered", "oc-owner-gate"), "", "owner_hold"),
+            ("OPEN", None, ("oc-discovered", "oc-scientific-gate"), "", "owner_hold"),
             ("CLOSED", "COMPLETED", ("oc-done", "oc-condition-cleared"), "", "discovered_label_removed"),
             ("CLOSED", None, ("oc-discovered", "oc-condition-cleared"), "", "closure_not_proven_complete"),
         ],
@@ -725,3 +727,77 @@ class TestMain:
         materialize.main(["--repository", REPO, "--report", str(self.write(tmp_path, report(candidate())))])
         assert json.loads(capsys.readouterr().out)["dry_run"] is True
         assert transport.calls == []
+
+
+@pytest.mark.parametrize("calyx_state", ["ready", "blocked", "invalid", "no_action"])
+def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
+    tmp_path, monkeypatch, capsys, calyx_state
+):
+    product = brain_pulse.calyx_product_operation()
+    brain_candidates = brain_pulse.mission_gap_candidates()[:3]
+    assert len(brain_candidates) == 3
+    for item in brain_candidates:
+        item["rank"] = 1
+    monkeypatch.setattr(brain_pulse, "mission_gap_candidates", lambda: brain_candidates)
+    monkeypatch.setattr(brain_pulse, "source_registry_gap_candidates", list)
+    monkeypatch.setattr(brain_pulse, "SUPPORTED_QUESTIONS", ())
+    if calyx_state == "blocked":
+        def fail_calyx():
+            raise RuntimeError("CALYX_PRODUCT_RECEIPT_FAILED")
+        monkeypatch.setattr(brain_pulse, "calyx_product_operation", fail_calyx)
+    elif calyx_state == "invalid":
+        monkeypatch.setattr(
+            brain_pulse, "calyx_product_operation",
+            lambda: {**product, "receipt": {**product["receipt"], "passed": False}},
+        )
+    elif calyx_state == "no_action":
+        module = {
+            **brain_pulse.AppliedAIDataScienceService.module(),
+            "reading_level": "grade-10",
+        }
+        monkeypatch.setattr(
+            brain_pulse.AppliedAIDataScienceService, "module",
+            staticmethod(lambda: module),
+        )
+
+    path = tmp_path / "brain-pulse.json"
+    monkeypatch.setattr("sys.argv", ["oc_brain_pulse", "--output", str(path)])
+    assert brain_pulse.main() == 0
+    transport = FakeGitHub()
+    monkeypatch.setattr(materialize, "github", transport)
+    output = tmp_path / "github-output"
+    for iteration in range(2):
+        assert materialize.main([
+            "--repository", REPO, "--report", str(path), "--max-new", "2",
+            "--github-output", str(output), "--apply",
+        ]) == (2 if calyx_state in {"blocked", "invalid"} else 0)
+        result = json.loads(capsys.readouterr().out)
+        calyx_issues = transport.of(product["candidates"][0]["fingerprint"])
+        if calyx_state == "ready":
+            assert len(calyx_issues) == 1
+            assert result["calyx_product"]["status"] == "ready"
+            assert not result["errors"]
+            assert "OC-SWARM-DISPOSITION: owner-gate" in calyx_issues[0]["body"]
+            if iteration == 0:
+                assert result["created_count"] == 3
+        elif calyx_state == "no_action":
+            assert calyx_issues == []
+            assert result["calyx_product"]["status"] == "ready"
+            assert result["calyx_product"]["action_count"] == 0
+            assert not result["errors"]
+        else:
+            assert calyx_issues == []
+            assert result["calyx_product"]["status"] == "blocked"
+            assert result["errors"][0]["source"] == materialize.CALYX_PRODUCT_SOURCE
+            assert all(
+                "Discovery source: `calyx-product-advisory`" not in issue["body"]
+                for issue in transport.issues
+            )
+        assert all(transport.of(item["fingerprint"]) for item in brain_candidates[:2])
+
+
+def test_combined_pulse_zero_bound_does_not_insert_work():
+    report = brain_pulse.build_report()
+    planned = materialize.plan(report, {}, max_new=0, max_cleared=0)
+    assert planned["actions"] == []
+    assert planned["calyx_product"]["action_count"] == 0

@@ -18,8 +18,11 @@ from scripts.oc_budget_denial_route import decide_denial_route
 from scripts.oc_health_contract import evaluate
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 
+#: ``oc-scientific-gate`` holds work awaiting human scientific review. It is
+#: re-checked here exactly like the owner gate: a gate applied between plan and
+#: claim must stop the claim.
 PARKED = {"oc-running", "oc-validating", "oc-blocked", "oc-owner-gate",
-          "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
+          "oc-scientific-gate", "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
 BLOCKER_FINGERPRINT = re.compile(r"^[a-f0-9]{24}$")
 
 
@@ -73,8 +76,10 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
     confirmed, skipped, errors = [], [], []
 
     def view(number):
+        # stateReason: a dependency closed as NOT_PLANNED must not unlock work
+        # at claim time any more than it does at plan time.
         return call(["issue", "view", str(number), "--repo", repository,
-                     "--json", "number,title,body,state,labels"])
+                     "--json", "number,title,body,state,stateReason,labels"])
 
     for worker in workers:
         number = worker["issue_number"]

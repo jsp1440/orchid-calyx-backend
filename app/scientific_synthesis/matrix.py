@@ -7,6 +7,7 @@ from typing import Any
 from app.literature_extraction.models import PaperKnowledge
 from app.literature_extraction.source_binding import CanonicalLiteratureSourceBinding
 
+from .identifiers import normalize_doi as _normalize_doi
 from .models import (
     BibliographicRecord,
     EvidenceAnchor,
@@ -23,16 +24,6 @@ VERIFIED = {
 
 def _clean(value: str | None) -> str:
     return " ".join((value or "").split()).casefold()
-
-
-def _normalize_doi(value: str | None) -> str | None:
-    if not value:
-        return None
-    normalized = value.strip().lower()
-    for prefix in ("https://doi.org/", "http://doi.org/", "doi:"):
-        if normalized.startswith(prefix):
-            normalized = normalized[len(prefix) :].strip()
-    return normalized or None
 
 
 def _bibliography_matches_paper(

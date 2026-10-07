@@ -114,6 +114,15 @@ def test_owner_gate_outranks_an_authorized_release_plan() -> None:
     assert transport.edits == 0
 
 
+def test_scientific_gate_outranks_an_authorized_release_plan() -> None:
+    transport = FakeTransport(
+        {"number": 7, "state": "OPEN", "labels": ["oc-blocked", "oc-scientific-gate"]}
+    )
+    with pytest.raises(ValueError, match="owner-gated"):
+        apply_action(transport, action(), controller_run_url="run://123", dry_run=False)
+    assert transport.edits == 0
+
+
 def test_dry_run_observes_but_never_writes() -> None:
     transport = FakeTransport()
     report = apply_plan(transport, plan(action()), controller_run_url="run://123")

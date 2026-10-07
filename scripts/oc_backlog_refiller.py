@@ -47,6 +47,11 @@ CONFLICT_FOLLOW_UP_SCHEMA = "oc.queue-conflict-follow-up.v1"
 # A reserve whose only queued issues are contradictory is not healthy: nothing
 # in it can run. Callers must treat this status as a failure.
 QUEUE_BLOCKED_BY_CONFLICTS = "queue_blocked_by_conflicts"
+# The queue is empty and candidates WERE offered, but every one was rejected
+# (duplicate, dependency-blocked, protected boundary, unauthorized source...).
+# That is not "healthy and empty": work was asked for and none was admissible.
+# ``queue_empty_healthy`` is reserved for a genuinely empty candidate set.
+QUEUE_EMPTY_ALL_CANDIDATES_REJECTED = "queue_empty_all_candidates_rejected"
 
 PROTECTED_BOUNDARIES = {
     "production",
@@ -410,6 +415,8 @@ def plan_refill(
         result["status"] = "refill_planned"
     elif queued_count == 0 and conflicts:
         result["status"] = QUEUE_BLOCKED_BY_CONFLICTS
+    elif queued_count == 0 and result["rejections"]:
+        result["status"] = QUEUE_EMPTY_ALL_CANDIDATES_REJECTED
     elif queued_count == 0:
         result["status"] = "queue_empty_healthy"
     else:

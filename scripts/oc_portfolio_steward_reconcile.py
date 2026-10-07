@@ -118,6 +118,16 @@ def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     query does not fetch; representing such issues without that metadata creates
     false global-health failures. Validation remains governed by its own exact-
     head supervisor rather than this refill planner.
+
+    Leases are likewise not observed here: they live in the frontend's own ledger,
+    so every ``oc-running`` issue used to read as "running with 0 leases" and fail
+    the whole scan (Brain #206, run 37131188915 / frontend #797 while run
+    37130872606 was executing it). The snapshot says so explicitly with
+    ``lease_evidence_observed: false``; the health contract then reports those
+    issues as unobserved instead of asserting a cardinality it cannot know. Exact
+    run-to-lease correlation stays with the frontend's own lease reconcile. Every
+    other invariant, including a running issue that also carries a backoff label,
+    is still enforced.
     """
     snapshot_issues: list[dict[str, Any]] = []
     for issue in all_issues:
@@ -138,6 +148,7 @@ def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "issues": snapshot_issues,
         "leases": [],
+        "lease_evidence_observed": False,
         "dispatch_fingerprints": [],
     }
 
