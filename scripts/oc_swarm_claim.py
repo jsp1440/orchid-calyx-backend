@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 
+from app.provider_reservoir.routing import route_task
 from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_budget_blocker import is_budget_denial
 from scripts.oc_budget_denial_route import decide_denial_route
@@ -74,6 +75,25 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
         raise ValueError("invalid bounded worker plan")
     original = {i["number"]: i for i in snapshot["issues"]}
     confirmed, skipped, errors = [], [], []
+    for worker in workers:
+        number = worker["issue_number"]
+        try:
+            routing = route_task(original[number])
+            expected = {
+                "lane_executable": routing.lane_executable,
+                "provider_free": routing.provider_free,
+                "acquisition": "firecrawl-acquisition" in routing.blocking_provider_capabilities,
+            }
+            if any(
+                type(worker.get(key)) is not bool or worker[key] != value
+                for key, value in expected.items()
+            ):
+                raise ValueError("invalid execution classification")
+        except (ValueError, TypeError, KeyError):
+            errors.append({
+                "issue": number, "phase": "plan_validation",
+                "reason": "invalid_execution_classification",
+            })
 
     def view(number):
         # stateReason: a dependency closed as NOT_PLANNED must not unlock work
@@ -81,7 +101,7 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
         return call(["issue", "view", str(number), "--repo", repository,
                      "--json", "number,title,body,state,stateReason,labels"])
 
-    for worker in workers:
+    for worker in ([] if errors else workers):
         number = worker["issue_number"]
         phase = "precheck"
         try:
@@ -148,11 +168,11 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             errors.append({"issue": number, "phase": phase, "reason": "claim_unconfirmed"})
 
     # The confirmed claims keep the planner's lane classification so the
-    # workflow can hand provider-free work to the deterministic worker job and
-    # provider-dependent work to the governed completion lane independently.
-    provider_free = [w for w in confirmed if w.get("provider_free")]
+    # workflow hands executable deterministic work to that worker, rather than
+    # confusing provider-free capabilities with an implemented executor.
+    provider_free = [w for w in confirmed if w.get("lane_executable")]
     acquisition = [w for w in confirmed if w.get("acquisition")]
-    provider = [w for w in confirmed if not w.get("provider_free") and not w.get("acquisition")]
+    provider = [w for w in confirmed if not w.get("lane_executable") and not w.get("acquisition")]
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),

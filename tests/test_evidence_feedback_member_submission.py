@@ -18,7 +18,7 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from app import member_auth, rate_limit
-from app.evidence_feedback import routes
+from app.evidence_feedback import ObjectType, routes
 from app.main import app
 from app.security import create_owner_session_token
 from tests.evidence_feedback_stores import STORES, make_store
@@ -780,6 +780,42 @@ def test_member_snapshot_cannot_squat_an_owner_registration(store, client, supab
     again = register_as(client, MEMBER_A, "taxon:1", "lexicon", TAXON_PAYLOAD)
     assert again.status_code == 201
     assert len(store.repository().list_object_versions("taxon:1")) == 1
+
+
+def test_same_member_snapshot_feedback_with_different_claimed_types_is_not_deduplicated(
+    store, client, supabase
+):
+    """Different provisional type claims are distinct owner-review evidence."""
+    object_id = "object:ambiguous-type"
+    payload = {"value": "same displayed content"}
+    lexicon = register_as(client, MEMBER_A, object_id, "lexicon", payload)
+    taxonomy = register_as(client, MEMBER_B, object_id, "taxonomy", payload)
+    assert lexicon.status_code == 201 and taxonomy.status_code == 201
+    assert lexicon.json()["version_hash"] == taxonomy.json()["version_hash"]
+
+    common = {
+        "object_id": object_id,
+        "object_version_hash": lexicon.json()["version_hash"],
+        "page_context": "/object/ambiguous-type",
+        "feedback_class": "report_problem",
+        "statement": "The displayed record type appears wrong.",
+        "proposed_replacement": None,
+        "citation": None,
+        "source_partner_id": None,
+        "defect_kind": None,
+        "severity": "normal",
+    }
+    first = client.post(f"{BASE}/cases", json={**common, "object_type": "lexicon"}, headers=MEMBER_A)
+    second = client.post(f"{BASE}/cases", json={**common, "object_type": "taxonomy"}, headers=MEMBER_B)
+    assert first.status_code == 201, first.text
+    assert second.status_code == 201, second.text
+    assert first.json()["created"] is True
+    assert second.json()["created"] is True
+    assert first.json()["case_id"] != second.json()["case_id"]
+
+    cases = store.repository().list_cases(status=None, object_type=None, limit=10, before=None)
+    assert {case.object_type for case in cases} == {ObjectType.LEXICON, ObjectType.TAXONOMY}
+    assert len({case.fingerprint for case in cases}) == 2
 
 
 def test_nobody_can_address_the_member_snapshot_namespace(file_store, client, supabase):

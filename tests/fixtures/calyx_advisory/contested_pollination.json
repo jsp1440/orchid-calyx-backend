@@ -1,0 +1,50 @@
+{
+  "artifact_id": "fixture-contested-pollination-deception-v1",
+  "module": "pollinator",
+  "title": "How do deceptive slipper-type orchid flowers attract pollinators?",
+  "fixture_notice": "TEST FIXTURE. The structure models a real kind of dispute (two competing deception mechanisms). Evidence and provenance entries are synthetic placeholders with citation_status 'unverified-fixture'. They are not literature claims and must not be published or cited.",
+  "claims": [
+    {
+      "id": "claim-attraction-mechanism",
+      "statement": "Pollinators are drawn to the flowers by deception rather than by a reward, but the evidence does not yet establish which deceptive signal is responsible.",
+      "evidence_state": "contested",
+      "mechanisms": [
+        {
+          "id": "mech-food-deception",
+          "label": "Food deception: the flower imitates a nectar or pollen source",
+          "evidence_refs": ["fixture-ev-1", "fixture-ev-2"],
+          "distinguishing_observation": "visitors probe the lip and leave quickly without feeding behaviour"
+        },
+        {
+          "id": "mech-oviposition-mimicry",
+          "label": "Oviposition-site mimicry: the flower imitates a place to lay eggs",
+          "evidence_refs": ["fixture-ev-3"],
+          "distinguishing_observation": "visiting flies deposit eggs or show egg-laying posture on the flower"
+        }
+      ],
+      "uncertainty": {
+        "statement": "The available observations are compatible with both mechanisms and cannot currently separate them.",
+        "reason": "Visitor behaviour was recorded in too few visits to distinguish probing for food from searching for an egg-laying site."
+      },
+      "provenance": [
+        {"ref": "fixture-ev-1", "kind": "observation", "citation_status": "unverified-fixture"},
+        {"ref": "fixture-ev-2", "kind": "observation", "citation_status": "unverified-fixture"},
+        {"ref": "fixture-ev-3", "kind": "observation", "citation_status": "unverified-fixture"}
+      ]
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "surface-genus-overview",
+      "audience": "beginner",
+      "claim_ids": ["claim-attraction-mechanism"],
+      "mechanism_ids_shown": ["mech-food-deception"],
+      "uncertainty_shown": false,
+      "has_media": true,
+      "alt_text": false,
+      "items_shown": 9,
+      "progressive_disclosure": false
+    }
+  ],
+  "learning_pathways": []
+}

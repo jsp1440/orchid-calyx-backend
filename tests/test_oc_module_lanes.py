@@ -147,6 +147,8 @@ def _controller():
 
 EXEC = "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-WRITES: {w}"
 UNSTAFFED = "OC-SWARM-CAPABILITY: taxonomy-resolution\nOC-SWARM-WRITES: {w}"
+# A named deterministic executor nothing implements: a capability gap, not a provider gate.
+UNSUPPORTED = "OC-SWARM-PROVIDER-FREE: rebuild-the-graph\nOC-SWARM-WRITES: {w}"
 
 
 def test_plan_reports_module_lanes_and_a_gated_lane_does_not_freeze_the_others():
@@ -157,6 +159,7 @@ def test_plan_reports_module_lanes_and_a_gated_lane_does_not_freeze_the_others()
             _issue(1, "literature", "oc-queued", body=EXEC.format(w="lit")),
             _issue(2, "atlas-geography-environment", "oc-queued", "oc-owner-gate", body=EXEC.format(w="atlas")),
             _issue(3, "calyx-education-intelligence", "oc-queued", body=UNSTAFFED.format(w="calyx")),
+            _issue(4, "taxonomy", "oc-queued", body=UNSUPPORTED.format(w="tax")),
         ],
     }
     plan = swarm.build_swarm_plan(snapshot)
@@ -164,12 +167,18 @@ def test_plan_reports_module_lanes_and_a_gated_lane_does_not_freeze_the_others()
     assert plan["selected_numbers"] == [1]
     assert lanes["literature"]["state"] == "replenishable"
     assert lanes["atlas-geography-environment"]["gates"] == {"owner_gated": [2]}
-    assert lanes["calyx-education-intelligence"]["state"] == "capability_gap"
+    # Work that needs code authored and has no authorised coding executor is a named
+    # provider gate (the controller's coding_dispatch record), not a factory gap.
+    assert lanes["calyx-education-intelligence"]["state"] == "gated"
+    assert lanes["calyx-education-intelligence"]["gates"] == {"provider_blocked": [3]}
+    # An unsupported named executor stays a capability gap.
+    assert lanes["taxonomy"]["state"] == "capability_gap"
+    assert lanes["taxonomy"]["capability_gap"] == [4]
     assert plan["module_lanes"]["schema"] == "oc.module-lanes.v1"
     # The registry never changes slot selection.
     assert plan["launch_count"] == 1
     assert lanes["calyx-education-intelligence"]["refusal_reasons"] == [
-        {"issue": 3, "reason": swarm.lane_refusal(snapshot["issues"][2])["reason"]}
+        {"issue": 3, "reason": "no-authorised-coding-executor"}
     ]
 
 
@@ -223,7 +232,8 @@ def test_completed_plan_adapter_reports_selection_not_execution():
     assert report["lanes"]["literature"]["planned"] == [1]
     assert report["lanes"]["literature"]["running"] == []
     assert report["lanes"]["taxonomy"]["planned"] == []
-    assert report["lanes"]["taxonomy"]["state"] == "capability_gap"
+    assert report["lanes"]["taxonomy"]["state"] == "gated"
+    assert report["lanes"]["taxonomy"]["gates"] == {"provider_blocked": [2]}
     assert report["lanes"]["taxonomy"]["refusal_reasons"]
     assert plan["provider_launch_count"] == 0
     assert plan["homeostasis"]["healthy_idle"] is False
