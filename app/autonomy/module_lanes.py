@@ -132,6 +132,8 @@ def lane_report(
     dependency_blocked: Iterable[int] = (),
     provider_gated: Iterable[int] = (),
     capability_gap: Iterable[int] = (),
+    lane_refusals: Iterable[Mapping[str, Any]] = (),
+    coding_dispatch: Iterable[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     """Per-lane state computed from that lane's own issues only.
 
@@ -141,10 +143,25 @@ def lane_report(
     ``empty`` (nothing unfinished: discovery should replenish). ``empty`` is
     never reported healthy here; whether idle is healthy is the controller's
     homeostasis verdict, which also needs discovery evidence.
+
+    Optional refusal and coding-dispatch records preserve planner reasons.
+    Dispatch records describe admission gates, never execution or certification.
+    A queued dispatch record cannot override an existing refusal or human gate.
     """
     dep = {int(n) for n in dependency_blocked}
     prov = {int(n) for n in provider_gated}
     gap = {int(n) for n in capability_gap}
+    reasons = {int(r["issue_number"]): r["reason"] for r in lane_refusals}
+    coding_gates = {}
+    for record in coding_dispatch:
+        state = record["state"]
+        if state in {"provider_blocked", "dependency_blocked", "owner_gated", "scientific_gated"}:
+            coding_gates[int(record["issue_number"])] = state
+        elif state == "capability_gap":
+            gap.add(int(record["issue_number"]))
+        if state in {"provider_blocked", "dependency_blocked", "owner_gated",
+                     "scientific_gated", "capability_gap"}:
+            reasons[int(record["issue_number"])] = record["gate"]
     buckets: dict[str, list[dict[str, Any]]] = {key: [] for key in LANES_BY_KEY}
     buckets[UNASSIGNED] = []
     for issue in issues:
@@ -158,6 +175,8 @@ def lane_report(
         row = {"number": number, "how": how, "gate": None, "running": bool(names & _RUNNING),
                "queued": "oc-queued" in names, "gap": number in gap}
         row["gate"] = _gate_for(issue, dependency_blocked=number in dep, provider_gated=number in prov)
+        if row["gate"] is None:
+            row["gate"] = coding_gates.get(number)
         buckets[lane].append(row)
 
     lanes: dict[str, dict[str, Any]] = {}
@@ -187,6 +206,11 @@ def lane_report(
             "replenishable": sorted(replenishable),
             "gates": {gate: sorted(nums) for gate, nums in sorted(gated.items())},
             "capability_gap": sorted(gaps),
+            "refusal_reasons": [
+                {"issue": r["number"], "reason": reasons[r["number"]]}
+                for r in sorted(rows, key=lambda r: r["number"])
+                if r["number"] in reasons and (r["gate"] or r["gap"])
+            ],
             "unfinished": len(rows),
         }
     return {

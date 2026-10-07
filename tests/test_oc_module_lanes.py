@@ -168,3 +168,36 @@ def test_plan_reports_module_lanes_and_a_gated_lane_does_not_freeze_the_others()
     assert plan["module_lanes"]["schema"] == "oc.module-lanes.v1"
     # The registry never changes slot selection.
     assert plan["launch_count"] == 1
+    assert lanes["calyx-education-intelligence"]["refusal_reasons"] == [
+        {"issue": 3, "reason": swarm.lane_refusal(snapshot["issues"][2])["reason"]}
+    ]
+
+
+def test_coding_dispatch_gate_is_not_a_capability_gap_or_execution():
+    issues = [_issue(1, "taxonomy", "oc-queued"), _issue(2, "literature", "oc-queued")]
+    report = ml.lane_report(
+        issues, capability_gap=[1],
+        coding_dispatch=[{
+            "issue_number": 1, "state": "provider_blocked",
+            "gate": "no-authorised-coding-executor",
+        }],
+    )
+    assert report["lanes"]["taxonomy"]["state"] == "gated"
+    assert report["lanes"]["taxonomy"]["capability_gap"] == []
+    assert report["lanes"]["taxonomy"]["gates"] == {"provider_blocked": [1]}
+    assert report["lanes"]["taxonomy"]["refusal_reasons"] == [
+        {"issue": 1, "reason": "no-authorised-coding-executor"}
+    ]
+    assert report["lanes"]["literature"]["next_mission"] == 2
+
+
+def test_queued_dispatch_cannot_release_a_refusal_or_owner_gate():
+    issues = [_issue(1, "taxonomy", "oc-queued", "oc-owner-gate"),
+              _issue(2, "literature", "oc-queued")]
+    report = ml.lane_report(
+        issues, capability_gap=[2],
+        coding_dispatch=[{"issue_number": n, "state": "queued", "gate": None} for n in (1, 2)],
+    )
+    assert report["lanes"]["taxonomy"]["state"] == "gated"
+    assert report["lanes"]["literature"]["state"] == "capability_gap"
+    assert all(lane["running"] == [] for lane in report["lanes"].values())

@@ -806,13 +806,18 @@ def build_swarm_plan(
     # Per-module lane state, computed from each lane's own issues. Read-only: it
     # reports which lanes are executing, replenishable, gated or unstaffed so one
     # blocked module is visible as exactly that and never as a global idle.
+    module_capability_gaps = set(unstaffed_numbers(snapshot))
     module_lanes = _MODULE_LANES.lane_report(
         snapshot.get("issues") or [],
         dependency_blocked=[
             int(row["issue_number"]) for row in dependency_suppressed if "issue_number" in row
         ],
         provider_gated=provider_parked_numbers(snapshot) if provider_free_only else [],
-        capability_gap=unstaffed_numbers(snapshot),
+        capability_gap=module_capability_gaps,
+        lane_refusals=[
+            lane_refusal(issue) for issue in snapshot.get("issues") or []
+            if int(issue.get("number") or 0) in module_capability_gaps
+        ],
     )
 
     # Provider-free-only mode withdraws non-executable work before the unstaffed
