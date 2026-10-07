@@ -17,7 +17,6 @@ import pytest
 from scripts import oc_provider_free_validate as executor
 from scripts import oc_validation_commands as registry
 
-
 #: Top-level packages that live in this repository. A ``-m`` target outside this set
 #: (``pytest``, ``compileall``) is an installed or standard-library module, not ours.
 PROJECT_PACKAGES = frozenset({"scripts", "app", "runtime", "tests"})
@@ -35,9 +34,16 @@ def missing_registry_targets(commands, root) -> list[str]:
     for command in commands:
         argv = tuple(command.argv)
         for index, part in enumerate(argv):
-            if index and argv[index - 1] == "-m" and part.split(".")[0] in PROJECT_PACKAGES:
+            if (
+                index
+                and argv[index - 1] == "-m"
+                and part.split(".")[0] in PROJECT_PACKAGES
+            ):
                 module = root.joinpath(*part.split("."))
-                if not (module.with_suffix(".py").exists() or (module / "__init__.py").exists()):
+                if not (
+                    module.with_suffix(".py").exists()
+                    or (module / "__init__.py").exists()
+                ):
                     missing.append(f"{command.command_id} names module {part}")
             elif part.startswith(("tests/", "scripts")):
                 if not (root / part).exists():
