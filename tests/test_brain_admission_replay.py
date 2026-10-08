@@ -49,6 +49,16 @@ def test_build_replay_preserves_progress(status):
     assert len(queue.snapshot().items) == 1
 
 
+def test_replay_cannot_change_provenance_or_mutate_saved_request():
+    queue = GovernedBuildQueue()
+    original = admission()
+    queue.submit(original)
+    queue.transition(original.build_id, "scheduled")
+    original.source_uris.append("fixture:different-source")
+    with pytest.raises(ValueError, match="conflicting build queue identity"):
+        queue.submit(original)
+
+
 @pytest.fixture
 def db(tmp_path):
     engine = create_engine(f"sqlite+pysqlite:///{tmp_path / 'replay.db'}")
@@ -139,4 +149,22 @@ def test_program_api_rejects_governed_actions_without_persistence(db, authority)
     with pytest.raises(HTTPException) as error:
         create_program(payload, {"subject": "fixture-owner"}, db)
     assert error.value.status_code == 403
+    assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 0
+
+
+@pytest.mark.parametrize("unsafe", ["provider-role", "mutation", "anonymous"])
+def test_program_handoff_cannot_grant_provider_mutation_or_owner_authority(db, unsafe):
+    from fastapi import HTTPException
+    from app.calyx_orchestrator.program_routes import create_program
+    payload = request_payload()
+    auth = {"subject": "fixture-owner"}
+    if unsafe == "provider-role":
+        payload.jobs[0].role_key = "provider_required"
+    elif unsafe == "mutation":
+        payload.jobs[0].mutating = True
+    else:
+        auth = {}
+    with pytest.raises(HTTPException) as error:
+        create_program(payload, auth, db)
+    assert error.value.status_code == (401 if unsafe == "anonymous" else 403)
     assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 0
