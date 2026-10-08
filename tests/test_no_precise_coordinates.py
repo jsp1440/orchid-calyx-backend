@@ -557,7 +557,7 @@ def test_parquet_read_errors_fail_closed_without_crashing(tmp_path, monkeypatch)
 
 def test_tracked_path_missing_from_the_working_tree_fails_closed(tmp_path):
     violations, problems = guard.check(tmp_path, ["data/sparse.csv", "code.py"], {})
-    assert [finding.path for finding in violations] == ["data/sparse.csv"]
+    assert [finding.path for finding in violations] == ["data/sparse.csv", "code.py"]
     assert "missing" in (violations[0].error or "")
     assert problems == []
 
@@ -782,3 +782,141 @@ def test_retired_real_looking_canaries_do_not_return():
                 offenders.append(relative)
                 break
     assert offenders == [], "a retired real-looking coordinate canary is back"
+
+
+# Synthetic open-ocean literals are assembled at runtime so source scanning
+# tests its fixtures without exempting this test module from the policy.
+@pytest.mark.parametrize("suffix", [".py", ".js", ".ts", ".tsx", ".md", ".txt"])
+def test_source_and_documents_are_scanned(tmp_path, suffix):
+    finding = _scan(
+        tmp_path,
+        "embedded" + suffix,
+        f"latitude = {PRECISE_LAT}\nlongitude = {PRECISE_LON}\n",
+    )
+    assert finding.precise_values >= 2
+    assert guard.is_scanned("embedded" + suffix)
+
+
+@pytest.mark.parametrize("encoding", ["utf-16", "utf-16-le", "utf-16-be", "utf-32"])
+@pytest.mark.parametrize("suffix", [".csv", ".json", ".md"])
+def test_unicode_encodings_cannot_hide_coordinates(tmp_path, encoding, suffix):
+    body = (
+        f"latitude,longitude\n{PRECISE_LAT},{PRECISE_LON}\n"
+        if suffix == ".csv"
+        else json.dumps({"latitude": PRECISE_LAT, "longitude": PRECISE_LON})
+    )
+    finding = _scan(tmp_path, "encoded" + suffix, body.encode(encoding))
+    assert finding.precise_values >= 2
+    assert finding.error is None
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".json", ".md", ".py"])
+def test_invalid_text_encoding_fails_closed(tmp_path, suffix):
+    assert _scan(tmp_path, "invalid" + suffix, b"latitude=\xff\xff").error is not None
+
+
+def test_dms_values_in_table_and_prose_are_detected(tmp_path):
+    # Same synthetic open-ocean location as the decimal fixtures above.
+    lat = "12" + "°20" + "'44.16" + '"N'
+    lon = "45" + "°40" + "'44.04" + '"W'
+    assert guard.is_precise(lat, "lat")
+    assert guard.is_precise(lon, "lon")
+    assert _scan(tmp_path, "dms.tsv", f"lat\tlon\n{lat}\t{lon}\n").precise_values == 2
+    assert _scan(tmp_path, "dms.md", f"Site: {lat} / {lon}").precise_values == 2
+    assert guard.parse_number("12" + "°61" + "'00\"N") is None
+
+
+def test_anonymous_xy_point_fails_closed_but_coarse_xy_passes(tmp_path):
+    point = {"x": PRECISE_LON, "y": PRECISE_LAT}
+    assert _scan(tmp_path, "anonymous.json", json.dumps(point)).precise_values == 1
+    point = {"x": COARSE_LON, "y": COARSE_LAT}
+    assert _scan(tmp_path, "coarse.json", json.dumps(point)).precise_values == 0
+
+
+def test_anonymous_xy_table_is_detected(tmp_path):
+    assert (
+        _scan(tmp_path, "xy.csv", f"x,y\n{PRECISE_LON},{PRECISE_LAT}\n").precise_values
+        == 2
+    )
+
+
+def test_columnless_sql_insert_is_unverifiable(tmp_path):
+    finding = _scan(
+        tmp_path,
+        "anonymous.sql",
+        f"INSERT INTO records VALUES (1, {PRECISE_LON}, {PRECISE_LAT});",
+    )
+    assert finding.error == "INSERT without column list"
+    assert (
+        _scan(
+            tmp_path,
+            "named.sql",
+            f"INSERT INTO records (id, lat, lon) VALUES (1, {PRECISE_LAT}, {PRECISE_LON});",
+        ).precise_values
+        == 2
+    )
+
+
+def test_unicode_source_member_inside_archive_is_detected(tmp_path):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr("literal.ts", f"latitude: {PRECISE_LAT}".encode("utf-16"))
+    assert _scan(tmp_path, "source.zip", buffer.getvalue()).precise_values > 0
+
+
+def test_new_notations_are_never_printed(tmp_path):
+    body = f"latitude={PRECISE_LAT}\nlongitude={PRECISE_LON}"
+    finding = _scan(tmp_path, "private.md", body)
+    assert finding.precise_values > 0
+    assert PRECISE_LAT not in finding.describe()
+    assert PRECISE_LON not in finding.describe()
+
+
+@pytest.mark.parametrize("suffix", [".py", ".ts", ".md"])
+def test_source_literals_and_document_tables_are_detected(tmp_path, suffix):
+    body = f"location: [{PRECISE_LAT}, {PRECISE_LON}]"
+    assert _scan(tmp_path, "source" + suffix, body).precise_values > 0
+    table = (
+        f"| latitude | longitude |\n| --- | --- |\n| {PRECISE_LAT} | {PRECISE_LON} |\n"
+    )
+    assert _scan(tmp_path, "table.md", table).precise_values >= 2
+
+
+def test_source_fixture_exception_is_exact_and_bounded(tmp_path, monkeypatch):
+    relative = "tests/synthetic_fixture.py"
+    p = tmp_path / relative
+    p.parent.mkdir()
+    content = f"latitude = {PRECISE_LAT}\n"
+    p.write_text(content)
+    monkeypatch.setattr(
+        guard,
+        "SOURCE_FIXTURE_DIGESTS",
+        {relative: hashlib.sha256(p.read_bytes()).hexdigest()},
+    )
+    assert guard.check(tmp_path, [relative], {}) == ([], [])
+    p.write_text(content + f"longitude = {PRECISE_LON}\n")
+    violations, _ = guard.check(tmp_path, [relative], {})
+    assert violations[0].error is not None
+    # Non-test source cannot use the exception even with the correct digest.
+    other = tmp_path / "application.py"
+    other.write_text(content)
+    monkeypatch.setattr(
+        guard,
+        "SOURCE_FIXTURE_DIGESTS",
+        {"application.py": hashlib.sha256(other.read_bytes()).hexdigest()},
+    )
+    assert guard.check(tmp_path, ["application.py"], {})[0][0].error is not None
+    monkeypatch.setattr(
+        guard,
+        "SOURCE_FIXTURE_DIGESTS",
+        {relative: hashlib.sha256(p.read_bytes()).hexdigest()},
+    )
+    monkeypatch.setattr(guard, "SOURCE_FIXTURE_MAX_BYTES", 1)
+    assert guard.check(tmp_path, [relative], {})[0][0].error is not None
+
+
+def test_reviewed_source_fixtures_have_no_prefix_exemptions():
+    for path, digest in guard.SOURCE_FIXTURE_DIGESTS.items():
+        assert path.startswith("tests/") and path.endswith(".py")
+        assert len(digest) == 64
+        assert hashlib.sha256((REPO_ROOT / path).read_bytes()).hexdigest() == digest
