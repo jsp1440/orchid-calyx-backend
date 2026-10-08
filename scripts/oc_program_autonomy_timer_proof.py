@@ -480,6 +480,34 @@ def _supervisor_child(verify_only: bool = False) -> int:
         return job
 
     def event(kind: str, assignment: GovernedAssignment, **extra: Any) -> None:
+        if kind == "start":
+            from hashlib import sha256
+
+            from app.calyx_orchestrator.program_models import CalyxProgramJob
+            from app.database import get_session_local
+
+            with get_session_local()() as db:
+                job = db.get(CalyxProgramJob, assignment.assignment_id)
+                token = job.lease_token if job else None
+                expires = (
+                    job.lease_expires_at.timestamp()
+                    if job and job.lease_expires_at
+                    else 0
+                )
+                extra.update(
+                    {
+                        "lease_fingerprint": sha256(token.encode()).hexdigest()
+                        if token
+                        else None,
+                        "live_owned_lease": bool(
+                            job
+                            and job.status == "running"
+                            and job.lease_owner == worker_id
+                            and token
+                            and expires > time.time()
+                        ),
+                    }
+                )
         _append_jsonl(
             ledger,
             {
@@ -1019,6 +1047,23 @@ class Proof:
             self.race_job_id = self.jobs()["race-0"]["program_job_id"]
         if self.scenario == "full":
             self.seed_canaries()
+        if self.scenario == "productive":
+            self.create_program(
+                "productive",
+                [
+                    self._spec(
+                        f"productive-{index}",
+                        PROBE_ROLE,
+                        f"Productive timer job {index}",
+                        "proof/productive",
+                    )
+                    for index in range(self.args.target_cycles)
+                ],
+                [
+                    (f"productive-{index}", f"productive-{index + 1}")
+                    for index in range(self.args.target_cycles - 1)
+                ],
+            )
         for index in range(1, self.args.supervisors + 1):
             self.supervisors.append(
                 self.spawn(f"supervisor-{index}", f"autproof-supervisor-{index}")
@@ -1040,7 +1085,8 @@ class Proof:
         if self.scenario == "full":
             self.seed_main_workload()
             self.duplicate_lease_attempts()
-        self.kill_victim()
+        if self.victim is not None:
+            self.kill_victim()
         self.drive(time.time() + self.args.deadline_seconds)
         self.mark("stop_supervisors")
         self.stop_all()
@@ -1048,6 +1094,17 @@ class Proof:
 
     def drive(self, deadline: float) -> None:
         while time.time() < deadline:
+            if self.scenario == "productive":
+                if (
+                    len(self.supervisors[0].cycles()) >= self.args.target_cycles
+                    and self.settled()
+                ):
+                    self.settled_before_deadline = True
+                    return
+                if self.supervisors[0].process.poll() is not None:
+                    return
+                time.sleep(1.0)
+                continue
             if self.fence_result is None:
                 self.try_fence_during_recovery()
             if self.scenario == "fence":
@@ -1416,6 +1473,8 @@ class Proof:
         if self.scenario == "full":
             self.evaluate_full(jobs, programs, ledger)
             self.evaluate_known_defects(jobs, programs, ledger, canaries)
+        if self.scenario == "productive":
+            self.evaluate_productive(jobs, ledger)
         network = self.evaluate_network(netlog)
         cycle_modules = (
             "runtime.program_autonomy_worker",
@@ -1533,7 +1592,7 @@ class Proof:
         }
         if not main:
             return evidence
-        target = args.target_cycles if self.scenario == "full" else 1
+        target = args.target_cycles if self.scenario in {"full", "productive"} else 1
         self.check(
             f"{sup.name}_consecutive_timer_cycles",
             len(cycles) >= target and len(sup.records) == len(cycles),
@@ -1544,7 +1603,7 @@ class Proof:
             not died and sup.process.returncode == -signal.SIGTERM,
             {"returncode": sup.process.returncode, "crash": evidence["crash"]},
         )
-        if self.scenario == "full":
+        if self.scenario in {"full", "productive"}:
             paced = (
                 bool(gaps)
                 and min(gaps) >= args.poll_seconds - 1.0
@@ -1559,6 +1618,79 @@ class Proof:
             f"{sup.name}_no_unexpected_cycle_errors", not unexpected, unexpected[:3]
         )
         return evidence
+
+    def evaluate_productive(
+        self, jobs: dict[str, Any], ledger: list[dict[str, Any]]
+    ) -> None:
+        """Refuse timer-only evidence: every required cycle must finish one job."""
+        cycles = self.supervisors[0].cycles()
+        expected = [f"productive-{index}" for index in range(self.args.target_cycles)]
+        completed_keys: list[str] = []
+        job_ids: list[str] = []
+        lease_ids: list[str] = []
+        cycle_evidence: list[dict[str, Any]] = []
+        valid = len(cycles) == self.args.target_cycles
+        for ordinal, record in enumerate(cycles, start=1):
+            cycle = self.supervisors[0].cycle(record)
+            results = cycle.get("jobs", [])
+            valid = valid and (
+                cycle.get("attempted_jobs") == 1
+                and cycle.get("completed_jobs") == 1
+                and not cycle.get("failed_jobs")
+                and not cycle.get("error")
+                and len(results) == 1
+            )
+            if len(results) != 1:
+                continue
+            result = results[0]
+            key, job_id = result.get("job_key"), result.get("program_job_id")
+            completed_keys.append(key)
+            job_ids.append(job_id)
+            durable = jobs.get(key, {})
+            starts = [
+                item
+                for item in ledger
+                if item.get("event") == "start" and item.get("program_job_id") == job_id
+            ]
+            ends = [
+                item
+                for item in ledger
+                if item.get("event") == "end" and item.get("program_job_id") == job_id
+            ]
+            persisted = (
+                result.get("outcome") == "DELIVERED"
+                and durable.get("program_job_id") == job_id
+                and durable.get("outcome") == "DELIVERED"
+                and durable.get("attempt_count") == 1
+                and durable.get("lease_owner") is None
+                and durable.get("lease_token") is None
+                and durable.get("lease_expires_at") is None
+                and len(starts) == len(ends) == 1
+                and starts[0].get("live_owned_lease") is True
+                and bool(starts[0].get("lease_fingerprint"))
+            )
+            lease_id = starts[0].get("lease_fingerprint") if len(starts) == 1 else None
+            lease_ids.append(lease_id)
+            valid = valid and persisted
+            cycle_evidence.append(
+                {
+                    "cycle": ordinal,
+                    "program_job_id": job_id,
+                    "job_key": key,
+                    "lease_fingerprint": lease_id,
+                    "completed_and_persisted": persisted,
+                }
+            )
+        self.check(
+            "ten_consecutive_productive_timer_cycles",
+            valid
+            and completed_keys == expected
+            and len(set(job_ids)) == self.args.target_cycles
+            and len(set(lease_ids)) == self.args.target_cycles
+            and all(job_ids)
+            and self.settled_before_deadline,
+            cycle_evidence,
+        )
 
     def evaluate_barrier(self, ledger: list[dict[str, Any]]) -> None:
         released = [item for item in ledger if item.get("event") == "barrier_released"]
@@ -1921,7 +2053,13 @@ class Proof:
                     "repairs": sorted(repairs),
                     "repair": {
                         k: repair.get(k)
-                        for k in ("status", "outcome", "blocker", "attempt_count", "max_attempts")
+                        for k in (
+                            "status",
+                            "outcome",
+                            "blocker",
+                            "attempt_count",
+                            "max_attempts",
+                        )
                     },
                     "downstream": {
                         k: downstream.get(k) for k in ("status", "outcome", "blocker")
@@ -2066,7 +2204,9 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
         type=Path,
         default=Path("artifacts/program-autonomy-timer-proof.json"),
     )
-    parser.add_argument("--scenario", choices=("full", "race", "fence"), default="full")
+    parser.add_argument(
+        "--scenario", choices=("full", "race", "fence", "productive"), default="full"
+    )
     parser.add_argument("--supervisors", type=int, default=2)
     parser.add_argument("--target-cycles", type=int, default=10)
     parser.add_argument("--poll-seconds", type=int, default=15)
@@ -2089,9 +2229,13 @@ def _parse(argv: list[str] | None) -> argparse.Namespace:
         return args
     if not args.dsn:
         parser.error("--dsn or TEST_DATABASE_URL is required")
-    if args.supervisors < 2:
+    if args.scenario == "productive" and (
+        args.supervisors != 1 or args.max_jobs_per_cycle != 1
+    ):
+        parser.error("productive proof requires --supervisors 1 --max-jobs-per-cycle 1")
+    if args.scenario != "productive" and args.supervisors < 2:
         parser.error("--supervisors must be >= 2")
-    if args.scenario == "full" and args.target_cycles < 10:
+    if args.scenario in {"full", "productive"} and args.target_cycles < 10:
         parser.error("--target-cycles must be >= 10")
     return args
 
