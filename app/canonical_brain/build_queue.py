@@ -39,6 +39,7 @@ class BuildQueueSnapshot(StrictModel):
 class GovernedBuildQueue:
     def __init__(self) -> None:
         self._items: dict[str, BuildQueueItem] = {}
+        self._requests: dict[str, BuildAdmissionRequest] = {}
 
     def submit(self, request: BuildAdmissionRequest, priority: int = 50) -> BuildQueueItem:
         decision = evaluate_build_admission(request)
@@ -54,11 +55,14 @@ class GovernedBuildQueue:
         )
         existing = self._items.get(request.build_id)
         if existing:
-            comparable_existing = existing.model_copy(update={"submitted_at": now, "updated_at": now})
-            if comparable_existing != candidate:
+            comparable_existing = existing.model_copy(update={
+                "submitted_at": now, "updated_at": now, "status": candidate.status,
+            })
+            if comparable_existing != candidate or self._requests[request.build_id] != request:
                 raise ValueError(f"conflicting build queue identity: {request.build_id}")
             return existing
         self._items[request.build_id] = candidate
+        self._requests[request.build_id] = request.model_copy(deep=True)
         return candidate
 
     def transition(self, build_id: str, target: QueueStatus) -> BuildQueueItem:

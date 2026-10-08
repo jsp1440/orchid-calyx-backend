@@ -36,12 +36,18 @@ class AutonomousCycleResult:
     # letter) and then continued past.
     failures: tuple[dict[str, Any], ...] = ()
 
+    @property
+    def settled_jobs(self) -> int:
+        """All terminal receipts, including blockers, cancellations and timeouts."""
+        return len(self.jobs)
+
     def as_dict(self) -> dict[str, Any]:
         return {
             "owner": self.owner,
             "worker_id": self.worker_id,
             "attempted_jobs": self.attempted_jobs,
             "completed_jobs": self.completed_jobs,
+            "settled_jobs": self.settled_jobs,
             "failed_jobs": len(self.failures),
             "stop_reason": self.stop_reason,
             "jobs": [asdict(item) for item in self.jobs],
@@ -116,6 +122,7 @@ def run_deterministic_program_cycle(
     executor_registry = registry or AuthoritativeExecutorRegistry()
     worker = PersistentProgramWorker(db)
     completed: list[CycleJobResult] = []
+    delivered_count = 0
     failures: list[dict[str, Any]] = []
     attempted = 0
     for _ in range(max_jobs):
@@ -130,7 +137,7 @@ def run_deterministic_program_cycle(
                 owner=normalized_owner,
                 worker_id=normalized_worker,
                 attempted_jobs=attempted,
-                completed_jobs=len(completed),
+                completed_jobs=delivered_count,
                 stop_reason="idle",
                 jobs=tuple(completed),
                 failures=tuple(failures),
@@ -143,7 +150,7 @@ def run_deterministic_program_cycle(
                 owner=normalized_owner,
                 worker_id=normalized_worker,
                 attempted_jobs=attempted,
-                completed_jobs=len(completed),
+                completed_jobs=delivered_count,
                 stop_reason="error",
                 jobs=tuple(completed),
                 error={
@@ -213,7 +220,7 @@ def run_deterministic_program_cycle(
                     owner=normalized_owner,
                     worker_id=normalized_worker,
                     attempted_jobs=attempted,
-                    completed_jobs=len(completed),
+                    completed_jobs=delivered_count,
                     stop_reason="error",
                     jobs=tuple(completed),
                     error=failure,
@@ -231,7 +238,7 @@ def run_deterministic_program_cycle(
                     owner=normalized_owner,
                     worker_id=normalized_worker,
                     attempted_jobs=attempted,
-                    completed_jobs=len(completed),
+                    completed_jobs=delivered_count,
                     stop_reason="error",
                     jobs=tuple(completed),
                     error=failure,
@@ -250,12 +257,14 @@ def run_deterministic_program_cycle(
                 repository_code_execution=registered.repository_code_execution,
             )
         )
+        if receipt.state.value == "delivered" and completed_job.outcome == "DELIVERED":
+            delivered_count += 1
 
     return AutonomousCycleResult(
         owner=normalized_owner,
         worker_id=normalized_worker,
         attempted_jobs=attempted,
-        completed_jobs=len(completed),
+        completed_jobs=delivered_count,
         stop_reason="budget_exhausted",
         jobs=tuple(completed),
         failures=tuple(failures),

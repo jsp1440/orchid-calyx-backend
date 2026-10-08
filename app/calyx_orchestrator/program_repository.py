@@ -4,8 +4,10 @@ import hashlib
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from uuid import NAMESPACE_URL, uuid5
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .engineering_core import TerminalOutcome
@@ -79,6 +81,67 @@ class PersistentProgramRepository:
         jobs: Iterable[ProgramJobSpec],
         dependencies: Iterable[tuple[str, str]],
         max_active_jobs: int = 6,
+        idempotency_key: str | None = None,
+    ) -> CalyxProgram:
+        specs, edges = list(jobs), list(dependencies)
+        if idempotency_key is None:
+            return self._create_program(
+                owner=owner, title=title, objective=objective, jobs=specs,
+                dependencies=edges, max_active_jobs=max_active_jobs,
+            )
+        if not isinstance(idempotency_key, str) or not idempotency_key.strip() or len(idempotency_key) > 256:
+            raise ValueError("PROGRAM_IDEMPOTENCY_KEY_INVALID")
+        program_id = str(uuid5(NAMESPACE_URL, json.dumps([owner, idempotency_key])))
+
+        def replay() -> CalyxProgram | None:
+            existing = self.db.get(CalyxProgram, program_id)
+            if existing is None:
+                return None
+            rows = self.db.scalars(select(CalyxProgramJob).where(
+                CalyxProgramJob.program_id == program_id,
+            )).all()
+            keys = {row.program_job_id: row.job_key for row in rows}
+            stored_edges = self.db.scalars(select(CalyxProgramDependency).where(
+                CalyxProgramDependency.program_id == program_id,
+            )).all()
+            if (
+                (existing.owner, existing.title, existing.objective, existing.max_active_jobs)
+                != (owner, title, objective, max_active_jobs)
+                or sorted((row.job_key, row.title, row.work_fingerprint) for row in rows)
+                != sorted((spec.job_key, spec.title, spec.fingerprint) for spec in specs)
+                or sorted((keys[edge.upstream_program_job_id], keys[edge.downstream_program_job_id])
+                          for edge in stored_edges) != sorted(edges)
+            ):
+                raise ValueError("PROGRAM_IDEMPOTENCY_CONFLICT")
+            return existing
+
+        existing = replay()
+        if existing is not None:
+            return existing
+        try:
+            return self._create_program(
+                owner=owner, title=title, objective=objective, jobs=specs,
+                dependencies=edges, max_active_jobs=max_active_jobs,
+                program_id=program_id,
+            )
+        except IntegrityError:
+            # The primary key arbitrates simultaneous admission, not a process lock.
+            self.db.rollback()
+            existing = replay()
+            if existing is None:
+                raise
+            return existing
+
+    def _create_program(
+        self,
+        *,
+        owner: str,
+        title: str,
+        objective: str,
+        jobs: Iterable[ProgramJobSpec],
+        dependencies: Iterable[tuple[str, str]],
+        max_active_jobs: int = 6,
+        program_id: str | None = None,
     ) -> CalyxProgram:
         specs = list(jobs)
         if not 1 <= max_active_jobs <= 6:
@@ -94,6 +157,8 @@ class PersistentProgramRepository:
             max_active_jobs=max_active_jobs,
             status="draft",
         )
+        if program_id is not None:
+            program.program_id = program_id
         self.db.add(program)
         self.db.flush()
         by_key: dict[str, CalyxProgramJob] = {}
