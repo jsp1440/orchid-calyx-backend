@@ -1,0 +1,316 @@
+{
+  "assertions": [
+    {
+      "detail": {
+        "cycles": 10,
+        "target": 10
+      },
+      "name": "supervisor-1_consecutive_timer_cycles",
+      "passed": true
+    },
+    {
+      "detail": {
+        "crash": null,
+        "returncode": -15
+      },
+      "name": "supervisor-1_loop_survived_until_stopped",
+      "passed": true
+    },
+    {
+      "detail": {
+        "max_gap": 15.08,
+        "min_gap": 15.03
+      },
+      "name": "supervisor-1_cycles_paced_by_own_timer",
+      "passed": true
+    },
+    {
+      "detail": [],
+      "name": "supervisor-1_no_unexpected_cycle_errors",
+      "passed": true
+    },
+    {
+      "detail": {
+        "expected": 1,
+        "released": 1,
+        "spread_s": 0.0,
+        "waiting_at_release": 1
+      },
+      "name": "barrier_released_all_supervisors_together",
+      "passed": true
+    },
+    {
+      "detail": {
+        "duplicate_attempt_starts": [],
+        "duplicate_successful_executions": [],
+        "executions": 10,
+        "overlapping_or_early_reexecutions": []
+      },
+      "name": "zero_duplicate_executions",
+      "passed": true
+    },
+    {
+      "detail": [
+        {
+          "completed_and_persisted": true,
+          "cycle": 1,
+          "job_key": "productive-0",
+          "lease_fingerprint": "d9e8a22e3844a32eebcaf737572e6486636be01dbee5a237eb0acc6548410bd2",
+          "program_job_id": "e2ea8bcd-2b86-45cd-aed9-3449cf2f7142"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 2,
+          "job_key": "productive-1",
+          "lease_fingerprint": "ba2ac00235d7bab5c8dbb78695f9b528369c1a0444bb6af333c19f81736af6e6",
+          "program_job_id": "a679416b-7aa0-4dbe-9530-c2badb4dedf0"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 3,
+          "job_key": "productive-2",
+          "lease_fingerprint": "d2a2d4bb8bbdcc4f498310ba7307b52a3cede308fa12a4f2aac667d918849879",
+          "program_job_id": "88dcabbf-3c85-4439-9358-b0bdc2ea158a"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 4,
+          "job_key": "productive-3",
+          "lease_fingerprint": "7f7a8fb9dd7205e01a2aed570c54a95619d1456f1e2b3f96f187abebb91c070c",
+          "program_job_id": "442a2c81-f793-4cb2-8361-ea426c47b3d8"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 5,
+          "job_key": "productive-4",
+          "lease_fingerprint": "b3b1e8e072fc5a71837affdb9dce7662f03b0360686f08d0f83dafc591288779",
+          "program_job_id": "f935eb0b-33ae-474d-b3c0-726334e1061a"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 6,
+          "job_key": "productive-5",
+          "lease_fingerprint": "4296ad5a01182b44b4d76675c4ba0b9be5e8d5c2de0b10d3ae399adba3b79813",
+          "program_job_id": "8d99f1e1-311e-45af-8ec4-3a16f02abbbb"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 7,
+          "job_key": "productive-6",
+          "lease_fingerprint": "511dee5fc74a83fff856a5dc100cbc9a20e97dc0fc30daaf9d7e87ed9f9efe19",
+          "program_job_id": "d7ec1a8e-04d7-481c-9328-ded25ba29437"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 8,
+          "job_key": "productive-7",
+          "lease_fingerprint": "7d27a482c0e34fb4823c317958ecddee2ea89b836389effb73090afa2c8abbfb",
+          "program_job_id": "8e9fa9c2-14bd-4d72-90dd-6b619ec87f7e"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 9,
+          "job_key": "productive-8",
+          "lease_fingerprint": "4eafd79fc290197aa277540b81a4c04ec47b7a14a69d13846fb208f6659277b4",
+          "program_job_id": "d1d100bb-c1a7-4844-9391-a2815b8cd77e"
+        },
+        {
+          "completed_and_persisted": true,
+          "cycle": 10,
+          "job_key": "productive-9",
+          "lease_fingerprint": "1e326bffe1a5c3d1c155de15c5c63afb2382f0912fd2ca285f60ef3bcb1d097e",
+          "program_job_id": "33b71056-9e15-4559-8cc3-f3baa79ece8f"
+        }
+      ],
+      "name": "ten_consecutive_productive_timer_cycles",
+      "passed": true
+    },
+    {
+      "detail": {
+        "blocked_attempts": [],
+        "guard_selftests_blocked": 1,
+        "processes_guarded": 1
+      },
+      "name": "no_network_calls",
+      "passed": true
+    },
+    {
+      "detail": [],
+      "name": "harness_never_invoked_the_cycle",
+      "passed": true
+    }
+  ],
+  "claims": {
+    "claim_updates": 10,
+    "lost_claim_races": 0,
+    "race_job_id": null
+  },
+  "crash_canaries": {},
+  "cycle_source": "each supervisor's own per-cycle JSON stdout records emitted by runtime.program_autonomy_worker.main()",
+  "duration_seconds": 146.74,
+  "executions": {
+    "injected_failures": 0,
+    "starts": 10,
+    "successes": 10
+  },
+  "fixed_behaviour_detected": {},
+  "gating_assertions": [
+    "barrier_released_all_supervisors_together",
+    "harness_never_invoked_the_cycle",
+    "no_network_calls",
+    "supervisor-1_consecutive_timer_cycles",
+    "supervisor-1_cycles_paced_by_own_timer",
+    "supervisor-1_loop_survived_until_stopped",
+    "supervisor-1_no_unexpected_cycle_errors",
+    "ten_consecutive_productive_timer_cycles",
+    "zero_duplicate_executions"
+  ],
+  "generated_at_unix": 1791456044.179,
+  "jobs": {
+    "productive-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-1": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-2": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-3": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-4": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-5": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-6": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-7": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-8": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "productive-9": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    }
+  },
+  "known_defects": [],
+  "missing_required_assertions": [],
+  "mode": "real run_forever supervisor subprocesses; synthetic proof workload; NO-API",
+  "network": {
+    "blocked_attempts": 0,
+    "guard_selftests": 1
+  },
+  "parameters": {
+    "deadline_seconds": 220,
+    "lease_seconds": 60,
+    "max_jobs_per_cycle": 1,
+    "poll_seconds": 15,
+    "require_defect_fixes": false,
+    "supervisors": 1,
+    "target_cycles": 10
+  },
+  "postgres": {
+    "dsn": "postgresql://oc_test@127.0.0.1:55439/postgres",
+    "schema": "oc_autproof_88bbef17bce1",
+    "server_version": "16.10"
+  },
+  "programs": {
+    "productive": "completed"
+  },
+  "scenario": "productive",
+  "schema": "oc.program-autonomy-timer-proof.v2",
+  "status": "PASS",
+  "supervisors": [
+    {
+      "consecutive_cycles": 10,
+      "crash": null,
+      "cycles": 10,
+      "died_before_stop": false,
+      "exit_code": -15,
+      "gap_seconds_max": 15.08,
+      "gap_seconds_min": 15.03,
+      "jobs_completed": 10,
+      "name": "supervisor-1",
+      "pid": 1388,
+      "ran_seconds": 139.45,
+      "records_not_executed": 0,
+      "stop_reasons": {
+        "budget_exhausted": 10
+      },
+      "unexpected_errors": [],
+      "worker_id": "autproof-supervisor-1"
+    }
+  ],
+  "timeline": [
+    {
+      "event": "enqueue",
+      "program": "productive",
+      "t": 6.69
+    },
+    {
+      "event": "spawn",
+      "pid": 1388,
+      "supervisor": "supervisor-1",
+      "t": 6.7
+    },
+    {
+      "event": "barrier_released",
+      "expected": 1,
+      "t": 10.7,
+      "waiting": 1
+    },
+    {
+      "event": "stop_supervisors",
+      "t": 146.73
+    }
+  ],
+  "victim": {
+    "returncode": null,
+    "worker_id": null
+  }
+}
