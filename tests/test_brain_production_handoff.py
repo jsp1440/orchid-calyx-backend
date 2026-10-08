@@ -30,6 +30,7 @@ def test_actual_brain_packets_execute_ten_source_checks_without_test_job_mapping
     if not source:
         pytest.skip("Explicit current Brain companion source required")
     producer = _load(Path(source) / "calyx_brain/reasoning_contracts.py", "handoff_brain")
+    submission = _load(Path(source) / "calyx_brain/program_submission.py", "handoff_submission")
     root, engine = disposable_program
     app = FastAPI()
     app.include_router(router)
@@ -52,8 +53,19 @@ def test_actual_brain_packets_execute_ten_source_checks_without_test_job_mapping
                 files=[{"path": path, "sha256": hashlib.sha256((root / path).read_bytes()).hexdigest()}],
             )
             # No translation into ProgramJobSpec or test-only role mapping.
-            first = client.post("/programs", json=packet)
-            replay = client.post("/programs", json=packet)
+            def capabilities():
+                response = client.get("/programs/submission-capabilities")
+                return response.status_code, response.json()
+
+            def post(payload):
+                return client.post("/programs", json=payload)
+
+            first = submission.submit_program(
+                packet, fetch_capabilities=capabilities, post_program=post,
+            )
+            replay = submission.submit_program(
+                packet, fetch_capabilities=capabilities, post_program=post,
+            )
             assert first.status_code == replay.status_code == 201
         assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 5
         assert db.scalar(select(func.count()).select_from(CalyxProgramJob)) == 10
