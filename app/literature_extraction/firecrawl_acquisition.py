@@ -397,6 +397,10 @@ async def acquire_matrix_sources(
             metadata = getattr(provider, "search_results", {}).get(
                 url, {"source_url": url}
             )
+            # Held-corpus match BEFORE the paid scrape: canonical URL (the
+            # ledger's canonicaliser), DOI (supplied or embedded in the URL),
+            # stable hashes and bibliography. The content-hash check after the
+            # scrape below is only the last resort.
             if audit is not None and held_source_match(
                 {**metadata, "source_url": url}, audit.get("identities", [])
             ):
@@ -437,6 +441,7 @@ async def acquire_matrix_sources(
             }
         ),
         firecrawl_searches=provider.searches,
+        firecrawl_search_cache_hits=getattr(provider, "search_cache_hits", 0),
         firecrawl_pages=provider.documents,
         credits_reserved=reserved,
         credits_reported=credit_receipt["provider_reported"],
@@ -447,7 +452,8 @@ async def acquire_matrix_sources(
         if reserved
         else None,
         evidence_per_credit_basis="new_review_pending_anchored_candidates_per_reserved_credit",
-        zero_credit_reuse=provider.calls == 0 and metrics["existing_documents_reused"] > 0,
+        zero_credit_reuse=provider.calls == 0
+        and metrics["existing_documents_reused"] > 0,
         efficiency_ranking="zero_credit_reuse"
         if provider.calls == 0 and metrics["existing_documents_reused"] > 0
         else "bounded_external_acquisition",
@@ -601,30 +607,23 @@ def missing_morphology_requirements(
 
 
 def held_source_match(candidate, identities):
-    """Match stable supplied identities; metadata absence never invents a match."""
+    """Match stable supplied identities; metadata absence never invents a match.
+
+    URLs are compared through the SAME canonicaliser as the acquisition ledger
+    key (:func:`app.source_federation.acquisition.canonicalize_url`), so what
+    counts as "already held" and what counts as "already acquired" cannot
+    drift apart. A value that is not an absolute http(s) URL has no canonical
+    form and matches only an identical value.
+    """
     import re
-    from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+
+    from app.source_federation.acquisition import canonical_identity_url
 
     def url(value):
-        if not value:
+        raw = str(value).strip() if value else ""
+        if not raw:
             return None
-        parsed = urlsplit(str(value))
-        return urlunsplit(
-            (
-                parsed.scheme.lower(),
-                parsed.netloc.lower().rstrip("."),
-                parsed.path.rstrip("/") or "/",
-                urlencode(
-                    sorted(
-                        (key, val)
-                        for key, val in parse_qsl(parsed.query)
-                        if not key.lower().startswith("utm_")
-                        and key.lower() not in {"fbclid", "gclid"}
-                    )
-                ),
-                "",
-            )
-        )
+        return canonical_identity_url(raw) or "raw:" + raw
 
     def doi(item):
         value = item.get("doi")

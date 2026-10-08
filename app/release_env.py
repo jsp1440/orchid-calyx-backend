@@ -575,6 +575,20 @@ RELEASE1_ENV: tuple[EnvVariable, ...] = (
         "Default cap.",
     ),
     EnvVariable(
+        "FIRECRAWL_REQUEST_TIMEOUT_SECONDS",
+        OPTIONAL,
+        "`45`",
+        "Wall-clock deadline for one live Firecrawl attempt (1-120); the acquisition-ledger lease is sized from it.",
+        "Default deadline.",
+    ),
+    EnvVariable(
+        "FIRECRAWL_SEARCH_CACHE_SECONDS",
+        OPTIONAL,
+        "`604800`",
+        "Freshness window in which a repeat of the same search is answered from the acquisition ledger at zero cost (1 s-30 days).",
+        "Default window (7 days).",
+    ),
+    EnvVariable(
         "FIRECRAWL_PILOT_GENUS",
         OPTIONAL,
         "`Paphiopedilum`",

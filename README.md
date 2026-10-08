@@ -130,6 +130,8 @@ wrong value that is present still reports present.
 | `FIRECRAWL_MAX_CALL_COST_USD` | No | `0` | Worst-case reserved cost per call; must be > 0 for live runs. | Zero: live execution is blocked. |
 | `FIRECRAWL_DAILY_BUDGET_USD` | No | `0` | Daily spend ceiling; must be > 0 for live runs. | Zero: live execution is blocked. |
 | `FIRECRAWL_DAILY_CREDIT_CAP` | No | `25` | Daily provider-credit ceiling. | Default cap. |
+| `FIRECRAWL_REQUEST_TIMEOUT_SECONDS` | No | `45` | Wall-clock deadline for one live Firecrawl attempt (1-120); the acquisition-ledger lease is sized from it. | Default deadline. |
+| `FIRECRAWL_SEARCH_CACHE_SECONDS` | No | `604800` | Freshness window in which a repeat of the same search is answered from the acquisition ledger at zero cost (1 s-30 days). | Default window (7 days). |
 | `FIRECRAWL_PILOT_GENUS` | No | `Paphiopedilum` | Genus the pilot is scoped to. | Default genus. |
 | `FIRECRAWL_PILOT_ISSUE_NUMBER` | No | empty | GitHub issue a live pilot run must reference. | Live pilot runs are refused (`LIVE_PILOT_ISSUE_SCOPE_REQUIRED`); dry runs are unaffected. |
 | `FIRECRAWL_REQUIRED_PREDICATES` | No | empty | Comma-separated predicate scope for the acquisition-coverage audit (app/literature_extraction/routes.py). | The coverage audit runs without a predicate filter. |

@@ -90,6 +90,20 @@ def test_unknown_usage_is_not_reported_as_actual():
     }
 
 
+def _memory_search_cache():
+    """A ledger search cache on a private in-memory SQLite ledger."""
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app.database import Base
+    from app.literature_extraction.firecrawl_search_cache import LedgerSearchCache
+    from app.source_federation.acquisition_models import AcquisitionLedgerRow
+
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine, tables=[AcquisitionLedgerRow.__table__])
+    return LedgerSearchCache(sessionmaker(bind=engine), freshness_seconds=3600)
+
+
 def test_retry_attempts_are_reserved_and_unknown_usage_stays_unknown(monkeypatch):
     from types import SimpleNamespace
 
@@ -136,6 +150,7 @@ def test_retry_attempts_are_reserved_and_unknown_usage_stays_unknown(monkeypatch
             "NO_API_MODE": "false",
             "FIRECRAWL_API_KEY": "synthetic-test-key",
         },
+        search_cache=_memory_search_cache(),
     )
     provider.lease_check = lambda: None
     assert provider.search("Paphiopedilum", task_id="fixture") == []
@@ -148,6 +163,8 @@ def test_retry_attempts_are_reserved_and_unknown_usage_stays_unknown(monkeypatch
         AcquisitionBlocked("DAILY_CREDIT_CAP")
     )
     provider.searches = 0
+    # A fresh ledger, so the repeat is not answered from the stored result.
+    provider.search_cache = _memory_search_cache()
     with pytest.raises(AcquisitionBlocked, match="DURABLE_RESERVATION_FAILED"):
         provider.search("Paphiopedilum", task_id="fixture")
     assert len(calls) == 2
