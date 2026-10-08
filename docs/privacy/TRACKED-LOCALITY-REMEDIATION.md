@@ -54,7 +54,7 @@ A committed data file bypasses every one of those runtime safeguards.
   - source literals in Python, JavaScript/TypeScript and related suffixes, plus Markdown/text/RST; labelled values, coordinate arrays, Python literal dictionaries and embedded JSON are scanned;
   - UTF-16/UTF-32 with BOMs, BOM-less UTF-16, and strict Unicode decoding; undecodable input fails closed rather than replacing bytes;
   - degree-minute-second values in labelled fields/tables and hemisphere-labelled prose;
-  - anonymous scalar `x`/`y` objects and paired table columns. The existing `nodes[].position` UI layout shape is retained unless it declares a CRS;
+  - anonymous scalar `x`/`y` objects and paired table columns. A UI layout shape does not exempt in-range pairs: ambiguous tracked data fails closed, while out-of-geographic-range pixel values remain unaffected;
   - SQL `INSERT` statements without a column list fail closed as unverifiable; explicit columns retain the existing detector.
 
   Documented remaining limitations:
