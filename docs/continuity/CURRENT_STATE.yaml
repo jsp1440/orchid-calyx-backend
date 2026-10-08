@@ -1,0 +1,96 @@
+schema: oc_continuity_state.v1
+project: Orchid Continuum
+repository: jsp1440/orchid-calyx-backend
+integration_branch: oc-autonomous-integration
+
+state_basis:
+  observed_integration_head: b8d66f87214c1325fa2f8033e3ae6573b9a0bee9
+  observed_at_utc: "2026-10-07T08:31:00Z"
+  note: "CONTINUE: bounded handoff of coordinator observations (UTC, minute precision), not a new audit. Investigation started clean at main f32d508677ffe3765c9e8c380d7d2619023ee6eb. PR #1778 remains draft/unmerged with historical merge-base 4cd307e3f9276c717691dac95875150e292263f6; no rebase or base change. Verify mutable facts before acting."
+
+authority:
+  repository_truth_outranks_manifest: true
+  owner_decisions_outrank_stale_memory: true
+  scientific_publication_requires_human_review: true
+  main_and_production_remain_owner_gated: true
+
+continuity:
+  durable_operating_memory:
+    path: docs/AGENT-OPERATING-MEMORY.md
+    status: verified_present
+  engineering_memory_v1:
+    completion_record: BUILD-1184-ENGINEERING-MEMORY-V1.md
+    implementation_root: app/engineering_memory
+    status: verified_present
+    evidence_class: non_scientific
+  live_state_layer:
+    path: docs/continuity
+    status: candidate_until_integrated
+
+current_program:
+  milestone: R1_PARALLEL_MODULE_AUTONOMY
+  status: blocked
+  integration_boundary: oc-autonomous-integration
+  invariant: "Previously verified capabilities may not be claimed as regressed or advanced without current evidence."
+
+verified_capabilities_carried_forward:
+  - id: engineering_memory_v1
+    status: verified
+    evidence: BUILD-1184-ENGINEERING-MEMORY-V1.md
+    note: "Scoped runs/lessons/retrievals, redaction, invalidation, provenance, lexical retrieval, tests."
+  - id: agent_operating_memory
+    status: verified
+    evidence: docs/AGENT-OPERATING-MEMORY.md
+    note: "Durable corrections and merge/CI truthfulness rules are already encoded."
+  - id: calyx_education_advisory_lane
+    status: observed
+    evidence: "integration commit 4cd307e3f9276c717691dac95875150e292263f6"
+    note: "Presence on integration branch is observed; this record does not independently recertify hosted acceptance."
+  - id: overnight_integration_revision
+    status: observed
+    evidence: "https://github.com/jsp1440/orchid-calyx-backend/pull/1767"
+    note: "2026-10-07 UTC: PR #1767 merged at b8d66f87214c1325fa2f8033e3ae6573b9a0bee9. PR #1769 remains open at abc472f81475a669219bd8a453c2b2126a553fbc (https://github.com/jsp1440/orchid-calyx-backend/pull/1769); PR #1764 remains open at ded64145befe4b14da4482d8d4d1c78917bdc041 (https://github.com/jsp1440/orchid-calyx-backend/pull/1764). Open heads are not landed evidence."
+  - id: scheduled_controller_admission
+    status: observed
+    evidence: "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/37590024622 ; https://github.com/jsp1440/orchid-calyx-backend/actions/runs/37594330687"
+    note: "2026-10-07 07:52 and 08:31 UTC: real scheduled runs on main logged controller_sha=b8d66f87214c1325fa2f8033e3ae6573b9a0bee9 matching integration. Both successful plans executed discovery: 0 new issues, 0 planned workers, 0 confirmed claims, 0 provider-free launches; refill skipped. Demonstrated wake, integration checkout, deterministic discovery/admission attempt, queue classification/refusal, governance/planning and fail-closed zero-claim decision only."
+  - id: autonomous_useful_work_continuation
+    status: unknown
+    evidence: "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/37594330687"
+    note: "Not demonstrated: lease/claim, dispatch, execution, validation, receipt/settlement/completion, change-state observation leading to next useful mission, or useful-work continuation. Successful planning is not closed-loop autonomy success."
+  - id: coding_executor_authorization
+    status: blocked
+    evidence: "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/37594330687 ; https://github.com/jsp1440/orchid-calyx-backend/issues/1742"
+    note: "2026-10-07 08:31 UTC: eligible queued issue #1742; selected=[]; homeostasis.status=capability_gap; healthy_idle=false; lane_refused=[1742]; coding_executor_blocked=[1742]; coding_executor_available=false. coding_dispatch: capability=open-ended-code-authoring, declared_executor=null, state=provider_blocked, gate=no-authorised-coding-executor, dispatchable=false, provider_called=false. Refusal: declared capabilities describe finished work rather than an executor; building it needs open-ended-code-authoring. Coordinator's gh issue list --state open --label oc-queued returned only #1742. Investigation made no code edits, commits, tests or production actions; this continuity update does not authorize implementation."
+
+active_gates:
+  - id: exact_head_evidence
+    rule: "Acceptance evidence applies only to the exact head SHA it validated."
+    status: enforced_by_operating_memory
+  - id: independent_checker
+    rule: "Maker cannot supply independent acceptance for automatic non-main integration."
+    status: enforced_by_AGENTS
+  - id: merge_integrity
+    rule: "A successful merge API response alone does not prove verified content landed."
+    status: enforced_by_operating_memory
+  - id: coding_executor_authorization
+    rule: "Executor-capability mismatch / authorization boundary, not healthy idle, GitHub credential failure, or proven code failure. No deterministic controller defect established; do not call a paid provider or expand authority."
+    status: blocked
+
+startup_policy:
+  broad_audit_by_default: false
+  read_continuity_first: true
+  verify_mutable_task_facts: true
+  expand_audit_when:
+    - continuity_is_stale
+    - continuity_conflicts_with_repository
+    - requested_task_requires_unrepresented_state
+    - safety_or_governance_boundary_is_unclear
+
+prohibited_content:
+  - raw_prompts
+  - private_chain_of_thought
+  - secrets
+  - credentials
+  - precise_protected_localities
+  - unreviewed_scientific_claims_presented_as_fact
