@@ -1,0 +1,728 @@
+{
+  "assertions": [
+    {
+      "detail": null,
+      "name": "victim_claimed_slow_job",
+      "passed": true
+    },
+    {
+      "detail": {
+        "claim_same_role": "refused",
+        "complete_forged_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "complete_victim_id_forged_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "heartbeat_forged_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "lease_unchanged": true,
+        "raw_conditional_claim_rows": "0"
+      },
+      "name": "duplicate_lease_attempts_refused",
+      "passed": true
+    },
+    {
+      "detail": {
+        "lease_expires_in_s": 58.0,
+        "returncode": -9
+      },
+      "name": "victim_killed_mid_lease",
+      "passed": true
+    },
+    {
+      "detail": {
+        "cycles": 14,
+        "target": 10
+      },
+      "name": "supervisor-1_consecutive_timer_cycles",
+      "passed": true
+    },
+    {
+      "detail": {
+        "crash": null,
+        "returncode": -15
+      },
+      "name": "supervisor-1_loop_survived_until_stopped",
+      "passed": true
+    },
+    {
+      "detail": {
+        "max_gap": 15.1,
+        "min_gap": 15.0
+      },
+      "name": "supervisor-1_cycles_paced_by_own_timer",
+      "passed": true
+    },
+    {
+      "detail": [],
+      "name": "supervisor-1_no_unexpected_cycle_errors",
+      "passed": true
+    },
+    {
+      "detail": {
+        "cycles": 13,
+        "target": 10
+      },
+      "name": "supervisor-2_consecutive_timer_cycles",
+      "passed": true
+    },
+    {
+      "detail": {
+        "crash": null,
+        "returncode": -15
+      },
+      "name": "supervisor-2_loop_survived_until_stopped",
+      "passed": true
+    },
+    {
+      "detail": {
+        "max_gap": 30.05,
+        "min_gap": 15.0
+      },
+      "name": "supervisor-2_cycles_paced_by_own_timer",
+      "passed": true
+    },
+    {
+      "detail": [],
+      "name": "supervisor-2_no_unexpected_cycle_errors",
+      "passed": true
+    },
+    {
+      "detail": {
+        "expected": 4,
+        "released": 4,
+        "spread_s": 0.0,
+        "waiting_at_release": 4
+      },
+      "name": "barrier_released_all_supervisors_together",
+      "passed": true
+    },
+    {
+      "detail": {
+        "contenders": 2,
+        "gate_arrivals": [
+          2,
+          2
+        ],
+        "lost": 1,
+        "won": 1
+      },
+      "name": "concurrent_claim_lost_by_all_but_one",
+      "passed": true
+    },
+    {
+      "detail": {
+        "final": {
+          "attempt_count": 1,
+          "outcome": "DELIVERED",
+          "status": "completed"
+        },
+        "starts": 1
+      },
+      "name": "race_job_delivered_exactly_once",
+      "passed": true
+    },
+    {
+      "detail": {
+        "duplicate_attempt_starts": [],
+        "duplicate_successful_executions": [],
+        "executions": 25,
+        "overlapping_or_early_reexecutions": []
+      },
+      "name": "zero_duplicate_executions",
+      "passed": true
+    },
+    {
+      "detail": {
+        "attempts": [
+          [
+            1,
+            "autproof-victim"
+          ],
+          [
+            2,
+            "autproof-supervisor-2"
+          ]
+        ],
+        "final": {
+          "attempt_count": 2,
+          "outcome": "DELIVERED",
+          "status": "completed"
+        },
+        "recovered_after_lease_expiry_s": 1.7
+      },
+      "name": "dead_worker_job_recovered",
+      "passed": true
+    },
+    {
+      "detail": {
+        "complete_current_owner_dead_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "complete_dead_worker_own_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "heartbeat_current_owner_dead_token": "refused:STALE_PROGRAM_JOB_LEASE",
+        "probed_at_s": 64.02,
+        "recovery_lease_owner": "autproof-supervisor-2",
+        "recovery_lease_still_live": true,
+        "recovery_lease_unchanged": true
+      },
+      "name": "dead_worker_token_fenced_during_recovery_lease",
+      "passed": true
+    },
+    {
+      "detail": {
+        "delivered_without_execution": [],
+        "executed_without_delivery": []
+      },
+      "name": "durable_outcomes_match_ledger",
+      "passed": true
+    },
+    {
+      "detail": {
+        "failing_supervisor_cycles_after_failure": 10,
+        "failing_worker": "autproof-supervisor-2",
+        "final": {
+          "attempt_count": 2,
+          "outcome": "DELIVERED",
+          "status": "completed"
+        },
+        "jobs_completed_while_503_job_waited": 6
+      },
+      "name": "provider_failure_does_not_stall_other_jobs",
+      "passed": true
+    },
+    {
+      "detail": {
+        "failed_attempts": [
+          1,
+          2,
+          3
+        ],
+        "final": {
+          "attempt_count": 3,
+          "blocker": "PROGRAM_JOB_ATTEMPTS_EXHAUSTED",
+          "outcome": "DEAD_LETTER",
+          "status": "blocked"
+        }
+      },
+      "name": "dead_letter_after_max_attempts",
+      "passed": true
+    },
+    {
+      "detail": {
+        "jobs": {
+          "midrun-0": "DELIVERED",
+          "midrun-1": "DELIVERED",
+          "midrun-2": "DELIVERED"
+        }
+      },
+      "name": "mid_run_enqueue_completed_autonomously",
+      "passed": true
+    },
+    {
+      "detail": {
+        "normal_jobs": 14,
+        "programs": {
+          "canary-connection-error": "completed",
+          "canary-httpx-status": "completed",
+          "chain": "completed",
+          "deadletter": "blocked",
+          "midrun": "completed",
+          "parallel": "completed",
+          "provider": "completed",
+          "race": "completed",
+          "slow": "completed"
+        }
+      },
+      "name": "durable_state_changed_as_expected",
+      "passed": true
+    },
+    {
+      "detail": {
+        "deadline_s": 420,
+        "duration_s": 199.17
+      },
+      "name": "settled_before_deadline",
+      "passed": true
+    },
+    {
+      "detail": {
+        "downstream": {
+          "blocker": "UPSTREAM_JOB_FAILED",
+          "outcome": "BLOCKED",
+          "status": "blocked"
+        },
+        "repair": {
+          "attempt_count": 0,
+          "blocker": "OWNER_ACTION_REQUIRED:DEAD_LETTER",
+          "max_attempts": 0,
+          "outcome": null,
+          "status": "blocked"
+        },
+        "repairs": [
+          "dead-letter-repair:1d7e8a5e-1ac0-4789-8b88-91fd66c775bf"
+        ]
+      },
+      "name": "D6_fixed_dead_letter_blocks_program_with_one_follow_up",
+      "passed": true
+    },
+    {
+      "detail": {
+        "error_cycles": 0,
+        "injected_failures": 4,
+        "reported_failures": {
+          "FAKE_PERMANENT_EXECUTOR_FAILURE": 3,
+          "FAKE_PROVIDER_HTTP_503": 1
+        }
+      },
+      "name": "D7_fixed_failures_do_not_end_the_cycle",
+      "passed": true
+    },
+    {
+      "detail": {
+        "connection_error": true,
+        "httpx_status": true
+      },
+      "name": "D7_crash_fixed_supervisor_survives_realistic_provider_errors",
+      "passed": true
+    },
+    {
+      "detail": {
+        "blocked_attempts": [],
+        "guard_selftests_blocked": 5,
+        "processes_guarded": 5
+      },
+      "name": "no_network_calls",
+      "passed": true
+    },
+    {
+      "detail": [],
+      "name": "harness_never_invoked_the_cycle",
+      "passed": true
+    }
+  ],
+  "claims": {
+    "claim_updates": 30,
+    "lost_claim_races": 5,
+    "race_contenders": 2,
+    "race_job_id": "632a1398-a7df-4f29-a0d3-23f93f1b5a39",
+    "race_lost": 1,
+    "race_won": 1
+  },
+  "crash_canaries": {
+    "connection_error": {
+      "consecutive_cycles": 14,
+      "crash": null,
+      "cycles": 14,
+      "died_before_stop": false,
+      "exit_code": -15,
+      "gap_seconds_max": 15.09,
+      "gap_seconds_min": 15.0,
+      "jobs_completed": 1,
+      "name": "canary-connection-error",
+      "pid": 1181,
+      "ran_seconds": 196.24,
+      "records_not_executed": 0,
+      "stop_reasons": {
+        "idle": 14
+      },
+      "unexpected_errors": [],
+      "worker_id": "autproof-canary-connection-error"
+    },
+    "httpx_status": {
+      "consecutive_cycles": 13,
+      "crash": null,
+      "cycles": 13,
+      "died_before_stop": false,
+      "exit_code": -15,
+      "gap_seconds_max": 15.03,
+      "gap_seconds_min": 15.0,
+      "jobs_completed": 1,
+      "name": "canary-httpx-status",
+      "pid": 1192,
+      "ran_seconds": 185.29,
+      "records_not_executed": 0,
+      "stop_reasons": {
+        "idle": 13
+      },
+      "unexpected_errors": [],
+      "worker_id": "autproof-canary-httpx-status"
+    }
+  },
+  "cycle_source": "each supervisor's own per-cycle JSON stdout records emitted by runtime.program_autonomy_worker.main()",
+  "duration_seconds": 199.17,
+  "executions": {
+    "injected_failures": 6,
+    "starts": 25,
+    "successes": 18
+  },
+  "fixed_behaviour_detected": {
+    "D6": true,
+    "D7": true,
+    "D7-crash": true
+  },
+  "gating_assertions": [
+    "D6_fixed_dead_letter_blocks_program_with_one_follow_up",
+    "D7_crash_fixed_supervisor_survives_realistic_provider_errors",
+    "D7_fixed_failures_do_not_end_the_cycle",
+    "barrier_released_all_supervisors_together",
+    "concurrent_claim_lost_by_all_but_one",
+    "dead_letter_after_max_attempts",
+    "dead_worker_job_recovered",
+    "dead_worker_token_fenced_during_recovery_lease",
+    "duplicate_lease_attempts_refused",
+    "durable_outcomes_match_ledger",
+    "durable_state_changed_as_expected",
+    "harness_never_invoked_the_cycle",
+    "mid_run_enqueue_completed_autonomously",
+    "no_network_calls",
+    "provider_failure_does_not_stall_other_jobs",
+    "race_job_delivered_exactly_once",
+    "settled_before_deadline",
+    "supervisor-1_consecutive_timer_cycles",
+    "supervisor-1_cycles_paced_by_own_timer",
+    "supervisor-1_loop_survived_until_stopped",
+    "supervisor-1_no_unexpected_cycle_errors",
+    "supervisor-2_consecutive_timer_cycles",
+    "supervisor-2_cycles_paced_by_own_timer",
+    "supervisor-2_loop_survived_until_stopped",
+    "supervisor-2_no_unexpected_cycle_errors",
+    "victim_claimed_slow_job",
+    "victim_killed_mid_lease",
+    "zero_duplicate_executions"
+  ],
+  "generated_at_unix": 1791442938.644,
+  "jobs": {
+    "canary-connection-error-job": {
+      "attempt_count": 2,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_fake_provider_probe",
+      "status": "completed"
+    },
+    "canary-httpx-status-job": {
+      "attempt_count": 2,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_fake_provider_probe",
+      "status": "completed"
+    },
+    "chain-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "chain-1": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "chain-2": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "chain-3": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "dead-always-fails": {
+      "attempt_count": 3,
+      "blocker": "PROGRAM_JOB_ATTEMPTS_EXHAUSTED",
+      "outcome": "DEAD_LETTER",
+      "role_key": "proof_permanent_failure",
+      "status": "blocked"
+    },
+    "dead-downstream": {
+      "attempt_count": 0,
+      "blocker": "UPSTREAM_JOB_FAILED",
+      "outcome": "BLOCKED",
+      "role_key": "autonomy_probe",
+      "status": "blocked"
+    },
+    "dead-letter-repair:1d7e8a5e-1ac0-4789-8b88-91fd66c775bf": {
+      "attempt_count": 0,
+      "blocker": "OWNER_ACTION_REQUIRED:DEAD_LETTER",
+      "outcome": null,
+      "role_key": "proof_permanent_failure",
+      "status": "blocked"
+    },
+    "midrun-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "midrun-1": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "midrun-2": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "parallel-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "parallel-1": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "parallel-2": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "parallel-3": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "provider-503-once": {
+      "attempt_count": 2,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_fake_provider_probe",
+      "status": "completed"
+    },
+    "provider-ok-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_fake_provider_probe",
+      "status": "completed"
+    },
+    "provider-ok-1": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_fake_provider_probe",
+      "status": "completed"
+    },
+    "race-0": {
+      "attempt_count": 1,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "autonomy_probe",
+      "status": "completed"
+    },
+    "slow-recovered": {
+      "attempt_count": 2,
+      "blocker": null,
+      "outcome": "DELIVERED",
+      "role_key": "proof_slow_probe",
+      "status": "completed"
+    }
+  },
+  "known_defects": [],
+  "missing_required_assertions": [],
+  "mode": "real run_forever supervisor subprocesses; synthetic proof workload; NO-API",
+  "network": {
+    "blocked_attempts": 0,
+    "guard_selftests": 5
+  },
+  "parameters": {
+    "deadline_seconds": 420,
+    "lease_seconds": 60,
+    "max_jobs_per_cycle": 2,
+    "poll_seconds": 15,
+    "require_defect_fixes": true,
+    "supervisors": 2,
+    "target_cycles": 10
+  },
+  "postgres": {
+    "dsn": "postgresql://oc_test@127.0.0.1:55439/postgres",
+    "schema": "oc_autproof_c7b7e7555a2f",
+    "server_version": "16.10"
+  },
+  "programs": {
+    "canary-connection-error": "completed",
+    "canary-httpx-status": "completed",
+    "chain": "completed",
+    "deadletter": "blocked",
+    "midrun": "completed",
+    "parallel": "completed",
+    "provider": "completed",
+    "race": "completed",
+    "slow": "completed"
+  },
+  "scenario": "full",
+  "schema": "oc.program-autonomy-timer-proof.v2",
+  "status": "PASS",
+  "supervisors": [
+    {
+      "consecutive_cycles": 14,
+      "crash": null,
+      "cycles": 14,
+      "died_before_stop": false,
+      "exit_code": -15,
+      "gap_seconds_max": 15.1,
+      "gap_seconds_min": 15.0,
+      "jobs_completed": 9,
+      "name": "supervisor-1",
+      "pid": 1173,
+      "ran_seconds": 196.58,
+      "records_not_executed": 0,
+      "stop_reasons": {
+        "budget_exhausted": 4,
+        "idle": 10
+      },
+      "unexpected_errors": [],
+      "worker_id": "autproof-supervisor-1"
+    },
+    {
+      "consecutive_cycles": 13,
+      "crash": null,
+      "cycles": 13,
+      "died_before_stop": false,
+      "exit_code": -15,
+      "gap_seconds_max": 30.05,
+      "gap_seconds_min": 15.0,
+      "jobs_completed": 7,
+      "name": "supervisor-2",
+      "pid": 1179,
+      "ran_seconds": 196.56,
+      "records_not_executed": 0,
+      "stop_reasons": {
+        "budget_exhausted": 4,
+        "idle": 9
+      },
+      "unexpected_errors": [],
+      "worker_id": "autproof-supervisor-2"
+    }
+  ],
+  "timeline": [
+    {
+      "event": "enqueue",
+      "program": "slow",
+      "t": 0.63
+    },
+    {
+      "event": "spawn",
+      "pid": 1165,
+      "supervisor": "victim",
+      "t": 0.64
+    },
+    {
+      "attempt": 1,
+      "event": "victim_claimed",
+      "t": 2.14
+    },
+    {
+      "event": "enqueue",
+      "program": "race",
+      "t": 2.16
+    },
+    {
+      "event": "enqueue",
+      "program": "canary-connection-error",
+      "t": 2.17
+    },
+    {
+      "event": "enqueue",
+      "program": "canary-httpx-status",
+      "t": 2.18
+    },
+    {
+      "event": "spawn",
+      "pid": 1173,
+      "supervisor": "supervisor-1",
+      "t": 2.19
+    },
+    {
+      "event": "spawn",
+      "pid": 1179,
+      "supervisor": "supervisor-2",
+      "t": 2.19
+    },
+    {
+      "event": "spawn",
+      "pid": 1181,
+      "supervisor": "canary-connection-error",
+      "t": 2.19
+    },
+    {
+      "event": "spawn",
+      "pid": 1192,
+      "supervisor": "canary-httpx-status",
+      "t": 2.19
+    },
+    {
+      "event": "barrier_released",
+      "expected": 4,
+      "t": 3.19,
+      "waiting": 4
+    },
+    {
+      "event": "race_resolved",
+      "t": 3.69
+    },
+    {
+      "event": "enqueue",
+      "program": "chain",
+      "t": 3.71
+    },
+    {
+      "event": "enqueue",
+      "program": "parallel",
+      "t": 3.73
+    },
+    {
+      "event": "enqueue",
+      "program": "provider",
+      "t": 3.74
+    },
+    {
+      "event": "enqueue",
+      "program": "deadletter",
+      "t": 3.75
+    },
+    {
+      "event": "duplicate_lease_attempts",
+      "t": 3.78
+    },
+    {
+      "event": "victim_sigkill",
+      "lease_live": true,
+      "t": 3.78
+    },
+    {
+      "event": "enqueue",
+      "program": "midrun",
+      "t": 33.92
+    },
+    {
+      "event": "fence_probe_during_recovery_lease",
+      "t": 64.02
+    },
+    {
+      "event": "stop_supervisors",
+      "t": 199.15
+    }
+  ],
+  "victim": {
+    "returncode": -9,
+    "worker_id": "autproof-victim"
+  }
+}
