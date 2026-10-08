@@ -42,11 +42,10 @@ are exempt. The report names files, fields and counts only. It never prints
 a coordinate value, so its output is safe to paste into a public pull
 request.
 
-Not scanned (documented follow-ups in
-``docs/privacy/TRACKED-LOCALITY-REMEDIATION.md``): source code (``.py``,
-``.js``, ``.ts``), Markdown, UTF-16 text, degree-minute-second notation,
-unlabelled ``x``/``y`` outside a geometry context, and ``INSERT`` statements
-without a column list.
+Source/document literals, Unicode UTF-16/32 text, degree-minute-second
+notation, and unlabelled x/y pairs are checked too. Columnless INSERTs
+fail closed. Dynamic computed/encoded source values remain outside this
+static detector; passing it is not scientific publication approval.
 
 Exit codes: 0 clean, 1 precise coordinates (or an unverifiable file) found,
 2 usage error.
@@ -58,6 +57,7 @@ import argparse
 import ast
 import csv
 import gzip
+import hashlib
 import html
 import io
 import json
@@ -80,6 +80,8 @@ YAML_SUFFIXES = frozenset({".yaml", ".yml"})
 WORKBOOK_SUFFIXES = frozenset({".xlsx", ".xlsm"})
 HTML_SUFFIXES = frozenset({".html", ".htm"})
 XML_SUFFIXES = frozenset({".kml", ".gpx"})
+SOURCE_SUFFIXES = frozenset({".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"})
+DOCUMENT_SUFFIXES = frozenset({".md", ".mdx", ".txt", ".rst"})
 ZIP_SUFFIXES = frozenset({".zip", ".kmz"})
 TAR_SUFFIXES = frozenset({".tar", ".tgz"})
 SCANNED_SUFFIXES = (
@@ -92,11 +94,13 @@ SCANNED_SUFFIXES = (
     | XML_SUFFIXES
     | ZIP_SUFFIXES
     | TAR_SUFFIXES
+    | SOURCE_SUFFIXES
+    | DOCUMENT_SUFFIXES
     | {".parquet", ".sql", ".ipynb", ".gz"}
 )
 
-# Values at or coarser than this many decimal places are generalised enough
-# for a public repository (0.01 degree is roughly 1 km).
+# Repository leak-detection floor only. Passing this check does not authorize
+# public locality release; sensitive taxa require their reviewed runtime policy.
 MAX_PUBLIC_DECIMALS = 2
 
 # A file (or archive member) larger than this is not loaded into memory; it
@@ -111,6 +115,26 @@ MAX_ARCHIVE_DEPTH = 3
 ALLOWLIST: dict[str, str] = {}
 ALLOWLIST_PREFIX = "tests/"
 ALLOWLIST_MAX_BYTES = 64 * 1024
+# Existing adversarial source tests deliberately contain synthetic locality
+# literals. Pin whole-file digests: changing a fixture cannot silently exempt
+# new coordinates. This separate source-only boundary retains the data-file
+# allowlist's 64 KiB cap and does not permit application-source exemptions.
+SOURCE_FIXTURE_MAX_BYTES = 128 * 1024
+SOURCE_FIXTURE_DIGESTS: dict[str, str] = {
+    "tests/scientific_observability/test_review_task_handoff.py": "a34f73177f6c7f5756d6885aee9c99237f8db2fe6cef9c4d7a4e2df48d31194c",
+    "tests/scientific_observability/test_workflow_reconstruction.py": "453299b83f74efde7e004c85edab7147988c402a39a52f32a1a53a9330d965c4",
+    "tests/test_matrix_relationship_governed_sources.py": "77413e6da60e3ce65f3b567ec88f60051205558db0297d71f1333dd5e2c278d8",
+    "tests/test_member_matrix_identification_adversarial.py": "e16968c96893e6917ff0d1ad9e9d4aef52abb5d0551458b5c1a1c7cd55d08d57",
+    "tests/test_member_matrix_screen_broadened.py": "c67803cd31119d90f20f81e80b8430991df9a3ee04a53715a1b060ebc62336e0",
+    "tests/test_member_read_access.py": "f37bc276cde252be90568dc136656eb5215447fed17cee060314c3e01255216e",
+    "tests/test_no_precise_coordinates.py": "f1729f6f36c962c5188b33672fcc2b947fb4676072cf784daedc819fb5e11b36",
+    "tests/test_provider_reservoir.py": "fd158f8af272d724d0ed193cbd0dc4880ac12834cb2ff74504b42ae411ce316e",
+    "tests/test_relationship_measurement.py": "ec0a5e3a401d81c88ccb2fb5bafde05de9e0c524283570cb8ee7df655dceb015",
+    "tests/test_scan_trait_locality.py": "76afbd0f9a5b0b526689fb31bffb9ce80ddbb09374adbb6217b8396cfe50ecd3",
+    "tests/test_species_dossier_routes.py": "93786c45f9b52a81d2d9f6b4ecc3548ee714f8542dd289c2aec75d9fac131f63",
+    "tests/test_teaching_synthesis_contract.py": "64a6ffbbb96411394c57695353bded05ff73b7cacf44e0d551caaa281f0c9f41",
+}
+
 
 # --------------------------------------------------------------------------
 # Field names
@@ -261,6 +285,12 @@ def is_pair_key(key: object) -> bool:
 _NUM = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
 _NUMBER_TEXT = re.compile(rf"^\s*({_NUM})\s*°?\s*[NSEWnsew]?\s*$")
 _COMMA_DECIMAL_TEXT = re.compile(r"^\s*([+-]?\d{1,3}),(\d+)\s*°?\s*[NSEWnsew]?\s*$")
+_DMS_PATTERN = (
+    r"([+-]?\d{1,3})\s*°\s*(\d{1,2}(?:\.\d+)?)\s*['′]"
+    r"(?:\s*(\d{1,2}(?:\.\d+)?)\s*[\"″])?\s*([NSEWnsew])?"
+)
+_DMS_TEXT = re.compile(rf"^\s*{_DMS_PATTERN}\s*$")
+_DMS_FREE = re.compile(rf"(?<![\w.]){_DMS_PATTERN}(?![\w.])")
 _PAIR_TEXT = re.compile(rf"^\s*\(?\s*({_NUM})\s*[,; ]\s*({_NUM})\s*\)?\s*$")
 
 
@@ -279,6 +309,18 @@ def parse_number(value: object) -> Decimal | None:
         text = value
     else:
         return None
+    dms = _DMS_TEXT.fullmatch(text)
+    if dms:
+        degrees, minutes = Decimal(dms.group(1)), Decimal(dms.group(2))
+        seconds = Decimal(dms.group(3) or "0")
+        if minutes >= 60 or seconds >= 60:
+            return None
+        number = abs(degrees) + minutes / 60 + seconds / 3600
+        return (
+            -number
+            if degrees < 0 or (dms.group(4) or "").upper() in {"S", "W"}
+            else number
+        )
     match = _NUMBER_TEXT.match(text)
     if match:
         text = match.group(1)
@@ -400,6 +442,14 @@ def _positions_in_array_text(text: str, finding: FileFinding, label: str) -> Non
 def scan_text(text: str, finding: FileFinding, *, key_values: bool) -> None:
     """Scan free text for coordinate literals in the notations above."""
 
+    for match in _DMS_FREE.finditer(text):
+        # A direction identifies the axis even in prose. Without a direction,
+        # labelled fields and tables are handled by parse_number instead.
+        direction = (match.group(4) or "").upper()
+        if direction and is_precise(
+            match.group(0), "lat" if direction in {"N", "S"} else "lon"
+        ):
+            finding.hit("dms")
     for match in _WKT.finditer(text):
         for position in _WKT_POSITION.finditer(match.group(1)):
             if pair_is_precise(position.group(1), position.group(2)):
@@ -418,6 +468,18 @@ def scan_text(text: str, finding: FileFinding, *, key_values: bool) -> None:
     for match in _TEXT_GEOJSON_COORDINATES.finditer(text):
         _positions_in_array_text(match.group(1), finding, "geojson.coordinates")
     if key_values:
+        for match in re.finditer(
+            r"[\"']?([A-Za-z_][\w.-]{0,63})[\"']?\s*[:=]\s*(\[[-+\d\s.,\[\]eE]*\])",
+            text,
+        ):
+            if (
+                is_pair_key(match.group(1))
+                or _compact(match.group(1)) in POSITION_LIST_KEYS
+            ) and (
+                _compact(match.group(1)) != "coordinates"
+                or "=" in match.group(0).split("[", 1)[0]
+            ):
+                _positions_in_array_text(match.group(2), finding, "source.positions")
         for match in _KEY_VALUE.finditer(text):
             axis = coordinate_axis(match.group(1))
             if axis and is_precise(match.group(2), axis):
@@ -578,10 +640,10 @@ def walk_document(node: object, finding: FileFinding) -> None:
             )
         lowered = {_compact(key): key for key in current}
         if "x" in lowered and "y" in lowered:
-            has_context = _compact(parent_key) in _XY_CONTEXT_KEYS or bool(
-                _XY_CRS_KEYS.intersection(lowered)
-            )
-            if has_context and pair_is_precise(
+            layout_position = parent_key.endswith(
+                "/nodes/position"
+            ) and not _XY_CRS_KEYS.intersection(lowered)
+            if not layout_position and pair_is_precise(
                 current[lowered["x"]], current[lowered["y"]]
             ):
                 finding.hit("x/y")
@@ -606,7 +668,7 @@ def walk_document(node: object, finding: FileFinding) -> None:
                 continue
             if _compact(key) in POSITION_LIST_KEYS and isinstance(value, (list, tuple)):
                 _scan_positions(value, finding, _compact(key))
-                stack.append((str(key), value))
+                stack.append((f"{parent_key}/{key}", value))
                 continue
             if is_pair_key(key) and isinstance(value, (list, tuple, str)):
                 _scan_positions(value, finding, _compact(key))
@@ -614,7 +676,7 @@ def walk_document(node: object, finding: FileFinding) -> None:
                     scan_text(value, finding, key_values=False)
                 continue
             if isinstance(value, (dict, list, tuple, str)):
-                stack.append((str(key), value))
+                stack.append((f"{parent_key}/{key}", value))
 
 
 def _load_json(text: str) -> object:
@@ -702,6 +764,12 @@ def scan_text_document(text: str, finding: FileFinding, *, python: bool) -> None
     scan_text_tables(text, finding)
     if python:
         scan_python_literals(text, finding)
+    # Source/documents may carry a JSON object inside unrelated text.
+    for match in re.finditer(r"\{[^{}]{1,4096}\}", text):
+        try:
+            walk_document(_load_json(match.group(0)), finding)
+        except (json.JSONDecodeError, RecursionError):
+            pass
 
 
 _HTML_ROW = re.compile(r"<tr\b[^>]*>(.*?)</tr\s*>", re.IGNORECASE | re.DOTALL)
@@ -804,10 +872,13 @@ class TableScanner:
         if any(parse_number(cell) is not None for cell in row):
             return []
         columns = []
+        xy = {_compact(cell) for cell in row} >= {"x", "y"}
         for index, cell in enumerate(row):
             if not isinstance(cell, str) or len(cell) > 64 or len(_tokens(cell)) > 6:
                 continue
             axis = coordinate_axis(cell)
+            if xy and _compact(cell) in {"x", "y"}:
+                axis = "lon" if _compact(cell) == "x" else "lat"
             if axis:
                 columns.append((index, _compact(cell), axis))
             elif is_pair_key(cell):
@@ -848,16 +919,36 @@ def _sniff_delimiter(sample: str, default: str) -> str:
     return best if counts[best] else default
 
 
+def text_encoding(prefix: bytes) -> str:
+    """Detect Unicode BOMs and BOM-less UTF-16; never replace invalid bytes."""
+    if prefix.startswith((b"\xff\xfe\x00\x00", b"\x00\x00\xfe\xff")):
+        return "utf-32"
+    if prefix.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return "utf-16"
+    if b"\x00" in prefix:
+        even, odd = prefix[::2], prefix[1::2]
+        if odd and odd.count(0) / len(odd) > 0.5:
+            return "utf-16-le"
+        if even and even.count(0) / len(even) > 0.5:
+            return "utf-16-be"
+        raise UnicodeError("unrecognized text encoding")
+    return "utf-8-sig"
+
+
 def scan_delimited(
     opener: Callable[[], BinaryIO], name: str, finding: FileFinding
 ) -> None:
     default = "\t" if name.lower().endswith(".tsv") else ","
     with opener() as raw:
-        sample = raw.read(64 * 1024).decode("utf-8-sig", errors="replace")
+        encoding = text_encoding(raw.read(4096))
+    with opener() as raw:
+        sample = io.TextIOWrapper(raw, encoding=encoding, errors="strict").read(
+            64 * 1024
+        )
     delimiter = _sniff_delimiter(sample, default)
     table = TableScanner(finding)
     with opener() as raw:
-        text = io.TextIOWrapper(raw, encoding="utf-8-sig", errors="replace", newline="")
+        text = io.TextIOWrapper(raw, encoding=encoding, errors="strict", newline="")
         csv.field_size_limit(MAX_IN_MEMORY_BYTES)
         for row in csv.reader(text, delimiter=delimiter):
             table.row(row)
@@ -959,6 +1050,9 @@ def _sql_tuples(text: str, start: int) -> Iterator[list[str]]:
 
 
 def scan_sql_text(text: str, finding: FileFinding) -> None:
+    if re.search(r'\bINSERT\s+INTO\s+[\w."`\[\]]+\s+VALUES\b', text, re.IGNORECASE):
+        # Without schema/columns positional values cannot be checked safely.
+        finding.fail_closed("INSERT without column list")
     for match in _SQL_INSERT.finditer(text):
         columns = [column.strip().strip('"`[]') for column in match.group(1).split(",")]
         table = TableScanner(finding)
@@ -1077,7 +1171,7 @@ def scan_source(
     elif suffix == ".parquet":
         scan_parquet(data, finding)
     else:
-        text = data.decode("utf-8-sig", errors="replace")
+        text = data.decode(text_encoding(data[:4096]), errors="strict")
         if suffix in JSON_SUFFIXES:
             scan_json_text(text, finding)
         elif suffix in JSON_LINES_SUFFIXES:
@@ -1091,6 +1185,8 @@ def scan_source(
         elif suffix in XML_SUFFIXES:
             scan_xml_text(text, finding)
             scan_text(text, finding, key_values=False)
+        elif suffix in SOURCE_SUFFIXES | DOCUMENT_SUFFIXES:
+            scan_text_document(text, finding, python=suffix == ".py")
         elif suffix in HTML_SUFFIXES:
             scan_text(text, finding, key_values=True)
             scan_html_tables(text, finding)
@@ -1102,7 +1198,7 @@ def scan_file(path: Path, display: str | None = None) -> FileFinding:
     finding = FileFinding(path=display or str(path))
     try:
         scan_source(lambda: path.open("rb"), path.name, finding)
-    except (OSError, zlib.error, EOFError) as exc:
+    except (OSError, UnicodeError, zlib.error, EOFError) as exc:
         finding.fail_closed(f"unreadable: {type(exc).__name__}")
     except (RecursionError, MemoryError) as exc:
         finding.fail_closed(f"not scannable: {type(exc).__name__}")
@@ -1155,6 +1251,22 @@ def check(
             )
             continue
         finding = scan_file(absolute, relative)
+        if relative in SOURCE_FIXTURE_DIGESTS:
+            if (
+                not relative.startswith("tests/")
+                or _suffix(relative) != ".py"
+                or absolute.stat().st_size > SOURCE_FIXTURE_MAX_BYTES
+                or hashlib.sha256(absolute.read_bytes()).hexdigest()
+                != SOURCE_FIXTURE_DIGESTS[relative]
+            ):
+                finding.fail_closed(
+                    "synthetic source fixture changed or is outside its boundary"
+                )
+            elif finding.precise_values and not finding.error:
+                # This reviewed exact fixture is synthetic. No prefix exemption.
+                continue
+            else:
+                finding.fail_closed("stale synthetic source fixture exemption")
         if not finding.precise_values and not finding.error:
             continue
         hits.add(relative)
