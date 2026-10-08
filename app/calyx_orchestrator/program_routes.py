@@ -8,11 +8,14 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.security import verify_owner_or_api_key
+from app.canonical_brain.constitution import BuildAdmissionRequest, evaluate_build_admission
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .capability_memory import load_owner_capability_registry
 from .dry_run_service import execute_deterministic_dry_run, require_owned_program_job
 from .experience_memory import load_program_experience
+from .repository_evidence_executor import REPOSITORY_EVIDENCE_ROLE
+from .static_validation_executor import STATIC_VALIDATION_ROLE
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
 
@@ -47,6 +50,8 @@ class ProgramRequest(BaseModel):
     dependencies: list[DependencyRequest] = Field(default_factory=list, max_length=200)
     max_active_jobs: int = Field(default=6, ge=1, le=6)
     start_immediately: bool = True
+    idempotency_key: str | None = Field(default=None, min_length=1, max_length=256)
+    admission: BuildAdmissionRequest | None = None
 
 
 class CancelRequest(BaseModel):
@@ -225,15 +230,42 @@ def complete_program_job(
 def create_program(payload: ProgramRequest, auth: AuthDependency, db: DbDependency) -> dict:
     repository = PersistentProgramRepository(db)
     try:
+        key = payload.idempotency_key
+        if payload.admission is not None:
+            decision = evaluate_build_admission(payload.admission)
+            if decision.status != "admitted":
+                raise HTTPException(403, detail={"code": "BRAIN_ADMISSION_BLOCKED"})
+            if key is not None and key != payload.admission.build_id:
+                raise ValueError("BRAIN_ADMISSION_IDENTITY_MISMATCH")
+            key = payload.admission.build_id
+            # This handoff admits verification, not science, edits or provider work.
+            if any(
+                item.mutating or item.role_key not in {
+                    REPOSITORY_EVIDENCE_ROLE, STATIC_VALIDATION_ROLE,
+                }
+                for item in payload.jobs
+            ):
+                raise HTTPException(403, detail={"code": "BRAIN_VERIFICATION_ROLE_REQUIRED"})
+        specs = [ProgramJobSpec(**item.model_dump()) for item in payload.jobs]
+        if payload.admission is not None:
+            specs = [
+                ProgramJobSpec(
+                    job_key=spec.job_key, role_key=spec.role_key, title=spec.title,
+                    repository=spec.repository, branch=spec.branch, mutating=spec.mutating,
+                    inputs={**(spec.inputs or {}), "brain_admission": payload.admission.model_dump(mode="json")},
+                )
+                for spec in specs
+            ]
         program = repository.create_program(
             owner=_owner(auth),
             title=payload.title,
             objective=payload.objective,
-            jobs=[ProgramJobSpec(**item.model_dump()) for item in payload.jobs],
+            jobs=specs,
             dependencies=[(item.upstream, item.downstream) for item in payload.dependencies],
             max_active_jobs=payload.max_active_jobs,
+            idempotency_key=key,
         )
-        if payload.start_immediately:
+        if payload.start_immediately and program.status == "draft":
             repository.start(owner=_owner(auth), program_id=program.program_id)
         return repository.snapshot(owner=_owner(auth), program_id=program.program_id)
     except (LookupError, TypeError, ValueError) as exc:
