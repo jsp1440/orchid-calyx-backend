@@ -54,7 +54,7 @@ _COORDINATE_PATTERNS = (
     re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}"),
     re.compile(r"\b(?:lat|latitude|lng|lon|long|longitude)\s*[=:]\s*[-+]?\d+(?:\.\d+)?",
                re.IGNORECASE),
-    # Degrees-minutes-seconds: 8°07'30"S
+# Degrees-minutes-seconds literals are recognized by the following pattern.
     re.compile(r"\d{1,3}\s*°\s*\d{1,2}\s*['′]\s*[\d.]+\s*[\"″]?\s*[NSEW]",
                re.IGNORECASE),
     # Grid references and plus codes.
