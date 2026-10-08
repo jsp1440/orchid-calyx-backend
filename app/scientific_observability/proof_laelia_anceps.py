@@ -104,8 +104,8 @@ def build_trace() -> list[ScientificObservationEvent]:
         conflict={"status": ConflictStatus.NONE_OBSERVED.value, "counterevidence_ids": []},
         locality_classification={"sensitivity": "RESEARCH_RESTRICTED", "disclosure": "GENERALIZED"},
         safe_status=SafeStatus(status=SafeStatusState.OK, reason_code="ASSERTION_CREATED"),
-        # Defense-in-depth: a protected coordinate that MUST be redacted before storage.
-        extensions={"latitude": 30.7891, "longitude": -45.8912, "raw_prompt": "should never persist"},
+        # Synthetic open-ocean locality: coordinate fields MUST be redacted even at coarse precision.
+        extensions={"latitude": 12.34, "longitude": -45.60, "raw_prompt": "should never persist"},
     )
 
     denied = ScientificObservationEvent(
