@@ -272,6 +272,16 @@ def create_program(payload: ProgramRequest, auth: AuthDependency, db: DbDependen
         raise _translate_error(exc) from exc
 
 
+@router.get("/submission-capabilities")
+def submission_capabilities(auth: AuthDependency) -> dict:
+    """Read-only wire features, not worker capacity or permission grants."""
+    _owner(auth)
+    return {"capabilities": [
+        "brain.verification_admission.v1",
+        "programs.idempotency.v1",
+    ]}
+
+
 @router.get("/capability-registry")
 def get_capability_registry(auth: AuthDependency, db: DbDependency) -> dict:
     return load_owner_capability_registry(db, owner=_owner(auth))
