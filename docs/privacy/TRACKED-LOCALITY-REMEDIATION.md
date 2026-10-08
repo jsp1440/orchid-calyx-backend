@@ -1,6 +1,6 @@
 # Tracked occurrence-locality remediation
 
-Status: files removed from the tip of `oc-autonomous-integration` by this change.
+Status: files removed from this PR candidate tip; integration/main convergence is pending approval.
 The data is still in git history, which only the owner can change.
 
 This document contains no coordinate values. Keep it that way.
@@ -48,15 +48,20 @@ A committed data file bypasses every one of those runtime safeguards.
 
   The 2 dp threshold is a floor for tracked files. It is not a statement of compliance with the per-taxon rules above: sensitive taxa need coarser generalisation, and occurrence data should not be committed at all.
 
-  The only exemption is an explicit allowlist of small synthetic fixtures under `tests/`. That allowlist is currently empty.
+  The data-file allowlist remains empty and bounded to 64 KiB. Existing adversarial Python unit-test fixtures have an explicit source-only exemption pinned to each exact SHA-256 digest, restricted to `tests/` Python files up to 128 KiB. There is no prefix exemption. Any fixture edit invalidates its exemption until its synthetic contents are reviewed and its digest updated. Application code, Markdown, data files, unreadable files and archive members cannot use this exemption. Fixture literals were already replaced with synthetic open-ocean canaries in the prior repair; no collected occurrences are exempted.
 
-  Documented follow-ups, not implemented:
-  - scanning source code (`.py`, `.js`, `.ts`) and Markdown;
-  - UTF-16 text;
-  - degree-minute-second notation;
-  - `x`/`y` pairs outside a geometry or CRS context;
-  - mysqldump `INSERT` statements without a column list;
-  - further suffixes (for example `.geopkg`, `.shp`, `.dbf`, `.ods`).
+  Added coverage:
+  - source literals in Python, JavaScript/TypeScript and related suffixes, plus Markdown/text/RST; labelled values, coordinate arrays, Python literal dictionaries and embedded JSON are scanned;
+  - UTF-16/UTF-32 with BOMs, BOM-less UTF-16, and strict Unicode decoding; undecodable input fails closed rather than replacing bytes;
+  - degree-minute-second values in labelled fields/tables and hemisphere-labelled prose;
+  - anonymous scalar `x`/`y` objects and paired table columns. The existing `nodes[].position` UI layout shape is retained unless it declares a CRS;
+  - SQL `INSERT` statements without a column list fail closed as unverifiable; explicit columns retain the existing detector.
+
+  Documented remaining limitations:
+  - computed, encrypted, obfuscated or externally loaded source values are not statically evaluated; lexical scanning is not a full JavaScript/TypeScript parser;
+  - short anonymous pair arrays retain the existing minimum-row heuristic; arbitrary UI or numerical data cannot be universally identified as geography from numbers alone;
+  - further suffixes (for example `.geopkg`, `.shp`, `.dbf`, `.ods`);
+  - per-taxon public release remains governed by the reviewed runtime locality policy. A clean repository scan does not authorize release of sensitive observations.
 - `tests/test_no_precise_coordinates.py` runs the guard over `git ls-files`. The guard runs in CI only when a workflow runs that test, and Orchid Autonomous Backend Validation runs only the test files a pull request changes. `.github/workflows/oc-critical-suites.yml` runs on every pull request and push to `main` and `oc-autonomous-integration`. This change lists this test and `tests/test_legacy_occurrence_api_fail_closed.py` in that workflow's required `OC_CRITICAL_PRIVACY_SUITES`.
 - `tests/test_legacy_occurrence_api_fail_closed.py` parses every standalone FastAPI route handler outside `app/`. It fails when a handler that touches coordinate names does not actually depend on `verify_owner_or_api_key`, whether through the decorator, a parameter dependency, the app's dependencies, or a wrapper that calls the check.
 - `.gitignore` now lists the generated exact-coordinate outputs.
@@ -85,3 +90,8 @@ that is destructive and owner-gated.
 2. **Provider notification.** Tell the data providers whose records were exposed (iNaturalist, Tropicos and the herbarium sources named in the `source` property). Put the *Phragmipedium* (CITES Appendix I) records first.
 3. **Exposure assessment.** Review forks, clone and traffic statistics, and any mirrors or caches of the public repository for the period since the files were first committed, to judge how widely the coordinates may have been copied.
 4. The agent asset metadata (`.agents/agent_assets_metadata.toml`) still lists `ecuador_orchids.geojson.json` as an output. `.agents/**` is an owner-checkpoint path, so this change leaves that entry alone. The entry holds no coordinates.
+
+
+## Follow-up implementation verification
+
+The scanner now checks the formerly omitted source/document, Unicode, DMS and anonymous x/y cases. The regression fixtures are synthetic and reports retain paths, labels and counts only. The source fixture digest exception is tested against changes, non-test paths and oversize files. Symbolic comments replace executable-looking example coordinates; the observability proof retains its redaction exercise with coarse synthetic open-ocean values, which are still removed because coordinate fields remain private. No scientific records or production settings were edited.
