@@ -101,9 +101,9 @@ def test_protected_locality_reduced_by_default_and_rejected_when_strict():
     db, _ = _session()
     svc = _svc()
     run = svc.capture_run(
-        db, _run_payload(sanitized_summary="found at -0.1807, -78.4678 near the ridge")
+        db, _run_payload(sanitized_summary="found at -4.1234, -25.2345 near the ridge")
     )
-    assert "-0.1807" not in run.sanitized_summary
+    assert "-4.1234" not in run.sanitized_summary
     assert "[REDACTED_COORDINATES]" in run.sanitized_summary
     assert run.redaction_report["locality_count"] == 1
 
@@ -111,7 +111,7 @@ def test_protected_locality_reduced_by_default_and_rejected_when_strict():
         svc.capture_run(
             db,
             _run_payload(
-                sanitized_summary="protected site 4.5709, -74.2973",
+                sanitized_summary="protected site 4.3456, -25.4567",
                 strict_locality=True,
             ),
         )
@@ -470,7 +470,7 @@ def test_orm_metadata_round_trips():
 
 
 def test_redaction_is_idempotent():
-    sample = "token GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwx1234 at 4.5709, -74.2973"
+    sample = "token GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwx1234 at 4.3456, -25.4567"
     once = redact_text(sample)
     twice = redact_text(once.text)
     assert once.text == twice.text

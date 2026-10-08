@@ -324,12 +324,13 @@ def test_no_map_claims_agreement_while_serving_a_standing_contradiction():
 @pytest.mark.parametrize(
     "leak",
     [
-        "Population located at 51.7520 -1.2577 near the reserve",
+        "Population located at 50.1234 -9.2345 near the reserve",
         "Population at 51.75, -1.25",
-        "lat 51.7520 lon -1.2577",
+        "lat 50.1234 lon -9.2345",
         "Recorded at 43\u00b0 17\u2019 N",
-        "51.7520, -1.2577",
+        "50.1234, -9.2345",
     ],
+    ids=lambda _case: "case",
 )
 def test_every_coordinate_shape_a_checker_found_is_now_caught(leak):
     """Each of these was served verbatim by the first version of the redactor.
@@ -397,7 +398,7 @@ def test_a_coordinate_in_the_graph_is_redacted_rather_than_served():
     for edge in repo.all_edges():
         payload = dict(edge.payload)
         if edge.edge_type == "co_occurs_with":
-            payload["citation"] = "Recorded at -8.1234, -35.6789 on the ridge"
+            payload["citation"] = "Recorded at -4.5678, -25.6789 on the ridge"
         edges.append(Edge(
             kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
             from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
@@ -406,7 +407,7 @@ def test_a_coordinate_in_the_graph_is_redacted_rather_than_served():
     leaky = execute(repository=InMemoryGraphRepository(
         nodes=list(repo.all_nodes()), edges=edges))
     serialized = json.dumps(leaky)
-    assert "-8.1234" not in serialized
+    assert "-4.5678" not in serialized
     assert "locality withheld" in serialized
 
 
@@ -572,7 +573,7 @@ def test_mechanism_prose_describes_the_edge_rather_than_this_fixture():
 #: Four of the five never write a digits-and-dot pair at all, which is what the
 #: first widening had assumed a coordinate would look like.
 _SECOND_ROUND_LEAKS = [
-    ("51.7520 degrees north, 1.2577 degrees west", ["51.7520", "1.2577"]),
+    ("50.1234 degrees north, 9.2345 degrees west", ["50.1234", "9.2345"]),
     ("UTM 30U 620000 5735000", ["620000", "5735000"]),
     ("51,7520 1,2577", ["51,7520", "1,2577"]),
     ("9C3XGV24+RQ", ["9C3XGV24+RQ"]),
@@ -580,7 +581,7 @@ _SECOND_ROUND_LEAKS = [
 ]
 
 
-@pytest.mark.parametrize("leak,fragments", _SECOND_ROUND_LEAKS)
+@pytest.mark.parametrize("leak,fragments", _SECOND_ROUND_LEAKS, ids=lambda _case: "case")
 def test_a_position_written_without_a_decimal_pair_is_still_withheld(leak, fragments):
     """The first is the same ~10 m Oxford position as the original reproduction.
 
@@ -616,11 +617,11 @@ def test_the_fail_closed_net_is_strictly_broader_than_the_redactor():
     from app.cognitive_integration.executor import _COORDINATE, _COORDINATE_SUSPICION
 
     probes = [leak for leak, _ in _SECOND_ROUND_LEAKS] + [
-        "Population located at 51.7520 -1.2577 near the reserve",
+        "Population located at 50.1234 -9.2345 near the reserve",
         "Population at 51.75, -1.25",
-        "lat 51.7520 lon -1.2577",
+        "lat 50.1234 lon -9.2345",
         "Recorded at 43° 17’ N",
-        "51.7520, -1.2577",
+        "50.1234, -9.2345",
         "30U WV 20000 35000",
     ]
     for probe in probes:
@@ -630,8 +631,8 @@ def test_the_fail_closed_net_is_strictly_broader_than_the_redactor():
             )
 
     # And it is genuinely wider: this one the redactor misses and the net holds.
-    assert not _COORDINATE.search("N51.7520 W1.2577")
-    assert _COORDINATE_SUSPICION.search("N51.7520 W1.2577")
+    assert not _COORDINATE.search("N50.6284 W9.3917")
+    assert _COORDINATE_SUSPICION.search("N50.6284 W9.3917")
 
 
 @pytest.mark.parametrize(
@@ -763,13 +764,13 @@ _THIRD_ROUND_LEAKS = [
     ("full-width digits", "５１．７５２０, －１．２５７７"),
     ("Arabic-Indic digits", "٥١٫٧٥٢٠ ١٫٢٥٧٧"),
     ("degrees-minutes-seconds, no units", "51 45 07 N 001 15 27 W"),
-    ("scientific notation", "5.17520e1, -1.2577e0"),
+    ("scientific notation", "5.03456e1, -9.2345e0"),
     ("digits spaced apart", "5 1 . 7 5 2 0 , - 1 . 2 5 7 7"),
     ("bare what3words", "filled.count.soap"),
 ]
 
 
-@pytest.mark.parametrize("label,leak", _THIRD_ROUND_LEAKS)
+@pytest.mark.parametrize("label,leak", _THIRD_ROUND_LEAKS, ids=lambda _case: "case")
 def test_the_national_grid_and_its_relatives_are_withheld(label, leak):
     """Ordnance Survey is the one that matters most here.
 
@@ -804,7 +805,7 @@ def test_the_national_grid_and_its_relatives_are_withheld(label, leak):
 def test_a_position_carried_as_numbers_is_examined_like_any_other():
     """The redactor returned every non-string unexamined.
 
-    Two edges carrying `51.7520` and `-1.2577` as floats were served intact,
+    Two edges carrying `50.1234` and `-9.2345` as floats were served intact,
     and the fail-closed check missed them too because the halves sat further
     apart than its window. That is the shape a real occurrence record is most
     likely to arrive in, and checking only strings is a bug class rather than a
@@ -815,9 +816,9 @@ def test_a_position_carried_as_numbers_is_examined_like_any_other():
     for edge in repo.all_edges():
         payload = dict(edge.payload)
         if edge.kg_edge_id == 4:
-            payload["identifier"] = 51.7520
+            payload["identifier"] = 50.1234
         if edge.kg_edge_id == 5:
-            payload["identifier"] = -1.2577
+            payload["identifier"] = -9.2345
         edges.append(Edge(
             kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
             from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
@@ -827,7 +828,7 @@ def test_a_position_carried_as_numbers_is_examined_like_any_other():
         nodes=list(repo.all_nodes()), edges=edges))
     served = json.dumps(result)
     assert "51.752" not in served
-    assert "-1.2577" not in served
+    assert "-9.2345" not in served
     assert result["geographic_context"]["coordinates_present"] is True
 
 
@@ -848,7 +849,7 @@ def test_the_map_reports_what_redaction_did_instead_of_asserting_it():
     for edge in repo.all_edges():
         payload = dict(edge.payload)
         if edge.edge_type == "co_occurs_with":
-            payload["citation"] = "Recorded at 51.7520, -1.2577."
+            payload["citation"] = "Recorded at 50.1234, -9.2345."
         edges.append(Edge(
             kg_edge_id=edge.kg_edge_id, edge_type=edge.edge_type,
             from_node_id=edge.from_node_id, to_node_id=edge.to_node_id,
@@ -857,7 +858,7 @@ def test_the_map_reports_what_redaction_did_instead_of_asserting_it():
     poisoned = execute(repository=InMemoryGraphRepository(
         nodes=list(repo.all_nodes()), edges=edges))
     assert poisoned["geographic_context"]["coordinates_present"] is True
-    assert "51.7520" not in json.dumps(poisoned)
+    assert "50.1234" not in json.dumps(poisoned)
 
 
 def test_redaction_applied_still_records_that_the_policy_ran():

@@ -793,8 +793,8 @@ def test_coordinate_looking_excerpts_are_withheld_from_any_section():
     rows = yong_gee_kg_rows(
         "101",
         {
-            "season": "Collected at 5.9804 N, 116.0735 E in March.",
-            "scent": "Noted near 6°05'N 116°33'E.",
+            "season": "Collected at 4.5678 N, 160.6789 E in March.",
+            "scent": "Noted near 4°12'N 160°34'E.",
         },
     )
     dossier = repository(FakeCursor(evidence={101: rows})).get_dossier("101")
@@ -803,7 +803,7 @@ def test_coordinate_looking_excerpts_are_withheld_from_any_section():
     # Check the coordinate fragments themselves: a bare "116" also matches the
     # generated_at timestamp whenever its microseconds contain those digits.
     dumped = str(dossier.model_dump(mode="json"))
-    for fragment in ("5.9804", "116.0735", "6°05'N", "116°33'E", "Collected at", "Noted near"):
+    for fragment in ("4.5678", "160.6789", "4°12'N", "160°34'E", "Collected at", "Noted near"):
         assert fragment not in dumped
 
 

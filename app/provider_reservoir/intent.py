@@ -50,11 +50,11 @@ _SECRET_VALUE_PATTERNS = (
 #: Coordinate and locality shapes. Orchid locality is protected by default, so
 #: these are redacted on the way in rather than trusted not to appear.
 _COORDINATE_PATTERNS = (
-    # Decimal pairs: "-8.1234, -35.6789" and "lat=-8.1 lng=-35.6".
+    # Decimal pairs: "-4.5678, -25.6789" and "lat=-8.1 lng=-35.6".
     re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;]\s*[-+]?\d{1,3}\.\d{3,}"),
     re.compile(r"\b(?:lat|latitude|lng|lon|long|longitude)\s*[=:]\s*[-+]?\d+(?:\.\d+)?",
                re.IGNORECASE),
-    # Degrees-minutes-seconds: 8°07'30"S
+# Degrees-minutes-seconds literals are recognized by the following pattern.
     re.compile(r"\d{1,3}\s*°\s*\d{1,2}\s*['′]\s*[\d.]+\s*[\"″]?\s*[NSEW]",
                re.IGNORECASE),
     # Grid references and plus codes.

@@ -211,7 +211,7 @@ def test_api_key_privilege_can_access_project_scoped_memory(db):
 def test_structured_protected_locality_fails_closed(db):
     workspace = project(db)
     payload = capture_payload().model_dump()
-    payload["items"][0]["structured_payload"]["decimalLatitude"] = -6.12345
+    payload["items"][0]["structured_payload"]["decimalLatitude"] = -4.45678
     with pytest.raises(ScientificMemoryError, match="SENSITIVE_LOCALITY_FORBIDDEN"):
         ScientificMemoryService().create_capture(
             db,

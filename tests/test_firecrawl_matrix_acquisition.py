@@ -234,7 +234,7 @@ async def test_unknown_taxon_and_locality_do_not_become_claims(tmp_path):
     source = tmp_path / "source.txt"
     source.write_text(
         TEXT + "Paphiopedilum unknown leaf length 9 cm.\n"
-        "Paphiopedilum delenatii leaf length 12 cm. Latitude 12.345 longitude 67.89.\n"
+        "Paphiopedilum delenatii leaf length 12 cm. Latitude 30.912 longitude 60.78.\n"
     )
     paper = await CanonicalMorphologyExtractor(taxonomy()).run(
         PipelineContext(source_path=source, output_dir=tmp_path),

@@ -95,7 +95,7 @@ _SECRETY_KEY = re.compile(
 
 # ---------------------------------------------------------------------------
 # Protected-locality patterns: decimal-degree coordinate pairs.
-# Examples: "-0.1807, -78.4678", "lat: 4.5709 lon: -74.2973".
+# Examples use symbolic latitude/longitude placeholders, never locality literals.
 # ---------------------------------------------------------------------------
 
 _COORD_PAIR = re.compile(r"[-+]?\d{1,3}\.\d{3,}\s*[,;/ ]\s*[-+]?\d{1,3}\.\d{3,}")

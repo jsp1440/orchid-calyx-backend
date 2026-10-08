@@ -158,7 +158,7 @@ def test_existing_append_idempotency_and_redaction_remain_in_force():
         resulting_state=WorkflowState.RUNNING,
         evidence_refs=("artifact:harvest-manifest-001",),
         extra_extensions={
-            "latitude": 12.345,
+            "latitude": 30.912,
             "api_key": "secret-value",
         },
     )
