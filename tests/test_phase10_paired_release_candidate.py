@@ -1,15 +1,25 @@
 """Current paired source -> HTTP -> PostgreSQL -> unchanged timer worker."""
 
-from datetime import datetime, timezone
 import hashlib
 import os
-from pathlib import Path
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
+from test_brain_cross_repository_contracts import _load
+from test_brain_module_lifecycle_contracts import (
+    BRANCH,
+    MODULE_TARGETS,
+    REPOSITORY,
+    disposable_program,  # noqa: F401 - imported pytest fixture
+)
+from test_brain_postgres_admission import (
+    postgres,  # noqa: F401 - imported pytest fixture
+)
 
 from app.calyx_orchestrator import program_cycle
 from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy
@@ -20,12 +30,6 @@ from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 from runtime import program_autonomy_worker
-from test_brain_cross_repository_contracts import _load
-from test_brain_module_lifecycle_contracts import (
-    BRANCH, MODULE_TARGETS, REPOSITORY,
-    disposable_program,  # noqa: F401 - imported pytest fixture
-)
-from test_brain_postgres_admission import postgres  # noqa: F401 - imported pytest fixture
 
 
 def test_paired_packet_preflight_admission_leases_and_timer_completion(postgres, disposable_program, monkeypatch):  # noqa: F811

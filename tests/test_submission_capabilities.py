@@ -31,5 +31,5 @@ def test_authentication_is_not_bypassed():
         raise HTTPException(401, detail="fixture-denied")
     with client(denied) as http:
         assert http.get("/programs/submission-capabilities").status_code == 401
-    with client(lambda: {}) as http:
+    with client(dict) as http:
         assert http.get("/programs/submission-capabilities").status_code == 401

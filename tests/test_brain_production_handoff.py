@@ -9,13 +9,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
-
-from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
-from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
-from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramJob
-from app.calyx_orchestrator.program_routes import router
-from app.database import get_db
-from app.security import verify_owner_or_api_key
 from test_brain_cross_repository_contracts import _load
 from test_brain_module_lifecycle_contracts import (
     BRANCH,
@@ -23,6 +16,13 @@ from test_brain_module_lifecycle_contracts import (
     REPOSITORY,
     disposable_program,  # noqa: F401 - pytest fixture reused, not copied
 )
+
+from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
+from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramJob
+from app.calyx_orchestrator.program_routes import router
+from app.database import get_db
+from app.security import verify_owner_or_api_key
 
 
 def test_actual_brain_packets_execute_ten_source_checks_without_test_job_mapping(disposable_program):  # noqa: F811 - imported pytest fixture

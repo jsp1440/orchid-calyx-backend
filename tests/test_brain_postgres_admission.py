@@ -1,7 +1,7 @@
 """Opt-in loopback PostgreSQL race checks; never read DATABASE_URL."""
 
-from concurrent.futures import ThreadPoolExecutor
 import os
+from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from urllib.parse import urlparse
 from uuid import uuid4
@@ -9,14 +9,15 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
+from test_brain_admission_replay import specification
 
 from app.calyx_orchestrator.program_models import (
-    CalyxProgram, CalyxProgramJob,
+    CalyxProgram,
+    CalyxProgramJob,
 )
 from app.calyx_orchestrator.program_repository import PersistentProgramRepository
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.schema import ensure_orchestrator_schema
-from test_brain_admission_replay import specification
 
 
 @pytest.fixture

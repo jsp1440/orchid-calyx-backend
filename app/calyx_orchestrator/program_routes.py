@@ -6,18 +6,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.canonical_brain.constitution import (
+    BuildAdmissionRequest,
+    evaluate_build_admission,
+)
 from app.database import get_db
 from app.security import verify_owner_or_api_key
-from app.canonical_brain.constitution import BuildAdmissionRequest, evaluate_build_admission
 
 from .assignment_factory import assignment_payload, governed_assignment_from_claimed_job
 from .capability_memory import load_owner_capability_registry
 from .dry_run_service import execute_deterministic_dry_run, require_owned_program_job
 from .experience_memory import load_program_experience
-from .repository_evidence_executor import REPOSITORY_EVIDENCE_ROLE
-from .static_validation_executor import STATIC_VALIDATION_ROLE
 from .program_repository import PersistentProgramRepository, ProgramJobSpec
 from .program_worker import PersistentProgramWorker
+from .repository_evidence_executor import REPOSITORY_EVIDENCE_ROLE
+from .static_validation_executor import STATIC_VALIDATION_ROLE
 
 router = APIRouter(prefix="/programs", tags=["calyx-engineering-programs"])
 
