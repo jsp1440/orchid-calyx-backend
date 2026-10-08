@@ -5,13 +5,17 @@ import os
 from pathlib import Path
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramJob
-from app.calyx_orchestrator.program_routes import ProgramRequest, create_program
+from app.calyx_orchestrator.program_routes import router
+from app.database import get_db
+from app.security import verify_owner_or_api_key
 from test_brain_cross_repository_contracts import _load
 from test_brain_module_lifecycle_contracts import (
     BRANCH,
@@ -27,7 +31,17 @@ def test_actual_brain_packets_execute_ten_source_checks_without_test_job_mapping
         pytest.skip("Explicit current Brain companion source required")
     producer = _load(Path(source) / "calyx_brain/reasoning_contracts.py", "handoff_brain")
     root, engine = disposable_program
-    with Session(engine) as db:
+    app = FastAPI()
+    app.include_router(router)
+
+    def session():
+        with Session(engine) as db:
+            yield db
+
+    app.dependency_overrides[get_db] = session
+    # Authentication is supplied only by this disposable test application.
+    app.dependency_overrides[verify_owner_or_api_key] = lambda: {"subject": "fixture-owner"}
+    with TestClient(app) as client, Session(engine) as db:
         for lane, path in MODULE_TARGETS.items():
             candidate = producer.CandidateKnowledge(
                 f"fixture:{lane}", "fixture:subject", "has_trait", "fixture:object",
@@ -38,9 +52,9 @@ def test_actual_brain_packets_execute_ten_source_checks_without_test_job_mapping
                 files=[{"path": path, "sha256": hashlib.sha256((root / path).read_bytes()).hexdigest()}],
             )
             # No translation into ProgramJobSpec or test-only role mapping.
-            payload = ProgramRequest.model_validate(packet)
-            create_program(payload, {"subject": "fixture-owner"}, db)
-            create_program(payload, {"subject": "fixture-owner"}, db)
+            first = client.post("/programs", json=packet)
+            replay = client.post("/programs", json=packet)
+            assert first.status_code == replay.status_code == 201
         assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 5
         assert db.scalar(select(func.count()).select_from(CalyxProgramJob)) == 10
         registry = AuthoritativeExecutorRegistry(workspace_root=root, repository_name=REPOSITORY)
