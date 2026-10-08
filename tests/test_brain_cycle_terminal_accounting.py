@@ -9,14 +9,21 @@ from sqlalchemy.orm import Session
 from app.calyx_orchestrator.engineering_core import TerminalOutcome
 from app.calyx_orchestrator.executor import ExecutionState, canonical_checksum
 from app.calyx_orchestrator.executor_registry import (
-    AUTONOMY_PROBE_ROLE, AuthoritativeExecutorRegistry, AutonomyProbeExecutor,
+    AUTONOMY_PROBE_ROLE,
+    AuthoritativeExecutorRegistry,
+    AutonomyProbeExecutor,
     RegisteredExecutor,
 )
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import (
-    CalyxProgram, CalyxProgramDependency, CalyxProgramJob,
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
 )
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.database import Base
 
 

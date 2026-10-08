@@ -6,31 +6,50 @@ program jobs. Git workspaces and the persisted SQLite database are disposable.
 External access is forbidden; cognitive reasoning uses the existing fixture store.
 """
 
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import socket
 import subprocess
+from datetime import datetime, timezone
+from itertools import pairwise
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.assignment_factory import governed_assignment_from_claimed_job
+from app.calyx_orchestrator.assignment_factory import (
+    governed_assignment_from_claimed_job,
+)
 from app.calyx_orchestrator.execution_bridge import LeaseExecutionBridge
-from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry, RegisteredExecutor
-from app.calyx_orchestrator.isolated_patch_executor import ISOLATION_MARKER, ISOLATION_SCHEMA
+from app.calyx_orchestrator.executor_registry import (
+    AuthoritativeExecutorRegistry,
+    RegisteredExecutor,
+)
+from app.calyx_orchestrator.isolated_patch_executor import (
+    ISOLATION_MARKER,
+    ISOLATION_SCHEMA,
+)
 from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
-from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_models import (
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.repository_evidence_executor import REPOSITORY_EVIDENCE_ROLE
 from app.calyx_orchestrator.static_validation_executor import STATIC_VALIDATION_ROLE
 from app.canonical_brain.build_queue import GovernedBuildQueue
 from app.canonical_brain.constitution import BuildAdmissionRequest
 from app.canonical_brain.orchestration import AgentDescriptor, GovernedOrchestrator
-from app.canonical_brain.scheduler_bridge import SchedulerJobMetadata, project_governed_queue
+from app.canonical_brain.scheduler_bridge import (
+    SchedulerJobMetadata,
+    project_governed_queue,
+)
 from app.database import Base
 from scripts import oc_brain_pulse, oc_work_materialize
 
@@ -125,7 +144,7 @@ def _plan(root):
                 build_id=key, role_key=role, repository=REPOSITORY,
                 branch=BRANCH, created_order=len(specs),
             ))
-    dependencies = tuple((left.job_key, right.job_key) for left, right in zip(specs, specs[1:]))
+    dependencies = tuple((left.job_key, right.job_key) for left, right in pairwise(specs))
     return report, queue, specs, tuple(metadata), dependencies
 
 
@@ -284,8 +303,12 @@ def test_wrong_lease_and_receipt_identity_cannot_settle_or_replenish(disposable_
         receipt = registry.require_authoritative(job.role_key).executor.execute(assignment)
         for overrides in ({"lease_token": "wrong-fixture-token"}, {"worker_id": "other-worker"},
                           {"receipt": replace(receipt, job_key="wrong-build")}):
-            kwargs = dict(program_job_id=job.program_job_id, worker_id="fixture-worker",
-                          lease_token=job.lease_token, receipt=receipt)
+            kwargs = {
+                "program_job_id": job.program_job_id,
+                "worker_id": "fixture-worker",
+                "lease_token": job.lease_token,
+                "receipt": receipt,
+            }
             kwargs.update(overrides)
             with pytest.raises((PermissionError, ValueError)):
                 LeaseExecutionBridge(db).complete_from_receipt(**kwargs)

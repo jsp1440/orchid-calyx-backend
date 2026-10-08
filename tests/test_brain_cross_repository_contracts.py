@@ -7,14 +7,18 @@ verified source checkouts. Missing siblings explicitly skip these checks.
 import importlib.util
 import json
 import os
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 
 from runtime.completion_receipt_contract import (
-    CompletionReceiptError, evidence_digest, frontend_declares_full_sha_pattern,
-    frontend_required_field_sets, load_contract, validate_completion_receipt,
+    CompletionReceiptError,
+    evidence_digest,
+    frontend_declares_full_sha_pattern,
+    frontend_required_field_sets,
+    load_contract,
+    validate_completion_receipt,
 )
 
 ROOT = Path(__file__).resolve().parents[1]
