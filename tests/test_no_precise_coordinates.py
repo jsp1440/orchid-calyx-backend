@@ -426,8 +426,8 @@ def test_json_coordinate_shapes_are_found(tmp_path, document):
     assert _scan(tmp_path, "doc.json", json.dumps(document)).precise_values >= 1
 
 
-def test_ui_xy_positions_are_not_coordinates(tmp_path):
-    document = {"nodes": [{"position": {"x": 12.3456, "y": 45.6789}}]}
+def test_ui_xy_outside_geographic_range_are_not_coordinates(tmp_path):
+    document = {"nodes": [{"position": {"x": 512.3456, "y": 245.6789}}]}
     assert _scan(tmp_path, "layout.json", json.dumps(document)).precise_values == 0
 
 
@@ -920,3 +920,46 @@ def test_reviewed_source_fixtures_have_no_prefix_exemptions():
         assert path.startswith("tests/") and path.endswith(".py")
         assert len(digest) == 64
         assert hashlib.sha256((REPO_ROOT / path).read_bytes()).hexdigest() == digest
+
+
+# Independent review regressions: ambiguous UI shape and source literals must
+# not provide an escape hatch for private locality data.
+def test_occurrence_disguised_as_layout_is_still_detected(tmp_path):
+    node = {
+        "species": "Synthetic test taxon",
+        "locality_type": "occurrence",
+        "position": {"x": PRECISE_LON, "y": PRECISE_LAT},
+    }
+    assert (
+        _scan(tmp_path, "layout.json", json.dumps({"nodes": [node]})).precise_values > 0
+    )
+    assert (
+        _scan(
+            tmp_path,
+            "ambiguous.json",
+            json.dumps({"nodes": [{"position": node["position"]}]}),
+        ).precise_values
+        > 0
+    )
+
+
+def test_unquoted_typescript_xy_literals_are_detected(tmp_path):
+    body = f"const point = {{x: {PRECISE_LON}, y: {PRECISE_LAT}}};"
+    assert _scan(tmp_path, "literal.ts", body).precise_values > 0
+    assert (
+        _scan(
+            tmp_path,
+            "coarse.ts",
+            f"const point = {{x: {COARSE_LON}, y: {COARSE_LAT}}};",
+        ).precise_values
+        == 0
+    )
+
+
+def test_labelled_source_dms_needs_no_hemisphere(tmp_path):
+    latitude = "12" + "°20" + "'44.16" + '"'
+    longitude = "45" + "°40" + "'44.04" + '"'
+    body = f"latitude = '{latitude}'; longitude = '{longitude}';"
+    finding = _scan(tmp_path, "literal.ts", body)
+    assert finding.precise_values >= 2
+    assert finding.error is None
