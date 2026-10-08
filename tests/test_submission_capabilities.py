@@ -29,7 +29,11 @@ def test_authenticated_discovery_is_read_only_and_precedes_dynamic_program_route
 def test_authentication_is_not_bypassed():
     def denied():
         raise HTTPException(401, detail="fixture-denied")
+
+    def unauthenticated():
+        return {}
+
     with client(denied) as http:
         assert http.get("/programs/submission-capabilities").status_code == 401
-    with client(dict) as http:
+    with client(unauthenticated) as http:
         assert http.get("/programs/submission-capabilities").status_code == 401
