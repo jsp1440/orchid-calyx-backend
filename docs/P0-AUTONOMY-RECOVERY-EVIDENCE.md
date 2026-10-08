@@ -102,16 +102,17 @@ repository test suite was not run.
 
 ## Exact remaining blockers and limitations
 
-- GitHub rejected the branch push because the existing Personal Access Token
-  lacks `workflow` scope for `.github/workflows/*`. No remote branch or PR was
-  created. Rejected upload is not a published implementation.
+- Initial pushes were rejected because the Personal Access Token lacked
+  `workflow` scope for `.github/workflows/*`. After the owner added permissions,
+  the recovery branch was successfully published. The permission blocker is
+  resolved; initial rejected uploads were not publication evidence.
 - The full fault/recovery proof includes idle cycles; the separate productive
   scenario proves ten consecutive completed probe jobs. Neither demonstrates
   ten live cross-module scientific or coding-product cycles.
 - Hosted schedule activation, Brain-to-live-service routing, and useful live
   cross-module completion remain unverified. Successful historical Actions
   runs or accepted dispatches are not completion evidence.
-- Workflow fixes remain local and require authorized publication and review.
+- Workflow fixes are published on the isolated recovery branch and require review.
   Scheduled behavior on GitHub's default branch cannot change merely because
   a feature-branch patch exists. Integration/default-branch convergence remains
   review- and owner-governed.
