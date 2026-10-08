@@ -801,3 +801,37 @@ def test_combined_pulse_zero_bound_does_not_insert_work():
     planned = materialize.plan(report, {}, max_new=0, max_cleared=0)
     assert planned["actions"] == []
     assert planned["calyx_product"]["action_count"] == 0
+
+
+def test_real_module_pulse_fake_github_admission_is_idempotent_after_owner_settlement():
+    """Real discovery/filing contracts, fake external provider, no scientific completion."""
+    from app.provider_reservoir.routing import route_task
+    from scripts.oc_swarm_provider_free_worker import execution_plan
+
+    report = brain_pulse.build_report()
+    transport = FakeGitHub(search_lags=True)
+    planned = materialize.plan(report, {}, max_new=20)
+    result = materialize.apply_plan(planned, REPO, dry_run=False, call=transport)
+    assert not result["errors"]
+    assert len(transport.issues) == report["candidate_count"]
+    assert {
+        candidate["lane"] for candidate in report["candidates"]
+    } >= {"atlas", "lexicon", "literature", "research-station", "university-education"}
+    for issue in transport.issues:
+        routing = route_task(issue)
+        plan = execution_plan(issue)
+        assert routing.lane_executable == plan["supported"]
+        if plan["supported"]:
+            # Generic scientific gaps park; the one product path runs an advisory,
+            # never silently claims to implement the recommendation.
+            assert plan["mode"] in {"reconcile", "validate"}
+            assert "OC-SWARM-DISPOSITION: owner-gate" in issue["body"]
+        issue["labels"].discard("oc-queued")
+        issue["labels"].add("oc-owner-gate")
+    index = materialize.scan_discovered_issues(REPO, call=transport)
+    replenished = materialize.plan(report, index, max_new=20)
+    assert not any(action["action"] in {"create_issue", "requeue"} for action in replenished["actions"])
+    # Even an overlapping stale plan must re-read the durable fake lineage.
+    second = materialize.apply_plan(planned, REPO, dry_run=False, call=transport)
+    assert not second["errors"]
+    assert len(transport.issues) == report["candidate_count"]
