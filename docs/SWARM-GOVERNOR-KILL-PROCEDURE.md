@@ -20,17 +20,28 @@ running provider steps finish normally.
 3. Locate `NO_API_MODE` (create it if absent).
 4. Set the value to anything that is NOT one of the disable values:
    `disabled`, `false`, `0`, `no`, `off`.
-   Recommended value: `enabled` (or any non-empty non-disable string).
+   Recommended value: `true` (or `enabled`). Unknown values block providers
+   but are diagnosed as invalid configuration.
 5. Click **Save**.
 
 **Confirmation:** Within the next scheduled or triggered run of any provider
 workflow, the NO-API guard step will print:
 ```
-[OC-NO-API-GUARD] NO_API_MODE='enabled': providers BLOCKED (set NO_API_MODE=false to enable).
+[OC-NO-API-GUARD] configuration_status=enabled: providers BLOCKED. Provider-free work remains eligible.
 ```
 All subsequent provider steps will be skipped.
 
-**To re-enable:** Set `NO_API_MODE` to `false` (or `disabled`, `0`, `no`, `off`).
+**To remove this block:** With owner authorization, set `NO_API_MODE` to `false`
+(or `disabled`, `0`, `no`, `off`). This is not spending authority: paid work still
+requires explicit paid execution enablement, a non-empty requested provider in
+the allowlist, valid budgets, and governor admission. Missing provider identity
+reports `BLOCKED_MISSING_PROVIDER`.
+
+The guard writes `blocked=true|false` and `configuration_status` to
+`GITHUB_OUTPUT`. The diagnostic status is `enabled`, `disabled`, `missing`, or
+`invalid`; missing/blank/invalid values remain blocked. Input values are not
+echoed. Deterministic provider-free work uses its existing independent admission
+path; these diagnostics neither authorize nor halt that lane.
 
 ---
 
