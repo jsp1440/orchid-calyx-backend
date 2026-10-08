@@ -127,7 +127,7 @@ SOURCE_FIXTURE_DIGESTS: dict[str, str] = {
     "tests/test_member_matrix_identification_adversarial.py": "e16968c96893e6917ff0d1ad9e9d4aef52abb5d0551458b5c1a1c7cd55d08d57",
     "tests/test_member_matrix_screen_broadened.py": "c67803cd31119d90f20f81e80b8430991df9a3ee04a53715a1b060ebc62336e0",
     "tests/test_member_read_access.py": "f37bc276cde252be90568dc136656eb5215447fed17cee060314c3e01255216e",
-    "tests/test_no_precise_coordinates.py": "f1729f6f36c962c5188b33672fcc2b947fb4676072cf784daedc819fb5e11b36",
+    "tests/test_no_precise_coordinates.py": "f3d5c416924e2384db26112a5bff83bc690463c6eec9db73fc2ee36d79f6525a",
     "tests/test_provider_reservoir.py": "fd158f8af272d724d0ed193cbd0dc4880ac12834cb2ff74504b42ae411ce316e",
     "tests/test_relationship_measurement.py": "ec0a5e3a401d81c88ccb2fb5bafde05de9e0c524283570cb8ee7df655dceb015",
     "tests/test_scan_trait_locality.py": "76afbd0f9a5b0b526689fb31bffb9ce80ddbb09374adbb6217b8396cfe50ecd3",
@@ -217,12 +217,6 @@ POSITION_LIST_KEYS = frozenset(
 # this rule; one under a coordinate or position key does not.
 ANONYMOUS_PAIR_MIN_ROWS = 5
 ANONYMOUS_PAIR_MIN_SHARE = 0.8
-# Parent keys that put an ``{"x": ..., "y": ...}`` object in geographic context.
-_XY_CONTEXT_KEYS = frozenset(
-    {"geometry", "geom", "location", "loc", "point", "geo", "geopoint", "coords"}
-    | {"coordinates", "coordinate", "coord", "centroid", "center", "centre"}
-)
-_XY_CRS_KEYS = frozenset({"spatialreference", "crs", "srid", "wkid"})
 GEOMETRY_TYPES = frozenset(
     {
         "point",
@@ -442,6 +436,14 @@ def _positions_in_array_text(text: str, finding: FileFinding, label: str) -> Non
 def scan_text(text: str, finding: FileFinding, *, key_values: bool) -> None:
     """Scan free text for coordinate literals in the notations above."""
 
+    if key_values:
+        labelled_dms = re.compile(
+            rf"[\"']?([A-Za-z_][\w.-]{{0,63}})[\"']?\s*(?::|=|=>)\s*[\"']?\s*({_DMS_PATTERN})"
+        )
+        for match in labelled_dms.finditer(text):
+            axis = coordinate_axis(match.group(1))
+            if axis and is_precise(match.group(2), axis):
+                finding.hit(f"text.dms.{axis}")
     for match in _DMS_FREE.finditer(text):
         # A direction identifies the axis even in prose. Without a direction,
         # labelled fields and tables are handled by parse_number instead.
@@ -639,14 +641,12 @@ def walk_document(node: object, finding: FileFinding) -> None:
                 current["coordinates"], finding, f"geometry.{geometry_type}"
             )
         lowered = {_compact(key): key for key in current}
-        if "x" in lowered and "y" in lowered:
-            layout_position = parent_key.endswith(
-                "/nodes/position"
-            ) and not _XY_CRS_KEYS.intersection(lowered)
-            if not layout_position and pair_is_precise(
-                current[lowered["x"]], current[lowered["y"]]
-            ):
-                finding.hit("x/y")
+        if (
+            "x" in lowered
+            and "y" in lowered
+            and pair_is_precise(current[lowered["x"]], current[lowered["y"]])
+        ):
+            finding.hit("x/y")
         for key, value in current.items():
             if (
                 key == "coordinates"
@@ -766,6 +766,18 @@ def scan_text_document(text: str, finding: FileFinding, *, python: bool) -> None
         scan_python_literals(text, finding)
     # Source/documents may carry a JSON object inside unrelated text.
     for match in re.finditer(r"\{[^{}]{1,4096}\}", text):
+        # JS/TS object keys need not be quoted. Treat plausible x/y literal
+        # pairs as potentially geographic rather than silently ignoring them.
+        properties = {
+            _compact(item.group(1)): item.group(2)
+            for item in _KEY_VALUE.finditer(match.group(0))
+        }
+        if (
+            "x" in properties
+            and "y" in properties
+            and pair_is_precise(properties["x"], properties["y"])
+        ):
+            finding.hit("source.x/y")
         try:
             walk_document(_load_json(match.group(0)), finding)
         except (json.JSONDecodeError, RecursionError):
