@@ -1,4 +1,5 @@
 """Authenticated canonical producer: admission -> durable program queue."""
+
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal
@@ -29,7 +30,9 @@ class BrainProgramRequest(BaseModel):
     inputs: dict[str, dict[str, Any]]
 
 
-def submit_brain_program(payload: BrainProgramRequest, auth: AuthDependency, db: DbDependency):
+def submit_brain_program(
+    payload: BrainProgramRequest, auth: AuthDependency, db: DbDependency
+):
     # Match existing program ownership: principal from verified auth, never body.
     owner = str(auth.get("subject") or auth.get("actor") or "").strip()
     if not owner:
@@ -56,12 +59,18 @@ def submit_brain_program(payload: BrainProgramRequest, auth: AuthDependency, db:
             for key, value in payload.inputs.items()
         }
         program = persist_governed_queue(
-            db, owner=owner, queue=queue.snapshot(), metadata=payload.metadata,
-            dependencies=payload.dependencies, inputs=inputs,
+            db,
+            owner=owner,
+            queue=queue.snapshot(),
+            metadata=payload.metadata,
+            dependencies=payload.dependencies,
+            inputs=inputs,
         )
         return {
-            "schema": PRODUCER_SCHEMA, "program_id": program.program_id,
-            "status": program.status, "build_ids": sorted(admissions),
+            "schema": PRODUCER_SCHEMA,
+            "program_id": program.program_id,
+            "status": program.status,
+            "build_ids": sorted(admissions),
             "authority": {"scientific_publication": False, "provider_calls": False},
         }
     except (ValueError, PermissionError, LookupError) as exc:

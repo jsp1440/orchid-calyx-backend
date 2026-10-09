@@ -53,7 +53,9 @@ def create_brain_router(
         return brain.search(q)
 
     @router.get("/objects/{object_id}/related", response_model=list[BrainObject])
-    def related(object_id: str, relationship_type: str | None = None) -> list[BrainObject]:
+    def related(
+        object_id: str, relationship_type: str | None = None
+    ) -> list[BrainObject]:
         if brain.get(object_id) is None:
             raise HTTPException(status_code=404, detail="Brain object not found")
         return brain.related(object_id, relationship_type)

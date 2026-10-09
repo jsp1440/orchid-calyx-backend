@@ -1,4 +1,5 @@
 """Changed integration ownership policy only; simulated GitHub, no providers."""
+
 from datetime import timedelta
 from pathlib import Path
 
@@ -12,20 +13,39 @@ from tests.swarm_wave_github_fake import EPOCH, FakeGitHub, iso
 
 
 def owned():
-    fake = FakeGitHub([{
-        "number": 1, "title": "Bounded repository work", "body": "",
-        "state": "OPEN", "labels": ["oc-queued", "oc-p4"], "createdAt": iso(EPOCH),
-    }])
+    fake = FakeGitHub(
+        [
+            {
+                "number": 1,
+                "title": "Bounded repository work",
+                "body": "",
+                "state": "OPEN",
+                "labels": ["oc-queued", "oc-p4"],
+                "createdAt": iso(EPOCH),
+            }
+        ]
+    )
     routing = route_task(fake.rows[1])
     result = claim_workers(
-        plan={"workers": [{"issue_number": 1, "dependencies": [], "reads": [],
-                           "writes": ["control-plane"],
-                           "lane_executable": routing.lane_executable,
-                           "provider_free": routing.provider_free,
-                           "acquisition": "firecrawl-acquisition" in
-                           routing.blocking_provider_capabilities}]},
-        snapshot=fake.snapshot(), repository=fake.repository,
-        run_id=71, run_attempt=1, call=fake,
+        plan={
+            "workers": [
+                {
+                    "issue_number": 1,
+                    "dependencies": [],
+                    "reads": [],
+                    "writes": ["control-plane"],
+                    "lane_executable": routing.lane_executable,
+                    "provider_free": routing.provider_free,
+                    "acquisition": "firecrawl-acquisition"
+                    in routing.blocking_provider_capabilities,
+                }
+            ]
+        },
+        snapshot=fake.snapshot(),
+        repository=fake.repository,
+        run_id=71,
+        run_attempt=1,
+        call=fake,
     )
     assert result["healthy"] and result["launch_count"] == 1, result
     comment_id = result["confirmed"][0]["lease_comment_id"]
@@ -38,8 +58,10 @@ def owned():
     }
 
 
-@pytest.mark.parametrize("age_minutes,allowed", [(0, True), (15, True), (15.01, False),
-                                                (89, False), (90, False), (-1, False)])
+@pytest.mark.parametrize(
+    "age_minutes,allowed",
+    [(0, True), (15, True), (15.01, False), (89, False), (90, False), (-1, False)],
+)
 def test_admission_reserves_execution_and_settlement_budget(age_minutes, allowed):
     fake, identity = owned()
     created = fake.now()
@@ -56,7 +78,9 @@ def test_admission_reserves_execution_and_settlement_budget(age_minutes, allowed
 def test_settlement_uses_valid_ownership_not_a_new_75_minute_execution_budget():
     fake, identity = owned()
     result = settle_worker(
-        **identity, result={"disposition": "done"}, call=fake,
+        **identity,
+        result={"disposition": "done"},
+        call=fake,
         now=fake.now() + timedelta(minutes=89),
     )
     assert result["lease_comment_id"] == identity["comment_id"]
@@ -72,8 +96,12 @@ def test_superseding_claim_on_later_page_blocks_old_worker_and_all_writes(malfor
         fake.comment(1, "unrelated authenticated progress")
     original = fake.comments[1][0]["body"]
     fake._ticks = 1
-    later = fake.comment(1, original if not malformed else
-                         "Dependency/resource lease claimed: `{\"schema\":[]}`")
+    later = fake.comment(
+        1,
+        original
+        if not malformed
+        else 'Dependency/resource lease claimed: `{"schema":[]}`',
+    )
     assert later["id"] > identity["comment_id"]
     before = (len(fake.edits), len(fake.comments[1]))
     with pytest.raises(ValueError, match="superseded|malformed"):
@@ -86,8 +114,12 @@ def test_superseding_claim_on_later_page_blocks_old_worker_and_all_writes(malfor
 def test_expired_worker_cannot_settle_even_when_labels_still_say_running():
     fake, identity = owned()
     with pytest.raises(ValueError, match="expired"):
-        settle_worker(**identity, result={"disposition": "done"}, call=fake,
-                      now=fake.now() + timedelta(minutes=90))
+        settle_worker(
+            **identity,
+            result={"disposition": "done"},
+            call=fake,
+            now=fake.now() + timedelta(minutes=90),
+        )
     assert fake.labels(1) == {"oc-running", "oc-p4"}
 
 
@@ -96,17 +128,25 @@ def test_workflow_bounds_and_current_claim_calls_are_wired_in_real_lanes():
     controller = yaml.safe_load((root / "orchid-swarm-controller.yml").read_text())
     completion = yaml.safe_load((root / "orchid-completion-lane.yml").read_text())
     free = controller["jobs"]["provider_free_workers"]
-    paid = next(job for job in completion["jobs"].values()
-                if job.get("env", {}).get("ISSUE_NUMBER"))
+    paid = next(
+        job
+        for job in completion["jobs"].values()
+        if job.get("env", {}).get("ISSUE_NUMBER")
+    )
     assert free["timeout-minutes"] == paid["timeout-minutes"] == 70
     for job in (free, paid):
-        terminal = next(x for x in job["steps"] if
-                        x.get("id") == "settlement" or
-                        x.get("name") == "Publish durable result and release lease")
+        terminal = next(
+            x
+            for x in job["steps"]
+            if x.get("id") == "settlement"
+            or x.get("name") == "Publish durable result and release lease"
+        )
         assert "scripts.oc_swarm_settlement" in terminal["run"]
         assert 'gh issue edit "$ISSUE_NUMBER"' not in terminal["run"]
         assert 'gh issue comment "$ISSUE_NUMBER"' not in terminal["run"]
-    providers = [x for x in paid["steps"] if x.get("id") in {"claude", "gemini", "openai"}]
+    providers = [
+        x for x in paid["steps"] if x.get("id") in {"claude", "gemini", "openai"}
+    ]
     assert len(providers) == 3
     assert all("--min-remaining-seconds 4500" in x["run"] for x in providers)
 

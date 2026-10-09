@@ -161,8 +161,10 @@ def run_deterministic_program_cycle(
         try:
             registered = executor_registry.require_authoritative(job.role_key)
             job = worker.heartbeat(
-                program_job_id=job.program_job_id, worker_id=normalized_worker,
-                lease_token=token, lease_seconds=execution_lease_seconds,
+                program_job_id=job.program_job_id,
+                worker_id=normalized_worker,
+                lease_token=token,
+                lease_seconds=execution_lease_seconds,
             )
             assignment = governed_assignment_from_claimed_job(
                 db,

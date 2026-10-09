@@ -1,4 +1,5 @@
 """Authenticated canonical producer against disposable PostgreSQL."""
+
 import json
 import os
 import subprocess
@@ -59,16 +60,29 @@ def client(engine, owner="r1-owner"):
 def payload(keys=("R1-BUILD-A",), *, role="repository_evidence_reader", root=None):
     return {
         "schema_version": "canonical-brain-program-handoff.v1",
-        "admissions": [{
-            "build_id": key, "architecture_id": "architecture:brain",
-            "intent_ids": ["intent:r1"], "decision_ids": ["decision:r1"],
-            "source_uris": ["brain://r1/source"], "validation_plan_ids": ["validation:r1"],
-            "deterministic_outputs": True, "preserves_provenance": True,
-            "separates_evidence_from_inference": True,
-        } for key in keys],
-        "metadata": [{"build_id": key, "role_key": role,
-                      "repository": "jsp1440/orchid-calyx-backend",
-                      "branch": "autonomy/r1-producer"} for key in keys],
+        "admissions": [
+            {
+                "build_id": key,
+                "architecture_id": "architecture:brain",
+                "intent_ids": ["intent:r1"],
+                "decision_ids": ["decision:r1"],
+                "source_uris": ["brain://r1/source"],
+                "validation_plan_ids": ["validation:r1"],
+                "deterministic_outputs": True,
+                "preserves_provenance": True,
+                "separates_evidence_from_inference": True,
+            }
+            for key in keys
+        ],
+        "metadata": [
+            {
+                "build_id": key,
+                "role_key": role,
+                "repository": "jsp1440/orchid-calyx-backend",
+                "branch": "autonomy/r1-producer",
+            }
+            for key in keys
+        ],
         "dependencies": [[keys[i], keys[i + 1]] for i in range(len(keys) - 1)],
         "inputs": {key: {"repository_root": str(root)} if root else {} for key in keys},
     }
@@ -82,13 +96,18 @@ def test_authentication_owner_spoof_and_protocol_rejection_do_not_write(engine):
     body = payload()
     assert post(client(engine, None), body).status_code == 401
     assert post(client(engine), {**body, "owner": "victim"}).status_code == 422
-    assert post(client(engine), {**body, "schema_version": "unknown.v9"}).status_code == 422
+    assert (
+        post(client(engine), {**body, "schema_version": "unknown.v9"}).status_code
+        == 422
+    )
     assert post(client(engine, ""), body).status_code == 401
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 0
 
 
-@pytest.mark.parametrize("failure", ["role", "test_executor", "admission", "dependency"])
+@pytest.mark.parametrize(
+    "failure", ["role", "test_executor", "admission", "dependency"]
+)
 def test_real_producer_rejects_unsupported_work_before_persistence(engine, failure):
     body = payload()
     if failure == "role":
@@ -111,7 +130,10 @@ def test_partial_batch_overlap_is_rejected_and_owners_remain_separate(engine):
     assert first.status_code == 200, first.text
     assert post(c, payload(("R1-BUILD-A", "R1-BUILD-B"))).status_code == 409
     other = post(client(engine, "other-owner"), payload())
-    assert other.status_code == 200 and other.json()["program_id"] != first.json()["program_id"]
+    assert (
+        other.status_code == 200
+        and other.json()["program_id"] != first.json()["program_id"]
+    )
 
 
 def test_competing_authenticated_producers_converge_to_one_owned_program(engine):
@@ -131,7 +153,9 @@ def test_competing_authenticated_producers_converge_to_one_owned_program(engine)
         assert db.scalar(select(func.count()).select_from(CalyxProgramJob)) == 1
 
 
-def test_authenticated_intake_reaches_real_executor_completion_and_dependency_release(engine, tmp_path, monkeypatch):
+def test_authenticated_intake_reaches_real_executor_completion_and_dependency_release(
+    engine, tmp_path, monkeypatch
+):
     renewals = []
     heartbeat = PersistentProgramWorker.heartbeat
 
@@ -142,34 +166,58 @@ def test_authenticated_intake_reaches_real_executor_completion_and_dependency_re
     monkeypatch.setattr(PersistentProgramWorker, "heartbeat", record_heartbeat)
     repo = tmp_path / "source"
     repo.mkdir()
-    for command in (["init", "-b", "autonomy/r1-producer"],
-                    ["config", "user.email", "test@example.invalid"],
-                    ["config", "user.name", "R1 isolated test"]):
-        subprocess.run(["git", "-C", str(repo), *command], check=True, capture_output=True)
+    for command in (
+        ["init", "-b", "autonomy/r1-producer"],
+        ["config", "user.email", "test@example.invalid"],
+        ["config", "user.name", "R1 isolated test"],
+    ):
+        subprocess.run(
+            ["git", "-C", str(repo), *command], check=True, capture_output=True
+        )
     (repo / "AGENTS.md").write_text("Provider-free source verification fixture.\n")
     (repo / "requirements.txt").write_text("")
-    subprocess.run(["git", "-C", str(repo), "add", "AGENTS.md", "requirements.txt"], check=True)
-    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "isolated source"], check=True)
+    subprocess.run(
+        ["git", "-C", str(repo), "add", "AGENTS.md", "requirements.txt"], check=True
+    )
+    subprocess.run(
+        ["git", "-C", str(repo), "commit", "-qm", "isolated source"], check=True
+    )
     body = payload(("R1-BUILD-A", "R1-BUILD-B"), root=repo)
     c = client(engine)
     response = post(c, body)
     assert response.status_code == 200, response.text
     with Session(engine) as db:
-        jobs = db.scalars(select(CalyxProgramJob).order_by(CalyxProgramJob.job_key)).all()
+        jobs = db.scalars(
+            select(CalyxProgramJob).order_by(CalyxProgramJob.job_key)
+        ).all()
         assert [x.status for x in jobs] == ["queued", "waiting"]
         assert db.get(CalyxProgram, response.json()["program_id"]).owner == "r1-owner"
-        source = json.loads(jobs[0].input_json)["brain_request_provenance"]["admission_request"]
+        source = json.loads(jobs[0].input_json)["brain_request_provenance"][
+            "admission_request"
+        ]
         assert source["source_uris"] == ["brain://r1/source"]
-        assert run_deterministic_program_cycle(
-            db, owner="other-owner", worker_id="wrong-owner", max_jobs=1,
-            lease_seconds=60, timeout_seconds=30,
-        ).attempted_jobs == 0
+        assert (
+            run_deterministic_program_cycle(
+                db,
+                owner="other-owner",
+                worker_id="wrong-owner",
+                max_jobs=1,
+                lease_seconds=60,
+                timeout_seconds=30,
+            ).attempted_jobs
+            == 0
+        )
         for _ in range(2):
             result = run_deterministic_program_cycle(
-                db, owner="r1-owner", worker_id="r1-worker", max_jobs=1,
-                lease_seconds=60, timeout_seconds=120,
+                db,
+                owner="r1-owner",
+                worker_id="r1-worker",
+                max_jobs=1,
+                lease_seconds=60,
+                timeout_seconds=120,
                 registry=AuthoritativeExecutorRegistry(
-                    workspace_root=repo, repository_name="jsp1440/orchid-calyx-backend",
+                    workspace_root=repo,
+                    repository_name="jsp1440/orchid-calyx-backend",
                 ),
             )
             assert result.completed_jobs == 1, json.dumps(result.as_dict())
@@ -186,8 +234,11 @@ def test_unrenewable_execution_budget_is_rejected_before_a_lease_is_taken(engine
     with Session(engine) as db:
         with pytest.raises(ValueError, match="EXECUTION_LEASE_BUDGET"):
             run_deterministic_program_cycle(
-                db, owner="r1-owner", worker_id="r1-worker",
-                lease_seconds=60, timeout_seconds=3600,
+                db,
+                owner="r1-owner",
+                worker_id="r1-worker",
+                lease_seconds=60,
+                timeout_seconds=3600,
             )
         job = db.scalar(select(CalyxProgramJob))
         assert job.status == "queued" and job.lease_token is None
@@ -203,5 +254,9 @@ def test_fenced_heartbeat_cannot_renew_superseded_ownership(engine):
         job.lease_token = str(uuid.uuid4())
         db.commit()
         with pytest.raises(PermissionError, match="STALE_PROGRAM_JOB_LEASE"):
-            worker.heartbeat(program_job_id=job_id, worker_id="old-worker",
-                             lease_token=old_token, lease_seconds=150)
+            worker.heartbeat(
+                program_job_id=job_id,
+                worker_id="old-worker",
+                lease_token=old_token,
+                lease_seconds=150,
+            )

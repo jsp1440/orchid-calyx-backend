@@ -22,8 +22,16 @@ from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependenci
 #: ``oc-scientific-gate`` holds work awaiting human scientific review. It is
 #: re-checked here exactly like the owner gate: a gate applied between plan and
 #: claim must stop the claim.
-PARKED = {"oc-running", "oc-validating", "oc-blocked", "oc-owner-gate",
-          "oc-scientific-gate", "oc-runtime-backoff", "oc-repair-backoff", "oc-done"}
+PARKED = {
+    "oc-running",
+    "oc-validating",
+    "oc-blocked",
+    "oc-owner-gate",
+    "oc-scientific-gate",
+    "oc-runtime-backoff",
+    "oc-repair-backoff",
+    "oc-done",
+}
 BLOCKER_FINGERPRINT = re.compile(r"^[a-f0-9]{24}$")
 
 
@@ -37,29 +45,53 @@ def _material(issue):
 
 def github(args, payload=None):
     result = subprocess.run(
-        ["gh", *args], input=json.dumps(payload) if payload is not None else None,
-        capture_output=True, text=True, timeout=30, check=True,
+        ["gh", *args],
+        input=json.dumps(payload) if payload is not None else None,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=True,
     )
-    return json.loads(result.stdout) if result.stdout.strip().startswith(("{", "[")) else None
+    return (
+        json.loads(result.stdout)
+        if result.stdout.strip().startswith(("{", "["))
+        else None
+    )
 
 
 def verify_worker_claim(issue, receipt, *, repository, run_id, run_attempt, comment_id):
     """Bind the Swarm handoff to its issue, run, attempt, and current packet."""
     labels = _labels(issue)
-    if (issue["state"].upper() != "OPEN" or "oc-running" not in labels
-            or labels & ((PARKED - {"oc-running"}) | {"oc-queued"})):
+    if (
+        issue["state"].upper() != "OPEN"
+        or "oc-running" not in labels
+        or labels & ((PARKED - {"oc-running"}) | {"oc-queued"})
+    ):
         raise ValueError("worker no longer owns exclusive running state")
     body = receipt.get("body") or ""
-    match = re.match(r"^\[OC-SWARM-V4\] Dependency/resource lease claimed: `(\{[^\n]+\})`\.", body)
-    if receipt.get("id") != comment_id or not match or not receipt.get("user", {}).get("login"):
+    match = re.match(
+        r"^\[OC-SWARM-V4\] Dependency/resource lease claimed: `(\{[^\n]+\})`\.", body
+    )
+    if (
+        receipt.get("id") != comment_id
+        or not match
+        or not receipt.get("user", {}).get("login")
+    ):
         raise ValueError("worker lease receipt unavailable")
     claim = json.loads(match.group(1))
     number = issue["number"]
-    packet = build_work_packet(issue_number=str(number), title=issue["title"],
-                               body=issue.get("body") or "", labels=labels)
-    if (claim.get("schema") != "oc.swarm-claim.v1" or claim.get("issue_number") != number
-            or claim.get("lease_id") != f"{repository}:{run_id}:{run_attempt}:{number}"
-            or claim.get("material_fingerprint") != packet.fingerprint):
+    packet = build_work_packet(
+        issue_number=str(number),
+        title=issue["title"],
+        body=issue.get("body") or "",
+        labels=labels,
+    )
+    if (
+        claim.get("schema") != "oc.swarm-claim.v1"
+        or claim.get("issue_number") != number
+        or claim.get("lease_id") != f"{repository}:{run_id}:{run_attempt}:{number}"
+        or claim.get("material_fingerprint") != packet.fingerprint
+    ):
         raise ValueError("worker lease identity or material changed")
     return True
 
@@ -82,7 +114,8 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             expected = {
                 "lane_executable": routing.lane_executable,
                 "provider_free": routing.provider_free,
-                "acquisition": "firecrawl-acquisition" in routing.blocking_provider_capabilities,
+                "acquisition": "firecrawl-acquisition"
+                in routing.blocking_provider_capabilities,
             }
             if any(
                 type(worker.get(key)) is not bool or worker[key] != value
@@ -90,25 +123,41 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
             ):
                 raise ValueError("invalid execution classification")
         except (ValueError, TypeError, KeyError):
-            errors.append({
-                "issue": number, "phase": "plan_validation",
-                "reason": "invalid_execution_classification",
-            })
+            errors.append(
+                {
+                    "issue": number,
+                    "phase": "plan_validation",
+                    "reason": "invalid_execution_classification",
+                }
+            )
 
     def view(number):
         # stateReason: a dependency closed as NOT_PLANNED must not unlock work
         # at claim time any more than it does at plan time.
-        return call(["issue", "view", str(number), "--repo", repository,
-                     "--json", "number,title,body,state,stateReason,labels"])
+        return call(
+            [
+                "issue",
+                "view",
+                str(number),
+                "--repo",
+                repository,
+                "--json",
+                "number,title,body,state,stateReason,labels",
+            ]
+        )
 
-    for worker in ([] if errors else workers):
+    for worker in [] if errors else workers:
         number = worker["issue_number"]
         phase = "precheck"
         try:
             current = view(number)
             labels = _labels(current)
-            if (current["number"] != number or current["state"].upper() != "OPEN"
-                    or "oc-queued" not in labels or labels & PARKED):
+            if (
+                current["number"] != number
+                or current["state"].upper() != "OPEN"
+                or "oc-queued" not in labels
+                or labels & PARKED
+            ):
                 skipped.append({"issue": number, "reason": "not_exclusively_queued"})
                 continue
             if _material(current) != _material(original[number]):
@@ -119,77 +168,150 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
                 raise ValueError("planned dependencies differ")
             graph = build_dependency_graph([current, *(view(n) for n in deps)])
             if not graph["status"][number]["ready"]:
-                skipped.append({"issue": number, "reason": "dependency_changed_since_plan"})
+                skipped.append(
+                    {"issue": number, "reason": "dependency_changed_since_plan"}
+                )
                 continue
 
             # Remove queued in the same label edit that acquires running. Keep
             # unrelated labels; do not replace the complete label collection.
             phase = "label_write"
-            call(["issue", "edit", str(number), "--repo", repository,
-                  "--remove-label", "oc-queued", "--add-label", "oc-running"])
-            expected = dict(current, labels=sorted((labels - {"oc-queued"}) | {"oc-running"}))
+            call(
+                [
+                    "issue",
+                    "edit",
+                    str(number),
+                    "--repo",
+                    repository,
+                    "--remove-label",
+                    "oc-queued",
+                    "--add-label",
+                    "oc-running",
+                ]
+            )
+            expected = dict(
+                current, labels=sorted((labels - {"oc-queued"}) | {"oc-running"})
+            )
             current = view(number)
-            if current["state"].upper() != "OPEN" or _material(current) != _material(expected):
+            if current["state"].upper() != "OPEN" or _material(current) != _material(
+                expected
+            ):
                 raise ValueError("claim state changed")
-            packet = build_work_packet(issue_number=str(number), title=current["title"],
-                                       body=current.get("body") or "", labels=_labels(current))
+            packet = build_work_packet(
+                issue_number=str(number),
+                title=current["title"],
+                body=current.get("body") or "",
+                labels=_labels(current),
+            )
             claim = {key: worker[key] for key in ("reads", "writes", "dependencies")}
-            claim.update(schema="oc.swarm-claim.v1", issue_number=number,
-                         lease_id=f"{repository}:{run_id}:{run_attempt}:{number}",
-                         material_fingerprint=packet.fingerprint)
-            body = ("[OC-SWARM-V4] Dependency/resource lease claimed: `"
-                    + json.dumps(claim, sort_keys=True, separators=(",", ":"))
-                    + f"`. packet={packet.fingerprint}. Controller run: "
-                    + f"https://github.com/{repository}/actions/runs/{run_id}.")
+            claim.update(
+                schema="oc.swarm-claim.v1",
+                issue_number=number,
+                lease_id=f"{repository}:{run_id}:{run_attempt}:{number}",
+                material_fingerprint=packet.fingerprint,
+            )
+            body = (
+                "[OC-SWARM-V4] Dependency/resource lease claimed: `"
+                + json.dumps(claim, sort_keys=True, separators=(",", ":"))
+                + f"`. packet={packet.fingerprint}. Controller run: "
+                + f"https://github.com/{repository}/actions/runs/{run_id}."
+            )
             phase = "receipt_write"
-            receipt = call(["api", "--method", "POST",
-                            f"repos/{repository}/issues/{number}/comments", "--input", "-"],
-                           {"body": body})
+            receipt = call(
+                [
+                    "api",
+                    "--method",
+                    "POST",
+                    f"repos/{repository}/issues/{number}/comments",
+                    "--input",
+                    "-",
+                ],
+                {"body": body},
+            )
             if not receipt or receipt.get("body") != body or not receipt.get("id"):
                 raise ValueError("durable receipt unconfirmed")
             phase = "confirmation"
             current = view(number)
-            if current["state"].upper() != "OPEN" or _material(current) != _material(expected):
+            if current["state"].upper() != "OPEN" or _material(current) != _material(
+                expected
+            ):
                 raise ValueError("claim changed before handoff")
-            health = evaluate({
-                "issues": [current],
-                "leases": [{"issue": number, "id": receipt["id"], "active": True,
+            health = evaluate(
+                {
+                    "issues": [current],
+                    "leases": [
+                        {
+                            "issue": number,
+                            "id": receipt["id"],
+                            "active": True,
                             "owner": receipt.get("user", {}).get("login"),
-                            "material_fingerprint": packet.fingerprint}],
-                "dispatch_fingerprints": [packet.fingerprint],
-            })
+                            "material_fingerprint": packet.fingerprint,
+                        }
+                    ],
+                    "dispatch_fingerprints": [packet.fingerprint],
+                }
+            )
             if not health["healthy"]:
                 raise ValueError("claim violates health contract")
-            confirmed.append({**worker, "lease_comment_id": receipt["id"],
-                              "material_fingerprint": packet.fingerprint})
+            confirmed.append(
+                {
+                    **worker,
+                    "lease_comment_id": receipt["id"],
+                    "material_fingerprint": packet.fingerprint,
+                }
+            )
         except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError):
             # Do not expose issue text, credentials, or raw API errors. A write
             # timeout can mean the write succeeded: observe, never blindly retry.
-            errors.append({"issue": number, "phase": phase, "reason": "claim_unconfirmed"})
+            errors.append(
+                {"issue": number, "phase": phase, "reason": "claim_unconfirmed"}
+            )
 
     # The confirmed claims keep the planner's lane classification so the
     # workflow hands executable deterministic work to that worker, rather than
     # confusing provider-free capabilities with an implemented executor.
     provider_free = [w for w in confirmed if w.get("lane_executable")]
     acquisition = [w for w in confirmed if w.get("acquisition")]
-    provider = [w for w in confirmed if not w.get("lane_executable") and not w.get("acquisition")]
-    return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
-            "run_attempt": run_attempt, "healthy": not errors,
-            "planned_count": len(workers), "launch_count": len(confirmed),
-            "matrix": {"include": confirmed}, "confirmed": confirmed,
-            "provider_free_matrix": {"include": provider_free},
-            "provider_matrix": {"include": provider},
-            "acquisition_matrix": {"include": acquisition},
-            "acquisition_launch_count": len(acquisition),
-            "provider_free_launch_count": len(provider_free),
-            "provider_launch_count": len(provider),
-            "skipped": skipped, "errors": errors}
+    provider = [
+        w
+        for w in confirmed
+        if not w.get("lane_executable") and not w.get("acquisition")
+    ]
+    return {
+        "schema": "oc.swarm-claim-handoff.v1",
+        "run_id": run_id,
+        "run_attempt": run_attempt,
+        "healthy": not errors,
+        "planned_count": len(workers),
+        "launch_count": len(confirmed),
+        "matrix": {"include": confirmed},
+        "confirmed": confirmed,
+        "provider_free_matrix": {"include": provider_free},
+        "provider_matrix": {"include": provider},
+        "acquisition_matrix": {"include": acquisition},
+        "acquisition_launch_count": len(acquisition),
+        "provider_free_launch_count": len(provider_free),
+        "provider_launch_count": len(provider),
+        "skipped": skipped,
+        "errors": errors,
+    }
 
 
-def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
-                      comment_id, reason, blocker_fingerprint=None,
-                      denied_provider=None, providers=None, shared_budget=None,
-                      provider_called=False, call=github):
+def park_denied_worker(
+    *,
+    repository,
+    issue_number,
+    run_id,
+    run_attempt,
+    comment_id,
+    reason,
+    blocker_fingerprint=None,
+    denied_provider=None,
+    providers=None,
+    shared_budget=None,
+    provider_called=False,
+    call=github,
+):
     """Settle a confirmed claim after denial, at the disposition the denial earns.
 
     Releasing the lease is not in question — a denied worker never keeps one.
@@ -201,9 +323,14 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     """
     from scripts.oc_swarm_settlement import settle_worker, verified_issue
 
-    issue = verified_issue(repository=repository, issue_number=issue_number,
-                           run_id=run_id, run_attempt=run_attempt,
-                           comment_id=comment_id, call=call)
+    issue = verified_issue(
+        repository=repository,
+        issue_number=issue_number,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        comment_id=comment_id,
+        call=call,
+    )
 
     # Decided from the issue GitHub is serving right now, not from the planner's
     # snapshot: the body is what says whether a deterministic executor can take
@@ -219,21 +346,40 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     )
     budget_denial = is_budget_denial(reason)
     durable_blocker = route.blocker
-    packet = build_work_packet(issue_number=str(issue_number), title=issue["title"],
-                               body=issue.get("body") or "", labels=_labels(issue))
-    release = {"schema": "oc.swarm-denied-release.v1", "issue_number": issue_number,
-               "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
-               "lease_comment_id": comment_id, "material_fingerprint": packet.fingerprint,
-               "reason": reason,
-               "blocker_fingerprint": (blocker_fingerprint
-                                       if budget_denial and route.records_blocker else None),
-               "blocker": durable_blocker if route.records_blocker else None,
-               "state": route.target_label, "provider_called": provider_called,
-               "route": route.to_record()}
-    settle_worker(result={**release, "disposition": route.target_label.removeprefix("oc-"),
-                          "blocked_on": durable_blocker if route.records_blocker else None},
-                  repository=repository, issue_number=issue_number, run_id=run_id,
-                  run_attempt=run_attempt, comment_id=comment_id, call=call)
+    packet = build_work_packet(
+        issue_number=str(issue_number),
+        title=issue["title"],
+        body=issue.get("body") or "",
+        labels=_labels(issue),
+    )
+    release = {
+        "schema": "oc.swarm-denied-release.v1",
+        "issue_number": issue_number,
+        "lease_id": f"{repository}:{run_id}:{run_attempt}:{issue_number}",
+        "lease_comment_id": comment_id,
+        "material_fingerprint": packet.fingerprint,
+        "reason": reason,
+        "blocker_fingerprint": (
+            blocker_fingerprint if budget_denial and route.records_blocker else None
+        ),
+        "blocker": durable_blocker if route.records_blocker else None,
+        "state": route.target_label,
+        "provider_called": provider_called,
+        "route": route.to_record(),
+    }
+    settle_worker(
+        result={
+            **release,
+            "disposition": route.target_label.removeprefix("oc-"),
+            "blocked_on": durable_blocker if route.records_blocker else None,
+        },
+        repository=repository,
+        issue_number=issue_number,
+        run_id=run_id,
+        run_attempt=run_attempt,
+        comment_id=comment_id,
+        call=call,
+    )
     return release
 
 
@@ -247,26 +393,41 @@ def main():
     parser.add_argument("--run-id", required=True, type=int)
     parser.add_argument("--run-attempt", type=int, default=1)
     parser.add_argument("--github-output")
-    parser.add_argument("--park-denied", help="Governor denial reason; settle the verified worker")
-    parser.add_argument("--blocker-fingerprint", help="Stable budget condition fingerprint")
-    parser.add_argument("--denied-provider", help="Provider the governor refused, for the route record")
+    parser.add_argument(
+        "--park-denied", help="Governor denial reason; settle the verified worker"
+    )
+    parser.add_argument(
+        "--blocker-fingerprint", help="Stable budget condition fingerprint"
+    )
+    parser.add_argument(
+        "--denied-provider", help="Provider the governor refused, for the route record"
+    )
     args = parser.parse_args()
     if args.verify_issue is not None:
         try:
             if args.park_denied:
-                result = park_denied_worker(repository=args.repository, issue_number=args.verify_issue,
-                                            run_id=args.run_id, run_attempt=args.run_attempt,
-                                            comment_id=args.lease_comment_id, reason=args.park_denied,
-                                            blocker_fingerprint=args.blocker_fingerprint,
-                                            denied_provider=args.denied_provider)
+                result = park_denied_worker(
+                    repository=args.repository,
+                    issue_number=args.verify_issue,
+                    run_id=args.run_id,
+                    run_attempt=args.run_attempt,
+                    comment_id=args.lease_comment_id,
+                    reason=args.park_denied,
+                    blocker_fingerprint=args.blocker_fingerprint,
+                    denied_provider=args.denied_provider,
+                )
                 print(json.dumps(result, sort_keys=True))
                 return 0
             from scripts.oc_swarm_settlement import verified_issue
 
-            verified_issue(repository=args.repository, issue_number=args.verify_issue,
-                           run_id=args.run_id, run_attempt=args.run_attempt,
-                           comment_id=args.lease_comment_id,
-                           min_remaining_seconds=75 * 60)
+            verified_issue(
+                repository=args.repository,
+                issue_number=args.verify_issue,
+                run_id=args.run_id,
+                run_attempt=args.run_attempt,
+                comment_id=args.lease_comment_id,
+                min_remaining_seconds=75 * 60,
+            )
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, KeyError):
             print('{"execute":false,"reason":"worker_claim_unconfirmed"}')
             return 2
@@ -278,19 +439,38 @@ def main():
         plan = json.load(handle)
     with open(args.snapshot, encoding="utf-8") as handle:
         snapshot = json.load(handle)
-    result = claim_workers(plan, snapshot, repository=args.repository,
-                           run_id=args.run_id, run_attempt=args.run_attempt)
+    result = claim_workers(
+        plan,
+        snapshot,
+        repository=args.repository,
+        run_id=args.run_id,
+        run_attempt=args.run_attempt,
+    )
     with open(args.github_output, "a", encoding="utf-8") as handle:
         handle.write(f"launch_count={result['launch_count']}\n")
-        handle.write("acquisition_matrix=" + json.dumps(result["acquisition_matrix"], separators=(",", ":")) + "\n")
+        handle.write(
+            "acquisition_matrix="
+            + json.dumps(result["acquisition_matrix"], separators=(",", ":"))
+            + "\n"
+        )
         handle.write(f"acquisition_launch_count={result['acquisition_launch_count']}\n")
-        handle.write("matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n")
-        handle.write(f"provider_free_launch_count={result['provider_free_launch_count']}\n")
+        handle.write(
+            "matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n"
+        )
+        handle.write(
+            f"provider_free_launch_count={result['provider_free_launch_count']}\n"
+        )
         handle.write(f"provider_launch_count={result['provider_launch_count']}\n")
-        handle.write("provider_free_matrix="
-                     + json.dumps(result["provider_free_matrix"], separators=(",", ":")) + "\n")
-        handle.write("provider_matrix="
-                     + json.dumps(result["provider_matrix"], separators=(",", ":")) + "\n")
+        handle.write(
+            "provider_free_matrix="
+            + json.dumps(result["provider_free_matrix"], separators=(",", ":"))
+            + "\n"
+        )
+        handle.write(
+            "provider_matrix="
+            + json.dumps(result["provider_matrix"], separators=(",", ":"))
+            + "\n"
+        )
     print(json.dumps(result, sort_keys=True))
     # Confirmed claims may proceed even when a different candidate was skipped
     # or failed. The artifact reports those failures independently of job status.
