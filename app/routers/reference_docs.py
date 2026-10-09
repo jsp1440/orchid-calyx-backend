@@ -18,6 +18,7 @@ from app.routers.matrix_identification_vision import router as matrix_identifica
 from app.routers.matrix_identification_report import router as matrix_identification_report_router
 from app.routers.matrix_identification_durability_readiness import router as matrix_identification_durability_readiness_router
 from app.routers.vision_activation_preflight import router as vision_activation_preflight_router
+from app.routers.matrix_contributor import router as matrix_contributor_router
 
 router = APIRouter()
 
@@ -121,3 +122,4 @@ router.include_router(matrix_identification_vision_router)
 router.include_router(matrix_identification_report_router)
 router.include_router(matrix_identification_durability_readiness_router)
 router.include_router(vision_activation_preflight_router)
+router.include_router(matrix_contributor_router)
