@@ -56,12 +56,9 @@ def test_lane_requires_a_bound_live_claim_before_provider(lane_text):
     assert "scripts.oc_swarm_settlement --verify-only" in lease_check
     assert "--min-remaining-seconds 4500" in lease_check
     assert (
-        '--issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID"'
-        in lease_check
+        '--issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID"' in lease_check
     )
-    assert (
-        '--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"' in lease_check
-    )
+    assert '--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"' in lease_check
     assert '--run-attempt "$GITHUB_RUN_ATTEMPT"' in lease_check
 
 
