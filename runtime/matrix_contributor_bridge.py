@@ -165,6 +165,32 @@ def attach_contributor_extractions(
     }
 
 
+def list_contributor_suggestions(
+    session_id: str,
+    *,
+    access_actor: str | None = None,
+    state: str | None = None,
+    root=None,
+) -> dict[str, Any]:
+    """Read contributor images and review-gated suggestions for one session.
+
+    Read-only. Owner scoping is enforced by the governed session store exactly
+    as in session reads: cross-owner access fails closed as session-not-found.
+    """
+    session = get_session(session_id, root=root, access_actor=access_actor)
+    suggestions = list(session.get("contributor_suggestions", []))
+    if state is not None:
+        suggestions = [item for item in suggestions if item.get("state") == state]
+    return {
+        "session_id": session_id,
+        "revision": session.get("revision"),
+        "contributor_images": session.get("contributor_images", {}),
+        "suggestions": suggestions,
+        "suggestion_count": len(suggestions),
+        "rule": "Suggestions never score until explicitly accepted or revised.",
+    }
+
+
 def review_contributor_suggestion(
     session_id: str,
     suggestion_id: str,
