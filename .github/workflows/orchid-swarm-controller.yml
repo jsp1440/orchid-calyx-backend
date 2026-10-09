@@ -537,6 +537,7 @@ jobs:
     # else, which the pre-push fence below enforces at the git level.
     if: needs.plan.outputs.provider_free_launch_count != '0'
     runs-on: ubuntu-latest
+    timeout-minutes: 70
     permissions:
       contents: write        # the edit lane pushes oc/discovered-<fingerprint> branches
       issues: write
@@ -638,6 +639,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m scripts.oc_swarm_settlement --verify-only \
+            --min-remaining-seconds 4500 \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
           issue=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --json number,title,body,state,labels)
           labels=$(jq -r '[.labels[].name] | join(" ")' <<<"$issue")
@@ -725,42 +731,13 @@ jobs:
       - name: Publish durable result and release lease
         if: steps.lease.outputs.execute == 'true'
         shell: bash
-        env:
-          DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
         run: |
           set -euo pipefail
-          result=$(jq -c . "$RUNNER_TEMP/provider-free-result.json")
-          case "$DISPOSITION" in
-            done)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --remove-label oc-owner-gate \
-                --add-label oc-done >/dev/null
-              ;;
-            owner-gate)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --add-label oc-owner-gate >/dev/null
-              ;;
-            blocked)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
-              # An edit lane that opened a pull request parks the issue on it;
-              # the blocked-work reconciler releases `pr#N` when it merges.
-              blocked_on=$(jq -r '.blocked_on // empty' "$RUNNER_TEMP/provider-free-result.json")
-              if [[ -n "$blocked_on" ]]; then
-                gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                  --body "[OC-SWARM-V4] Provider-free edit lane opened a pull request for this condition; the issue waits on it. OC-BLOCKED-ON: ${blocked_on}" >/dev/null
-              fi
-              ;;
-            *)
-              echo "Unknown provider-free disposition: $DISPOSITION" >&2
-              exit 2
-              ;;
-          esac
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          python3 -m scripts.oc_swarm_settlement \
+            --result "$RUNNER_TEMP/provider-free-result.json" \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
 
       # A pull request opened with GITHUB_TOKEN starts no pull_request workflow,
       # so the edit lane's PR would carry no validation checks at all. Dispatch
@@ -833,14 +810,13 @@ jobs:
         if: failure() && steps.lease.outputs.execute == 'true'
         shell: bash
         run: |
-          # Exact failure evidence travels with the release so the observer and
-          # a later repair never have to guess why this lane died.
-          evidence=$(jq -c . "$RUNNER_TEMP/provider-free-result.json" 2>/dev/null || echo '{"error":"worker_result_unavailable"}')
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-            --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-SWARM-V4] Provider-free reconciliation failed closed; execution lease released and issue blocked. Worker evidence: \`$evidence\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          set -euo pipefail
+          evidence=$(cat "$RUNNER_TEMP/provider-free-result.json" 2>/dev/null || echo '{"error":"worker_result_unavailable"}')
+          python3 -m scripts.oc_swarm_settlement --disposition blocked \
+            --message "Provider-free reconciliation failed: $evidence" \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
 
   refill:
     needs: [plan, workers, provider_free_workers]

@@ -86,6 +86,16 @@ class FakeGitHub:
             number = int(path.split("/issues/")[1].split("/")[0])
             return self._post_comment(number, payload["body"])
         if args[:3] == ["api", "--method", "GET"]:
+            if "/comments?" in args[3]:
+                from urllib.parse import parse_qs
+
+                path, query = args[3].split("?", 1)
+                number = int(path.split("/issues/")[1].split("/")[0])
+                params = parse_qs(query)
+                size = int(params["per_page"][0])
+                page = int(params["page"][0])
+                rows = self.comments[number][(page - 1) * size:page * size]
+                return [self._comment_view(number, row) for row in rows]
             comment_id = int(args[3].rsplit("/", 1)[1])
             number, comment = self.comment_index[comment_id]
             return self._comment_view(number, comment)

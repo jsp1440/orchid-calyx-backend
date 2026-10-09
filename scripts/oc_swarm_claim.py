@@ -199,17 +199,11 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     provider that refused it. Everything else parks with its durable blocker
     exactly as before, and nothing here ever restores paid eligibility.
     """
-    args = ["issue", "view", str(issue_number), "--repo", repository,
-            "--json", "number,title,body,state,labels"]
-    issue = call(args)
-    receipt = call(["api", "--method", "GET",
-                    f"repos/{repository}/issues/comments/{comment_id}"])
-    if (issue.get("number") != issue_number
-            or (receipt.get("user") or {}).get("login") != "github-actions[bot]"
-            or receipt.get("issue_url") != f"https://api.github.com/repos/{repository}/issues/{issue_number}"):
-        raise ValueError("denied worker claim origin invalid")
-    verify_worker_claim(issue, receipt, repository=repository, run_id=run_id,
-                        run_attempt=run_attempt, comment_id=comment_id)
+    from scripts.oc_swarm_settlement import settle_worker, verified_issue
+
+    issue = verified_issue(repository=repository, issue_number=issue_number,
+                           run_id=run_id, run_attempt=run_attempt,
+                           comment_id=comment_id, call=call)
 
     # Decided from the issue GitHub is serving right now, not from the planner's
     # snapshot: the body is what says whether a deterministic executor can take
@@ -225,16 +219,6 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
     )
     budget_denial = is_budget_denial(reason)
     durable_blocker = route.blocker
-    removed = ["oc-running"] if route.requeues else ["oc-running", "oc-queued"]
-
-    expected = dict(issue, labels=sorted((_labels(issue) - set(removed)) | {route.target_label}))
-    edit = ["issue", "edit", str(issue_number), "--repo", repository]
-    for label in removed:
-        edit += ["--remove-label", label]
-    call(edit + ["--add-label", route.target_label])
-    current = call(args)
-    if current["state"].upper() != "OPEN" or _material(current) != _material(expected):
-        raise ValueError("denied worker parking unconfirmed")
     packet = build_work_packet(issue_number=str(issue_number), title=issue["title"],
                                body=issue.get("body") or "", labels=_labels(issue))
     release = {"schema": "oc.swarm-denied-release.v1", "issue_number": issue_number,
@@ -246,23 +230,10 @@ def park_denied_worker(*, repository, issue_number, run_id, run_attempt,
                "blocker": durable_blocker if route.records_blocker else None,
                "state": route.target_label, "provider_called": provider_called,
                "route": route.to_record()}
-    if route.requeues:
-        # No OC-BLOCKED-ON line: this task is not blocked on anything. Writing
-        # one would make the next reconciliation hold work that is running.
-        body = ("[OC-SWARM-V4] Provider admission denied; execution lease released and work "
-                "rerouted to the deterministic lane: `"
-                + json.dumps(release, sort_keys=True) + "`.")
-    else:
-        body = ("[OC-SWARM-V4] Provider admission denied; execution lease released: `"
-                + json.dumps(release, sort_keys=True) + "`.\n"
-                + f"OC-BLOCKED-ON: {durable_blocker}")
-    saved = call(["api", "--method", "POST", f"repos/{repository}/issues/{issue_number}/comments",
-                  "--input", "-"], {"body": body})
-    if not saved or saved.get("body") != body or not saved.get("id"):
-        raise ValueError("denied worker receipt unconfirmed")
-    confirmed = call(["api", "--method", "GET", f"repos/{repository}/issues/comments/{saved['id']}"])
-    if confirmed.get("body") != body:
-        raise ValueError("denied worker receipt readback failed")
+    settle_worker(result={**release, "disposition": route.target_label.removeprefix("oc-"),
+                          "blocked_on": durable_blocker if route.records_blocker else None},
+                  repository=repository, issue_number=issue_number, run_id=run_id,
+                  run_attempt=run_attempt, comment_id=comment_id, call=call)
     return release
 
 
@@ -290,12 +261,12 @@ def main():
                                             denied_provider=args.denied_provider)
                 print(json.dumps(result, sort_keys=True))
                 return 0
-            issue = github(["issue", "view", str(args.verify_issue), "--repo", args.repository,
-                            "--json", "number,title,body,state,labels"])
-            receipt = github(["api", "--method", "GET",
-                              f"repos/{args.repository}/issues/comments/{args.lease_comment_id}"])
-            verify_worker_claim(issue, receipt, repository=args.repository, run_id=args.run_id,
-                                run_attempt=args.run_attempt, comment_id=args.lease_comment_id)
+            from scripts.oc_swarm_settlement import verified_issue
+
+            verified_issue(repository=args.repository, issue_number=args.verify_issue,
+                           run_id=args.run_id, run_attempt=args.run_attempt,
+                           comment_id=args.lease_comment_id,
+                           min_remaining_seconds=75 * 60)
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, KeyError):
             print('{"execute":false,"reason":"worker_claim_unconfirmed"}')
             return 2

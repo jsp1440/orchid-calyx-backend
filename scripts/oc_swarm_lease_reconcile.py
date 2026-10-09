@@ -88,19 +88,32 @@ def _latest_claim(comments: Iterable[dict], *, repository: str, number: int) -> 
             continue
         match = _CLAIM.match(str(comment.get("body") or ""))
         if not match:
+            if str(comment.get("body") or "").startswith(
+                "[OC-SWARM-V4] Dependency/resource lease claimed:"
+            ):
+                raise ValueError("malformed_authenticated_claim")
             continue
         try:
             claim = json.loads(match.group(1))
         except ValueError:
-            continue
+            raise ValueError("malformed_authenticated_claim") from None
+        if not isinstance(claim, dict):
+            raise ValueError("malformed_authenticated_claim")
         lease_id = str(claim.get("lease_id") or "")
         parts = lease_id.split(":")
         if (claim.get("schema") != "oc.swarm-claim.v1" or claim.get("issue_number") != number
                 or len(parts) != 4 or parts[0] != repository or parts[3] != str(number)
                 or not parts[1].isdigit() or not parts[2].isdigit()):
-            continue
+            raise ValueError("malformed_authenticated_claim")
         created = _parse_time(comment.get("created_at"))
-        if latest is None or (created and latest["created_at"] and created > latest["created_at"]):
+        if (created is None or type(comment.get("id")) is not int
+                or comment["id"] < 1 or type(claim.get("issue_number")) is not int
+                or int(parts[1]) < 1 or int(parts[2]) < 1):
+            raise ValueError("malformed_authenticated_claim")
+        if (latest is None
+                or (created and latest["created_at"] and created > latest["created_at"])
+                or (created == latest["created_at"]
+                    and int(comment.get("id") or 0) > int(latest["comment_id"] or 0))):
             latest = {"comment_id": comment.get("id"), "lease_id": lease_id,
                       "run_id": int(parts[1]), "run_attempt": int(parts[2]),
                       "created_at": created}
@@ -231,15 +244,19 @@ class GitHubTransport:
         text = result.stdout.strip()
         return json.loads(text) if text.startswith(("{", "[")) else None
 
-    def _paged(self, path: str) -> list[dict]:
+    def _paged(self, path: str, *, page_budget=10, require_complete=False) -> list[dict]:
         rows: list[dict] = []
-        for page in range(1, 11):
+        for page in range(1, page_budget + 1):
             batch = self._run(["api", f"repos/{self.repository}/{path}?per_page=100&page={page}"])
             if not isinstance(batch, list):
+                if require_complete:
+                    raise ValueError("comment_history_unconfirmed")
                 break
             rows.extend(batch)
             if len(batch) < 100:
-                break
+                return rows
+        if require_complete:
+            raise ValueError("comment_history_incomplete")
         return rows
 
     def running_issues(self) -> list[dict]:
@@ -255,7 +272,8 @@ class GitHubTransport:
         return list(rows or [])
 
     def comments(self, number: int) -> list[dict]:
-        return self._paged(f"issues/{number}/comments")
+        return self._paged(f"issues/{number}/comments", page_budget=100,
+                           require_complete=True)
 
     def labeled_at(self, number: int) -> datetime | None:
         latest = None

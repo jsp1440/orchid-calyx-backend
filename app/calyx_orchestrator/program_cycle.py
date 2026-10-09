@@ -112,6 +112,11 @@ def run_deterministic_program_cycle(
         raise ValueError("AUTONOMY_LEASE_SECONDS_OUT_OF_RANGE")
     if not 1 <= timeout_seconds <= 3600:
         raise ValueError("AUTONOMY_TIMEOUT_SECONDS_OUT_OF_RANGE")
+    # No unbounded renewal loop. Reserve execution plus settlement time using
+    # the existing fenced heartbeat, which cannot revive an expired lease.
+    execution_lease_seconds = max(lease_seconds, timeout_seconds + 30)
+    if execution_lease_seconds > 3600:
+        raise ValueError("AUTONOMY_EXECUTION_LEASE_BUDGET_OUT_OF_RANGE")
 
     executor_registry = registry or AuthoritativeExecutorRegistry()
     worker = PersistentProgramWorker(db)
@@ -155,6 +160,10 @@ def run_deterministic_program_cycle(
         registered: RegisteredExecutor | None = None
         try:
             registered = executor_registry.require_authoritative(job.role_key)
+            job = worker.heartbeat(
+                program_job_id=job.program_job_id, worker_id=normalized_worker,
+                lease_token=token, lease_seconds=execution_lease_seconds,
+            )
             assignment = governed_assignment_from_claimed_job(
                 db,
                 owner=normalized_owner,
