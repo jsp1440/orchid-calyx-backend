@@ -164,11 +164,19 @@ def test_receipt_from_unauthenticated_user_is_ignored():
     assert run(t)["kept"][0]["reason"] == "manual_lease_age_unknown"
 
 
-def test_receipt_for_other_issue_or_repository_is_ignored():
+def test_claim_for_other_issue_fails_closed_without_releasing_lease():
     foreign = claim_comment(number=2)
-    foreign["body"] = foreign["body"].replace('"issue_number":2', '"issue_number":1')
     t = Transport([issue()], comments={1: [foreign]}, runs={555: "completed"})
-    assert run(t)["kept"][0]["reason"] == "manual_lease_age_unknown"
+    report = run(t)
+    assert report["recovered_count"] == 0 and report["running_after"] == 1
+    assert report["errors"] == [
+        {
+            "issue": 1,
+            "reason": "lease_reconcile_unconfirmed",
+            "error_type": "ValueError",
+        }
+    ]
+    assert not t.edits and not t.posted
 
 
 def test_automatic_recoveries_are_bounded_then_block():
