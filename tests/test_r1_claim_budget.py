@@ -29,8 +29,13 @@ def owned():
     )
     assert result["healthy"] and result["launch_count"] == 1, result
     comment_id = result["confirmed"][0]["lease_comment_id"]
-    return fake, dict(repository=fake.repository, issue_number=1, run_id=71,
-                      run_attempt=1, comment_id=comment_id)
+    return fake, {
+        "repository": fake.repository,
+        "issue_number": 1,
+        "run_id": 71,
+        "run_attempt": 1,
+        "comment_id": comment_id,
+    }
 
 
 @pytest.mark.parametrize("age_minutes,allowed", [(0, True), (15, True), (15.01, False),

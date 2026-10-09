@@ -97,8 +97,6 @@ def _latest_claim(comments: Iterable[dict], *, repository: str, number: int) -> 
             claim = json.loads(match.group(1))
         except ValueError:
             raise ValueError("malformed_authenticated_claim") from None
-        if not isinstance(claim, dict):
-            raise ValueError("malformed_authenticated_claim")
         lease_id = str(claim.get("lease_id") or "")
         parts = lease_id.split(":")
         if (claim.get("schema") != "oc.swarm-claim.v1" or claim.get("issue_number") != number

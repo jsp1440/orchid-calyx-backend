@@ -11,6 +11,7 @@ import pytest
 
 from scripts import oc_control_plane_health as health
 from scripts import oc_swarm_claim as claims
+from scripts import oc_swarm_settlement as settlement
 
 REPO = "jsp1440/orchid-calyx-backend"
 NUMBER = 1371
@@ -57,6 +58,8 @@ class DenialGitHub:
             return None
         assert args[:2] == ["api", "--method"]
         if args[2] == "GET":
+            if args[3] == f"repos/{REPO}/issues/{NUMBER}/comments?per_page=100&page=1":
+                return copy.deepcopy(self.comments)
             number = int(args[3].rsplit("/", 1)[1])
             value = next(c for c in self.comments if c["id"] == number)
             result = copy.deepcopy(value)
@@ -113,7 +116,8 @@ def admit(transport=None, *, body=None):
 
 
 @pytest.fixture
-def admitted():
+def admitted(monkeypatch):
+    monkeypatch.setattr(settlement, "_utc_now", lambda: NOW)
     return admit()
 
 
@@ -214,7 +218,8 @@ def test_unconfirmed_label_write_never_fabricates_release_or_retries(admitted, f
     admitted.fault = fault
     with pytest.raises((ValueError, subprocess.SubprocessError)):
         park(admitted)
-    assert len(admitted.comments) == 1
+    assert len(admitted.comments) == 2
+    assert "requested lease disposition" in admitted.comments[-1]["body"]
     edits = [args for args, _ in admitted.calls if args[:2] == ["issue", "edit"]]
     assert len(edits) == 1
     if fault == "foreign_gate":
@@ -226,9 +231,10 @@ def test_unconfirmed_receipt_never_reports_success_or_restores_queue(admitted, f
     admitted.fault = fault
     with pytest.raises((ValueError, subprocess.SubprocessError)):
         park(admitted)
-    assert set(admitted.issue["labels"]) == {"oc-blocked", "oc-p4"}
+    assert set(admitted.issue["labels"]) == {"oc-running", "oc-p4"}
+    assert len(admitted.comments) == 2
     assert (
-        len([args for args, _ in admitted.calls if args[:2] == ["issue", "edit"]]) == 1
+        len([args for args, _ in admitted.calls if args[:2] == ["issue", "edit"]]) == 0
     )
 
 
@@ -381,7 +387,7 @@ def test_modern_denial_with_changed_binding_preserves_claim(admitted, change):
     assert [lease["id"] for lease in snapshot["leases"]] == [5000]
 
 
-def test_deterministic_work_is_rerouted_to_the_queue_instead_of_blocked():
+def test_deterministic_work_is_rerouted_to_the_queue_instead_of_blocked(monkeypatch):
     """The denial loop's requeue half, closed from the settlement side.
 
     #1401 was released from ``oc-blocked`` back to ``oc-queued`` by a stale
@@ -390,6 +396,7 @@ def test_deterministic_work_is_rerouted_to_the_queue_instead_of_blocked():
     the queue with no blocker recorded, and the planner routes it to a lane that
     cannot spend.
     """
+    monkeypatch.setattr(settlement, "_utc_now", lambda: NOW)
     admitted = admit(
         body=(
             "OC-SWARM-WRITES: control-plane\n"
@@ -412,7 +419,8 @@ def test_deterministic_work_is_rerouted_to_the_queue_instead_of_blocked():
     assert "OC-BLOCKED-ON:" not in body
 
 
-def test_a_reroute_still_releases_the_lease_and_never_keeps_running():
+def test_a_reroute_still_releases_the_lease_and_never_keeps_running(monkeypatch):
+    monkeypatch.setattr(settlement, "_utc_now", lambda: NOW)
     admitted = admit(
         body=(
             "OC-SWARM-WRITES: control-plane\n"

@@ -48,7 +48,8 @@ def main():
         def run(argv, name):
             with (out / name).open("w") as log:
                 return subprocess.run(argv, cwd=root, env=env, stdout=log,
-                                      stderr=subprocess.STDOUT, timeout=180).returncode
+                                      stderr=subprocess.STDOUT, timeout=180,
+                                      check=False).returncode
 
         data = home / "postgres"
         if run([initdb, "-D", str(data), "-U", "oc_local", "-A", "trust",

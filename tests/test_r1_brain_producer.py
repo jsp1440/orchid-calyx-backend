@@ -12,8 +12,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, func, select, text
 from sqlalchemy.orm import Session
 
-from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
 from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramJob
 from app.calyx_orchestrator.program_worker import PersistentProgramWorker
 from app.calyx_orchestrator.schema import ensure_orchestrator_schema

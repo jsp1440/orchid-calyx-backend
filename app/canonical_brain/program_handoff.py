@@ -6,9 +6,15 @@ import json
 
 from sqlalchemy import select, text
 
-from app.calyx_orchestrator.executor_registry import AUTONOMY_PROBE_ROLE, AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.executor_registry import (
+    AUTONOMY_PROBE_ROLE,
+    AuthoritativeExecutorRegistry,
+)
 from app.calyx_orchestrator.program_models import CalyxProgram, CalyxProgramJob
-from app.calyx_orchestrator.program_repository import PersistentProgramRepository, ProgramJobSpec
+from app.calyx_orchestrator.program_repository import (
+    PersistentProgramRepository,
+    ProgramJobSpec,
+)
 
 from .build_queue import BuildQueueSnapshot
 from .scheduler_bridge import SchedulerJobMetadata, project_governed_queue

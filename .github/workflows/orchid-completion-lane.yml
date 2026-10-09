@@ -659,7 +659,7 @@ jobs:
               exit 1
             fi
           elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "billing_exhausted" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
-            settle runtime-backoff "No verifiable model execution ($CLAUDE_KIND); no paid retry."
+            settle runtime-backoff "No verifiable model execution ($CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry."
           elif [[ "$CLAUDE_KIND" == "max_turns" || "$CLAUDE_KIND" == "no_durable_change" ]]; then
             settle repair "Bounded ceiling or no durable change ($CLAUDE_KIND)."
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_OUTCOME" == "success" ]]; then
@@ -680,9 +680,9 @@ jobs:
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER}." >/dev/null
           else
             if [[ "${ISSUE_LABELS:-}" == *oc-repair* ]]; then
-              settle runtime-backoff "No durable PR on allowed repair attempt; retry exhausted."
+              settle runtime-backoff "No durable PR on allowed repair attempt. Retry budget exhausted; issue parked in oc-runtime-backoff."
             else
-              settle queued "No durable PR; one bounded repair remains." --repair-queued
+              settle queued "No durable PR; one bounded repair remains; automatic refill remains disabled unless explicitly authorized." --repair-queued
             fi
           fi
 
