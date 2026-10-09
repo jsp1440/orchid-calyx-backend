@@ -6,6 +6,7 @@ import subprocess
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from urllib.parse import urlsplit
 
 import pytest
 from fastapi import FastAPI
@@ -26,7 +27,19 @@ from app.security import verify_owner_or_api_key
 @pytest.fixture
 def engine():
     dsn = os.environ["TEST_DATABASE_URL"]
-    assert dsn.startswith("postgresql://oc_local@127.0.0.1:")
+    test_url = urlsplit(dsn)
+    assert test_url.scheme == "postgresql"
+    assert (
+        test_url.username == "oc_local"
+        and test_url.hostname == "127.0.0.1"
+        and test_url.port is not None
+        and test_url.path == "/postgres"
+    ) or (
+        test_url.username == "ocvalidate"
+        and test_url.hostname == "localhost"
+        and test_url.port == 5432
+        and test_url.path == "/oc_validate"
+    )
     schema = "r1_producer_" + uuid.uuid4().hex
     admin = create_engine(dsn)
     with admin.begin() as conn:
