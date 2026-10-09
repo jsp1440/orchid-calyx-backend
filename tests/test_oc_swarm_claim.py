@@ -110,6 +110,7 @@ def test_plan_to_claim_races_fail_closed(update):
     api.rows[1].update(update)
     result, _ = execute(rows, api)
     assert result["launch_count"] == 0
+    assert result["execution_reason_code"] == "planned_candidates_skipped"
     assert not api.edits
 
 
@@ -192,6 +193,7 @@ def test_unknown_receipt_write_outcome_never_dispatches_or_retries():
     assert result["matrix"] == {"include": []}
     assert result["healthy"] is False
     assert result["errors"] == [{"issue": 1, "phase": "receipt_write", "reason": "claim_unconfirmed"}]
+    assert result["execution_reason_code"] == "claim_unconfirmed"
     assert len(api.edits) == 1  # do not overwrite a concurrent actor with rollback
 
 
@@ -221,6 +223,7 @@ def test_health_contract_rejects_unowned_receipt():
 def test_zero_worker_plan_still_emits_valid_empty_matrix():
     result, api = execute([])
     assert result["matrix"] == {"include": []} and result["healthy"]
+    assert result["execution_reason_code"] == "no_planned_work"
     assert not api.edits
 
 
@@ -332,3 +335,4 @@ def test_zero_plan_emits_empty_split_matrices():
     assert result["provider_matrix"] == {"include": []}
     assert result["provider_free_launch_count"] == 0
     assert result["provider_launch_count"] == 0
+    assert result["execution_reason_code"] == "no_planned_work"

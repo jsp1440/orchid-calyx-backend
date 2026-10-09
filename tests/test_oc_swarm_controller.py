@@ -495,6 +495,99 @@ def test_incomplete_edit_contract_is_refused_before_claim_planning(monkeypatch):
     assert refusal["blocked"] is False
 
 
+def test_capability_gap_has_machine_reason_and_does_not_starve_executable_work(monkeypatch):
+    class QueueAwareScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            queued = [
+                issue
+                for issue in snapshot["issues"]
+                if "oc-queued" in issue.get("labels", [])
+            ]
+            return {
+                "ranking": [
+                    {"number": issue["number"], "lane_id": "L3", "priority": 0, "repair": False}
+                    for issue in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return QueueAwareScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = {
+        "issues": [
+            {
+                "number": 100,
+                "title": "Open-ended work",
+                "body": "OC-SWARM-CAPABILITY: taxonomy-resolution",
+                "labels": ["oc-queued", "oc-p0"],
+                "state": "OPEN",
+            },
+            {
+                "number": 101,
+                "title": "Deterministic reconciliation",
+                "body": (
+                    "OC-SWARM-PROVIDER-FREE: reconcile\n"
+                    "OC-SWARM-DISPOSITION: done"
+                ),
+                "labels": ["oc-queued", "oc-p4"],
+                "state": "OPEN",
+            },
+        ]
+    }
+
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=1)
+
+    assert plan["selected_numbers"] == [101]
+    assert plan["execution_state"] == "dispatchable"
+    refusal = plan["lane_refusals"][0]
+    assert refusal["issue_number"] == 100
+    assert refusal["reason_code"] == "no_authorised_coding_executor"
+    assert refusal["blocked"] is False
+    assert {
+        "code": "no_authorised_coding_executor",
+        "issue_number": 100,
+        "reason": refusal["reason"],
+    } in plan["execution_reasons"]
+
+    blocked_only = dict(snapshot, issues=[snapshot["issues"][0]])
+    refused_plan = swarm.build_swarm_plan(blocked_only, worker_slots=1)
+    assert refused_plan["selected_numbers"] == []
+    assert refused_plan["execution_state"] == "capability_gap"
+    assert refused_plan["execution_reasons"][0]["code"] == "no_authorised_coding_executor"
+
+
+def test_empty_plan_has_explicit_idle_reason(monkeypatch):
+    class EmptyScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            return {
+                "ranking": [],
+                "active_lanes": [],
+                "eligible_count": 0,
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return EmptyScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = swarm.build_swarm_plan({"issues": []}, worker_slots=1)
+
+    assert plan["execution_state"] == "idle"
+    assert plan["execution_reasons"] == [{"code": "no_eligible_work"}]
+
+
 def test_edit_mode_marker_matches_the_worker_parser():
     assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: EDIT\n"}) is True
     assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: reconcile"}) is False

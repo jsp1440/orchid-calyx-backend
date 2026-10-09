@@ -161,9 +161,18 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
     # provider-dependent work to the governed completion lane independently.
     provider_free = [w for w in confirmed if w.get("provider_free")]
     provider = [w for w in confirmed if not w.get("provider_free")]
+    execution_reason_code = None
+    if not confirmed:
+        if errors:
+            execution_reason_code = "claim_unconfirmed"
+        elif skipped:
+            execution_reason_code = "planned_candidates_skipped"
+        else:
+            execution_reason_code = "no_planned_work"
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),
+            "execution_reason_code": execution_reason_code,
             "matrix": {"include": confirmed}, "confirmed": confirmed,
             "provider_free_matrix": {"include": provider_free},
             "provider_matrix": {"include": provider},
@@ -300,6 +309,7 @@ def main():
         handle.write("matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n")
         handle.write(f"provider_free_launch_count={result['provider_free_launch_count']}\n")
         handle.write(f"provider_launch_count={result['provider_launch_count']}\n")
+        handle.write(f"execution_reason_code={result['execution_reason_code'] or ''}\n")
         handle.write("provider_free_matrix="
                      + json.dumps(result["provider_free_matrix"], separators=(",", ":")) + "\n")
         handle.write("provider_matrix="

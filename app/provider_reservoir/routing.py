@@ -232,6 +232,19 @@ class TaskRouting:
         return "no deterministic work is declared"
 
     @property
+    def unexecutable_reason_code(self) -> str | None:
+        """Stable machine-readable category for deterministic-lane refusal."""
+        if self.lane_executable:
+            return None
+        if self.executor_contract_error:
+            return "invalid_executor_contract"
+        if self.provider_free_task:
+            return "unsupported_deterministic_executor"
+        if self.deterministic_capabilities:
+            return "no_authorised_coding_executor"
+        return "no_deterministic_work"
+
+    @property
     def parked_capabilities(self) -> list[str]:
         """Capabilities that need a provider and so do not run in this pass."""
         return sorted({*self.blocking_provider_capabilities, *self.optional_provider_capabilities})
