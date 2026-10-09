@@ -130,5 +130,5 @@ def test_recovery_does_not_ignore_a_malformed_authenticated_claim():
     fake.comment(1, "[OC-SWARM-V4] Dependency/resource lease claimed: `[]`.")
     before = len(fake.edits)
     with pytest.raises(ValueError, match="malformed_authenticated_claim"):
-        _latest_claim(fake.comments.values(), repository=fake.repository, number=1)
+        _latest_claim(fake.comments[1], repository=fake.repository, number=1)
     assert len(fake.edits) == before
