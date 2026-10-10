@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
@@ -147,7 +147,7 @@ def run_demo() -> dict[str, object]:
                 digest,
                 config.resource_id,
                 canonical_checksum(asdict(config)),
-                datetime.now(timezone.utc) + timedelta(seconds=300),
+                datetime.now(UTC) + timedelta(seconds=300),
                 config.max_cost_microusd,
             ),
         )

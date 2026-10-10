@@ -12,7 +12,7 @@ import json
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from sqlalchemy.exc import IntegrityError
@@ -177,7 +177,7 @@ def lease_digest(token: str) -> str:
 
 
 def _utc(value: datetime) -> datetime:
-    return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 def _receipt_payload(receipt: ExecutionReceipt) -> dict[str, object]:
@@ -234,7 +234,7 @@ class AzureContainerAppsExecutor:
         worker_id: str,
         lease_token: str,
         grant_resolver: Callable[[GovernedAssignment, str], AzureExecutionGrant | None],
-        clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:

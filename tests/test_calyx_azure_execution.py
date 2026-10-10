@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -81,7 +81,7 @@ def context(tmp_path):
             lease_digest(job.lease_token),
             config.resource_id,
             canonical_checksum(asdict(config)),
-            datetime.now(timezone.utc) + timedelta(seconds=300),
+            datetime.now(UTC) + timedelta(seconds=300),
             1000,
         )
         executor = AzureContainerAppsExecutor(
@@ -139,7 +139,7 @@ def test_duplicate_dispatch_after_adapter_and_session_restart(context):
 def test_lease_and_program_fences_before_network(context, change):
     db, job, assignment, executor, client, _ = context
     if change == "expired":
-        job.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
     elif change == "superseded":
         job.lease_token = "replacement-token"
     elif change == "unleased":
@@ -186,7 +186,7 @@ def test_untrusted_assignment_cannot_override_authority(context, field):
 def test_authorization_and_budget_rejection_are_durable(context, field):
     db, job, assignment, executor, client, grant = context
     changes = {
-        "expiry": {"expires_at": datetime.now(timezone.utc) - timedelta(seconds=1)},
+        "expiry": {"expires_at": datetime.now(UTC) - timedelta(seconds=1)},
         "lease": {"lease_digest": "f" * 64},
         "checksum": {"input_checksum": "f" * 64},
         "resource": {"resource_id": "/other"},
@@ -585,9 +585,7 @@ def test_resume_does_not_extend_elapsed_original_deadline(context):
         executor.execute(assignment)
     record = db.get(AzureExecutionRecord, job.program_job_id)
     evidence = json.loads(record.evidence_json)
-    evidence["deadline_at"] = (
-        datetime.now(timezone.utc) - timedelta(seconds=1)
-    ).isoformat()
+    evidence["deadline_at"] = (datetime.now(UTC) - timedelta(seconds=1)).isoformat()
     record.evidence_json = json.dumps(evidence)
     db.commit()
     client.observe = original
@@ -663,7 +661,7 @@ def test_lease_expiring_during_observation_cannot_complete(context):
 
     def expire(*args):
         observation = original(*args)
-        job.lease_expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+        job.lease_expires_at = datetime.now(UTC) - timedelta(seconds=1)
         db.commit()
         return observation
 
