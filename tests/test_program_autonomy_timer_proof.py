@@ -198,7 +198,9 @@ def test_negative_control_claim_guard_removed_fails_the_proof(tmp_path: Path) ->
     assert completed.returncode == 1 and report["status"] == "FAIL"
     failed = _failed(report)
     assert "concurrent_claim_lost_by_all_but_one" in failed, failed
-    assert "zero_duplicate_executions" in failed, failed
+    # The independent pre-execution heartbeat may fence the overwritten lease
+    # before duplicate execution; the missing claim guard still breaks admission.
+    assert "race_job_delivered_exactly_once" in failed, failed
     assert report["claims"]["race_lost"] == 0
 
 
