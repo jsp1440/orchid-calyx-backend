@@ -30,6 +30,7 @@ from runtime.matrix_contributor_bridge import (
     review_contributor_suggestion,
 )
 from runtime.matrix_identification_session import evaluate_session, get_session
+from runtime.matrix_identification_workflow import build_identification_report
 
 router = APIRouter(
     prefix="/api/matrix-contributor",
@@ -97,6 +98,20 @@ class ContributorEvaluateRequest(BaseModel):
 
 class ContributorEvidenceRecordRequest(BaseModel):
     submission_id: str = Field(min_length=1, max_length=200)
+    source_assertions: list[dict[str, Any]] | None = None
+
+
+class IdentificationReportRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=200)
+    ambiguity_epsilon: float = Field(default=0.05, ge=0, le=1)
+    synonym_entries: list[dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Optional governed synonym entries "
+            "({canonical_taxon_id, accepted_name, synonyms[]}) used to reconcile "
+            "candidate names for reporting. Never mutates canonical taxonomy."
+        ),
+    )
     source_assertions: list[dict[str, Any]] | None = None
 
 
@@ -297,6 +312,37 @@ def evidence_record(
             image,
             source_assertions=payload.source_assertions,
             access_actor=access_actor,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
+
+
+@router.post("/sessions/{session_id}/identification")
+def identification_report(
+    session_id: str,
+    payload: IdentificationReportRequest,
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Full governed identification report for one session.
+
+    Ranked candidates with per-candidate supporting / partial / contradicting /
+    missing characters, taxonomic resolution with explicit synonym
+    reconciliation, contributor-image provenance links, review-gate state,
+    ambiguity detection, and honest identification limitations. Candidate
+    ranking is hypothesis-generating evidence, never a determination.
+    """
+    try:
+        return build_identification_report(
+            session_id,
+            limit=payload.limit,
+            ambiguity_epsilon=payload.ambiguity_epsilon,
+            synonym_entries=payload.synonym_entries,
+            source_assertions=payload.source_assertions,
+            access_actor=_access_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
