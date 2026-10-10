@@ -1,0 +1,174 @@
+name: Calyx Azure worker container
+
+on:
+  pull_request:
+    paths:
+      - 'containers/azure-worker/**'
+      - 'app/calyx_orchestrator/azure_*.py'
+      - 'app/calyx_orchestrator/executor.py'
+      - 'app/calyx_orchestrator/engineering_core.py'
+      - 'scripts/oc_azure_container_proof.py'
+      - 'tests/test_calyx_azure_worker.py'
+      - '.github/workflows/calyx-azure-container.yml'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish only after owner authorization and protected-environment approval'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: azure-worker-container-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      revision: ${{ steps.identity.outputs.revision }}
+      image: ${{ steps.identity.outputs.image }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - name: Bind exact source and image identity
+        id: identity
+        run: |
+          set -euo pipefail
+          REVISION="$(git rev-parse HEAD)"
+          IMAGE="ghcr.io/jsp1440/orchid-calyx-backend/oc-brain-worker:sha-${REVISION}"
+          echo "revision=${REVISION}" >> "$GITHUB_OUTPUT"
+          echo "image=${IMAGE}" >> "$GITHUB_OUTPUT"
+          echo "SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)" >> "$GITHUB_ENV"
+      - name: Install provider-free validation dependencies
+        run: pip install -r requirements-dev.txt sqlalchemy pydantic requests 'fastapi<0.116'
+      - name: Worker and governance contracts
+        run: |
+          python -m pytest -q tests/test_calyx_azure_worker.py tests/test_calyx_azure_execution.py
+          python -m ruff check app/calyx_orchestrator/azure_worker.py app/calyx_orchestrator/azure_execution_contract.py scripts/oc_azure_container_proof.py tests/test_calyx_azure_worker.py
+          python -m compileall -q app/calyx_orchestrator/azure_worker.py scripts/oc_azure_container_proof.py
+      - name: Build exact-head Linux container (no push)
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+        run: |
+          docker buildx build --platform linux/amd64 --load --provenance=false \
+            --build-arg SOURCE_REVISION="$REVISION" \
+            --build-arg SOURCE_DATE_EPOCH="$SOURCE_DATE_EPOCH" \
+            --file containers/azure-worker/Dockerfile --tag "$IMAGE" .
+      - name: Actual-container fake Azure lifecycle proof
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+        run: |
+          set -euo pipefail
+          python -m scripts.oc_azure_container_proof --image "$IMAGE" | tee container-proof.json
+          test "$(docker inspect --format '{{.Config.User}}' "$IMAGE")" = "65532:65532"
+      - name: Vulnerability and secret scan (fail closed)
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: 'v0.75.0'
+          image-ref: ${{ steps.identity.outputs.image }}
+          scanners: 'vuln,secret'
+          severity: 'HIGH,CRITICAL'
+          ignore-unfixed: false
+          exit-code: '1'
+          format: 'json'
+          output: 'container-security.json'
+      - name: Generate SBOM
+        uses: aquasecurity/trivy-action@57a97c7e7821a5776cebc9bb87c984fa69cba8f1 # 0.35.0
+        with:
+          version: 'v0.75.0'
+          image-ref: ${{ steps.identity.outputs.image }}
+          format: 'cyclonedx'
+          output: 'worker-sbom.json'
+          exit-code: '0'
+      - name: Save local image identity
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+          REVISION: ${{ steps.identity.outputs.revision }}
+        run: |
+          docker image inspect "$IMAGE" > image-inspect.json
+          printf '{"source_revision":"%s","image_tag":"%s","published":false}\n' \
+            "$REVISION" "$IMAGE" > image-identity.json
+      - name: Upload build evidence only (not a registry publish)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: azure-worker-evidence-${{ steps.identity.outputs.revision }}
+          retention-days: 7
+          path: |
+            container-proof.json
+            container-security.json
+            worker-sbom.json
+            image-identity.json
+            image-inspect.json
+      - name: Stage verified image for separately authorized publishing
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && vars.CALYX_AZURE_GHCR_PUBLISH_AUTHORIZED == 'true'
+        env:
+          IMAGE: ${{ steps.identity.outputs.image }}
+        run: docker save "$IMAGE" -o worker-image.tar
+      - name: Upload authorized staging artifact
+        if: github.event_name == 'workflow_dispatch' && inputs.publish && vars.CALYX_AZURE_GHCR_PUBLISH_AUTHORIZED == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: azure-worker-authorized-image
+          path: worker-image.tar
+          retention-days: 1
+
+  publish:
+    needs: build
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && vars.CALYX_AZURE_GHCR_PUBLISH_AUTHORIZED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: azure-worker-ghcr-publish
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Require owner-controlled reviewer gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GH_REPO}/environments/azure-worker-ghcr-publish" > environment.json
+          python - <<'PY'
+          import json
+          rules = json.load(open("environment.json"))["protection_rules"]
+          reviewers = [r for r in rules if r["type"] == "required_reviewers"]
+          if not reviewers or not any(r.get("reviewers") and r.get("prevent_self_review") for r in reviewers):
+              raise SystemExit("Publishing requires protected reviewers and no self-approval")
+          PY
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: azure-worker-authorized-image
+      - run: docker load -i worker-image.tar
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish one immutable source tag, never latest
+        env:
+          IMAGE: ${{ needs.build.outputs.image }}
+        run: |
+          set -euo pipefail
+          if docker manifest inspect "$IMAGE" > /dev/null 2> manifest-error.txt; then
+            echo "Refusing to overwrite an existing commit-SHA tag"
+            exit 1
+          fi
+          if ! grep -Eq 'manifest unknown|manifest_unknown' manifest-error.txt; then
+            echo "Cannot prove the SHA tag is absent; refusing publish"
+            exit 1
+          fi
+          docker push "$IMAGE"
+          docker inspect --format '{{json .RepoDigests}}' "$IMAGE" >> "$GITHUB_STEP_SUMMARY"

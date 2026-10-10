@@ -187,9 +187,10 @@ class AzureContainerAppsJobClient:
                 or container["resources"].get("cpu") != 0.5
                 or container["resources"].get("memory") != "1Gi"
                 or any(
-                    container.get(key)
-                    for key in ("command", "args", "env", "volumeMounts")
+                    container.get(key) for key in ("command", "args", "volumeMounts")
                 )
+                or sorted(container.get("env", []), key=lambda item: item["name"])
+                != sorted(config.worker_environment(), key=lambda item: item["name"])
             ):
                 raise AzureApiError("AZURE_CONTAINER_CONTRACT_MISMATCH")
         except (KeyError, TypeError, AttributeError, IndexError) as exc:
@@ -231,7 +232,10 @@ class AzureContainerAppsJobClient:
                         "name": config.container_name,
                         "image": config.image,
                         "resources": {"cpu": 0.5, "memory": "1Gi"},
-                        "env": [{"name": "CALYX_EXECUTION_PAYLOAD", "value": encoded}],
+                        "env": [
+                            *config.worker_environment(),
+                            {"name": "CALYX_EXECUTION_PAYLOAD", "value": encoded},
+                        ],
                     }
                 ],
             },

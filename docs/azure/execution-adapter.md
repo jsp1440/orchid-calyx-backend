@@ -94,7 +94,10 @@ production DB/KG, publication, deployment, paid AI, or scheduler authority.
 Before start, the adapter checks resource/environment/identity, manual trigger,
 one replica and completion, zero Azure retries, a bounded replica timeout, and
 one pinned container at 0.5 CPU / 1 GiB. Init containers, volumes, container
-command/argument overrides, and preconfigured environment values are refused.
+command/argument overrides, and unapproved environment values are refused.
+The deployable worker's five exact identity/receipt-storage environment values
+are explicitly allowlisted and preserved when the ARM start template is built;
+see [worker deployment](worker-deployment.md) for the image/build/checklist.
 No resource creation, schedule update, or configuration mutation is implemented.
 
 Start sends `CALYX_EXECUTION_PAYLOAD` to the approved image's entrypoint.

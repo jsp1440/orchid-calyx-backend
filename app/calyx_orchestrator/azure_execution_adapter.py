@@ -19,6 +19,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from .assignment_factory import governed_assignment_from_claimed_job
+from .azure_execution_contract import AZURE_EXECUTOR_KEY, AZURE_ROLE
 from .azure_execution_models import AzureExecutionRecord
 from .engineering_core import TerminalOutcome
 from .execution_bridge import LeaseExecutionBridge
@@ -29,9 +30,6 @@ from .executor import (
     canonical_checksum,
 )
 from .program_models import CalyxProgramJob
-
-AZURE_EXECUTOR_KEY = "azure_container_apps_job_v1"
-AZURE_ROLE = "azure_bounded_job"
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,6 +48,9 @@ class AzureJobConfig:
     poll_seconds: int = 2
     max_polls: int = 30
     max_cost_microusd: int = 0
+    receipt_storage_account: str = ""
+    receipt_container: str = ""
+    worker_identity_client_id: str = ""
 
     @classmethod
     def from_environ(cls, env: Mapping[str, str]) -> AzureJobConfig:
@@ -64,6 +65,9 @@ class AzureJobConfig:
                 "managed_identity_client_id",
                 "container_name",
                 "image",
+                "receipt_storage_account",
+                "receipt_container",
+                "worker_identity_client_id",
             )
         }
         enabled = env.get("CALYX_AZURE_ENABLED", "false").lower()
@@ -122,6 +126,35 @@ class AzureJobConfig:
             and self.max_cost_microusd > 0
         ):
             raise ValueError("AZURE_EXECUTION_BOUNDS_INVALID")
+        if any(
+            (
+                self.receipt_storage_account,
+                self.receipt_container,
+                self.worker_identity_client_id,
+            )
+        ) and not (
+            re.fullmatch(r"[a-z0-9]{3,24}", self.receipt_storage_account)
+            and re.fullmatch(r"[a-z0-9][a-z0-9-]{1,61}[a-z0-9]", self.receipt_container)
+            and re.fullmatch(r"[a-fA-F0-9-]{36}", self.worker_identity_client_id)
+        ):
+            raise ValueError("AZURE_WORKER_RECEIPT_CONFIGURATION_INVALID")
+
+    def worker_environment(self) -> list[dict[str, str]]:
+        if not self.receipt_storage_account:
+            return []
+        return [
+            {"name": "CALYX_AZURE_WORKER_ENABLED", "value": "true"},
+            {"name": "CALYX_WORKER_JOB_RESOURCE_ID", "value": self.resource_id},
+            {
+                "name": "CALYX_WORKER_IDENTITY_CLIENT_ID",
+                "value": self.worker_identity_client_id,
+            },
+            {
+                "name": "CALYX_RECEIPT_STORAGE_ACCOUNT",
+                "value": self.receipt_storage_account,
+            },
+            {"name": "CALYX_RECEIPT_CONTAINER", "value": self.receipt_container},
+        ]
 
 
 @dataclass(frozen=True, slots=True)

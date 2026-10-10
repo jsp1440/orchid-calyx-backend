@@ -1,0 +1,80 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+  "contentVersion": "1.0.0.0",
+  "metadata": {
+    "subscriptionDisplayName": "Azure subscription 1",
+    "resourceGroup": "RG-ORCHID-CONTINUUM-AGENTS",
+    "purpose": "Owner-gated non-production manual Calyx worker; no dispatch or role assignments."
+  },
+  "parameters": {
+    "location": { "type": "string", "defaultValue": "westus2", "allowedValues": ["westus2"] },
+    "environmentName": { "type": "string", "minLength": 1 },
+    "workloadIdentityName": { "type": "string", "minLength": 1 },
+    "workloadIdentityClientId": { "type": "string", "minLength": 36, "maxLength": 36 },
+    "imageDigest": { "type": "string", "minLength": 71, "maxLength": 71 },
+    "receiptStorageAccount": { "type": "string", "minLength": 3, "maxLength": 24 },
+    "receiptContainer": { "type": "string", "minLength": 3, "maxLength": 63 },
+    "workerEnabled": { "type": "bool", "defaultValue": false },
+    "registryUsername": { "type": "string", "defaultValue": "" },
+    "registryPassword": { "type": "secureString", "defaultValue": "" }
+  },
+  "variables": {
+    "jobName": "oc-brain-worker",
+    "jobResourceId": "[resourceId('Microsoft.App/jobs', variables('jobName'))]",
+    "identityResourceId": "[resourceId('Microsoft.ManagedIdentity/userAssignedIdentities', parameters('workloadIdentityName'))]",
+    "image": "[concat('ghcr.io/jsp1440/orchid-calyx-backend/oc-brain-worker@', parameters('imageDigest'))]"
+  },
+  "resources": [
+    {
+      "type": "Microsoft.App/jobs",
+      "apiVersion": "2024-03-01",
+      "name": "[variables('jobName')]",
+      "location": "[parameters('location')]",
+      "tags": {
+        "project": "orchid-continuum",
+        "environment": "test",
+        "workload": "governed-input-verification",
+        "data-classification": "internal",
+        "managed-by": "iac",
+        "cost-center": "azure-nonprofit-credit"
+      },
+      "identity": {
+        "type": "UserAssigned",
+        "userAssignedIdentities": { "[variables('identityResourceId')]": {} }
+      },
+      "properties": {
+        "environmentId": "[resourceId('Microsoft.App/managedEnvironments', parameters('environmentName'))]",
+        "workloadProfileName": "Consumption",
+        "configuration": {
+          "triggerType": "Manual",
+          "replicaTimeout": 60,
+          "replicaRetryLimit": 0,
+          "secrets": "[if(empty(parameters('registryUsername')), json('[]'), createArray(createObject('name', 'ghcr-pull', 'value', parameters('registryPassword'))))]",
+          "registries": "[if(empty(parameters('registryUsername')), json('[]'), createArray(createObject('server', 'ghcr.io', 'username', parameters('registryUsername'), 'passwordSecretRef', 'ghcr-pull')))]",
+          "manualTriggerConfig": { "parallelism": 1, "replicaCompletionCount": 1 }
+        },
+        "template": {
+          "containers": [
+            {
+              "name": "worker",
+              "image": "[variables('image')]",
+              "resources": { "cpu": 0.5, "memory": "1Gi" },
+              "env": [
+                { "name": "CALYX_AZURE_WORKER_ENABLED", "value": "[toLower(string(parameters('workerEnabled')))]" },
+                { "name": "CALYX_WORKER_JOB_RESOURCE_ID", "value": "[variables('jobResourceId')]" },
+                { "name": "CALYX_WORKER_IDENTITY_CLIENT_ID", "value": "[parameters('workloadIdentityClientId')]" },
+                { "name": "CALYX_RECEIPT_STORAGE_ACCOUNT", "value": "[parameters('receiptStorageAccount')]" },
+                { "name": "CALYX_RECEIPT_CONTAINER", "value": "[parameters('receiptContainer')]" }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "outputs": {
+    "jobResourceId": { "type": "string", "value": "[variables('jobResourceId')]" },
+    "imageReference": { "type": "string", "value": "[variables('image')]" },
+    "providerEnabled": { "type": "bool", "value": false }
+  }
+}
