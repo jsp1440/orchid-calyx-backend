@@ -1,0 +1,3 @@
+# Only artifact transport/authentication. No database, API server, or AI SDK.
+azure-identity==1.25.1
+requests==2.32.5
