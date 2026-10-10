@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Install local validation dependencies
-        run: pip install -r requirements-dev.txt sqlalchemy pydantic requests 'fastapi<0.116'
+        run: pip install -r requirements-dev.txt sqlalchemy pydantic requests fastapi 'fastapi<0.116'
       - name: Provider-free tests
         run: python -m pytest -q tests/test_calyx_azure_execution.py
       - name: Local Brain-to-Calyx proof
