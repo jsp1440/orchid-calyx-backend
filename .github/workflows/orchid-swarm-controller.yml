@@ -418,6 +418,10 @@ jobs:
             echo
             echo "- planned_count: $(jq -r '.launch_count' <<<"$PLAN")"
             echo "- confirmed_launch_count: ${{ steps.claim.outputs.launch_count }}"
+            echo "- execution_state: $(jq -r '.execution_state' <<<"$PLAN")"
+            echo "- execution_reasons: $(jq -c '.execution_reasons' <<<"$PLAN")"
+            echo "- lane_refusals: $(jq -c '.lane_refusals' <<<"$PLAN")"
+            echo "- zero_claim_reason: $(jq -r '.execution_reason_code // "none"' "$RUNNER_TEMP/swarm-claims.json")"
             echo "- provider_free_launch_count: ${{ steps.claim.outputs.provider_free_launch_count }}"
             echo "- provider_launch_count: ${{ steps.claim.outputs.provider_launch_count }}"
             echo "- stale leases recovered: ${{ steps.leases.outputs.recovered_count }} (running after reconcile: ${{ steps.leases.outputs.running_after }}, reconcile errors: ${{ steps.leases.outputs.reconcile_errors }})"
@@ -608,6 +612,11 @@ jobs:
           python3 scripts/oc_swarm_provider_free_worker.py \
             --plan --issue-json "$issue" > "$RUNNER_TEMP/provider-free-plan.json"
           mode=$(jq -r '.mode' "$RUNNER_TEMP/provider-free-plan.json")
+          dispatchable=$(jq -r '.dispatchable' "$RUNNER_TEMP/provider-free-plan.json")
+          if [[ "$dispatchable" != "true" ]]; then
+            echo "Provider-free execution contract refused: $(jq -r '.refusal_reason' "$RUNNER_TEMP/provider-free-plan.json")" >&2
+            exit 2
+          fi
 
           validation_args=()
           if [[ "$mode" == "validate" ]]; then

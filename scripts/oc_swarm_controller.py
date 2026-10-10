@@ -110,6 +110,7 @@ def lane_refusal(issue: dict) -> dict:
         "issue_number": routing.issue_number,
         "provider_free": routing.provider_free,
         "lane_executable": False,
+        "reason_code": routing.unexecutable_reason_code,
         "reason": routing.unexecutable_reason,
         "declared_deterministic_capabilities": list(routing.deterministic_capabilities),
         "parked_capabilities": routing.parked_capabilities,
@@ -444,6 +445,64 @@ def build_swarm_plan(
     waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
+    execution_reasons = [
+        {
+            "code": refusal["reason_code"],
+            "issue_number": refusal["issue_number"],
+            "reason": refusal["reason"],
+        }
+        for refusal in lane_refusals
+    ]
+    execution_reasons.extend(
+        {
+            "code": "executor_requires_canonical_integration_ref",
+            "issue_number": number,
+        }
+        for number in sorted(deferred_edit)
+    )
+    execution_reasons.extend(
+        {
+            "code": "dependency_unresolved",
+            "issue_number": row.get("issue_number", row.get("number")),
+        }
+        for row in dependency_suppressed
+    )
+    execution_reasons.extend(
+        {
+            "code": "resource_conflict",
+            "issue_number": row.get("issue_number", row.get("number")),
+        }
+        for row in lock_suppressed
+    )
+    execution_reasons.extend(
+        {
+            "code": "scheduler_suppressed",
+            "issue_number": row.get("issue_number", row.get("number")),
+            "reason": row.get("reason"),
+        }
+        for row in plan.get("suppressed") or []
+    )
+    if active_count:
+        execution_reasons.append(
+            {"code": "active_workers", "count": active_count}
+        )
+    if waiting_count:
+        execution_reasons.append(
+            {"code": "work_waiting", "count": waiting_count}
+        )
+    if not workers and not execution_reasons:
+        execution_reasons.append({"code": "no_eligible_work"})
+
+    refusal_codes = {row["reason_code"] for row in lane_refusals}
+    if workers:
+        execution_state = "dispatchable"
+    elif active_count or waiting_count:
+        execution_state = "waiting"
+    elif refusal_codes:
+        execution_state = "capability_gap"
+    else:
+        execution_state = "idle"
+
     return {
         "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
@@ -462,6 +521,8 @@ def build_swarm_plan(
         "unstaffed_numbers": sorted(unstaffed),
         "lane_refusals": lane_refusals,
         "unstaffed_count": len(unstaffed),
+        "execution_state": execution_state,
+        "execution_reasons": execution_reasons,
         "selected_numbers": [worker["issue_number"] for worker in workers],
         "dependency_graph": {
             "edge_count": int(graph.get("edge_count") or 0),
@@ -516,6 +577,12 @@ def _write_github_output(path: str, plan: dict) -> None:
         )
         handle.write(f"provider_free_launch_count={plan['provider_free_launch_count']}\n")
         handle.write(f"provider_launch_count={plan['provider_launch_count']}\n")
+        handle.write(f"execution_state={plan['execution_state']}\n")
+        handle.write(
+            "execution_reasons="
+            + json.dumps(plan["execution_reasons"], separators=(",", ":"))
+            + "\n"
+        )
         handle.write(f"selected_numbers={json.dumps(plan['selected_numbers'], separators=(',', ':'))}\n")
         handle.write(f"refill_recommended={str(plan['refill_recommended']).lower()}\n")
         handle.write(f"summary={summary}\n")

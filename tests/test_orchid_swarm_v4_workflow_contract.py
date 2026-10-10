@@ -162,6 +162,15 @@ def test_v4_summary_reports_the_intake_outcome_not_its_conclusion():
     assert "steps.discovery.outcome }} materialize=${{ steps.materialize.outcome" in text
 
 
+def test_v4_summary_surfaces_execution_and_zero_claim_reasons():
+    text = WORKFLOW.read_text(encoding="utf-8")
+
+    assert "execution_state: $(jq -r '.execution_state'" in text
+    assert "execution_reasons: $(jq -c '.execution_reasons'" in text
+    assert "lane_refusals: $(jq -c '.lane_refusals'" in text
+    assert "zero_claim_reason: $(jq -r '.execution_reason_code" in text
+
+
 def test_v4_provisions_the_environment_discovery_reads_before_reading_it():
     """The undeclared-import source asks what is installed, not what it guesses.
 

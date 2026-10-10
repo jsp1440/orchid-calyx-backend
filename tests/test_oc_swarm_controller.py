@@ -191,7 +191,9 @@ def test_provider_free_mode_hides_unmarked_queue_without_losing_dependencies(mon
         raise AssertionError(filename)
 
     snapshot = _snapshot()
-    snapshot["issues"][2]["body"] += "\nOC-SWARM-PROVIDER-FREE: reconcile"
+    snapshot["issues"][2]["body"] += (
+        "\nOC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+    )
     monkeypatch.setattr(swarm, "_load_sibling", loader)
     plan = swarm.build_swarm_plan(snapshot, provider_free_only=True)
 
@@ -389,7 +391,11 @@ def test_blocked_report_drives_enrichment_then_one_idempotent_release():
 def _edit_snapshot():
     snapshot = _snapshot()
     snapshot["issues"][1]["body"] = (
-        "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-DISPOSITION: done\nOC-SWARM-VALIDATE: ruff-check"
+        "OC-SWARM-PROVIDER-FREE: edit\n"
+        "OC-SWARM-DISPOSITION: done\n"
+        "OC-SWARM-VALIDATE: control-plane-compiles\n"
+        "OC-DISCOVERY-FINGERPRINT: 0123456789abcdef\n"
+        "OC-SWARM-WRITES: repo-global"
     )
     return snapshot
 
@@ -441,6 +447,145 @@ def test_edit_mode_issues_are_planned_on_the_integration_ref(monkeypatch):
     assert 100 in plan["selected_numbers"]
     assert plan["edit_mode_deferred_numbers"] == []
     assert plan["safety"]["edit_mode_deferred"] is False
+
+
+def test_incomplete_edit_contract_is_refused_before_claim_planning(monkeypatch):
+    class QueueAwareScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            queued = [
+                issue
+                for issue in snapshot["issues"]
+                if "oc-queued" in issue.get("labels", [])
+            ]
+            return {
+                "ranking": [
+                    {
+                        "number": issue["number"],
+                        "lane_id": "L3",
+                        "priority": 1,
+                        "repair": False,
+                    }
+                    for issue in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return QueueAwareScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = _edit_snapshot()
+    snapshot["issues"][1]["body"] = (
+        "OC-SWARM-PROVIDER-FREE: edit\n"
+        "OC-SWARM-DISPOSITION: done\n"
+        "OC-SWARM-VALIDATE: control-plane-compiles"
+    )
+
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=8)
+
+    assert 100 not in plan["selected_numbers"]
+    refusal = next(row for row in plan["lane_refusals"] if row["issue_number"] == 100)
+    assert "discovery fingerprint" in refusal["reason"]
+    assert refusal["blocked"] is False
+
+
+def test_capability_gap_has_machine_reason_and_does_not_starve_executable_work(monkeypatch):
+    class QueueAwareScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            queued = [
+                issue
+                for issue in snapshot["issues"]
+                if "oc-queued" in issue.get("labels", [])
+            ]
+            return {
+                "ranking": [
+                    {"number": issue["number"], "lane_id": "L3", "priority": 0, "repair": False}
+                    for issue in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return QueueAwareScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = {
+        "issues": [
+            {
+                "number": 100,
+                "title": "Open-ended work",
+                "body": "OC-SWARM-CAPABILITY: taxonomy-resolution",
+                "labels": ["oc-queued", "oc-p0"],
+                "state": "OPEN",
+            },
+            {
+                "number": 101,
+                "title": "Deterministic reconciliation",
+                "body": (
+                    "OC-SWARM-PROVIDER-FREE: reconcile\n"
+                    "OC-SWARM-DISPOSITION: done"
+                ),
+                "labels": ["oc-queued", "oc-p4"],
+                "state": "OPEN",
+            },
+        ]
+    }
+
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=1)
+
+    assert plan["selected_numbers"] == [101]
+    assert plan["execution_state"] == "dispatchable"
+    refusal = plan["lane_refusals"][0]
+    assert refusal["issue_number"] == 100
+    assert refusal["reason_code"] == "no_authorised_coding_executor"
+    assert refusal["blocked"] is False
+    assert {
+        "code": "no_authorised_coding_executor",
+        "issue_number": 100,
+        "reason": refusal["reason"],
+    } in plan["execution_reasons"]
+
+    blocked_only = dict(snapshot, issues=[snapshot["issues"][0]])
+    refused_plan = swarm.build_swarm_plan(blocked_only, worker_slots=1)
+    assert refused_plan["selected_numbers"] == []
+    assert refused_plan["execution_state"] == "capability_gap"
+    assert refused_plan["execution_reasons"][0]["code"] == "no_authorised_coding_executor"
+
+
+def test_empty_plan_has_explicit_idle_reason(monkeypatch):
+    class EmptyScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            return {
+                "ranking": [],
+                "active_lanes": [],
+                "eligible_count": 0,
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return EmptyScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = swarm.build_swarm_plan({"issues": []}, worker_slots=1)
+
+    assert plan["execution_state"] == "idle"
+    assert plan["execution_reasons"] == [{"code": "no_eligible_work"}]
 
 
 def test_edit_mode_marker_matches_the_worker_parser():

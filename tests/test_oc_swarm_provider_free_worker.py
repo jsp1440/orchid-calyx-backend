@@ -45,6 +45,35 @@ def test_explicit_provider_free_reconcile_produces_safe_receipt():
     }
 
 
+def test_execution_plan_refuses_an_edit_without_its_bounded_work_contract():
+    plan = worker.execution_plan(
+        issue(
+            "OC-SWARM-PROVIDER-FREE: edit\n"
+            "OC-SWARM-DISPOSITION: done\n"
+            "OC-SWARM-VALIDATE: control-plane-compiles"
+        )
+    )
+
+    assert plan["supported"] is True
+    assert plan["dispatchable"] is False
+    assert "discovery fingerprint" in plan["refusal_reason"]
+
+
+def test_execution_plan_accepts_only_a_registered_scoped_edit_request():
+    plan = worker.execution_plan(
+        issue(
+            "OC-SWARM-PROVIDER-FREE: edit\n"
+            "OC-SWARM-DISPOSITION: done\n"
+            "OC-SWARM-VALIDATE: control-plane-compiles\n"
+            "OC-DISCOVERY-FINGERPRINT: 0123456789abcdef\n"
+            "OC-SWARM-WRITES: repo-global"
+        )
+    )
+
+    assert plan["dispatchable"] is True
+    assert plan["commands"] == ["control-plane-compiles"]
+
+
 def test_missing_mode_fails_closed():
     try:
         worker.build_receipt(
@@ -54,7 +83,7 @@ def test_missing_mode_fails_closed():
             integration_sha="abc123",
         )
     except ValueError as exc:
-        assert "marker missing" in str(exc)
+        assert "unsupported provider-free executor" in str(exc)
     else:
         raise AssertionError("missing provider-free mode was accepted")
 
@@ -68,7 +97,7 @@ def test_unknown_disposition_fails_closed():
             integration_sha="abc123",
         )
     except ValueError as exc:
-        assert "not fail-closed" in str(exc)
+        assert "supported OC-SWARM-DISPOSITION" in str(exc)
     else:
         raise AssertionError("unsafe disposition was accepted")
 
@@ -154,7 +183,7 @@ def test_validate_mode_without_a_declared_command_is_refused():
     try:
         _validate(VALIDATION_EVIDENCE, body)
     except ValueError as exc:
-        assert "declares no OC-SWARM-VALIDATE" in str(exc)
+        assert "requires a registered OC-SWARM-VALIDATE command" in str(exc)
     else:
         raise AssertionError("a validation task validating nothing was accepted")
 

@@ -12,6 +12,7 @@ import json
 import re
 import subprocess
 
+from app.provider_reservoir.routing import is_lane_executable, is_provider_free
 from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_budget_blocker import is_budget_denial
 from scripts.oc_budget_denial_route import decide_denial_route
@@ -80,6 +81,19 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
         number = worker["issue_number"]
         phase = "precheck"
         try:
+            planned_issue = original.get(number)
+            if planned_issue is None:
+                skipped.append(
+                    {"issue": number, "reason": "issue_missing_from_plan_snapshot"}
+                )
+                continue
+            if worker.get("lane_executable") is not is_lane_executable(
+                planned_issue
+            ) or worker.get("provider_free") is not is_provider_free(planned_issue):
+                skipped.append(
+                    {"issue": number, "reason": "execution_contract_changed"}
+                )
+                continue
             current = view(number)
             labels = _labels(current)
             if (current["number"] != number or current["state"].upper() != "OPEN"
@@ -147,9 +161,18 @@ def claim_workers(plan, snapshot, *, repository, run_id, run_attempt=1, call=git
     # provider-dependent work to the governed completion lane independently.
     provider_free = [w for w in confirmed if w.get("provider_free")]
     provider = [w for w in confirmed if not w.get("provider_free")]
+    execution_reason_code = None
+    if not confirmed:
+        if errors:
+            execution_reason_code = "claim_unconfirmed"
+        elif skipped:
+            execution_reason_code = "planned_candidates_skipped"
+        else:
+            execution_reason_code = "no_planned_work"
     return {"schema": "oc.swarm-claim-handoff.v1", "run_id": run_id,
             "run_attempt": run_attempt, "healthy": not errors,
             "planned_count": len(workers), "launch_count": len(confirmed),
+            "execution_reason_code": execution_reason_code,
             "matrix": {"include": confirmed}, "confirmed": confirmed,
             "provider_free_matrix": {"include": provider_free},
             "provider_matrix": {"include": provider},
@@ -286,6 +309,7 @@ def main():
         handle.write("matrix=" + json.dumps(result["matrix"], separators=(",", ":")) + "\n")
         handle.write(f"provider_free_launch_count={result['provider_free_launch_count']}\n")
         handle.write(f"provider_launch_count={result['provider_launch_count']}\n")
+        handle.write(f"execution_reason_code={result['execution_reason_code'] or ''}\n")
         handle.write("provider_free_matrix="
                      + json.dumps(result["provider_free_matrix"], separators=(",", ":")) + "\n")
         handle.write("provider_matrix="

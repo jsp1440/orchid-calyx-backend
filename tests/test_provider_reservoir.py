@@ -587,6 +587,70 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
         assert result.executable_task == "reconcile"
         assert result.unexecutable_reason is None
 
+    @pytest.mark.parametrize(
+        ("body", "reason"),
+        [
+            ("OC-SWARM-PROVIDER-FREE: reconcile", "DISPOSITION"),
+            (
+                "OC-SWARM-PROVIDER-FREE: validate\nOC-SWARM-DISPOSITION: done",
+                "VALIDATE",
+            ),
+            (
+                (
+                    "OC-SWARM-PROVIDER-FREE: validate\n"
+                    "OC-SWARM-VALIDATE: made-up-command\n"
+                    "OC-SWARM-DISPOSITION: done"
+                ),
+                "unregistered validation command",
+            ),
+            (
+                (
+                    "OC-SWARM-PROVIDER-FREE: edit\n"
+                    "OC-SWARM-VALIDATE: control-plane-compiles\n"
+                    "OC-SWARM-DISPOSITION: done"
+                ),
+                "discovery fingerprint",
+            ),
+            (
+                (
+                    "OC-SWARM-PROVIDER-FREE: edit\n"
+                    "OC-SWARM-VALIDATE: control-plane-compiles\n"
+                    "OC-SWARM-DISPOSITION: done\n"
+                    "OC-DISCOVERY-FINGERPRINT: 0123456789abcdef"
+                ),
+                "repo-global write scope",
+            ),
+        ],
+    )
+    def test_incomplete_or_unregistered_executor_contract_is_not_admitted(
+        self, body: str, reason: str
+    ) -> None:
+        result = routing.route_task({"number": 9003, "state": "OPEN", "body": body})
+        assert result.provider_free is True
+        assert result.lane_executable is False
+        assert reason.lower() in (result.unexecutable_reason or "").lower()
+
+    def test_edit_executor_requires_one_registered_command_and_exact_write_scope(
+        self,
+    ) -> None:
+        body = (
+            "OC-SWARM-PROVIDER-FREE: edit\n"
+            "OC-SWARM-VALIDATE: control-plane-compiles\n"
+            "OC-SWARM-DISPOSITION: done\n"
+            "OC-DISCOVERY-FINGERPRINT: 0123456789abcdef\n"
+            "OC-SWARM-WRITES: repo-global"
+        )
+        result = routing.route_task({"number": 9004, "state": "OPEN", "body": body})
+        assert result.lane_executable is True
+        assert result.unexecutable_reason is None
+
+    def test_validation_executor_registry_matches_command_registry(self) -> None:
+        from scripts.oc_validation_commands import VALIDATION_COMMANDS
+
+        assert routing.DETERMINISTIC_VALIDATION_COMMANDS == frozenset(
+            VALIDATION_COMMANDS
+        )
+
     def test_a_named_executor_that_does_not_exist_is_refused_by_name(self) -> None:
         # The legacy marker accepts any task name since #1504. Accepting the
         # name is not the same as having the program, and the refusal has to say
@@ -625,7 +689,11 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
                 },
             ),
             "edit": (
-                "\nOC-SWARM-VALIDATE: control-plane-compiles",
+                (
+                    "\nOC-SWARM-VALIDATE: control-plane-compiles"
+                    "\nOC-DISCOVERY-FINGERPRINT: 0123456789abcdef"
+                    "\nOC-SWARM-WRITES: repo-global"
+                ),
                 {
                     "edit": {
                         "schema": "oc.provider-free-edit-result.v1",
@@ -650,6 +718,7 @@ OC-SWARM-PROVIDER-OPTIONAL: natural-language-explanation"""
                 ),
             }
             # Must not raise the "missing or unsupported" marker error.
+            assert worker.execution_plan(issue)["dispatchable"] is True
             receipt = worker.build_receipt(
                 issue,
                 lease_comment=_RECONCILE_LEASE_COMMENT,
