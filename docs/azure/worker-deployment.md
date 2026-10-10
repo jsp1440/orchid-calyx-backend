@@ -61,15 +61,15 @@ ghcr.io/jsp1440/orchid-calyx-backend/oc-brain-worker@sha256:<published-manifest-
 ```
 
 The adapter/template require this digest, not `latest` or a mutable tag.
-The base is `python:3.12.15-slim-bookworm` pinned to
-`sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258`.
+The base is `python:3.12.15-alpine3.24` pinned to
+`sha256:1b668429b3511ab407d8e00648891631b0b1a4d7e15e3ca70f38ab5b91ad4ab4`.
 Python wheels/transitive dependencies are version/hash-locked in
 `containers/azure-worker/requirements.lock`. The Linux lock was generated with
 uv 0.9.2; updates require regenerating, reviewing, rebuilding, and scanning.
 
 ```powershell
 py -m uv pip compile containers\azure-worker\requirements.in `
-  --python-version 3.12 --python-platform x86_64-unknown-linux-gnu `
+  --python-version 3.12 --python-platform x86_64-unknown-linux-musl `
   --generate-hashes --output-file containers\azure-worker\requirements.lock
 ```
 
