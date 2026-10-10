@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine
@@ -52,7 +52,7 @@ def _receipt(request_digest: str) -> dict:
         "return_code": 0,
         "stdout_sha256": EMPTY_SHA,
         "stderr_sha256": EMPTY_SHA,
-        "issued_at": datetime(2026, 8, 8, 20, 0, tzinfo=timezone.utc).isoformat(),
+        "issued_at": datetime(2026, 8, 8, 20, 0, tzinfo=UTC).isoformat(),
     }
 
 

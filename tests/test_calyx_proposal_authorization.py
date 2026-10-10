@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -139,7 +139,7 @@ def _build(
         decision=decision,
         rationale="Reviewed exact proposal evidence.",
         evidence_uris=("review:ticket-123",),
-        decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=timezone.utc),
+        decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=UTC),
     )
 
 
@@ -283,7 +283,7 @@ def test_evidence_and_timezone_are_required() -> None:
             decision="approved",
             rationale="Reviewed exact proposal evidence.",
             evidence_uris=(),
-            decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=timezone.utc),
+            decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=UTC),
         )
     with pytest.raises(ValueError, match="TIMEZONE_REQUIRED"):
         builder.build(
