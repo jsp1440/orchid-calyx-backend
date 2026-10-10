@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from hashlib import sha256
 from typing import Any
@@ -208,6 +208,6 @@ def prepare_connector_request(
         action=action,
         subject=subject,
         idempotency_key=stable_idempotency_key(source.source_id, action, subject),
-        requested_at=datetime.now(timezone.utc).isoformat(),
+        requested_at=datetime.now(UTC).isoformat(),
         redacted_payload=_safe(payload or {}),
     )

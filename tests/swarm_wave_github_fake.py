@@ -31,7 +31,9 @@ class FakeGitHub:
         self.repository = repository
         self.rows = {int(row["number"]): deepcopy(row) for row in issues}
         for row in self.rows.values():
-            row["labels"] = [x if isinstance(x, str) else x["name"] for x in row["labels"]]
+            row["labels"] = [
+                x if isinstance(x, str) else x["name"] for x in row["labels"]
+            ]
         self.comments: dict[int, list[dict]] = {number: [] for number in self.rows}
         self.comment_index: dict[int, tuple[int, dict]] = {}
         self.runs: dict[int, str] = {}
@@ -50,18 +52,29 @@ class FakeGitHub:
     # -- gh CLI shapes -------------------------------------------------------
     def _view(self, number: int) -> dict:
         row = self.rows[number]
-        return {"number": number, "title": row["title"], "body": row.get("body") or "",
-                "state": row["state"], "labels": [{"name": x} for x in row["labels"]]}
+        return {
+            "number": number,
+            "title": row["title"],
+            "body": row.get("body") or "",
+            "state": row["state"],
+            "labels": [{"name": x} for x in row["labels"]],
+        }
 
     def _comment_view(self, number: int, comment: dict) -> dict:
-        return {**deepcopy(comment),
-                "issue_url": f"https://api.github.com/repos/{self.repository}/issues/{number}"}
+        return {
+            **deepcopy(comment),
+            "issue_url": f"https://api.github.com/repos/{self.repository}/issues/{number}",
+        }
 
     def _post_comment(self, number: int, body: str) -> dict:
         self.advance()
         self._next_comment_id += 1
-        comment = {"id": self._next_comment_id, "body": body,
-                   "user": {"login": BOT_LOGIN}, "created_at": iso(self.now())}
+        comment = {
+            "id": self._next_comment_id,
+            "body": body,
+            "user": {"login": BOT_LOGIN},
+            "created_at": iso(self.now()),
+        }
         self.comments[number].append(comment)
         self.comment_index[comment["id"]] = (number, comment)
         return self._comment_view(number, comment)
@@ -86,6 +99,16 @@ class FakeGitHub:
             number = int(path.split("/issues/")[1].split("/")[0])
             return self._post_comment(number, payload["body"])
         if args[:3] == ["api", "--method", "GET"]:
+            if "/comments?" in args[3]:
+                from urllib.parse import parse_qs
+
+                path, query = args[3].split("?", 1)
+                number = int(path.split("/issues/")[1].split("/")[0])
+                params = parse_qs(query)
+                size = int(params["per_page"][0])
+                page = int(params["page"][0])
+                rows = self.comments[number][(page - 1) * size : page * size]
+                return [self._comment_view(number, row) for row in rows]
             comment_id = int(args[3].rsplit("/", 1)[1])
             number, comment = self.comment_index[comment_id]
             return self._comment_view(number, comment)
@@ -93,9 +116,11 @@ class FakeGitHub:
 
     # -- oc_swarm_lease_reconcile transport interface -------------------------
     def running_issues(self) -> list[dict]:
-        return [{**self._view(n), "updatedAt": iso(self.now())}
-                for n, row in sorted(self.rows.items())
-                if row["state"] == "OPEN" and "oc-running" in row["labels"]]
+        return [
+            {**self._view(n), "updatedAt": iso(self.now())}
+            for n, row in sorted(self.rows.items())
+            if row["state"] == "OPEN" and "oc-running" in row["labels"]
+        ]
 
     def pull_requests(self) -> list[dict]:
         return []
@@ -128,15 +153,26 @@ class FakeGitHub:
     def snapshot(self) -> dict:
         issues = []
         for number, row in sorted(self.rows.items()):
-            issue = {"number": number, "title": row["title"], "body": row.get("body") or "",
-                     "labels": [{"name": x} for x in row["labels"]],
-                     "createdAt": row["createdAt"], "updatedAt": row.get("updatedAt", row["createdAt"]),
-                     "state": row["state"]}
+            issue = {
+                "number": number,
+                "title": row["title"],
+                "body": row.get("body") or "",
+                "labels": [{"name": x} for x in row["labels"]],
+                "createdAt": row["createdAt"],
+                "updatedAt": row.get("updatedAt", row["createdAt"]),
+                "state": row["state"],
+            }
             if row["state"] == "OPEN" and "oc-blocked" in row["labels"]:
-                issue["comments"] = [{"id": c["id"], "body": c["body"]} for c in self.comments[number]]
+                issue["comments"] = [
+                    {"id": c["id"], "body": c["body"]} for c in self.comments[number]
+                ]
             issues.append(issue)
-        return {"issues": issues, "pull_requests": [], "budget_fingerprints": {},
-                "now": iso(self.now())}
+        return {
+            "issues": issues,
+            "pull_requests": [],
+            "budget_fingerprints": {},
+            "now": iso(self.now()),
+        }
 
     def labels(self, number: int) -> set[str]:
         return set(self.rows[number]["labels"])

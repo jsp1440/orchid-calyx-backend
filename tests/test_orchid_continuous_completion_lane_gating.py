@@ -44,12 +44,22 @@ def test_provider_lane_is_gated_before_job_initialization(lane_text):
     assert "@openai/codex" in lane_text
 
 
-def test_lane_requires_a_live_scheduler_lease(lane_text):
+def test_lane_requires_a_bound_live_claim_before_provider(lane_text):
     lease = lane_text.index("name: Verify scheduler lease")
     provider = lane_text.index("scripts/swarm_anthropic_direct.py")
     assert lease < provider
-    assert "oc-running" in lane_text[lease:provider]
-    assert "Stale/duplicate completion dispatch suppressed" in lane_text[lease:provider]
+    lease_check = lane_text[lease:provider]
+    assert (
+        "Missing/manual handoffs fail closed; labels never grant ownership."
+        in lease_check
+    )
+    assert "scripts.oc_swarm_settlement --verify-only" in lease_check
+    assert "--min-remaining-seconds 4500" in lease_check
+    assert (
+        '--issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID"' in lease_check
+    )
+    assert '--repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID"' in lease_check
+    assert '--run-attempt "$GITHUB_RUN_ATTEMPT"' in lease_check
 
 
 def test_lane_targets_integration_and_never_merges_main(lane_text):

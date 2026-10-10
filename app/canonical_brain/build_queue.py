@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -42,7 +42,7 @@ class GovernedBuildQueue:
 
     def submit(self, request: BuildAdmissionRequest, priority: int = 50) -> BuildQueueItem:
         decision = evaluate_build_admission(request)
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         candidate = BuildQueueItem(
             build_id=request.build_id,
             architecture_id=request.architecture_id,
@@ -75,7 +75,7 @@ class GovernedBuildQueue:
         }
         if target not in allowed[item.status]:
             raise ValueError(f"invalid queue transition: {item.status} -> {target}")
-        updated = item.model_copy(update={"status": target, "updated_at": datetime.now(timezone.utc)})
+        updated = item.model_copy(update={"status": target, "updated_at": datetime.now(UTC)})
         self._items[build_id] = updated
         return updated
 

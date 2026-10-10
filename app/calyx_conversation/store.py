@@ -5,7 +5,7 @@ import os
 import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from threading import RLock
 from typing import Any
 
@@ -48,7 +48,7 @@ class ConversationStore:
 
     @staticmethod
     def _now() -> str:
-        return datetime.now(timezone.utc).isoformat()
+        return datetime.now(UTC).isoformat()
 
     @staticmethod
     def _hash(content: str) -> str:

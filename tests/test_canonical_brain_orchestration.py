@@ -1,5 +1,5 @@
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from sqlalchemy import create_engine
@@ -106,7 +106,7 @@ def durable_execution(build_id: str) -> tuple[Session, CalyxProgramJob, object]:
         status="running",
         lease_owner="worker:test",
         lease_token="33333333-3333-3333-3333-333333333333",
-        lease_expires_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        lease_expires_at=datetime.now(UTC) + timedelta(minutes=10),
         attempt_count=1,
     )
     db.add_all([program, job])
@@ -140,7 +140,7 @@ def test_deterministic_assignment_retry_returns_existing_assignment() -> None:
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-ATLAS-002"), priority=10)
     system = orchestrator(queue)
-    now = datetime(2026, 8, 6, 20, 0, tzinfo=timezone.utc)
+    now = datetime(2026, 8, 6, 20, 0, tzinfo=UTC)
 
     first = system.assign("BUILD-ATLAS-002", now)
     second = system.assign("BUILD-ATLAS-002", now + timedelta(seconds=5))
@@ -155,7 +155,7 @@ def test_blocked_build_cannot_be_assigned() -> None:
     queue.submit(request("BUILD-BLOCKED", merge_requested=True))
 
     with pytest.raises(ValueError, match="only admitted builds"):
-        orchestrator(queue).assign("BUILD-BLOCKED", datetime.now(timezone.utc))
+        orchestrator(queue).assign("BUILD-BLOCKED", datetime.now(UTC))
 
 
 def test_missing_capable_agent_fails_closed() -> None:
@@ -163,24 +163,24 @@ def test_missing_capable_agent_fails_closed() -> None:
     queue.submit(request("BUILD-CONSERVATORY", architecture_id="architecture:conservatory"))
 
     with pytest.raises(ValueError, match="no enabled agent"):
-        orchestrator(queue).assign("BUILD-CONSERVATORY", datetime.now(timezone.utc))
+        orchestrator(queue).assign("BUILD-CONSERVATORY", datetime.now(UTC))
 
 
 def test_durable_authoritative_job_can_complete_matching_probe_assignment() -> None:
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-PROBE", architecture_id="architecture:brain"))
     system = probe_orchestrator(queue)
-    assigned = system.assign("BUILD-PROBE", datetime(2026, 8, 6, 20, 0, tzinfo=timezone.utc))
+    assigned = system.assign("BUILD-PROBE", datetime(2026, 8, 6, 20, 0, tzinfo=UTC))
     started = system.record_started(
         assigned.assignment_id,
-        datetime(2026, 8, 6, 20, 1, tzinfo=timezone.utc),
+        datetime(2026, 8, 6, 20, 1, tzinfo=UTC),
     )
     assert started.authoritative is False
 
     db, job, receipt = durable_execution("BUILD-PROBE")
     completed = system.record_completed(
         assigned.assignment_id,
-        datetime(2026, 8, 6, 20, 3, tzinfo=timezone.utc),
+        datetime(2026, 8, 6, 20, 3, tzinfo=UTC),
         db,
         program_job_id=job.program_job_id,
         executor_role_key=AUTONOMY_PROBE_ROLE,
@@ -196,14 +196,14 @@ def test_unpersisted_or_incomplete_executor_result_cannot_complete_build() -> No
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-PROBE-PENDING", architecture_id="architecture:brain"))
     system = probe_orchestrator(queue)
-    assigned = system.assign("BUILD-PROBE-PENDING", datetime.now(timezone.utc))
-    system.record_started(assigned.assignment_id, datetime.now(timezone.utc))
+    assigned = system.assign("BUILD-PROBE-PENDING", datetime.now(UTC))
+    system.record_started(assigned.assignment_id, datetime.now(UTC))
 
     db, job, _ = durable_execution("ANOTHER-BUILD")
     with pytest.raises(ValueError, match="COMPLETION_BUILD_MISMATCH"):
         system.record_completed(
             assigned.assignment_id,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             db,
             program_job_id=job.program_job_id,
             executor_role_key=AUTONOMY_PROBE_ROLE,
@@ -215,14 +215,14 @@ def test_durable_receipt_cannot_complete_mismatched_agent_role() -> None:
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-ATLAS-003"))
     system = orchestrator(queue)
-    assigned = system.assign("BUILD-ATLAS-003", datetime(2026, 8, 6, 20, 0, tzinfo=timezone.utc))
-    system.record_started(assigned.assignment_id, datetime(2026, 8, 6, 20, 1, tzinfo=timezone.utc))
+    assigned = system.assign("BUILD-ATLAS-003", datetime(2026, 8, 6, 20, 0, tzinfo=UTC))
+    system.record_started(assigned.assignment_id, datetime(2026, 8, 6, 20, 1, tzinfo=UTC))
 
     db, job, _ = durable_execution("BUILD-ATLAS-003")
     with pytest.raises(PermissionError, match="COMPLETION_AGENT_ROLE_MISMATCH"):
         system.record_completed(
             assigned.assignment_id,
-            datetime(2026, 8, 6, 20, 2, tzinfo=timezone.utc),
+            datetime(2026, 8, 6, 20, 2, tzinfo=UTC),
             db,
             program_job_id=job.program_job_id,
             executor_role_key=AUTONOMY_PROBE_ROLE,
@@ -234,8 +234,8 @@ def test_completion_requires_durable_evidence_uris() -> None:
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-PROBE-NO-EVIDENCE", architecture_id="architecture:brain"))
     system = probe_orchestrator(queue)
-    assigned = system.assign("BUILD-PROBE-NO-EVIDENCE", datetime.now(timezone.utc))
-    system.record_started(assigned.assignment_id, datetime.now(timezone.utc))
+    assigned = system.assign("BUILD-PROBE-NO-EVIDENCE", datetime.now(UTC))
+    system.record_started(assigned.assignment_id, datetime.now(UTC))
 
     db, job, _ = durable_execution("BUILD-PROBE-NO-EVIDENCE")
     evidence = json.loads(job.evidence_json or "{}")
@@ -246,7 +246,7 @@ def test_completion_requires_durable_evidence_uris() -> None:
     with pytest.raises(ValueError, match="DURABLE_EXECUTION_EVIDENCE_REQUIRED"):
         system.record_completed(
             assigned.assignment_id,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             db,
             program_job_id=job.program_job_id,
             executor_role_key=AUTONOMY_PROBE_ROLE,
@@ -258,13 +258,13 @@ def test_cannot_complete_before_starting() -> None:
     queue = GovernedBuildQueue()
     queue.submit(request("BUILD-PROBE-SCHEDULED", architecture_id="architecture:brain"))
     system = probe_orchestrator(queue)
-    assigned = system.assign("BUILD-PROBE-SCHEDULED", datetime.now(timezone.utc))
+    assigned = system.assign("BUILD-PROBE-SCHEDULED", datetime.now(UTC))
     db = Session(create_engine("sqlite+pysqlite:///:memory:"))
 
     with pytest.raises(ValueError, match="only running assignments"):
         system.record_completed(
             assigned.assignment_id,
-            datetime.now(timezone.utc),
+            datetime.now(UTC),
             db,
             program_job_id="missing",
             executor_role_key=AUTONOMY_PROBE_ROLE,

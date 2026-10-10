@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from collections.abc import Mapping
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -54,7 +54,7 @@ PATCH_CONTENT = "print('bounded owner change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_BEFORE = "b" * 64
 PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
-NOW = datetime(2026, 8, 8, 23, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 8, 23, 0, tzinfo=UTC)
 SECRET = b"s" * 32
 OWNER = "principal:owner"
 

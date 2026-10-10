@@ -41,7 +41,7 @@ import logging
 import os
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from runtime.research_station_store import (
@@ -74,7 +74,7 @@ _PRIVILEGED_AUTH_TYPES = frozenset({"api_key", "owner_session"})
 
 
 def _utc_day(now: datetime | None = None) -> str:
-    return (now or datetime.now(tz=timezone.utc)).strftime("%Y-%m-%d")
+    return (now or datetime.now(tz=UTC)).strftime("%Y-%m-%d")
 
 
 def _non_negative_int(raw: str | None) -> int | None:
@@ -136,7 +136,7 @@ class GenerativeTurnLedger:
                 record={
                     "count": max(0, count),
                     "day": day,
-                    "updated_at": datetime.now(tz=timezone.utc).isoformat(),
+                    "updated_at": datetime.now(tz=UTC).isoformat(),
                 },
             )
         except Exception as exc:

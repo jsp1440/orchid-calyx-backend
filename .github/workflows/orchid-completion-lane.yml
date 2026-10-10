@@ -49,6 +49,7 @@ jobs:
     timeout-minutes: 70
     env:
       ISSUE_NUMBER: ${{ inputs.issue_number }}
+      LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
       GH_TOKEN: ${{ github.token }}
       INTEGRATION_BRANCH: oc-autonomous-integration
     steps:
@@ -65,29 +66,16 @@ jobs:
           LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
         run: |
           set -euo pipefail
-          # Swarm supplies a specific durable claim. Legacy manual dispatches
-          # retain their existing label-based check below.
-          if [[ -n "$LEASE_COMMENT_ID" ]]; then
-            if python3 -m scripts.oc_swarm_claim \
-              --verify-issue "$ISSUE_NUMBER" --lease-comment-id "$LEASE_COMMENT_ID" \
+          # Missing/manual handoffs fail closed; labels never grant ownership.
+          if [[ "$LEASE_COMMENT_ID" =~ ^[1-9][0-9]*$ ]] && \
+            python3 -m scripts.oc_swarm_settlement --verify-only \
+              --min-remaining-seconds 4500 \
+              --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
               --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
               --run-attempt "$GITHUB_RUN_ATTEMPT"; then
-              echo "execute=true" >> "$GITHUB_OUTPUT"
-            else
-              echo "execute=false" >> "$GITHUB_OUTPUT"
-            fi
-            exit 0
-          fi
-          labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json state,labels --jq 'select(.state == "OPEN") | [.labels[].name] | join(" ")' 2>/dev/null || true)
-          if [[ "$labels" == *oc-repair-backoff* ]]; then
-            echo "execute=false" >> "$GITHUB_OUTPUT"
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Completion dispatch suppressed before provider execution because repair backoff is authoritative; execution labels were cleared. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
-          elif [[ "$labels" == *oc-running* ]]; then
             echo "execute=true" >> "$GITHUB_OUTPUT"
           else
             echo "execute=false" >> "$GITHUB_OUTPUT"
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Stale/duplicate completion dispatch suppressed before provider execution because this issue no longer owns an oc-running lease. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
           fi
 
       - name: Load issue context and publish worker receipt
@@ -228,10 +216,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --remove-label oc-running --add-label oc-queued >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-AUTO] NO-API mode active; all provider steps skipped. Issue returned to queue. Set NO_API_MODE=false (repository variable) to enable provider execution. Run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          set -euo pipefail
+          python3 -m scripts.oc_swarm_settlement --disposition queued \
+            --message "NO-API mode active; no provider executed." \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
 
       - name: Prepare worker validation Python
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
@@ -264,6 +254,11 @@ jobs:
           set -euo pipefail
           # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
           # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
+          python3 -m scripts.oc_swarm_settlement --verify-only \
+            --min-remaining-seconds 4500 \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
           python3 scripts/swarm_anthropic_direct.py \
             --issue-number "$ISSUE_NUMBER" \
             --title "$ISSUE_TITLE" \
@@ -382,6 +377,11 @@ jobs:
         run: |
           set -euo pipefail
           : > "$RUNNER_TEMP/gemini-stderr.log"
+          python3 -m scripts.oc_swarm_settlement --verify-only \
+            --min-remaining-seconds 4500 \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
           : > "$RUNNER_TEMP/gemini-result.json"
           if [[ -z "${GEMINI_API_KEY:-}" ]]; then
             echo "config_missing" > "$RUNNER_TEMP/gemini-status.txt"
@@ -494,6 +494,11 @@ jobs:
         run: |
           set -euo pipefail
           : > "$RUNNER_TEMP/openai-stdout.log"
+          python3 -m scripts.oc_swarm_settlement --verify-only \
+            --min-remaining-seconds 4500 \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
           : > "$RUNNER_TEMP/openai-stderr.log"
           if [[ -z "${OPENAI_API_KEY:-}" ]]; then
             echo "config_missing" > "$RUNNER_TEMP/openai-status.txt"
@@ -633,60 +638,51 @@ jobs:
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
           route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}; reserved_cost_usd=${ROUTE_RESERVED_COST:-unknown}; packet=${PACKET_FINGERPRINT:-unknown}; packet_est_tokens=${PACKET_ESTIMATED_TOKENS:-unknown}; execution_class=${PACKET_EXECUTION_CLASS:-unknown}"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running >/dev/null 2>&1 || true
-
-          latest_labels=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --json labels --jq '[.labels[].name] | join(" ")' 2>/dev/null || true)
-          if [[ "$latest_labels" == *oc-repair-backoff* ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-repair --remove-label oc-validating >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Worker settlement preserved authoritative repair backoff; no queue, repair, or validation eligibility was restored. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
-            exit 0
-          fi
+          settle() {
+            local disposition="$1" message="$2"
+            shift 2
+            python3 -m scripts.oc_swarm_settlement --disposition "$disposition" \
+              --message "$message Route=${route_telemetry}; Claude=${CLAUDE_KIND:-unknown}; Gemini=${GEMINI_KIND:-not-run}; OpenAI=${OPENAI_KIND:-not-run}." \
+              --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+              --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+              --run-attempt "$GITHUB_RUN_ATTEMPT" "$@"
+          }
 
           if [[ -n "$pr" ]]; then
+            settle validating "Durable PR #$pr awaits validation." --blocked-on "pr#$pr"
             echo "pr=$pr" >> "$GITHUB_OUTPUT"
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --remove-label oc-blocked --remove-label oc-runtime-backoff --add-label oc-validating >/dev/null 2>&1 || true
             head=$(gh pr view "$pr" --repo "$GITHUB_REPOSITORY" --json headRefName --jq '.headRefName')
             if gh workflow run orchid-autonomous-validation.yml --repo "$GITHUB_REPOSITORY" --ref "$head" >/dev/null; then
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Lane delivered/updated integration PR #$pr, dispatched independent backend validation, and released its execution slot. Route=${route_telemetry}; Claude=${CLAUDE_KIND:-unknown}; Gemini=${GEMINI_KIND:-not-run}; OpenAI=${OPENAI_KIND:-not-run}. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              echo "Validation dispatched for PR #$pr." >> "$GITHUB_STEP_SUMMARY"
             else
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-repair --add-label oc-validating >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Durable PR #$pr exists, but validation dispatch failed. Kept in oc-validating; scheduler will retry validation without redispatching a model. Worker run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+              echo "PR #$pr remains validating; dispatch failed." >> "$GITHUB_STEP_SUMMARY"
               exit 1
             fi
           elif [[ "$CLAUDE_KIND" == "no_execution" || "$CLAUDE_KIND" == "no_model_usage" || "$CLAUDE_KIND" == "workflow_validation_skip" || "$CLAUDE_KIND" == "provider_failure" || "$CLAUDE_KIND" == "billing_exhausted" || "$CLAUDE_KIND" == "security" || "$CLAUDE_KIND" == "safe_provider" || "$CLAUDE_KIND" == "unknown" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Provider execution did not produce verifiable model execution evidence (classification=$CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry." >/dev/null
+            settle runtime-backoff "No verifiable model execution ($CLAUDE_KIND). Parked in oc-runtime-backoff; no automatic paid retry."
           elif [[ "$CLAUDE_KIND" == "max_turns" || "$CLAUDE_KIND" == "no_durable_change" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --remove-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude reached the bounded task/turn ceiling or completed without durable repository changes (classification=$CLAUDE_KIND). Provider runtime remains healthy; issue moved to oc-repair and the global circuit stays closed." >/dev/null
+            settle repair "Bounded ceiling or no durable change ($CLAUDE_KIND)."
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_OUTCOME" == "success" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable; Gemini completed without durable changes. Issue returned to bounded repair without opening the global circuit." >/dev/null
+            settle queued "Gemini completed without durable changes." --repair-queued
           elif [[ "$GEMINI_FALLBACK" == "true" && "$OPENAI_OUTCOME" == "success" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-runtime-backoff --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable and Gemini ended with classification=${GEMINI_KIND:-unknown}; independently authorized OpenAI completed without durable changes. The Gemini credential/security finding remains visible, while the issue returned to bounded repair without opening the global circuit." >/dev/null
+            settle queued "Authorized OpenAI completed without durable changes." --repair-queued
           elif [[ "$CLAUDE_FALLBACK" == "true" && "$GEMINI_FALLBACK" != "true" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            settle runtime-backoff "Gemini non-substitutable failure; OpenAI not attempted."
             gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was safely unavailable but Gemini failed with non-substitutable classification=${GEMINI_KIND:-unknown}. Failed closed; OpenAI was not attempted." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after Gemini non-substitutable failure on issue #${ISSUE_NUMBER}." >/dev/null
           elif [[ "$GEMINI_FALLBACK" == "true" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            settle runtime-backoff "All eligible providers exhausted; no automatic paid retry."
             gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude was unavailable, Gemini ended with classification=${GEMINI_KIND:-unknown}, and independently authorized OpenAI did not produce durable work (classification=${OPENAI_KIND:-unknown}, outcome=${OPENAI_OUTCOME:-unknown}). All eligible providers exhausted; issue parked without provider thrashing." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after all eligible providers failed on issue #${ISSUE_NUMBER}." >/dev/null
           elif [[ "$CLAUDE_OUTCOME" != "success" ]]; then
-            gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
+            settle runtime-backoff "Non-fallback Claude failure; no provider bypass."
             gh issue edit 1031 --repo "$GITHUB_REPOSITORY" --add-label oc-runtime-degraded --add-label oc-provider-chain-blocked >/dev/null 2>&1 || true
-            gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Claude failed with non-fallback classification=${CLAUDE_KIND:-unknown}. Failed closed; no provider bypass attempted." >/dev/null
             gh issue comment 1031 --repo "$GITHUB_REPOSITORY" --body "ORCHID RUNTIME CIRCUIT — **OPEN** after non-fallback Claude failure on issue #${ISSUE_NUMBER}." >/dev/null
           else
             if [[ "${ISSUE_LABELS:-}" == *oc-repair* ]]; then
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-queued --remove-label oc-validating --remove-label oc-repair --add-label oc-runtime-backoff >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR on the allowed repair attempt. Retry budget exhausted; issue parked in oc-runtime-backoff." >/dev/null
+              settle runtime-backoff "No durable PR on allowed repair attempt. Retry budget exhausted; issue parked in oc-runtime-backoff."
             else
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --remove-label oc-running --remove-label oc-validating --add-label oc-queued --add-label oc-repair >/dev/null 2>&1 || true
-              gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" --body "[OC-AUTO] Preferred provider completed without a durable integration PR. One bounded repair attempt remains; automatic refill remains disabled unless explicitly authorized." >/dev/null
+              settle queued "No durable PR; one bounded repair remains; automatic refill remains disabled unless explicitly authorized." --repair-queued
             fi
           fi
 

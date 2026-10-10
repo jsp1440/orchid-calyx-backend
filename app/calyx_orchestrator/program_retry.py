@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 RETRY_BACKOFF_SCHEMA = "calyx.program-job-retry-backoff.v1"
@@ -42,8 +42,8 @@ def retry_backoff_seconds(attempt_count: int) -> int:
 
 def _as_utc(value: datetime) -> datetime:
     if value.tzinfo is None:
-        return value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc)
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _loads(evidence_json: str | None) -> Any:

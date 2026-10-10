@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -101,7 +101,7 @@ class SwarmExecutionGovernor:
                 issue_task_id=request.issue_task_id,
                 provider=request.provider,
                 worker_lane=request.worker_lane,
-                started_at=datetime.now(timezone.utc),
+                started_at=datetime.now(UTC),
                 retry_count=request.retry_count,
                 governing_policy_snapshot=self._policy.snapshot(),
                 estimated_cost_usd=request.estimated_cost_usd,
@@ -126,7 +126,7 @@ class SwarmExecutionGovernor:
         with self._lock:
             updated = self._ledger._update_locked(
                 entry_id,
-                ended_at=datetime.now(timezone.utc),
+                ended_at=datetime.now(UTC),
                 succeeded=succeeded,
                 termination_reason=termination_reason,
                 estimated_tokens=estimated_tokens,
@@ -199,7 +199,7 @@ class SwarmExecutionGovernor:
         # 8–10. Budget checks (when stop_on_budget_threshold is True)
         if self._policy.stop_on_budget_threshold:
             estimated = request.estimated_cost_usd or Decimal(0)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
 
             if (
                 self._policy.per_run_budget is not None

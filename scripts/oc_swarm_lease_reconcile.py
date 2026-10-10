@@ -48,8 +48,17 @@ QUEUED = "oc-queued"
 VALIDATING = "oc-validating"
 BLOCKED = "oc-blocked"
 #: Labels that already park or settle an issue; oc-running beside them is stale.
-PARKED = frozenset({"oc-done", VALIDATING, BLOCKED, "oc-owner-gate", "oc-scientific-gate",
-                    "oc-runtime-backoff", "oc-repair-backoff"})
+PARKED = frozenset(
+    {
+        "oc-done",
+        VALIDATING,
+        BLOCKED,
+        "oc-owner-gate",
+        "oc-scientific-gate",
+        "oc-runtime-backoff",
+        "oc-repair-backoff",
+    }
+)
 #: Manual/legacy leases (no Swarm receipt) expire after one day. Owner-declared
 #: local continuations in this repository have used the same horizon.
 MANUAL_LEASE_MAX_AGE_SECONDS = 24 * 60 * 60
@@ -59,13 +68,17 @@ BOT_LOGIN = "github-actions[bot]"
 RECOVERY_PREFIX = "[OC-SWARM-V4] Stale lease recovered: `"
 
 _CLAIM = re.compile(
-    r"^\[OC-SWARM-V\d+\] Dependency/resource lease claimed: `(\{[^\n]+\})`", re.IGNORECASE
+    r"^\[OC-SWARM-V\d+\] Dependency/resource lease claimed: `(\{[^\n]+\})`",
+    re.IGNORECASE,
 )
 _AUTO_ISSUE = re.compile(r"OC-AUTO-ISSUE:\s*#(\d+)")
 
 
 def _labels(issue: dict) -> set[str]:
-    return {x if isinstance(x, str) else str(x.get("name")) for x in issue.get("labels") or []}
+    return {
+        x if isinstance(x, str) else str(x.get("name"))
+        for x in issue.get("labels") or []
+    }
 
 
 def _parse_time(value: Any) -> datetime | None:
@@ -80,7 +93,9 @@ def _parse_time(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _latest_claim(comments: Iterable[dict], *, repository: str, number: int) -> dict | None:
+def _latest_claim(
+    comments: Iterable[dict], *, repository: str, number: int
+) -> dict | None:
     """Return the newest authenticated Swarm claim receipt bound to this issue."""
     latest = None
     for comment in comments:
@@ -88,22 +103,52 @@ def _latest_claim(comments: Iterable[dict], *, repository: str, number: int) -> 
             continue
         match = _CLAIM.match(str(comment.get("body") or ""))
         if not match:
+            if str(comment.get("body") or "").startswith(
+                "[OC-SWARM-V4] Dependency/resource lease claimed:"
+            ):
+                raise ValueError("malformed_authenticated_claim")
             continue
         try:
             claim = json.loads(match.group(1))
         except ValueError:
-            continue
+            raise ValueError("malformed_authenticated_claim") from None
         lease_id = str(claim.get("lease_id") or "")
         parts = lease_id.split(":")
-        if (claim.get("schema") != "oc.swarm-claim.v1" or claim.get("issue_number") != number
-                or len(parts) != 4 or parts[0] != repository or parts[3] != str(number)
-                or not parts[1].isdigit() or not parts[2].isdigit()):
-            continue
+        if (
+            claim.get("schema") != "oc.swarm-claim.v1"
+            or claim.get("issue_number") != number
+            or len(parts) != 4
+            or parts[0] != repository
+            or parts[3] != str(number)
+            or not parts[1].isdigit()
+            or not parts[2].isdigit()
+        ):
+            raise ValueError("malformed_authenticated_claim")
         created = _parse_time(comment.get("created_at"))
-        if latest is None or (created and latest["created_at"] and created > latest["created_at"]):
-            latest = {"comment_id": comment.get("id"), "lease_id": lease_id,
-                      "run_id": int(parts[1]), "run_attempt": int(parts[2]),
-                      "created_at": created}
+        if (
+            created is None
+            or type(comment.get("id")) is not int
+            or comment["id"] < 1
+            or type(claim.get("issue_number")) is not int
+            or int(parts[1]) < 1
+            or int(parts[2]) < 1
+        ):
+            raise ValueError("malformed_authenticated_claim")
+        if (
+            latest is None
+            or (created and latest["created_at"] and created > latest["created_at"])
+            or (
+                created == latest["created_at"]
+                and int(comment.get("id") or 0) > int(latest["comment_id"] or 0)
+            )
+        ):
+            latest = {
+                "comment_id": comment.get("id"),
+                "lease_id": lease_id,
+                "run_id": int(parts[1]),
+                "run_attempt": int(parts[2]),
+                "created_at": created,
+            }
     return latest
 
 
@@ -123,7 +168,8 @@ def _settled_after(comments: Iterable[dict], claim: dict) -> bool:
 
 def _recovery_count(comments: Iterable[dict]) -> int:
     return sum(
-        1 for c in comments
+        1
+        for c in comments
         if (c.get("user") or {}).get("login") == BOT_LOGIN
         and str(c.get("body") or "").startswith(RECOVERY_PREFIX)
     )
@@ -141,7 +187,11 @@ def durable_pr_index(pull_requests: Iterable[dict]) -> dict[int, dict]:
             issue = int(raw)
             current = index.get(issue)
             if current is None or int(pr["number"]) < int(current["number"]):
-                index[issue] = {"number": int(pr["number"]), "merged": merged, "state": state}
+                index[issue] = {
+                    "number": int(pr["number"]),
+                    "merged": merged,
+                    "state": state,
+                }
     return index
 
 
@@ -159,9 +209,16 @@ def classify_lease(
     number = int(issue["number"])
     labels = _labels(issue)
     decision: dict[str, Any] = {
-        "schema": RECOVERY_SCHEMA, "issue_number": number, "action": "keep",
-        "reason": None, "target": None, "lease_id": None, "lease_comment_id": None,
-        "run_id": None, "run_status": None, "lease_age_seconds": None,
+        "schema": RECOVERY_SCHEMA,
+        "issue_number": number,
+        "action": "keep",
+        "reason": None,
+        "target": None,
+        "lease_id": None,
+        "lease_comment_id": None,
+        "run_id": None,
+        "run_status": None,
+        "lease_age_seconds": None,
         "recoveries_before": _recovery_count(comments),
         "durable_pr": None if durable_pr is None else durable_pr["number"],
         "labels": sorted(labels),
@@ -171,23 +228,31 @@ def classify_lease(
         return decision
 
     if labels & PARKED:
-        decision.update(action="recover", reason="running_label_beside_parked_state",
-                        target=None)
+        decision.update(
+            action="recover", reason="running_label_beside_parked_state", target=None
+        )
         return decision
 
     claim = _latest_claim(comments, repository=repository, number=number)
     if claim is not None:
-        decision.update(lease_id=claim["lease_id"], lease_comment_id=claim["comment_id"],
-                        run_id=claim["run_id"])
+        decision.update(
+            lease_id=claim["lease_id"],
+            lease_comment_id=claim["comment_id"],
+            run_id=claim["run_id"],
+        )
         if claim["created_at"] is not None:
-            decision["lease_age_seconds"] = int((now - claim["created_at"]).total_seconds())
+            decision["lease_age_seconds"] = int(
+                (now - claim["created_at"]).total_seconds()
+            )
         if _settled_after(comments, claim):
             decision.update(action="recover", reason="settled_without_label_release")
         else:
             status = run_status(claim["run_id"])
             decision["run_status"] = status
             if status in {"completed", "missing"}:
-                decision.update(action="recover", reason="worker_run_terminated_without_settlement")
+                decision.update(
+                    action="recover", reason="worker_run_terminated_without_settlement"
+                )
             else:
                 decision["reason"] = "worker_run_active_or_unknown"
                 return decision
@@ -225,42 +290,85 @@ class GitHubTransport:
 
     def _run(self, args: list[str], payload: dict | None = None) -> Any:
         result = subprocess.run(
-            ["gh", *args], input=json.dumps(payload) if payload is not None else None,
-            capture_output=True, text=True, timeout=60, check=True,
+            ["gh", *args],
+            input=json.dumps(payload) if payload is not None else None,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=True,
         )
         text = result.stdout.strip()
         return json.loads(text) if text.startswith(("{", "[")) else None
 
-    def _paged(self, path: str) -> list[dict]:
+    def _paged(
+        self, path: str, *, page_budget=10, require_complete=False
+    ) -> list[dict]:
         rows: list[dict] = []
-        for page in range(1, 11):
-            batch = self._run(["api", f"repos/{self.repository}/{path}?per_page=100&page={page}"])
+        for page in range(1, page_budget + 1):
+            batch = self._run(
+                ["api", f"repos/{self.repository}/{path}?per_page=100&page={page}"]
+            )
             if not isinstance(batch, list):
+                if require_complete:
+                    raise ValueError("comment_history_unconfirmed")
                 break
             rows.extend(batch)
             if len(batch) < 100:
-                break
+                return rows
+        if require_complete:
+            raise ValueError("comment_history_incomplete")
         return rows
 
     def running_issues(self) -> list[dict]:
-        rows = self._run(["issue", "list", "--repo", self.repository, "--state", "open",
-                          "--label", RUNNING, "--limit", "200",
-                          "--json", "number,title,body,state,labels,updatedAt"])
+        rows = self._run(
+            [
+                "issue",
+                "list",
+                "--repo",
+                self.repository,
+                "--state",
+                "open",
+                "--label",
+                RUNNING,
+                "--limit",
+                "200",
+                "--json",
+                "number,title,body,state,labels,updatedAt",
+            ]
+        )
         return list(rows or [])
 
     def pull_requests(self) -> list[dict]:
-        rows = self._run(["pr", "list", "--repo", self.repository, "--state", "all",
-                          "--base", "oc-autonomous-integration", "--limit", "200",
-                          "--json", "number,state,body,mergedAt"])
+        rows = self._run(
+            [
+                "pr",
+                "list",
+                "--repo",
+                self.repository,
+                "--state",
+                "all",
+                "--base",
+                "oc-autonomous-integration",
+                "--limit",
+                "200",
+                "--json",
+                "number,state,body,mergedAt",
+            ]
+        )
         return list(rows or [])
 
     def comments(self, number: int) -> list[dict]:
-        return self._paged(f"issues/{number}/comments")
+        return self._paged(
+            f"issues/{number}/comments", page_budget=100, require_complete=True
+        )
 
     def labeled_at(self, number: int) -> datetime | None:
         latest = None
         for event in self._paged(f"issues/{number}/timeline"):
-            if event.get("event") != "labeled" or (event.get("label") or {}).get("name") != RUNNING:
+            if (
+                event.get("event") != "labeled"
+                or (event.get("label") or {}).get("name") != RUNNING
+            ):
                 continue
             created = _parse_time(event.get("created_at"))
             if created and (latest is None or created > latest):
@@ -277,8 +385,17 @@ class GitHubTransport:
         return str((run or {}).get("status") or "unknown")
 
     def issue(self, number: int) -> dict:
-        return self._run(["issue", "view", str(number), "--repo", self.repository,
-                          "--json", "number,title,body,state,labels"])
+        return self._run(
+            [
+                "issue",
+                "view",
+                str(number),
+                "--repo",
+                self.repository,
+                "--json",
+                "number,title,body,state,labels",
+            ]
+        )
 
     def edit_labels(self, number: int, *, remove: list[str], add: list[str]) -> None:
         args = ["issue", "edit", str(number), "--repo", self.repository]
@@ -289,12 +406,25 @@ class GitHubTransport:
         self._run(args)
 
     def comment(self, number: int, body: str) -> dict:
-        return self._run(["api", "--method", "POST",
-                          f"repos/{self.repository}/issues/{number}/comments", "--input", "-"],
-                         {"body": body}) or {}
+        return (
+            self._run(
+                [
+                    "api",
+                    "--method",
+                    "POST",
+                    f"repos/{self.repository}/issues/{number}/comments",
+                    "--input",
+                    "-",
+                ],
+                {"body": body},
+            )
+            or {}
+        )
 
 
-def apply_recovery(transport: GitHubTransport, decision: dict, *, controller_run_url: str) -> dict:
+def apply_recovery(
+    transport: GitHubTransport, decision: dict, *, controller_run_url: str
+) -> dict:
     """Release one stale lease and write its durable recovery receipt."""
     number = decision["issue_number"]
     present = set(decision.get("labels") or [RUNNING])
@@ -314,8 +444,11 @@ def apply_recovery(transport: GitHubTransport, decision: dict, *, controller_run
         raise ValueError("stale lease release unconfirmed")
     receipt = {k: v for k, v in decision.items() if k != "action"}
     receipt["released_state"] = sorted(_labels(current))
-    body = (RECOVERY_PREFIX + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
-            + f"`. Controller run: {controller_run_url}.")
+    body = (
+        RECOVERY_PREFIX
+        + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+        + f"`. Controller run: {controller_run_url}."
+    )
     saved = transport.comment(number, body)
     if saved.get("body") != body or not saved.get("id"):
         raise ValueError("recovery receipt unconfirmed")
@@ -330,7 +463,9 @@ def reconcile(
     dry_run: bool = False,
 ) -> dict:
     now = now or datetime.now(timezone.utc)
-    controller_run_url = f"https://github.com/{transport.repository}/actions/runs/{run_id}"
+    controller_run_url = (
+        f"https://github.com/{transport.repository}/actions/runs/{run_id}"
+    )
     running = transport.running_issues()
     durable = durable_pr_index(transport.pull_requests())
     recovered: list[dict] = []
@@ -341,10 +476,13 @@ def reconcile(
         try:
             comments = transport.comments(number)
             decision = classify_lease(
-                issue, comments, repository=transport.repository,
+                issue,
+                comments,
+                repository=transport.repository,
                 run_status=transport.run_status,
                 labeled_at=transport.labeled_at(number),
-                durable_pr=durable.get(number), now=now,
+                durable_pr=durable.get(number),
+                now=now,
             )
             if decision["action"] != "recover":
                 kept.append(decision)
@@ -352,20 +490,44 @@ def reconcile(
             if dry_run:
                 recovered.append({**decision, "dry_run": True})
                 continue
-            recovered.append(apply_recovery(transport, decision, controller_run_url=controller_run_url))
-        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError) as exc:
+            recovered.append(
+                apply_recovery(
+                    transport, decision, controller_run_url=controller_run_url
+                )
+            )
+        except (
+            OSError,
+            subprocess.SubprocessError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
             # Never expose issue text or raw API errors; never retry a write blindly.
-            errors.append({"issue": number, "reason": "lease_reconcile_unconfirmed",
-                           "error_type": type(exc).__name__})
+            errors.append(
+                {
+                    "issue": number,
+                    "reason": "lease_reconcile_unconfirmed",
+                    "error_type": type(exc).__name__,
+                }
+            )
     return {
-        "schema": SCHEMA, "run_id": run_id, "generated_at": now.isoformat().replace("+00:00", "Z"),
-        "running_count": len(running), "recovered_count": len(recovered),
-        "running_after": len(running) - len(recovered), "recovered": recovered,
-        "kept": kept, "errors": errors, "dry_run": dry_run,
-        "safety": {"provider_calls": False, "repository_writes": False,
-                   "time_alone_releases_lease": False,
-                   "max_automatic_recoveries": MAX_AUTOMATIC_RECOVERIES,
-                   "manual_lease_max_age_seconds": MANUAL_LEASE_MAX_AGE_SECONDS},
+        "schema": SCHEMA,
+        "run_id": run_id,
+        "generated_at": now.isoformat().replace("+00:00", "Z"),
+        "running_count": len(running),
+        "recovered_count": len(recovered),
+        "running_after": len(running) - len(recovered),
+        "recovered": recovered,
+        "kept": kept,
+        "errors": errors,
+        "dry_run": dry_run,
+        "safety": {
+            "provider_calls": False,
+            "repository_writes": False,
+            "time_alone_releases_lease": False,
+            "max_automatic_recoveries": MAX_AUTOMATIC_RECOVERIES,
+            "manual_lease_max_age_seconds": MANUAL_LEASE_MAX_AGE_SECONDS,
+        },
     }
 
 
@@ -376,7 +538,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--github-output")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
-    report = reconcile(GitHubTransport(args.repository), run_id=args.run_id, dry_run=args.dry_run)
+    report = reconcile(
+        GitHubTransport(args.repository), run_id=args.run_id, dry_run=args.dry_run
+    )
     if args.github_output:
         with open(args.github_output, "a", encoding="utf-8") as handle:
             handle.write(f"recovered_count={report['recovered_count']}\n")
