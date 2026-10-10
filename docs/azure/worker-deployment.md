@@ -117,8 +117,9 @@ Default `workflow_dispatch publish=false`. Prepared GHCR publish requires all:
 - repository variable `CALYX_AZURE_GHCR_PUBLISH_AUTHORIZED=true`;
 - manual workflow input `publish=true`;
 - successful build, worker proof and security scan;
-- protected environment `azure-worker-ghcr-publish` with required reviewers and
-  prevent-self-review enabled (API verification fails closed);
+- environment `azure-worker-ghcr-publish` configured by the repository owner;
+- dispatch actor must be `jsp1440` (single-owner manual approval, no reviewer bypass);
+- publishing remains disabled unless the repository authorization variable is exactly `true`;
 - a new SHA tag (existing tags are refused, and unknown registry errors block).
 
 Only that separately gated job gets `packages: write`, loads the exact verified
@@ -215,7 +216,7 @@ were not executed against Azure here.
    and independently authorize package visibility/publish plus one bounded
    non-production job. Approve private storage immutability/retention and
    least-privilege identities; verify Consumption environment in westus2.
-2. Run the protected publish workflow for the reviewed SHA. Record GHCR
+2. After approved integration makes the workflow available on the default branch, manually dispatch the owner-gated publish workflow for the reviewed SHA. A PR-only workflow is not sufficient for manual dispatch. Record GHCR
    manifest digest and exact-head evidence. Do not reuse an unverified tag.
 3. Resolve the target subscription ID without copying any secret:
 
