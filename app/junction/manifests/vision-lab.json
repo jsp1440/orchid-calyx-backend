@@ -1,0 +1,39 @@
+{
+  "manifest_version": "oc-junction-manifest-v1",
+  "module_id": "vision-lab",
+  "module_version": "1.0.0",
+  "profile": {
+    "id": "oc-junction-profile-v1",
+    "version": "1.0.0"
+  },
+  "capabilities": {
+    "publishes": [
+      "vision.image_verified",
+      "module.readiness.changed"
+    ],
+    "subscribes": [],
+    "can_propose_work": false,
+    "execution_authority": "none"
+  },
+  "health_policy": {
+    "min_state_to_publish": "open",
+    "min_state_to_subscribe": "open",
+    "degraded_egress": "observation_only",
+    "heartbeat_event": "module.readiness.changed"
+  },
+  "evidence_policy": {
+    "require_source_refs_for": [
+      "vision.image_verified"
+    ],
+    "preserve_conflict_records": true,
+    "unresolved_identity_marker": "unresolved"
+  },
+  "budgets": {
+    "max_signals_per_minute": 60,
+    "max_payload_bytes": 4096
+  },
+  "idempotency": {
+    "dedupe_key_rule": "sha256_canonical_json(source_module+event_type+entity_scope+payload)",
+    "replay_safe": true
+  }
+}
