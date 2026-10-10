@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .deep_orchestrate import (
@@ -113,7 +113,7 @@ class DeterministicResearchWorker:
         reservoir after.
         """
         started = time.monotonic()
-        started_at = datetime.now(timezone.utc).isoformat()
+        started_at = datetime.now(UTC).isoformat()
 
         # Hard safety check — owner-gated classes must never auto-execute.
         if leaf.authority_class in _NEVER_AUTO_EXECUTE:
@@ -264,7 +264,7 @@ class DeterministicResearchWorker:
         started_at: str,
         elapsed: float,
     ) -> TaskExecutionResult:
-        completed_at = datetime.now(timezone.utc).isoformat()
+        completed_at = datetime.now(UTC).isoformat()
         return TaskExecutionResult(
             task_key=leaf.key,
             blueprint_id=leaf.evidence.get("blueprint_id"),

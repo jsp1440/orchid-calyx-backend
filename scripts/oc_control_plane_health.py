@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.oc_health_contract import evaluate as evaluate_health_contract
@@ -120,7 +120,7 @@ def build_contract_snapshot(snapshot: dict) -> dict:
     return {
         "schema": "oc.completion-health-snapshot.v1",
         "generated_at": snapshot.get("generated_at")
-        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "issues": [] if raw_issues is None else issues,
         "leases": [] if raw_leases is None else leases,
         "dispatch_fingerprints": (
@@ -184,7 +184,7 @@ def build_health(snapshot: dict) -> dict:
         "healthy": contract["report"]["healthy"] and not observation_errors,
         "observation_complete": not bool(observation_errors),
         "observation_errors": observation_errors,
-        "generated_at": snapshot.get("generated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "generated_at": snapshot.get("generated_at") or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "scheduler_heartbeat": snapshot.get("scheduler_heartbeat", UNKNOWN),
         "last_dispatch_time": snapshot.get("last_dispatch_time", UNKNOWN),
         "current_running_lease": (running[0].get("number") if len(running) == 1 else (None if not running else UNKNOWN)) if issues_available else UNKNOWN,
@@ -295,7 +295,7 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
 
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or run_id < 1:
         raise ValueError("a repository and positive workflow run ID are required")
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     prefix = f"repos/{repository}/"
     errors: list[dict] = []
     reads = 0
@@ -422,7 +422,8 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
         for claim in claims:
             comment = claim["comment"]
             try:
-                claimed_at = datetime.fromisoformat(comment["created_at"].replace("Z", "+00:00"))
+                created_at = comment["created_at"].replace("Z", "+00:00")
+                claimed_at = datetime.fromisoformat(created_at)
                 age = max(0, int((now - claimed_at).total_seconds()))
             except (KeyError, TypeError, ValueError):
                 errors.append({"source": f"comments:{number}", "reason": "lease_time_unavailable"})

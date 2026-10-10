@@ -5,7 +5,7 @@ from __future__ import annotations
 import copy
 import json
 import subprocess
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -17,7 +17,7 @@ REPO = "jsp1440/orchid-calyx-backend"
 NUMBER = 1371
 RUN = 1001
 ATTEMPT = 1
-NOW = datetime(2026, 9, 12, 8, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 12, 8, tzinfo=UTC)
 BLOCKER_FINGERPRINT = "a" * 24
 
 

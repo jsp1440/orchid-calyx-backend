@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -64,7 +64,7 @@ class ExecutionLeaseManager:
     def _utc(value: datetime) -> datetime:
         if value.tzinfo is None:
             raise ValueError("lease timestamps must be timezone-aware")
-        return value.astimezone(timezone.utc)
+        return value.astimezone(UTC)
 
     def acquire(
         self,

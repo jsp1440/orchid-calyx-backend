@@ -501,7 +501,7 @@ def build_teaching_synthesis(
     """
     import datetime
 
-    ts = generated_at or datetime.datetime.now(datetime.timezone.utc).isoformat()
+    ts = generated_at or datetime.datetime.now(datetime.UTC).isoformat()
 
     try:
         audience_level = AudienceLevel(audience)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
@@ -105,7 +105,7 @@ def _validation(
         "return_code": 0 if outcome == "delivered" else 1,
         "stdout_sha256": EMPTY_HASH,
         "stderr_sha256": EMPTY_HASH,
-        "issued_at": datetime(2026, 8, 8, 20, 0, tzinfo=timezone.utc).isoformat(),
+        "issued_at": datetime(2026, 8, 8, 20, 0, tzinfo=UTC).isoformat(),
     }
     return {"request": request, "receipt": receipt}
 

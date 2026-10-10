@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
@@ -178,7 +178,7 @@ def _manifest_payload(snapshot: Mapping[str, Any]) -> dict[str, Any]:
 def _normalize_timestamp(value: datetime) -> str:
     if value.tzinfo is None:
         raise ValueError("PROPOSAL_AUTH_DECIDED_AT_TIMEZONE_REQUIRED")
-    return value.astimezone(timezone.utc).isoformat()
+    return value.astimezone(UTC).isoformat()
 
 
 @dataclass(frozen=True, slots=True)
