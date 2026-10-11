@@ -420,7 +420,8 @@ def runner_health():
         "active_mode": ACTIVE_MODE,
         "mode": "build_046_scientific_priority_realignment",
         "runtime_mode": config["worker_mode"],
-        "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
+        "blockers": config["blockers"],
+        "deployment_actions": config["deployment_actions"],
         "configuration": config,
         "runtime_engine": runtime_engine.status(),
         "allowedActions": runner_allowed_actions(),
@@ -438,7 +439,7 @@ def runtime_configuration_diagnostic():
         "owner_auth_ready": bool(get_owner_access_code()) and bool(get_owner_session_secret()),
         "allowed_origin_configured": bool(os.environ.get("CORS_ALLOW_ORIGIN", "").strip()),
         "runtime_enabled": autonomous_runtime_enabled_by_config(),
-        "interval_seconds": runtime_interval_seconds_from_env(),
+        "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
     }
 
 
@@ -488,10 +489,10 @@ def autonomous_cycle():
 
 @app.post("/api/runner/start", dependencies=RUNTIME_WRITE_AUTH)
 def start_runtime(request: RunnerConfirmRequest | None = None):
-    if request is None:
-        request = RunnerConfirmRequest()
     if not request.confirm:
-        decision = evaluate_runtime_action("start_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        request = RunnerConfirmRequest()
+    decision = evaluate_runtime_action("start_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+    if not request.confirm:
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
@@ -507,10 +508,10 @@ def start_runtime(request: RunnerConfirmRequest | None = None):
 
 @app.post("/api/runner/stop", dependencies=RUNTIME_WRITE_AUTH)
 def stop_runtime(request: RunnerConfirmRequest | None = None):
-    if request is None:
-        request = RunnerConfirmRequest()
     if not request.confirm:
-        decision = evaluate_runtime_action("stop_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        request = RunnerConfirmRequest()
+    decision = evaluate_runtime_action("stop_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+    if not request.confirm:
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
@@ -525,10 +526,10 @@ def stop_runtime(request: RunnerConfirmRequest | None = None):
 
 @app.post("/api/runner/restart", dependencies=RUNTIME_WRITE_AUTH)
 def restart_runtime(request: RunnerConfirmRequest | None = None):
-    if request is None:
-        request = RunnerConfirmRequest()
     if not request.confirm:
-        decision = evaluate_runtime_action("restart_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+        request = RunnerConfirmRequest()
+    decision = evaluate_runtime_action("restart_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
+    if not request.confirm:
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
@@ -666,3 +667,7 @@ from app.routers import calyx_evolve
 app.include_router(calyx_evolve.router)
 
 app.include_router(cognitive_integration_routes.router)
+
+from app.featured_genus.routes import router as featured_genus_router
+
+app.include_router(featured_genus_router)
