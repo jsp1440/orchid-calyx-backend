@@ -9,6 +9,13 @@ on:
       - "app/intake/knowledge_delta_repository.py"
       - "app/intake/routes.py"
       - "app/intake/technology_scout.py"
+      - "app/intake/intelligence_autonomy.py"
+      - "app/intake/discovery/**"
+      - "config/intelligence_discovery_profiles.json"
+      - "migrations/142_native_intelligence_discovery.sql"
+      - "tests/native_discovery_fixtures.py"
+      - "tests/test_native_discovery.py"
+      - "tests/test_native_discovery_postgres.py"
       - "migrations/108_intelligence_assimilation_ledger.sql"
       - "tests/test_intelligence_assimilation.py"
       - "tests/test_intelligence_ledger_postgres.py"
@@ -46,7 +53,7 @@ jobs:
       - name: Run deterministic assimilation tests
         env:
           PYTHONPATH: .
-        run: pytest -q tests/test_intelligence_assimilation.py tests/test_technology_scout.py
+        run: pytest -q tests/test_intelligence_assimilation.py tests/test_technology_scout.py tests/test_native_discovery.py
       - name: Run PostgreSQL lifecycle ledger tests
         env:
           PYTHONPATH: .
@@ -63,5 +70,16 @@ jobs:
           PYTHONPATH: .
           INTELLIGENCE_DELTA_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_intelligence_delta_test
         run: pytest -q tests/test_intelligence_knowledge_delta_postgres.py
+      - name: Reset PostgreSQL for native discovery tests
+        env:
+          PGPASSWORD: postgres
+        run: |
+          dropdb -h localhost -U postgres --if-exists orchid_native_discovery_test
+          createdb -h localhost -U postgres orchid_native_discovery_test
+      - name: Run PostgreSQL native discovery lifecycle tests
+        env:
+          PYTHONPATH: .
+          NATIVE_DISCOVERY_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/orchid_native_discovery_test
+        run: pytest -q tests/test_native_discovery_postgres.py
       - name: Compile intake package
         run: python -m compileall -q app/intake

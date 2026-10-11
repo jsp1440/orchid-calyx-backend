@@ -1,0 +1,42 @@
+{
+  "schema": "oc.native-discovery.profiles.v1",
+  "note": "Bounded native discovery profiles. Providers are free public registries; adding a provider requires an adapter in app/intake/discovery/providers.py.",
+  "profiles": [
+    {
+      "key": "orchid-literature",
+      "description": "Newly indexed orchid literature and preprints across free scholarly registries.",
+      "domain_hint": "research",
+      "providers": [
+        "crossref",
+        "openalex",
+        "europepmc"
+      ],
+      "queries": {
+        "default": "orchid Orchidaceae",
+        "openalex": "orchid|orchidaceae",
+        "europepmc": "orchid* Orchidaceae"
+      },
+      "lookback_days": 7,
+      "max_window_days": 31,
+      "rows_per_request": 50,
+      "new_window_days": 60,
+      "enabled": true
+    },
+    {
+      "key": "orchid-taxonomic-novelties",
+      "description": "Protologues, new combinations and revisions in Orchidaceae.",
+      "domain_hint": "taxonomy",
+      "providers": [
+        "crossref"
+      ],
+      "queries": {
+        "default": "Orchidaceae new species sp. nov. taxonomy"
+      },
+      "lookback_days": 7,
+      "max_window_days": 31,
+      "rows_per_request": 50,
+      "new_window_days": 60,
+      "enabled": true
+    }
+  ]
+}

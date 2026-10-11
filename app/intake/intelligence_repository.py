@@ -92,6 +92,10 @@ def record_intelligence_items(
                 # Keep the complete versioned assessment with the immutable
                 # observation, rather than losing it on the mutable item row.
                 snapshot["technology_scout"] = item["technology_scout"]
+            if "native_discovery" in item:
+                # Native discovery keeps provider identities, source/discovery
+                # dates and the separated evidence layers with the observation.
+                snapshot["native_discovery"] = item["native_discovery"]
             cur.execute(
                 """
                 INSERT INTO oc_intake.intelligence_observations
