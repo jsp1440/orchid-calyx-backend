@@ -46,6 +46,9 @@ PostgreSQL owner-scoped advisory locking serializes admission. Identical batches
 converge on the existing program; conflicting manifests and partially overlapping
 canonical batches reject rather than enqueueing the same owner/build twice.
 Build IDs can be reused in a different authenticated owner's namespace.
+The submit response reports `submission_outcome: "submitted"` for a newly
+persisted program and `"idempotent_replay"` when the exact owner-scoped
+manifest already exists; conflicting manifests continue to reject.
 
 The focused HTTP-to-worker test invokes this actual router, native PostgreSQL,
 and the actual `repository_evidence_reader` bound to its configured private Git

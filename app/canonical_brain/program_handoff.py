@@ -132,6 +132,7 @@ def persist_governed_queue(
 
     repo = PersistentProgramRepository(db)
     program = locked_existing()
+    replayed = program is not None
     if program is None:
         program = repo.create_program(
             owner=owner,
@@ -147,4 +148,4 @@ def persist_governed_queue(
     else:
         # Replays do not resume paused/cancelled jobs or repeat completed work.
         db.commit()
-    return program
+    return program, replayed

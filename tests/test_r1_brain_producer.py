@@ -141,6 +141,11 @@ def test_partial_batch_overlap_is_rejected_and_owners_remain_separate(engine):
     c = client(engine)
     first = post(c, payload())
     assert first.status_code == 200, first.text
+    assert first.json()["submission_outcome"] == "submitted"
+    replay = post(c, payload())
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["submission_outcome"] == "idempotent_replay"
+    assert replay.json()["program_id"] == first.json()["program_id"]
     assert post(c, payload(("R1-BUILD-A", "R1-BUILD-B"))).status_code == 409
     other = post(client(engine, "other-owner"), payload())
     assert (
@@ -157,11 +162,19 @@ def test_competing_authenticated_producers_converge_to_one_owned_program(engine)
         barrier.wait(timeout=10)
         response = post(c, payload())
         assert response.status_code == 200, response.text
-        return response.json()["program_id"]
+        return (
+            response.json()["program_id"],
+            response.json()["submission_outcome"],
+        )
 
     with ThreadPoolExecutor(max_workers=2) as pool:
-        ids = list(pool.map(produce, range(2)))
+        results = list(pool.map(produce, range(2)))
+    ids = [result[0] for result in results]
     assert ids[0] == ids[1]
+    assert sorted(result[1] for result in results) == [
+        "idempotent_replay",
+        "submitted",
+    ]
     with Session(engine) as db:
         assert db.scalar(select(func.count()).select_from(CalyxProgramJob)) == 1
 
@@ -240,6 +253,7 @@ def test_authenticated_intake_reaches_real_executor_completion_and_dependency_re
     replay = post(c, body)
     assert replay.status_code == 200 and replay.json()["status"] == "completed"
     assert replay.json()["program_id"] == response.json()["program_id"]
+    assert replay.json()["submission_outcome"] == "idempotent_replay"
 
 
 def test_unrenewable_execution_budget_is_rejected_before_a_lease_is_taken(engine):

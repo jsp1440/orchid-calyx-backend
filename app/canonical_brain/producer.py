@@ -58,7 +58,7 @@ def submit_brain_program(
             }
             for key, value in payload.inputs.items()
         }
-        program = persist_governed_queue(
+        program, replayed = persist_governed_queue(
             db,
             owner=owner,
             queue=queue.snapshot(),
@@ -71,6 +71,7 @@ def submit_brain_program(
             "program_id": program.program_id,
             "status": program.status,
             "build_ids": sorted(admissions),
+            "submission_outcome": "idempotent_replay" if replayed else "submitted",
             "authority": {"scientific_publication": False, "provider_calls": False},
         }
     except (ValueError, PermissionError, LookupError) as exc:
