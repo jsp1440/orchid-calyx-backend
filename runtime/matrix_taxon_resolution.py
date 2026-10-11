@@ -15,7 +15,15 @@ tests and the offline demo use a static, reviewable entry set.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
-from typing import Any, Protocol
+from typing import Any, Iterable, Protocol
+
+from runtime.knowledge_graph.canonical_taxonomy import (
+    CANONICAL_AUTHORITY_LABEL,
+    CanonicalRegistry,
+    WorldPlantsRelease,
+    build_canonical_registry,
+    canonical_name_of,
+)
 
 RESOLUTION_STATES = frozenset(
     {"resolved_canonical", "resolved_synonym", "unresolved"}
@@ -220,3 +228,141 @@ def collapse_synonym_candidates(
             if alias and alias != group["accepted_name"]:
                 group["aliases"] = sorted(set(group["aliases"]) | {alias})
     return groups
+
+
+# ---------------------------------------------------------------------------
+# Canonical-backbone binding (Phase 4)
+# ---------------------------------------------------------------------------
+
+
+class CanonicalRegistryTaxonResolver:
+    """``TaxonResolver`` backed by the World Plants canonical backbone.
+
+    This binds the owner-designated canonical taxonomy (World Plants /
+    Hassler, via the existing ``runtime.knowledge_graph.canonical_taxonomy``
+    registry) into the Matrix identification workflow behind the same small
+    resolver contract. The registry is treated as read-only: resolution
+    follows synonyms to their accepted taxon for *reporting* and never
+    mutates, re-publishes, or re-interprets canonical taxonomy. Alternative
+    determinations stay visible because the queried name is always preserved
+    in ``query_name`` and ``matched_via``.
+    """
+
+    def __init__(self, registry: CanonicalRegistry) -> None:
+        self._registry = registry
+
+    def _release_note(self) -> str:
+        release = self._registry.canonical_release
+        if release is None:
+            return "no canonical release registered"
+        label = release.version_label or release.snapshot_id
+        return f"canonical release {label} (status {release.status})"
+
+    def resolve(self, name: str) -> TaxonResolution:
+        query = " ".join(str(name or "").split()).strip()
+        if not query:
+            return TaxonResolution(
+                query_name="",
+                resolution_state="unresolved",
+                canonical_taxon_id=None,
+                accepted_name=None,
+                matched_via=None,
+                note="empty name cannot be resolved",
+            )
+        accepted = self._registry.resolve(query)
+        if accepted is None:
+            return TaxonResolution(
+                query_name=query,
+                resolution_state="unresolved",
+                canonical_taxon_id=None,
+                accepted_name=None,
+                matched_via=None,
+                note=(
+                    f"no match in the {CANONICAL_AUTHORITY_LABEL} canonical "
+                    f"backbone ({self._release_note()}); the name is reported "
+                    "unreconciled rather than fuzzy-matched"
+                ),
+            )
+        via = (
+            "accepted_name"
+            if canonical_name_of(query) == accepted.canonical_name
+            else "synonym"
+        )
+        return TaxonResolution(
+            query_name=query,
+            resolution_state=(
+                "resolved_canonical" if via == "accepted_name" else "resolved_synonym"
+            ),
+            canonical_taxon_id=f"world_plants:{accepted.canonical_id}",
+            accepted_name=accepted.scientific_name,
+            matched_via=via,
+            note=(
+                f"reconciled against the {CANONICAL_AUTHORITY_LABEL} canonical "
+                f"backbone ({self._release_note()}); this is a reporting "
+                "reconciliation, not a taxonomy mutation"
+            ),
+        )
+
+
+def canonical_backbone_resolver(
+    *,
+    load_rows: Iterable[dict[str, Any]],
+    synonym_rows: Iterable[dict[str, Any]] = (),
+    authority_rows: Iterable[dict[str, Any]] = (),
+    canonical_release: WorldPlantsRelease | None = None,
+) -> CanonicalRegistryTaxonResolver:
+    """Build a backbone resolver from World Plants projection rows.
+
+    Row shapes are exactly those of the existing canonical registry builder;
+    superseded/historical releases are preserved by the release-selection
+    layer upstream, never here.
+    """
+    registry = build_canonical_registry(
+        load_rows,
+        synonym_rows=synonym_rows,
+        authority_rows=authority_rows,
+        canonical_release=canonical_release,
+    )
+    return CanonicalRegistryTaxonResolver(registry)
+
+
+class FallbackTaxonResolver:
+    """Resolve against the canonical backbone first, then a governed fallback.
+
+    The fallback (typically ``resolver_from_candidates``) covers Matrix
+    candidate names that are not in the backbone — e.g. registry-local taxa
+    awaiting canonical ingestion. Fallback hits are labeled as such in the
+    note so a report can distinguish backbone reconciliation from
+    registry-local matching. Names neither source resolves stay
+    ``unresolved`` with both notes preserved.
+    """
+
+    def __init__(self, primary: TaxonResolver, fallback: TaxonResolver) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    def resolve(self, name: str) -> TaxonResolution:
+        primary = self._primary.resolve(name)
+        if primary.resolution_state != "unresolved":
+            return primary
+        fallback = self._fallback.resolve(name)
+        if fallback.resolution_state == "unresolved":
+            return TaxonResolution(
+                query_name=fallback.query_name,
+                resolution_state="unresolved",
+                canonical_taxon_id=None,
+                accepted_name=None,
+                matched_via=None,
+                note=f"canonical backbone: {primary.note}; fallback: {fallback.note}",
+            )
+        return TaxonResolution(
+            query_name=fallback.query_name,
+            resolution_state=fallback.resolution_state,
+            canonical_taxon_id=fallback.canonical_taxon_id,
+            accepted_name=fallback.accepted_name,
+            matched_via=fallback.matched_via,
+            note=(
+                f"{fallback.note} (resolved by the governed fallback after a "
+                "canonical backbone miss)"
+            ),
+        )
