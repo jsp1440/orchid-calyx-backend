@@ -438,7 +438,7 @@ def runtime_configuration_diagnostic():
         "owner_auth_ready": bool(get_owner_access_code()) and bool(get_owner_session_secret()),
         "allowed_origin_configured": bool(os.environ.get("CORS_ALLOW_ORIGIN", "").strip()),
         "runtime_enabled": autonomous_runtime_enabled_by_config(),
-        "interval_seconds": runtime_interval_seconds_from_env(),
+        "interval_seconds": AUTO_LOOP_INTERVAL_SECONDS,
     }
 
 
@@ -666,3 +666,7 @@ from app.routers import calyx_evolve
 app.include_router(calyx_evolve.router)
 
 app.include_router(cognitive_integration_routes.router)
+
+from app.featured_genus.routes import router as featured_genus_router
+
+app.include_router(featured_genus_router)

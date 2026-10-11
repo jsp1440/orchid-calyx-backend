@@ -1,0 +1,25 @@
+{
+  "policy_version": "featured-genus-selection-policy/v1",
+  "description": "Editorial selection policy for the Featured Genus experience. The deterministic 12-hour UTC rotation is the default; an override is operational editorial input, never scientific evidence. Overrides require a canonical genus, a recorded reviewer, a reason, and an expiry; a genus outside the curated rotation additionally requires evidence_reviewed=true so genera with insufficient usable evidence are not repeatedly featured.",
+  "rotation": {
+    "window_seconds": 43200,
+    "candidates": [
+      "Cattleya",
+      "Dracula",
+      "Masdevallia",
+      "Dendrobium",
+      "Bulbophyllum",
+      "Catasetum",
+      "Vanilla",
+      "Phalaenopsis"
+    ]
+  },
+  "override": null,
+  "override_schema": {
+    "genus": "Bounded canonical genus name, e.g. \"Cattleya\" (never a binomial, route, or locality)",
+    "reason": "Why this genus is featured (editorial justification)",
+    "reviewer": "Name or identifier of the scientific reviewer who approved the override",
+    "expires_at": "ISO-8601 date or datetime; the override is ignored after this moment",
+    "evidence_reviewed": "Required true when genus is outside rotation.candidates"
+  }
+}
