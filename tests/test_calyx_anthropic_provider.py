@@ -78,7 +78,7 @@ def test_generate_file_changes_calls_anthropic_and_returns_structured_json(monke
     assert captured["timeout"] == 120
     sent = json.loads(captured["request"].data)
     assert sent["model"] == "approved-model"
-    assert sent["temperature"] == 0
+    assert "temperature" not in sent
     assert captured["request"].headers["X-api-key"] == "secret"
 
 
