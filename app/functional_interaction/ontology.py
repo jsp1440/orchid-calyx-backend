@@ -69,6 +69,30 @@ _TYPES = (
         "Unpublished reasoning-ledger entries: support, conflict and gaps.",
     ),
     SemanticType(
+        "oc:LiteratureDocumentBatch",
+        "oc:Artifact",
+        "app.literature_extraction.ingest.ingest_text",
+        "Content-addressed literature documents awaiting the extraction pipeline.",
+    ),
+    SemanticType(
+        "oc:PaperClaimBatch",
+        "oc:ExtractedClaimBatch",
+        "app.literature_extraction.models.Claim",
+        "Claims from the canonical literature pipeline, each with its exact span.",
+    ),
+    SemanticType(
+        "oc:TraitBankRecordBatch",
+        "oc:TraitBankCandidateBatch",
+        "harvesters.traitbank.TraitBankHarvester._normalize",
+        "Taxon-resolved records in the TraitBank harvester shape plus aggregation inputs.",
+    ),
+    SemanticType(
+        "oc:CalyxCandidateHandoffBatch",
+        "oc:Artifact",
+        "app.parallel_platform.brain_candidate_handoff.BrainCandidateHandoffRequest",
+        "Review-required candidates admitted through the Brain-to-Calyx handoff.",
+    ),
+    SemanticType(
         "oc:PlainLanguageExplanation",
         "oc:Artifact",
         None,

@@ -26,7 +26,7 @@ from app.calyx_orchestrator.executor import (
     canonical_checksum,
 )
 
-from .contracts import RECEIPT_SCHEMA, CapabilityDescriptor
+from .contracts import RECEIPT_SCHEMA, TAXON_LINK_STATUSES, CapabilityDescriptor
 from .governance import GovernanceDecision
 from .planner import WorkflowPlan
 
@@ -43,6 +43,8 @@ class HandlerResult:
     events: tuple[str, ...] = ()
     provenance: tuple[str, ...] = ()
     notes: Mapping[str, Any] = field(default_factory=dict)
+    #: Every taxon link on the output, for functions with a taxon policy.
+    taxon_links: tuple[Mapping[str, Any], ...] = ()
 
 
 Handler = Callable[[Any], HandlerResult]
@@ -174,6 +176,32 @@ def _violation(descriptor: CapabilityDescriptor, result: HandlerResult) -> str |
         return f"UNDECLARED_EVENT:{','.join(undeclared_events)}"
     if descriptor.provenance.preserves_chain and not result.provenance:
         return "PROVENANCE_CHAIN_DROPPED"
+    return _taxon_violation(descriptor, result)
+
+
+def _taxon_violation(
+    descriptor: CapabilityDescriptor, result: HandlerResult
+) -> str | None:
+    """Check emitted taxon links against the descriptor's taxon policy.
+
+    A provider must name its authority and an allowed status on every link and
+    must never have matched fuzzily; a requirer must emit only links whose
+    status it admits. Links are checked, never trusted.
+    """
+    policy = descriptor.taxon_resolution
+    if policy is None:
+        return None
+    for link in result.taxon_links:
+        status = link.get("status")
+        if policy.role == "provides":
+            if status not in TAXON_LINK_STATUSES:
+                return f"TAXON_RESOLUTION_VIOLATION:unknown_status:{status}"
+            if link.get("authority") != policy.authority:
+                return f"TAXON_RESOLUTION_VIOLATION:authority:{link.get('authority')}"
+            if link.get("automatic_fuzzy_matching") is not False:
+                return "TAXON_RESOLUTION_VIOLATION:fuzzy_matching_not_excluded"
+        elif status not in policy.admitted_statuses:
+            return f"TAXON_RESOLUTION_VIOLATION:inadmissible_status:{status}"
     return None
 
 

@@ -340,6 +340,52 @@
           }
         }
       }
+    },
+    "taxon_resolution": {
+      "description": "FIL-001B, additive and optional: what the function guarantees (provides) or requires about taxon identity. Fuzzy matching is never permitted.",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "role",
+            "authority",
+            "admitted_statuses",
+            "fuzzy_matching_allowed"
+          ],
+          "properties": {
+            "role": {
+              "enum": [
+                "provides",
+                "requires"
+              ]
+            },
+            "authority": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "admitted_statuses": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "enum": [
+                  "accepted",
+                  "ambiguous",
+                  "synonym",
+                  "unresolved"
+                ]
+              }
+            },
+            "fuzzy_matching_allowed": {
+              "const": false
+            }
+          }
+        }
+      ]
     }
   },
   "allOf": [

@@ -86,6 +86,15 @@ FORBIDDEN_EFFECTS = frozenset(
     }
 )
 
+#: Statuses a taxon link may carry. ``synonym`` means the submitted name is a
+#: synonym and the link points at the accepted taxon; ``ambiguous`` means more
+#: than one taxon matched and nothing was chosen.
+TAXON_LINK_STATUSES = ("accepted", "ambiguous", "synonym", "unresolved")
+
+#: The canonical backbone (``runtime.knowledge_graph.canonical_taxonomy``).
+#: Literal so this module stays importable without that package's driver.
+CANONICAL_TAXON_AUTHORITY = "world_plants"
+
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$")
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _SEMANTIC_TYPE = re.compile(r"^oc:[A-Z][A-Za-z0-9]*$")
@@ -236,6 +245,54 @@ class ProvenanceRequirement:
 
 
 @dataclass(frozen=True)
+class TaxonResolutionPolicy:
+    """What a function guarantees or requires about taxon identity (FIL-001B).
+
+    ``provides``: every taxon link the function emits names the backbone
+    ``authority``, uses only :data:`TAXON_LINK_STATUSES`, and was matched
+    exactly. ``requires``: the function admits only items whose taxon link has a
+    status in ``admitted_statuses``; anything else must have been withheld
+    upstream. Fuzzy matching is never permitted -- a fuzzy taxon match is a
+    candidate for human review, not a resolution.
+    """
+
+    role: str
+    authority: str = CANONICAL_TAXON_AUTHORITY
+    admitted_statuses: tuple[str, ...] = TAXON_LINK_STATUSES
+    fuzzy_matching_allowed: bool = False
+
+    def __post_init__(self) -> None:
+        _require(
+            self.role in {"provides", "requires"},
+            f"INVALID_TAXON_POLICY_ROLE:{self.role}",
+        )
+        _require(
+            bool(_CONDITION.match(self.authority)),
+            f"INVALID_TAXON_AUTHORITY:{self.authority}",
+        )
+        _require(not self.fuzzy_matching_allowed, "FUZZY_TAXON_MATCHING_FORBIDDEN")
+        unknown = sorted(set(self.admitted_statuses) - set(TAXON_LINK_STATUSES))
+        _require(not unknown, f"UNKNOWN_TAXON_LINK_STATUS:{','.join(unknown)}")
+        _require(bool(self.admitted_statuses), "TAXON_POLICY_ADMITS_NOTHING")
+        object.__setattr__(
+            self, "admitted_statuses", tuple(sorted(set(self.admitted_statuses)))
+        )
+
+    @property
+    def conditions(self) -> tuple[str, str]:
+        """The conditions a provider establishes and a requirer depends on."""
+        return ("taxon_resolution_recorded", f"taxon_authority_{self.authority}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "role": self.role,
+            "authority": self.authority,
+            "admitted_statuses": list(self.admitted_statuses),
+            "fuzzy_matching_allowed": self.fuzzy_matching_allowed,
+        }
+
+
+@dataclass(frozen=True)
 class HealthSpec:
     """Declared status plus the failure reasons the function can report."""
 
@@ -284,6 +341,7 @@ class CapabilityDescriptor:
     emits: tuple[str, ...] = ()
     implementation: str | None = None
     brain_capability_id: str | None = None
+    taxon_resolution: TaxonResolutionPolicy | None = None
 
     def __post_init__(self) -> None:
         _require(
@@ -356,6 +414,19 @@ class CapabilityDescriptor:
                 "DETERMINISTIC_CAPABILITY_HAS_PROVIDER_BUDGET",
             )
 
+        if self.taxon_resolution is not None:
+            needed = set(self.taxon_resolution.conditions)
+            declared = set(
+                self.effects
+                if self.taxon_resolution.role == "provides"
+                else self.preconditions
+            )
+            missing = sorted(needed - declared)
+            _require(
+                not missing,
+                f"TAXON_POLICY_CONDITIONS_UNDECLARED:{self.taxon_resolution.role}:{','.join(missing)}",
+            )
+
         known_events = {item.value for item in ObservationEventType}
         for name, values in (("TRIGGER", self.triggers), ("EMITTED_EVENT", self.emits)):
             unknown = sorted(set(values) - known_events)
@@ -395,6 +466,9 @@ class CapabilityDescriptor:
             "triggers": list(self.triggers),
             "emits": list(self.emits),
             "health": self.health.to_dict(),
+            "taxon_resolution": self.taxon_resolution.to_dict()
+            if self.taxon_resolution
+            else None,
         }
 
 
