@@ -17,6 +17,7 @@ from .knowledge import (
     SourceLocation,
 )
 from .models import DesignDocument
+from .publication_gate import PublicationGate
 
 DOMAIN_TERMS = {
     SemanticDesignDomain.UX: ("user experience", "usability", "ux"),
@@ -242,11 +243,26 @@ class DesignReasoningService:
     RELATIONSHIP_VERSION = "089b-relationships-1"
 
     def __init__(
-        self, repository=None, provider: EmbeddingProvider | None = None
+        self,
+        repository=None,
+        provider: EmbeddingProvider | None = None,
+        publication_gate: PublicationGate | None = None,
     ) -> None:
         self.repository = repository or MemoryDesignKnowledgeRepository()
         self.provider = provider or DeterministicLocalProvider(dimension=32)
         self.decomposer = SemanticDecomposer()
+        self.publication_gate = publication_gate
+
+    @property
+    def publication_enforced(self) -> bool:
+        """True when search only returns approved, published, current units.
+
+        Production wiring must set a gate. A service built without one keeps the
+        historical unrestricted behavior so indexing-time callers and fixtures are
+        unchanged, but consumers that surface guidance to users or to Calyx must
+        check this flag and refuse to search without it.
+        """
+        return self.publication_gate is not None
 
     def index_document(self, document: DesignDocument) -> tuple[SemanticUnit, ...]:
         raw_units = self.decomposer.decompose(document)
@@ -365,6 +381,17 @@ class DesignReasoningService:
         }
         return next((kind for cue, kind in cues.items() if cue in text), None)
 
+    @staticmethod
+    def _related_unit_visible(relationship, unit_id, unit_index, visible) -> bool:
+        """A related concept must itself be retrievable, or it is not disclosed."""
+        other_id = (
+            relationship.target_unit_id
+            if relationship.source_unit_id == unit_id
+            else relationship.source_unit_id
+        )
+        other = unit_index.get(other_id)
+        return other is not None and visible(other)
+
     def search(
         self,
         query: str,
@@ -379,12 +406,25 @@ class DesignReasoningService:
             raise ValueError("INVALID_DESIGN_REASONING_QUERY")
         query_vector = self.provider.embed_batch([normalized])[0]
         terms = set(re.findall(r"[a-z0-9]+", normalized))
+        unit_index = {item.unit_id: item for item in self.repository.units}
         relationships_by_unit: dict[str, list[DesignRelationship]] = {}
         for relationship in self.repository.relationships:
             relationships_by_unit.setdefault(relationship.source_unit_id, []).append(relationship)
             relationships_by_unit.setdefault(relationship.target_unit_id, []).append(relationship)
         ranked = []
+        visibility: dict[tuple[int, int], bool] = {}
+
+        def visible(unit: SemanticUnit) -> bool:
+            if self.publication_gate is None:
+                return True
+            key = (unit.document_id, unit.document_version)
+            if key not in visibility:
+                visibility[key] = bool(self.publication_gate(*key))
+            return visibility[key]
+
         for unit in self.repository.units:
+            if not visible(unit):
+                continue
             if domains and not set(domains).intersection(unit.domains):
                 continue
             if classifications and not set(classifications).intersection(
@@ -411,7 +451,11 @@ class DesignReasoningService:
             )
             if score <= 0:
                 continue
-            related = relationships_by_unit.get(unit.unit_id, [])
+            related = [
+                rel
+                for rel in relationships_by_unit.get(unit.unit_id, [])
+                if self._related_unit_visible(rel, unit.unit_id, unit_index, visible)
+            ]
             ranked.append((score, unit, related, lexical, semantic))
         ranked.sort(
             key=lambda item: (

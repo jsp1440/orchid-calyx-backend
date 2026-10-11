@@ -8,6 +8,7 @@ from app.security import verify_owner_or_api_key
 
 from .knowledge import SemanticDesignDomain
 from .models import DesignDomain, DesignKnowledgeType
+from .publication_gate import DesignPublicationStateUnavailable, corpus_publication_gate
 from .reasoning import DesignReasoningService, MemoryDesignKnowledgeRepository
 from .repository import MemoryDesignCorpusRepository
 from .service import DesignIntelligenceService, DesignSearchQuery
@@ -30,7 +31,9 @@ if database_url := configured_database_url():
     KNOWLEDGE_REPOSITORY = PostgresDesignKnowledgeRepository(database_url)
 else:
     KNOWLEDGE_REPOSITORY = MemoryDesignKnowledgeRepository()
-REASONING_SERVICE = DesignReasoningService(KNOWLEDGE_REPOSITORY)
+REASONING_SERVICE = DesignReasoningService(
+    KNOWLEDGE_REPOSITORY, publication_gate=corpus_publication_gate(REPOSITORY)
+)
 
 
 class DesignSearchIn(BaseModel):
@@ -77,6 +80,8 @@ def reasoning_search(payload: DesignReasoningSearchIn):
             citation=payload.citation,
             limit=payload.limit,
         )
+    except DesignPublicationStateUnavailable as exc:
+        raise HTTPException(503, detail={"code": str(exc)}) from exc
     except ValueError as exc:
         raise HTTPException(422, detail={"code": str(exc)}) from exc
 
@@ -90,5 +95,6 @@ def configuration():
         "semantic_classification_version": REASONING_SERVICE.CLASSIFIER_VERSION,
         "semantic_domains": [item.value for item in SemanticDesignDomain],
         "published_only": True,
+        "publication_enforced": REASONING_SERVICE.publication_enforced,
         "read_only": True,
     }
