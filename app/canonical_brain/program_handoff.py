@@ -16,9 +16,36 @@ from app.calyx_orchestrator.program_repository import (
     PersistentProgramRepository,
     ProgramJobSpec,
 )
+from app.calyx_orchestrator.static_validation_executor import (
+    MAX_VALIDATION_FILES,
+    STATIC_VALIDATION_ROLE,
+    IsolatedWorkspaceStaticValidationExecutor,
+)
 
 from .build_queue import BuildQueueSnapshot
 from .scheduler_bridge import SchedulerJobMetadata, project_governed_queue
+
+
+def _require_executable_validation_targets(inputs: dict[str, object]) -> None:
+    """Reject at admission what the static validator would refuse at execution.
+
+    Admitting a target outside the validator's path policy would leave a job
+    that can only fail, back off and dead-letter. The validator's own parse and
+    path checks are reused unchanged; nothing about its policy is relaxed.
+    """
+    targets = inputs.get("files")
+    if (
+        not isinstance(targets, list)
+        or not targets
+        or len(targets) > MAX_VALIDATION_FILES
+    ):
+        raise PermissionError("BRAIN_HANDOFF_VALIDATION_TARGETS_REQUIRED")
+    try:
+        for item in targets:
+            target = IsolatedWorkspaceStaticValidationExecutor._parse_target(item)
+            IsolatedWorkspaceStaticValidationExecutor._validate_path(target.path)
+    except (TypeError, ValueError, PermissionError) as exc:
+        raise PermissionError("BRAIN_HANDOFF_VALIDATION_TARGET_NOT_ALLOWED") from exc
 
 
 def persist_governed_queue(
@@ -56,6 +83,8 @@ def persist_governed_queue(
         executor = registry.require_authoritative(record.role_key)
         if record.mutating or executor.workspace_mutation:
             raise PermissionError("BRAIN_HANDOFF_READ_ONLY_REQUIRED")
+        if record.role_key == STATIC_VALIDATION_ROLE:
+            _require_executable_validation_targets(inputs[record.build_id])
         specs.append(
             ProgramJobSpec(
                 job_key=record.build_id,

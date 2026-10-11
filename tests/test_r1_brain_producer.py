@@ -303,3 +303,36 @@ def test_fenced_heartbeat_cannot_renew_superseded_ownership(engine):
                 lease_token=old_token,
                 lease_seconds=150,
             )
+
+
+@pytest.mark.parametrize(
+    ("inputs", "admitted"),
+    [
+        ({"files": [{"path": "app/module.py", "sha256": "a" * 64}]}, True),
+        # The static validator only reads app/, tests/ and docs/brain/. Work it
+        # can never execute must be refused at admission, not dead-lettered.
+        ({"files": [{"path": "src/module.py", "sha256": "a" * 64}]}, False),
+        ({"files": [{"path": "app/../secrets.py", "sha256": "a" * 64}]}, False),
+        ({"files": [{"path": "app/module.py", "sha256": "not-a-digest"}]}, False),
+        ({"files": []}, False),
+        ({}, False),
+    ],
+)
+def test_static_validation_targets_are_checked_before_persistence(
+    engine, inputs, admitted
+):
+    body = payload(role="isolated_workspace_static_validator")
+    body["inputs"] = {"R1-BUILD-A": inputs}
+    result = post(client(engine), body)
+    with Session(engine) as db:
+        persisted = db.scalar(select(func.count()).select_from(CalyxProgramJob))
+    if admitted:
+        assert result.status_code == 200, result.text
+        assert persisted == 1
+    else:
+        assert result.status_code == 409, result.text
+        assert result.json()["detail"]["code"] in {
+            "BRAIN_HANDOFF_VALIDATION_TARGET_NOT_ALLOWED",
+            "BRAIN_HANDOFF_VALIDATION_TARGETS_REQUIRED",
+        }
+        assert persisted == 0

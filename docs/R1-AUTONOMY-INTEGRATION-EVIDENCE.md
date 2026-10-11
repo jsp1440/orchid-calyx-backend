@@ -237,3 +237,27 @@ mask the cycle result. No scheduler, queue, executor or reason taxonomy was adde
 Active PRs #1792 and #226 were not altered. There was no merge, deployment,
 production mutation, paid-provider call, hosted dispatch, whole-workspace staging,
 or retry of the broken workspace checkpoint.
+
+## Brain-driven ten-cycle acceptance (continuation)
+
+The full Brain-to-Calyx pipeline is now a committed, reproducible test:
+`scripts/oc_brain_calyx_autonomy_acceptance.py`, wrapped by
+`tests/test_brain_calyx_autonomy_acceptance.py`. Both need `TEST_DATABASE_URL` and
+`OC_BRAIN_REPO_PATH`, and skip with a reason when no Brain checkout is configured. The harness
+replaces the earlier ad-hoc cross-repository harness. The existing `run_forever` loop runs the
+Brain `calyx_brain.autonomy_pulse.run_pulse` as an optional per-cycle `replenish` step. No new
+scheduler was added.
+
+Repairs found by running it:
+
+- `run_deterministic_program_cycle` reported a cycle whose only job settled `BLOCKED`/`NO_OP` as
+  productive (`completed_jobs=1`, `zero_execution=None`). It now reports `productive_jobs`, and
+  every non-delivering cycle carries `zero_execution.category`/`healthy`.
+- Canonical admission accepted static-validation targets that the validator refuses at execution
+  (outside `app/`, `tests/`, `docs/brain/`). Admission now applies the validator's own checks and
+  returns 409 `BRAIN_HANDOFF_VALIDATION_TARGET_NOT_ALLOWED`.
+
+Requirement 4 above has one concrete value: programs submitted with the backend API key are
+owned by `backend_api_key`, so the worker must run with
+`CALYX_PROGRAM_AUTONOMY_OWNER=backend_api_key` to claim them. Activation procedure and
+configuration: Brain `14_ENGINEERING/BRAIN-CALYX-AUTONOMY-PULSE.md`.

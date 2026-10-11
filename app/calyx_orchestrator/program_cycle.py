@@ -13,6 +13,68 @@ from .persisted_scheduler import project_persisted_schedule
 from .program_models import CalyxProgramJob
 from .program_worker import PersistentProgramWorker
 
+# A job counts as productive only when its verified receipt delivered and the
+# fenced settlement recorded DELIVERED. BLOCKED, NO_OP, CANCELLED and
+# DEAD_LETTER settlements are truthful terminal accounting, not productive work.
+PRODUCTIVE_OUTCOME = "DELIVERED"
+PRODUCTIVE_RECEIPT_STATE = "delivered"
+
+# Operator-facing zero-execution vocabulary. ``healthy`` separates expected
+# waiting (nothing is wrong; the next scheduled cycle may make progress) from a
+# condition that needs repair or configuration before any cycle can progress.
+ZERO_EXECUTION_CATEGORIES: dict[str, bool] = {
+    "no_eligible_work": True,
+    "capacity_exhausted": True,
+    "dependency_blocked": True,
+    "runtime_backoff": True,
+    "provider_budget": True,
+    "owner_gate": True,
+    "no_executor": False,
+    "configuration_unavailable": False,
+    "execution_not_delivered": False,
+    "scheduler_defect": False,
+}
+
+_CODE_CATEGORIES = {
+    "IDLE_NO_CANDIDATE": "no_eligible_work",
+    "ALREADY_RUNNING": "capacity_exhausted",
+    "GLOBAL_CAPACITY_REACHED": "capacity_exhausted",
+    "ARCHITECTURE_CAPACITY_REACHED": "capacity_exhausted",
+    "ROLE_CAPACITY_REACHED": "capacity_exhausted",
+    "REPOSITORY_CAPACITY_REACHED": "capacity_exhausted",
+    "MUTATING_BRANCH_CAPACITY_REACHED": "capacity_exhausted",
+    "WAITING_FOR_PREREQUISITES": "dependency_blocked",
+    "PREREQUISITE_FAILED": "dependency_blocked",
+    "RETRY_BACKOFF": "runtime_backoff",
+    "AUTHORITATIVE_EXECUTOR_NOT_REGISTERED": "no_executor",
+    "COMPLETED_WITHOUT_DELIVERY": "execution_not_delivered",
+}
+
+
+def classify_zero_execution(record: dict[str, Any]) -> tuple[str, bool]:
+    """Map an existing zero-execution record onto the operator vocabulary.
+
+    Unknown codes fail closed to ``scheduler_defect``: a cycle that cannot
+    explain why it did nothing is never reported as healthy waiting.
+    """
+    source = record.get("source")
+    code = str(record.get("reason_code") or "")
+    if source in {"cycle_error", "diagnosis", "schedule_projection"}:
+        category = "scheduler_defect"
+    elif source == "executor_failure":
+        category = (
+            "provider_budget"
+            if "BUDGET" in code or "PROVIDER" in code
+            else "runtime_backoff"
+        )
+    elif source == "claim_admission" and code not in _CODE_CATEGORIES:
+        # Runnable work the admission policy refuses (for example a mutating
+        # job without a branch) waits on an owner correction, not a retry.
+        category = "owner_gate"
+    else:
+        category = _CODE_CATEGORIES.get(code, "scheduler_defect")
+    return category, ZERO_EXECUTION_CATEGORIES[category]
+
 
 @dataclass(frozen=True, slots=True)
 class CycleJobResult:
@@ -24,6 +86,13 @@ class CycleJobResult:
     executor_key: str
     workspace_mutation: bool = False
     repository_code_execution: bool = False
+
+    @property
+    def productive(self) -> bool:
+        return (
+            self.outcome == PRODUCTIVE_OUTCOME
+            and self.receipt_state == PRODUCTIVE_RECEIPT_STATE
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,8 +109,13 @@ class AutonomousCycleResult:
     failures: tuple[dict[str, Any], ...] = ()
     # Machine-readable reason for any cycle that completed zero jobs. Built
     # only from existing contracts (ClaimDiagnostic, scheduler decision codes,
-    # executor-registry and executor failure codes); None when work completed.
+    # executor-registry and executor failure codes); None when work was
+    # delivered. Present for cycles that settled jobs without delivering.
     zero_execution: dict[str, Any] | None = None
+
+    @property
+    def productive_jobs(self) -> int:
+        return sum(1 for item in self.jobs if item.productive)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -49,9 +123,12 @@ class AutonomousCycleResult:
             "worker_id": self.worker_id,
             "attempted_jobs": self.attempted_jobs,
             "completed_jobs": self.completed_jobs,
+            "productive_jobs": self.productive_jobs,
             "failed_jobs": len(self.failures),
             "stop_reason": self.stop_reason,
-            "jobs": [asdict(item) for item in self.jobs],
+            "jobs": [
+                {**asdict(item), "productive": item.productive} for item in self.jobs
+            ],
             "error": self.error,
             "failures": [dict(item) for item in self.failures],
             "zero_execution": (
@@ -108,8 +185,9 @@ def _zero_execution_reason(
     stop_reason: str,
     error: dict[str, Any] | None,
     failures: tuple[dict[str, Any], ...],
+    settled: tuple[CycleJobResult, ...] = (),
 ) -> dict[str, Any]:
-    """Read-only explanation for a cycle that completed zero jobs.
+    """Read-only explanation for a cycle that delivered zero jobs.
 
     Reuses existing codes only: cycle error codes, executor failure codes,
     ``PersistentProgramWorker.diagnose`` outcomes, the registry's
@@ -125,6 +203,9 @@ def _zero_execution_reason(
         "unregistered_runnable_roles": [],
         "eligible_role_keys": sorted(eligible_role_keys),
         "failure_codes": [str(item.get("code")) for item in failures],
+        "non_delivered_outcomes": [
+            {"job_key": item.job_key, "outcome": item.outcome} for item in settled
+        ],
     }
     schedule_error: str | None = None
     try:
@@ -168,6 +249,7 @@ def _zero_execution_reason(
         if error is not None:
             record["reason_code"] = str(error.get("code"))
             record["source"] = "cycle_error"
+        record["category"], record["healthy"] = classify_zero_execution(record)
         return record
 
     claim = record["claim_diagnostic"]
@@ -176,6 +258,9 @@ def _zero_execution_reason(
     elif failures:
         record["reason_code"] = str(failures[-1].get("code"))
         record["source"] = "executor_failure"
+    elif settled:
+        record["reason_code"] = "COMPLETED_WITHOUT_DELIVERY"
+        record["source"] = "terminal_outcome"
     elif claim and claim["outcome"] == "REJECTED_ADMISSION":
         record["reason_code"], record["source"] = (
             claim["reason_code"],
@@ -193,6 +278,7 @@ def _zero_execution_reason(
     else:
         record["reason_code"] = claim["outcome"] if claim else "IDLE_NO_CANDIDATE"
         record["source"] = "claim_diagnostic"
+    record["category"], record["healthy"] = classify_zero_execution(record)
     return record
 
 
@@ -216,7 +302,7 @@ def run_deterministic_program_cycle(
         timeout_seconds=timeout_seconds,
         executor_registry=executor_registry,
     )
-    if result.completed_jobs:
+    if result.productive_jobs:
         return result
     return replace(
         result,
@@ -227,6 +313,7 @@ def run_deterministic_program_cycle(
             stop_reason=result.stop_reason,
             error=result.error,
             failures=result.failures,
+            settled=result.jobs,
         ),
     )
 
