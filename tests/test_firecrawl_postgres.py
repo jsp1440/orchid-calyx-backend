@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import os
 from copy import deepcopy
+from datetime import UTC, datetime
 from pathlib import Path
 
 import psycopg
@@ -48,6 +49,20 @@ class GitHubTransport:
                 }
             }
         if args[0] == "api" and "GET" in args:
+            history = next((value for value in args if "/comments?" in value), None)
+            if history is not None:
+                # Paginated issue-comment history, as the GitHub REST API
+                # returns it; settlement verifies the current claim from it.
+                path, _, query = history.partition("?")
+                params = dict(item.split("=", 1) for item in query.split("&") if item)
+                size, page = int(params.get("per_page", 30)), int(params.get("page", 1))
+                issue_url = f"https://api.github.com/{path.rsplit('/comments', 1)[0]}"
+                rows = [
+                    self.comments[key]
+                    for key in sorted(self.comments)
+                    if self.comments[key]["issue_url"] == issue_url
+                ]
+                return deepcopy(rows[(page - 1) * size : page * size])
             endpoint = next(value for value in args if "/issues/comments/" in value)
             return deepcopy(self.comments[int(endpoint.rsplit("/", 1)[1])])
         if args[:2] == ["issue", "list"]:
@@ -96,6 +111,8 @@ class GitHubTransport:
             "body": body,
             "user": {"login": "github-actions[bot]"},
             "issue_url": f"https://api.github.com/repos/{REPOSITORY}/issues/{number}",
+            # Real GitHub comments always carry an aware creation timestamp.
+            "created_at": datetime.now(UTC).replace(microsecond=0).isoformat(),
         }
         self.comments[comment_id] = receipt
         return deepcopy(receipt)

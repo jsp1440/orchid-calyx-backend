@@ -105,14 +105,27 @@ def test_execute_step_runs_the_edit_lane_and_hands_its_receipt_to_the_worker():
 
 
 def test_blocked_case_records_the_pull_request_the_issue_waits_on():
+    # #1795 moved the result disposition out of inline shell: the step hands
+    # the worker result to the verified settlement, which applies the
+    # canonical label and records OC-BLOCKED-ON for a blocked result.
     run = _step("Publish durable result and release lease")["run"]
-    blocked = run.split("blocked)", maxsplit=1)[1].split("*)", maxsplit=1)[0]
-    assert "--add-label oc-blocked" in blocked
-    assert "blocked_on=$(jq -r '.blocked_on // empty'" in blocked
-    assert "OC-BLOCKED-ON: ${blocked_on}" in blocked
-    # done / owner-gate branches are unchanged.
-    assert "--add-label oc-done" in run
-    assert "--add-label oc-owner-gate" in run
+    assert "python3 -m scripts.oc_swarm_settlement" in run
+    assert '--result "$RUNNER_TEMP/provider-free-result.json"' in run
+    assert "gh issue edit" not in run
+
+    from scripts.oc_swarm_settlement import settle_worker
+    from tests.test_oc_swarm_acquisition_worker import claimed
+
+    transport, identity = claimed()
+    settle_worker(
+        result={"disposition": "blocked", "blocked_on": "pr#77"},
+        call=transport,
+        **identity,
+    )
+    assert "oc-blocked" in transport.issue["labels"]
+    assert "oc-running" not in transport.issue["labels"]
+    receipt = list(transport.comments.values())[-1]["body"]
+    assert receipt.endswith("\nOC-BLOCKED-ON: pr#77")
 
 
 def test_edit_receipt_is_retained_as_evidence():

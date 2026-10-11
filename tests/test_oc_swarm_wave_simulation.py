@@ -180,8 +180,9 @@ def _execute_worker(fake: FakeGitHub, worker: dict, *, run_id: int) -> str:
         return "died"
     result = build_receipt(issue, lease_comment=receipt["body"], changed_files=[],
                            integration_sha=INTEGRATION_SHA)
+    # Settlement checks claim age; the simulation's deterministic clock drives it.
     settle_worker(result=result, repository=REPO, issue_number=number, run_id=run_id,
-                  run_attempt=1, comment_id=comment_id, call=fake)
+                  run_attempt=1, comment_id=comment_id, call=fake, now=fake.now())
     return result["disposition"]
 
 
@@ -340,16 +341,23 @@ def test_actual_local_validation_claim_settlement_and_refill(tmp_path):
             assert result["validation"] == evidence
             assert result["disposition"] == ("blocked" if number == failing else "done")
             before = (len(fake.edits), sum(map(len, fake.comments.values())))
-            with pytest.raises(ValueError):
+            # A different run must be refused for its identity, not merely
+            # because the clock made the claim look expired.
+            with pytest.raises(ValueError, match="lease identity"):
                 settle_worker(
                     result=result,
                     issue_number=number,
                     call=fake,
+                    now=fake.now(),
                     **{**identity, "run_id": run_id + 1},
                 )
             assert before == (len(fake.edits), sum(map(len, fake.comments.values())))
             settled = settle_worker(
-                result=result, issue_number=number, call=fake, **identity
+                result=result,
+                issue_number=number,
+                call=fake,
+                now=fake.now(),
+                **identity,
             )
             assert settled["validation"] == evidence
             assert "oc-running" not in fake.labels(number)

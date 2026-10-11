@@ -94,9 +94,11 @@ def test_failed_provider_free_lane_releases_lease_with_exact_evidence():
     step = next(s for s in free["steps"] if s.get("name", "").startswith("Fail closed and release lease"))
     assert step["if"] == "failure() && steps.lease.outputs.execute == 'true'"
     assert "provider-free-result.json" in step["run"]
-    assert "--remove-label oc-running" in step["run"]
-    assert "--add-label oc-blocked" in step["run"]
-    assert "Worker evidence:" in step["run"]
+    # #1795: the release goes through the verified settlement (which removes
+    # oc-running and applies oc-blocked) and carries the worker evidence.
+    assert "python3 -m scripts.oc_swarm_settlement --disposition blocked" in step["run"]
+    assert '--message "Provider-free reconciliation failed: $evidence"' in step["run"]
+    assert "gh issue edit" not in step["run"]
 
 
 def test_refill_follows_completion_for_provider_free_waves_and_stays_on_the_same_revision():
