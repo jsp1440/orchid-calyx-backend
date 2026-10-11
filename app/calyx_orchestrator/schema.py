@@ -6,7 +6,12 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from .models import CalyxFinding, CalyxJob
-from .program_models import CalyxProgram, CalyxProgramDependency, CalyxProgramJob
+from .program_models import (
+    CalyxAutonomyCycle,
+    CalyxProgram,
+    CalyxProgramDependency,
+    CalyxProgramJob,
+)
 from .specialist_models import (
     SpecialistApproval,
     SpecialistArtifact,
@@ -43,6 +48,7 @@ def ensure_orchestrator_schema(db: Session) -> None:
             CalyxProgram.__table__,
             CalyxProgramJob.__table__,
             CalyxProgramDependency.__table__,
+            CalyxAutonomyCycle.__table__,
             SpecialistMission.__table__,
             SpecialistArtifact.__table__,
             SpecialistReview.__table__,

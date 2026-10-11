@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .approved_tasks import task_profile, task_provider_status
+from .autonomy_cycles import autonomy_status
 from .models import CalyxJob, utcnow
 from .persisted_scheduler import persisted_schedule_status
 from .program_models import CalyxProgram, CalyxProgramJob
@@ -156,6 +157,8 @@ def _engineering_program_status(db: Session, *, owner: str) -> dict:
             {item["human_action"] for item in blockers if item.get("human_action")}
         ),
         "schedule": persisted_schedule_status(db, owner=owner),
+        # Recorded scheduled cycles: heartbeat freshness vs delivered work.
+        "autonomy": autonomy_status(db, owner=owner),
         "recent_programs": [
             {
                 "program_id": program.program_id,

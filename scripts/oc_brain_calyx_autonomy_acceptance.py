@@ -44,6 +44,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.request
 import uuid
@@ -71,12 +72,14 @@ def serve() -> int:
     import uvicorn
     from fastapi import FastAPI
 
-    from app.calyx_orchestrator.program_routes import router as program_router
+    from app.calyx_orchestrator.routes import router as orchestrator_router
     from app.canonical_brain.api import create_brain_router
 
     app = FastAPI()
     app.include_router(create_brain_router(prefix="/brain/canonical"))
-    app.include_router(program_router, prefix="/brain/orchestrator")
+    # The real orchestrator router: program routes plus the operational
+    # status Mission Control reads (/brain/orchestrator/status).
+    app.include_router(orchestrator_router, prefix="/brain")
     uvicorn.run(
         app,
         host="127.0.0.1",
@@ -116,29 +119,24 @@ def _install_loopback_guard(log_path: str) -> None:
 
 
 def scheduler() -> int:
+    """The deployable Brain worker entrypoint, plus harness instrumentation only.
+
+    Policy, Brain pulse, executor registry and receipt recorder come from
+    ``runtime.program_autonomy_brain_worker.build_worker`` exactly as deployed.
+    The harness adds a loopback socket guard, an execution ledger around each
+    registered executor, an optional deliberate hang (for the kill test) and a
+    shorter poll interval.
+    """
     env = os.environ
     _install_loopback_guard(env["OC_ACCEPT_EVENTS"])
-    sys.path.append(env["OC_ACCEPT_BRAIN_REPO"])
-    from calyx_brain.autonomy_pulse import (
-        PulseLedger,
-        load_manifest,
-        run_pulse,
-        urllib_status_transport,
-    )
-    from calyx_brain.canonical_handoff import urllib_transport
 
-    from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy
-    from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
-    from runtime.program_autonomy_worker import run_forever
+    from runtime.program_autonomy_brain_worker import build_worker
+    from runtime.program_autonomy_worker import install_stop_handlers, run_forever
 
-    worker = env["CALYX_PROGRAM_AUTONOMY_WORKER_ID"]
+    worker_id = env["CALYX_PROGRAM_AUTONOMY_WORKER_ID"]
     events = env["OC_ACCEPT_EVENTS"]
     hang_prefix = env.get("OC_ACCEPT_HANG_BUILD_ID") or None
-
-    registry = AuthoritativeExecutorRegistry(
-        workspace_root=Path(env["OC_ACCEPT_SOURCE_REPO"]),
-        repository_name=REPOSITORY,
-    )
+    worker = build_worker(env)
 
     class Observed:
         """Ledger-only wrapper; execution is the registered executor's own."""
@@ -149,7 +147,7 @@ def scheduler() -> int:
 
         def execute(self, assignment: Any) -> Any:
             meta = {
-                "worker": worker,
+                "worker": worker_id,
                 "pid": os.getpid(),
                 "job_key": assignment.job_key,
                 "program_job_id": assignment.assignment_id,
@@ -172,35 +170,28 @@ def scheduler() -> int:
             )
             return receipt
 
+    registry = worker.registry
     for role, registered in list(registry._by_role.items()):
         registry._by_role[role] = dataclasses.replace(
             registered, executor=Observed(registered.executor)
         )
 
-    manifest = load_manifest(Path(env["OC_ACCEPT_MANIFEST"]))
-    ledger = PulseLedger(Path(env["OC_ACCEPT_LEDGER"]))
-    post, get = urllib_transport(timeout=10), urllib_status_transport(timeout=10)
-
-    def replenish() -> dict[str, Any]:
-        return run_pulse(
-            manifest,
-            ledger=ledger,
-            transport=post,
-            status_transport=get,
-            env=env,
-            max_in_flight=1,
-            backoff_base_seconds=1,
-            backoff_max_seconds=4,
-        )
-
     def on_cycle(result: dict[str, Any]) -> None:
         _append(env["OC_ACCEPT_CYCLES"], {"pid": os.getpid(), **result})
 
-    policy = ProgramAutonomyPolicy.from_environ(env)
     # Test acceleration only: production bounds poll_seconds to >= 15. The
     # loop still sleeps a real interval between cycles.
-    policy = dataclasses.replace(policy, poll_seconds=int(env["OC_ACCEPT_POLL"]))
-    run_forever(policy, on_cycle=on_cycle, replenish=replenish, registry=registry)
+    policy = dataclasses.replace(worker.policy, poll_seconds=int(env["OC_ACCEPT_POLL"]))
+    stop = threading.Event()
+    install_stop_handlers(stop)
+    run_forever(
+        policy,
+        on_cycle=on_cycle,
+        replenish=worker.replenish,
+        registry=registry,
+        recorder=worker.recorder,
+        stop=stop,
+    )
     return 0
 
 
@@ -371,7 +362,7 @@ class Harness:
         env = {
             key: value
             for key, value in os.environ.items()
-            if not key.startswith(("PG", "CALYX_", "OC_ACCEPT_"))
+            if not key.startswith(("PG", "CALYX_", "OC_ACCEPT_", "OC_BRAIN_"))
         }
         env.update(
             {
@@ -423,10 +414,14 @@ class Harness:
                 "CALYX_PROGRAM_AUTONOMY_LEASE_SECONDS": "60",
                 "CALYX_PROGRAM_AUTONOMY_TIMEOUT_SECONDS": "30",
                 "CALYX_BACKEND_BASE_URL": f"http://127.0.0.1:{self.port}",
-                "OC_ACCEPT_BRAIN_REPO": str(self.args.brain_repo),
-                "OC_ACCEPT_SOURCE_REPO": str(self.source),
-                "OC_ACCEPT_MANIFEST": str(self.manifest),
-                "OC_ACCEPT_LEDGER": str(self.ledger),
+                # Deployable entrypoint configuration.
+                "OC_BRAIN_CHECKOUT": str(self.args.brain_repo),
+                "OC_BRAIN_WORK_MANIFEST": str(self.manifest),
+                "OC_BRAIN_PULSE_LEDGER": str(self.ledger),
+                "OC_BRAIN_PULSE_BACKOFF_BASE_SECONDS": "1",
+                "OC_BRAIN_PULSE_BACKOFF_MAX_SECONDS": "4",
+                "CALYX_PROGRAM_AUTONOMY_WORKSPACE": str(self.source),
+                "GITHUB_REPOSITORY": REPOSITORY,
                 "OC_ACCEPT_CYCLES": str(self.cycles_log),
                 "OC_ACCEPT_EVENTS": str(self.events_log),
                 "OC_ACCEPT_POLL": str(self.args.poll_seconds),
@@ -436,16 +431,19 @@ class Harness:
             env["OC_ACCEPT_HANG_BUILD_ID"] = hang_build
         self.spawn(worker, "--scheduler", env)
 
-    def stop(self, name: str, sig: int = signal.SIGTERM) -> None:
+    def stop(self, name: str, sig: int = signal.SIGTERM) -> int | None:
         proc = self.processes.get(name)
-        if proc is None or proc.poll() is not None:
-            return
+        if proc is None:
+            return None
+        if proc.poll() is not None:
+            return proc.returncode
         proc.send_signal(sig)
         try:
-            proc.wait(timeout=15)
+            return proc.wait(timeout=60)
         except subprocess.TimeoutExpired:
             proc.kill()
             proc.wait(timeout=15)
+            return None
 
     def stop_all(self) -> None:
         for name in list(self.processes):
@@ -507,6 +505,41 @@ class Harness:
         finally:
             engine.dispose()
 
+    def receipts(self, worker: str) -> list[dict[str, Any]]:
+        from sqlalchemy import select
+        from sqlalchemy.orm import Session
+
+        from app.calyx_orchestrator.program_models import CalyxAutonomyCycle
+
+        engine = self.engine()
+        try:
+            with Session(engine) as db:
+                rows = db.scalars(
+                    select(CalyxAutonomyCycle)
+                    .where(CalyxAutonomyCycle.worker_id == worker)
+                    .order_by(CalyxAutonomyCycle.sequence)
+                ).all()
+                return [
+                    {
+                        "sequence": r.sequence,
+                        "owner": r.owner,
+                        "productive": r.productive,
+                        "category": r.category,
+                        "job_keys": json.loads(r.job_keys_json),
+                    }
+                    for r in rows
+                ]
+        finally:
+            engine.dispose()
+
+    def operational_status(self) -> dict[str, Any]:
+        request = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/brain/orchestrator/status",
+            headers={"X-API-Key": self.api_key, "Accept": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=10) as response:
+            return json.loads(response.read())
+
     # -- phase A -------------------------------------------------------------
 
     def phase_a(self) -> dict[str, Any]:
@@ -516,7 +549,16 @@ class Harness:
             timeout=self.cycles * (self.args.poll_seconds + 20) + 60,
             watch=["scheduler-a", "api"],
         )
-        self.stop("scheduler-a")
+        exit_code = self.stop("scheduler-a")
+        self.check(
+            "sigterm_stops_the_scheduler_gracefully",
+            exit_code == 0
+            and not any(
+                j["lease_owner"] == "scheduler-a" and j["status"] == "running"
+                for j in self.jobs()
+            ),
+            {"exit_code": exit_code},
+        )
         cycles = self.cycles_of("scheduler-a")[: self.cycles]
         self.check("phase_a_cycle_count_reached", reached, len(cycles))
         self.check(
@@ -670,7 +712,32 @@ class Harness:
             all(submitted[w] == 1 for w in self.work_order[: self.cycles]),
             dict(submitted),
         )
-        return {"cycles": per_cycle}
+        receipts = self.receipts("scheduler-a")
+        self.check(
+            "every_cycle_has_a_durable_receipt_matching_its_execution",
+            [r["sequence"] for r in receipts[: self.cycles]]
+            == list(range(1, self.cycles + 1))
+            and all(
+                r["productive"]
+                and r["owner"] == API_KEY_OWNER
+                and r["job_keys"] == [j["job_key"] for j in c["jobs"]]
+                for r, c in zip(receipts, per_cycle, strict=False)
+            ),
+            receipts[:2],
+        )
+        status = self.operational_status()["engineering_programs"]["autonomy"]
+        latest = receipts[-1]
+        self.check(
+            "mission_control_status_reflects_actual_execution",
+            status["last_cycle"]["sequence"] == latest["sequence"]
+            and status["last_cycle"]["worker_id"] == "scheduler-a"
+            and status["last_productive"]["job_keys"]
+            == next(r["job_keys"] for r in reversed(receipts) if r["productive"])
+            and status["recent"]["productive"]
+            == sum(1 for r in receipts if r["productive"]),
+            {k: status[k] for k in ("state", "heartbeat", "recent")},
+        )
+        return {"cycles": per_cycle, "status_after_phase_a": status["state"]}
 
     # -- phase B -------------------------------------------------------------
 
@@ -813,6 +880,23 @@ class Harness:
                 e["event"] == "execution_finished" and e["worker"] == "scheduler-b"
                 for e in events
             ),
+        )
+        recovery_receipts = self.receipts("scheduler-c") + self.receipts("scheduler-d")
+        self.check(
+            "recovery_cycles_durably_recorded_with_their_categories",
+            len(recovery_receipts) == len(recovery_cycles)
+            and Counter(r["category"] or "productive" for r in recovery_receipts)
+            == categories,
+            dict(Counter(r["category"] or "productive" for r in recovery_receipts)),
+        )
+        final_status = self.operational_status()["engineering_programs"]["autonomy"]
+        self.check(
+            "status_after_drain_is_healthy_waiting_not_productive",
+            final_status["state"] == "healthy_waiting"
+            and final_status["last_cycle"]["category"] == "no_eligible_work"
+            and final_status["last_productive"] is not None
+            and final_status["consecutive_nonproductive"] >= 1,
+            {k: final_status[k] for k in ("state", "consecutive_nonproductive")},
         )
         pulses = _read_jsonl(self.ledger.with_suffix(".json.receipts.jsonl"))
         submitted = Counter(

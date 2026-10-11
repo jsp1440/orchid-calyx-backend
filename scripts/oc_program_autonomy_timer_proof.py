@@ -1539,9 +1539,12 @@ class Proof:
             len(cycles) >= target and len(sup.records) == len(cycles),
             {"cycles": len(cycles), "target": target},
         )
+        # The harness's SIGTERM is a graceful stop request: the worker finishes
+        # its cycle and exits 0. Any other exit, or one before the stop, is a
+        # loop that did not survive.
         self.check(
             f"{sup.name}_loop_survived_until_stopped",
-            not died and sup.process.returncode == -signal.SIGTERM,
+            not died and sup.process.returncode == 0,
             {"returncode": sup.process.returncode, "crash": evidence["crash"]},
         )
         if self.scenario == "full":
@@ -2043,7 +2046,7 @@ class Proof:
                 and len(fails) == 1
                 and fails[0]["code"] == CANARY_CODES[kind]
                 and canaries[kind]["cycles"] >= 3
-                and canaries[kind]["exit_code"] == -signal.SIGTERM
+                and canaries[kind]["exit_code"] == 0
             )
         self.check(
             "D7_crash_fixed_supervisor_survives_realistic_provider_errors",

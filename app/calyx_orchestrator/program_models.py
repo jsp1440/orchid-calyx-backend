@@ -94,3 +94,31 @@ class CalyxProgramDependency(Base):
         String(36), ForeignKey("calyx_engineering_program_jobs.program_job_id", ondelete="CASCADE"), index=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class CalyxAutonomyCycle(Base):
+    """Append-only receipt for one scheduled ``run_forever`` cycle.
+
+    A heartbeat alone is not evidence of useful work: each row records whether
+    the cycle delivered jobs and, if not, the reason-coded category.
+    """
+
+    __tablename__ = "calyx_program_autonomy_cycles"
+
+    cycle_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    owner: Mapped[str] = mapped_column(String(240), index=True)
+    worker_id: Mapped[str] = mapped_column(String(240), index=True)
+    sequence: Mapped[int] = mapped_column(Integer)
+    poll_seconds: Mapped[int] = mapped_column(Integer)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    productive: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    category: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    healthy: Mapped[bool] = mapped_column(Boolean, default=False)
+    completed_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    productive_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    failed_jobs: Mapped[int] = mapped_column(Integer, default=0)
+    reason_code: Mapped[str | None] = mapped_column(String(160), nullable=True)
+    job_keys_json: Mapped[str] = mapped_column(Text, default="[]")
+    replenishment_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    deployment_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import logging
+import signal
+import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -24,6 +26,11 @@ logger = logging.getLogger(__name__)
 #: zero-submission pulse names its reason as ``zero_reason`` using
 #: ``ZERO_EXECUTION_CATEGORIES``. It never claims, executes or settles jobs.
 Replenisher = Callable[[], dict[str, Any]]
+
+#: Optional durable recorder for each finished cycle (see
+#: ``app.calyx_orchestrator.autonomy_cycles``). A recorder failure is reported
+#: in the cycle result and never stops the loop.
+Recorder = Callable[[dict[str, Any]], str]
 
 # Upstream reasons that explain an idle cycle better than "no eligible work".
 _UPSTREAM_REASONS = frozenset(ZERO_EXECUTION_CATEGORIES) - {"no_eligible_work"}
@@ -123,17 +130,26 @@ def run_once(
 def run_forever(
     policy: ProgramAutonomyPolicy | None = None,
     *,
-    sleeper: Callable[[float], None] = time.sleep,
+    sleeper: Callable[[float], None] | None = None,
     on_cycle: Callable[[dict[str, Any]], None] | None = None,
     replenish: Replenisher | None = None,
     registry: AuthoritativeExecutorRegistry | None = None,
+    recorder: Recorder | None = None,
+    stop: threading.Event | None = None,
 ) -> None:
+    """Run scheduled cycles until ``stop`` is set (or forever without one).
+
+    A stop request never interrupts a cycle: the running cycle finishes and
+    settles its leases, then the loop exits instead of sleeping.
+    """
     active_policy = (policy or ProgramAutonomyPolicy.from_environ()).validated()
     if not active_policy.status()["authorized"]:
         raise PermissionError("PROGRAM_AUTONOMY_NOT_AUTHORIZED")
+    if sleeper is None:
+        sleeper = stop.wait if stop is not None else time.sleep
 
     sequence = 0
-    while True:
+    while stop is None or not stop.is_set():
         sequence += 1
         try:
             result = run_once(active_policy, replenish=replenish, registry=registry)
@@ -153,9 +169,48 @@ def run_forever(
             "worker_id": active_policy.worker_id,
             "poll_seconds": active_policy.poll_seconds,
         }
+        if recorder is not None:
+            try:
+                result["receipt"] = {"persisted": True, "cycle_id": recorder(result)}
+            except Exception as exc:  # telemetry must not stop execution
+                logger.exception("program autonomy cycle receipt not persisted")
+                result["receipt"] = {
+                    "persisted": False,
+                    "error": {"exception_type": type(exc).__name__},
+                }
         if on_cycle is not None:
             on_cycle(result)
+        if stop is not None and stop.is_set():
+            break
         sleeper(active_policy.poll_seconds)
+
+
+def database_recorder(owner: str) -> Recorder:
+    """Persist cycle receipts with the application database session."""
+    from app.calyx_orchestrator.autonomy_cycles import record_cycle
+    from app.calyx_orchestrator.schema import ensure_orchestrator_schema
+    from app.routers.release_identity import release_identity
+
+    commit = release_identity()["commit_sha"]
+    session_factory = get_session_local()
+
+    def record(result: dict[str, Any]) -> str:
+        with session_factory() as db:
+            ensure_orchestrator_schema(db)
+            return record_cycle(db, result, owner=owner, deployment_commit=commit)
+
+    return record
+
+
+def install_stop_handlers(stop: threading.Event) -> None:
+    """SIGTERM/SIGINT request a graceful stop after the current cycle."""
+
+    def request_stop(signum: int, _frame: object) -> None:
+        logger.info("program autonomy stop requested by signal %s", signum)
+        stop.set()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
 
 
 def main() -> int:
@@ -172,7 +227,14 @@ def main() -> int:
     def emit(result: dict[str, Any]) -> None:
         print(json.dumps(result, sort_keys=True, default=str), flush=True)
 
-    run_forever(policy, on_cycle=emit)
+    stop = threading.Event()
+    install_stop_handlers(stop)
+    run_forever(
+        policy,
+        on_cycle=emit,
+        recorder=database_recorder(policy.owner),
+        stop=stop,
+    )
     return 0
 
 
