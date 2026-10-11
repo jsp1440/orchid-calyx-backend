@@ -1,5 +1,6 @@
 """External transports are fixtures; claim verification/settlement are production."""
 from copy import deepcopy
+from datetime import UTC, datetime
 
 import pytest
 
@@ -27,8 +28,19 @@ class GitHubTransport:
             self.issue["labels"] = sorted(labels)
             return None
         if args[2] == "GET":
-            return deepcopy(self.comments[int(args[3].split("/")[-1])])
-        comment = {"id": len(self.comments) + 1, "body": payload["body"], "user": {"login": "github-actions[bot]"}, "issue_url": f"https://api.github.com/repos/{REPO}/issues/42"}
+            path, _, query = args[3].partition("?")
+            if path.endswith("/comments"):
+                # Paginated issue-comment history, as the GitHub REST API returns
+                # it; settlement reads this to verify the current claim.
+                params = dict(item.split("=", 1) for item in query.split("&") if item)
+                size, page = int(params.get("per_page", 30)), int(params.get("page", 1))
+                rows = [self.comments[key] for key in sorted(self.comments)]
+                return deepcopy(rows[(page - 1) * size : page * size])
+            return deepcopy(self.comments[int(path.split("/")[-1])])
+        # Real GitHub comments always carry an aware creation timestamp; the
+        # history-aware claim guard orders and validates by it.
+        created = datetime.now(UTC).replace(microsecond=0)
+        comment = {"id": len(self.comments) + 1, "body": payload["body"], "user": {"login": "github-actions[bot]"}, "issue_url": f"https://api.github.com/repos/{REPO}/issues/42", "created_at": created.isoformat().replace("+00:00", "Z")}
         self.comments[comment["id"]] = comment
         return deepcopy(comment)
 
@@ -102,6 +114,7 @@ def test_main_failure_parks_and_records_canonical_release(monkeypatch, failure):
             raise OSError("comment write outcome unknown")
         if (failure == "receipt_confirmation" and not failed_confirmation
                 and args[:3] == ["api", "--method", "GET"]
+                and isinstance(result, dict)
                 and result["body"].startswith("[OC-SWARM-V4] Worker result validated;")):
             failed_confirmation = True
             return {**result, "body": "unconfirmed write"}
