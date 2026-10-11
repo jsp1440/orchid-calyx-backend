@@ -31,6 +31,11 @@ from runtime.matrix_contributor_bridge import (
 )
 from runtime.matrix_identification_session import evaluate_session, get_session
 from runtime.matrix_identification_workflow import build_identification_report
+from runtime.matrix_kg_handoff import build_kg_handoff
+from runtime.matrix_vision_adapter import (
+    run_vision_extraction,
+    vision_extraction_capability,
+)
 
 router = APIRouter(
     prefix="/api/matrix-contributor",
@@ -82,7 +87,9 @@ class ContributorExtractionInput(BaseModel):
 
 class ContributorExtractionAttachRequest(BaseModel):
     submission_id: str = Field(min_length=1, max_length=200)
-    extractions: list[ContributorExtractionInput] = Field(min_length=1, max_length=200)
+    # An empty list links the staged image into the session (multi-image
+    # specimen support) without attaching any machine suggestions.
+    extractions: list[ContributorExtractionInput] = Field(max_length=200)
 
 
 class ContributorSuggestionReviewRequest(BaseModel):
@@ -112,6 +119,34 @@ class IdentificationReportRequest(BaseModel):
             "candidate names for reporting. Never mutates canonical taxonomy."
         ),
     )
+    source_assertions: list[dict[str, Any]] | None = None
+
+
+class VisionExtractionRequest(BaseModel):
+    mode: Literal["fixture", "live"] = "fixture"
+    submission_ids: list[str] | None = Field(
+        default=None,
+        description=(
+            "Optional subset of staged images linked to this session. Defaults "
+            "to every linked staged image."
+        ),
+    )
+    fixture_analyses: dict[str, dict[str, Any]] | None = Field(
+        default=None,
+        description=(
+            "Fixture-mode only: ImageAnalysisResult-shaped mappings keyed by "
+            "submission_id (or content_sha256). Fixture results must match the "
+            "staged image identity and carry license + attribution; they are "
+            "replayed through the governed pathway and explicitly labeled "
+            "extraction_mode=fixture. No AI inference is performed."
+        ),
+    )
+
+
+class KGHandoffRequest(BaseModel):
+    limit: int = Field(default=20, ge=1, le=200)
+    ambiguity_epsilon: float = Field(default=0.05, ge=0, le=1)
+    synonym_entries: list[dict[str, Any]] | None = None
     source_assertions: list[dict[str, Any]] | None = None
 
 
@@ -312,6 +347,77 @@ def evidence_record(
             image,
             source_assertions=payload.source_assertions,
             access_actor=access_actor,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
+
+
+@router.post("/sessions/{session_id}/vision-extraction")
+def vision_extraction(
+    session_id: str,
+    payload: VisionExtractionRequest,
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Bounded Vision AI extraction over this session's staged images.
+
+    Fixture mode (default) replays caller-supplied fixtures through the real
+    governed pathway and labels every record extraction_mode=fixture; live
+    mode fails closed unless the governed provider registry reports READY
+    with live inference explicitly enabled. All extracted characters remain
+    review-required suggestions — nothing scores without a human decision.
+    """
+    try:
+        return run_vision_extraction(
+            session_id,
+            mode=payload.mode,
+            fixture_analyses=payload.fixture_analyses,
+            submission_ids=payload.submission_ids,
+            access_actor=_access_actor(auth),
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except PermissionError as exc:
+        # Provider-contract license/attribution enforcement.
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise _service_unavailable(exc) from exc
+
+
+@router.get("/vision-extraction/capability")
+def vision_capability(
+    _: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Truthful Vision extraction capability declaration (fixture vs live)."""
+    return vision_extraction_capability()
+
+
+@router.post("/sessions/{session_id}/kg-handoff")
+def kg_handoff(
+    session_id: str,
+    payload: KGHandoffRequest,
+    auth: Any = Depends(verify_owner_or_api_key),  # noqa: B008
+) -> dict[str, Any]:
+    """Materialize governed oc-kg-materialization/v1 records for this session.
+
+    Produces review-required KG handoff records from the identification
+    report with full provenance chains. Nothing is published, mutated, or
+    promoted automatically; publication requires explicit owner
+    authorization and a separate governed step.
+    """
+    try:
+        return build_kg_handoff(
+            session_id,
+            limit=payload.limit,
+            ambiguity_epsilon=payload.ambiguity_epsilon,
+            synonym_entries=payload.synonym_entries,
+            source_assertions=payload.source_assertions,
+            access_actor=_access_actor(auth),
         )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
