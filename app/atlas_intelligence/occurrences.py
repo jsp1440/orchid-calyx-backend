@@ -31,7 +31,7 @@ import time
 from collections import Counter, OrderedDict
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -1130,7 +1130,7 @@ def _cluster_from_aggregate(
 class OccurrenceService:
     repository: OccurrenceRepository
     cache: TTLCache = field(default_factory=TTLCache)
-    clock: Callable[[], datetime] = field(default=lambda: datetime.now(timezone.utc))
+    clock: Callable[[], datetime] = field(default=lambda: datetime.now(UTC))
 
     def query(self, query: OccurrenceQuery) -> OccurrenceQueryResponse:
         source = self.repository.describe()

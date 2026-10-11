@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -27,7 +27,7 @@ from app.atlas_intelligence.occurrences import (
 )
 
 CONTRACTS = Path(__file__).resolve().parents[1] / "contracts"
-FIXED_NOW = datetime(2026, 10, 11, tzinfo=timezone.utc)
+FIXED_NOW = datetime(2026, 10, 11, tzinfo=UTC)
 
 
 def _record(

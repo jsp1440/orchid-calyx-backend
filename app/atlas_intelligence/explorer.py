@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -254,7 +254,7 @@ def module_capabilities(
     return {
         "schema": contract["schema"],
         "api_version": contract["api_version"],
-        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "generated_at": datetime.now(UTC).isoformat(),
         "identifier_systems": contract["identifier_systems"],
         "capabilities": capabilities,
         "workflows": contract["workflows"],

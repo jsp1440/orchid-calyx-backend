@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .models import (
     AtlasLayer,
@@ -116,7 +116,7 @@ def build_reasoning_response(manifest: ThematicMapManifest, layers: list[AtlasLa
 
 
 def assemble_brain_records(manifest: ThematicMapManifest) -> list[BrainRegistrationRecord]:
-    created_at = datetime.now(timezone.utc)
+    created_at = datetime.now(UTC)
     manifest_payload = manifest.model_dump(mode="json")
     checksum = _canonical_checksum(manifest_payload)
     return [
