@@ -198,8 +198,13 @@ def _design_search(payload: dict[str, Any]) -> ToolResult:
     query = str(payload.get("query") or "").strip()
     if not query:
         raise ValueError("DESIGN_QUERY_REQUIRED")
+    from app.design_intelligence.publication_gate import DesignPublicationGateRequired
     from app.design_intelligence.routes import REASONING_SERVICE
 
+    # Fail closed: guidance that reaches Calyx must come from approved, published,
+    # current documents. A service without a publication gate must not be searched.
+    if not REASONING_SERVICE.publication_enforced:
+        raise DesignPublicationGateRequired()
     result = REASONING_SERVICE.search(query, limit=min(int(payload.get("limit", 10)), 25))
     return ToolResult(
         tool_id="design_intelligence.search",

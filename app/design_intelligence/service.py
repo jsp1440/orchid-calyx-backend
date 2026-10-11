@@ -12,6 +12,7 @@ from .models import (
     DesignKnowledgeType,
     DesignReviewDecision,
     PublicationStatus,
+    ReviewState,
     utcnow,
 )
 
@@ -87,6 +88,9 @@ class DesignIntelligenceService:
         terms = self._expanded_terms(query.text)
         candidates = []
         for document in self.repository.published_latest():
+            # Publication alone is not enough: a later rejection must hide it.
+            if self.repository.review_state(document.document_id) is not ReviewState.APPROVED:
+                continue
             if query.domains and not set(query.domains).intersection(document.domains):
                 continue
             if query.knowledge_types and not set(query.knowledge_types).intersection(
