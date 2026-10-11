@@ -50,7 +50,9 @@ them before any query and reports missing columns as `unavailable`:
 `taxon_id`, `scientific_name`, `genus`, `decimal_latitude`, `decimal_longitude`,
 `coordinate_uncertainty_in_meters`, `country_code`, `year`, `month`, `event_date`,
 `basis_of_record`, `dataset_name`, `institution_code`, `license`, `rights_holder`,
-`references_uri`, `iucn_category`, `conservation_status`, `assessment_resolved`, `locality`.
+`references_uri`, `iucn_category`, `conservation_status`, `assessment_resolved`, `locality`, `family`.
+
+Taxonomic scope: only rows whose `family` is exactly `Orchidaceae` are ever served, by every route (points, clusters, SQL aggregates, summaries and the taxon-search fallback). A row with a missing or different family — for example *Hypoxis* (Hypoxidaceae) carried in an orchid export — is excluded, never inferred.
 
 Set `ATLAS_OCCURRENCE_USE_POSTGIS=true` when the relation also has an indexed
 `geom geometry(Point, 4326)` column; otherwise a `(decimal_latitude, decimal_longitude)`

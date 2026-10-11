@@ -142,7 +142,7 @@ def repo() -> Iterator[PostgresOccurrenceRepository]:
               coordinate_uncertainty_in_meters double precision, country_code text,
               year int, month int, event_date text, basis_of_record text, dataset_name text,
               institution_code text, license text, rights_holder text, references_uri text,
-              iucn_category text, conservation_status text, assessment_resolved boolean, locality text
+              iucn_category text, conservation_status text, assessment_resolved boolean, locality text, family text
             )
             """
         )
@@ -169,8 +169,8 @@ def repo() -> Iterator[PostgresOccurrenceRepository]:
                 f"""INSERT INTO {schema}.public_occurrences
                 (occurrence_id, taxon_id, scientific_name, genus, decimal_latitude, decimal_longitude,
                  coordinate_uncertainty_in_meters, year, month, iucn_category, assessment_resolved, locality,
-                 dataset_name, license, basis_of_record)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'CC-BY-4.0','PreservedSpecimen')""",
+                 dataset_name, license, basis_of_record, family)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,'CC-BY-4.0','PreservedSpecimen','Orchidaceae')""",
                 (
                     oid,
                     tid,
@@ -187,6 +187,16 @@ def repo() -> Iterator[PostgresOccurrenceRepository]:
                     dataset,
                 ),
             )
+        # Out-of-scope rows inside the Ecuador viewport: a non-orchid that a
+        # source mislabelled into an orchid export, and a row whose family the
+        # projection could not state. Neither may ever be served.
+        cur.execute(
+            f"""INSERT INTO {schema}.public_occurrences
+            (occurrence_id, taxon_id, scientific_name, genus, decimal_latitude, decimal_longitude,
+             year, assessment_resolved, dataset_name, family)
+            VALUES ('o7', 't9', 'Hypoxis decumbens', 'Hypoxis', -3.7, -79.3, 2020, true, 'Survey D', 'Hypoxidaceae'),
+                   ('o8', NULL, 'Dracula vampira', 'Dracula', -3.8, -79.4, 2021, true, 'Survey D', NULL)"""
+        )
         cur.execute(
             f"CREATE TABLE {schema}.incomplete (occurrence_id text, decimal_latitude float)"
         )
@@ -282,3 +292,14 @@ def test_taxon_search_falls_back_to_relation_names(
         and species[0].scientific_name == "Dracula vampira"
         and species[0].taxon_id == "t1"
     )
+
+
+def test_only_orchidaceae_rows_are_served(repo: PostgresOccurrenceRepository) -> None:
+    ecuador = OccurrenceQuery(bbox=BBox(-80, -5, -78, -3), zoom=12, mode="points")
+    ids = [r.occurrence_id for r in repo.fetch(ecuador, after_id=None, max_rows=50)]
+    assert "o7" not in ids and "o8" not in ids
+    assert repo.count(ecuador, cap=50) == (2, True)
+    cells = repo.aggregate(OccurrenceQuery(bbox=BBox.world(), zoom=1), cell_deg=10.0)
+    assert sum(c.count for c in cells or []) == 5
+    assert all("Hypoxis" not in c.top_genera for c in cells or [])
+    assert [m.scientific_name for m in repo.search_taxa("Hypox", limit=5)] == []

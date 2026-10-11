@@ -38,6 +38,7 @@ def _record(
         "genus": "Dracula",
         "taxon_id": "tx-dracula-vampira",
         "assessment_resolved": True,
+        "family": "Orchidaceae",
         "dataset_name": "Synthetic test dataset",
         "license": "CC0-1.0",
         "year": 2001,
@@ -66,7 +67,11 @@ def _service(records: list[OccurrenceRecord]) -> OccurrenceService:
 
 def _vectors() -> list[dict]:
     return json.loads(
-        (Path(__file__).resolve().parent / "fixtures" / "atlas_locality_policy_vectors_v1.json").read_text()
+        (
+            Path(__file__).resolve().parent
+            / "fixtures"
+            / "atlas_locality_policy_vectors_v1.json"
+        ).read_text()
     )["vectors"]
 
 
@@ -255,6 +260,34 @@ def test_filters_taxon_time_and_month() -> None:
     ] == ["3"]
 
 
+def test_non_orchidaceae_and_unknown_family_are_never_served() -> None:
+    records = [
+        _record("orchid", -3.5, -79.2),
+        _record(
+            "hypoxis",
+            -3.6,
+            -79.3,
+            scientific_name="Hypoxis decumbens",
+            genus="Hypoxis",
+            taxon_id="tx-hypoxis",
+            family="Hypoxidaceae",
+        ),
+        _record("unknown-family", -3.7, -79.4, family=None),
+    ]
+    service = _service(records)
+    points = service.query(
+        OccurrenceQuery(bbox=BBox(-80, -5, -78, -3), zoom=12, mode="points")
+    ).points
+    assert [p.occurrenceID for p in points] == ["orchid"]
+    clusters = service.query(
+        OccurrenceQuery(bbox=BBox.world(), zoom=1, mode="clusters")
+    )
+    assert sum(c.count for c in clusters.clusters) == 1
+    assert service.search_taxa("Hypox").matches == []
+    summary = service.summary(OccurrenceQuery(bbox=BBox.world()))
+    assert [b.key for b in summary.top_genera] == ["Dracula"]
+
+
 def test_cache_hits_and_expires() -> None:
     now = [0.0]
     service = OccurrenceService(
@@ -315,11 +348,12 @@ def test_sql_where_is_parameterised_and_handles_antimeridian() -> None:
     where, params = build_where(query, after_id="occ-9")
     assert "Dendrobium" not in where and "%s" in where
     assert where.count("decimal_longitude BETWEEN %s AND %s") == 2
-    assert params[:6] == [-30, -10, 170, 180.0, -180.0, -170]
+    assert params[:7] == ["Orchidaceae", -30, -10, 170, 180.0, -180.0, -170]
     assert params[-3:] == ["Dendrobium", [1, 2], "occ-9"]
     postgis_where, postgis_params = build_where(query, use_postgis=True)
     assert (
-        postgis_where.count("ST_MakeEnvelope") == 2 and len(postgis_params) == 2 + 8 + 2
+        postgis_where.count("ST_MakeEnvelope") == 2
+        and len(postgis_params) == 1 + 2 + 8 + 2
     )
 
 

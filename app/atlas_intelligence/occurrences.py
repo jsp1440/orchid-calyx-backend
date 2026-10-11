@@ -50,6 +50,9 @@ POINT_MODE_MIN_ZOOM = 7
 # already locality-safe, so clustering them would only hide detail.
 SMALL_VIEW_POINTS = 250
 POLICY_MAX_CELL_DEG = 1.0
+# The Atlas is an Orchidaceae atlas. A row is served only when its projection
+# states this family; a missing or different family is excluded, never guessed.
+ATLAS_FAMILY = "Orchidaceae"
 
 # Cluster cell ladder by zoom. Coarse rungs are whole degrees aligned at 0, so
 # every locality-policy cell (1, 0.5, 0.25, 0.1, 0.05 degrees) nests inside one
@@ -176,6 +179,7 @@ class OccurrenceRecord:
     conservation_status: str | None = None
     assessment_resolved: bool | None = None
     locality: str | None = None
+    family: str | None = None
 
 
 @dataclass(frozen=True)
@@ -243,6 +247,8 @@ class OccurrenceQuery:
 
     def matches(self, record: OccurrenceRecord) -> bool:
         """In-memory filter semantics; the SQL repository must mirror these."""
+        if record.family != ATLAS_FAMILY:
+            return False
         if not usable_coordinate(record.decimal_latitude, record.decimal_longitude):
             return False
         if not self.bbox.contains(record.decimal_latitude, record.decimal_longitude):
@@ -556,7 +562,8 @@ class InMemoryOccurrenceRepository:
         seen: dict[str, TaxonMatch] = {}
         for record in self._records:
             if (
-                record.taxon_id
+                record.family == ATLAS_FAMILY
+                and record.taxon_id
                 and needle in record.scientific_name.lower()
                 and record.taxon_id not in seen
             ):
@@ -615,6 +622,7 @@ OCCURRENCE_COLUMNS: tuple[str, ...] = (
     "conservation_status",
     "assessment_resolved",
     "locality",
+    "family",
 )
 _RELATION = re.compile(r"^[a-z_][a-z0-9_]{0,62}\.[a-z_][a-z0-9_]{0,62}$")
 TAXONOMY_RELATION = "public.orchid_taxonomy"
@@ -633,6 +641,7 @@ def build_where(
 ) -> tuple[str, list[Any]]:
     """Parameterised WHERE clause mirroring :meth:`OccurrenceQuery.matches`."""
     clauses = [
+        "family = %s",
         "decimal_latitude IS NOT NULL",
         "decimal_longitude IS NOT NULL",
         "decimal_latitude BETWEEN -90 AND 90",
@@ -640,7 +649,7 @@ def build_where(
         "NOT (decimal_latitude = 0 AND decimal_longitude = 0)",
         "decimal_latitude BETWEEN %s AND %s",
     ]
-    params: list[Any] = [query.bbox.south, query.bbox.north]
+    params: list[Any] = [ATLAS_FAMILY, query.bbox.south, query.bbox.north]
     ranges = query.bbox.lon_ranges()
     if use_postgis:
         envelopes = " OR ".join(
@@ -836,9 +845,10 @@ class PostgresOccurrenceRepository:
                 cur.execute(
                     f"""
                     SELECT genus, count(*) AS n FROM {self._relation}
-                    WHERE genus ILIKE %s GROUP BY genus ORDER BY n DESC, genus LIMIT 4
+                    WHERE family = %s AND genus ILIKE %s
+                    GROUP BY genus ORDER BY n DESC, genus LIMIT 4
                     """,
-                    (f"{pattern}%",),
+                    (ATLAS_FAMILY, f"{pattern}%"),
                 ),
                 cur.fetchall(),
             )[1]
@@ -888,12 +898,12 @@ class PostgresOccurrenceRepository:
             f"""
             SELECT scientific_name, genus, min(taxon_id::text) AS taxon_id, count(*) AS n
             FROM {self._relation}
-            WHERE scientific_name ILIKE %s
+            WHERE family = %s AND scientific_name ILIKE %s
             GROUP BY scientific_name, genus
             ORDER BY (scientific_name ILIKE %s) DESC, n DESC, scientific_name
             LIMIT %s
             """,
-            (f"%{pattern}%", f"{pattern}%", limit),
+            (ATLAS_FAMILY, f"%{pattern}%", f"{pattern}%", limit),
         )
         return [
             TaxonMatch(
@@ -963,6 +973,7 @@ def _record_from_row(row: dict[str, Any]) -> OccurrenceRecord:
         conservation_status=_optional_str(row.get("conservation_status")),
         assessment_resolved=row.get("assessment_resolved"),
         locality=_optional_str(row.get("locality")),
+        family=_optional_str(row.get("family")),
     )
 
 
