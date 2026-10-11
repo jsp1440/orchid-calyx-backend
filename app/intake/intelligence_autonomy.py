@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import os
 import re
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any
 
 import psycopg
@@ -148,7 +148,7 @@ def execute_internal_intelligence_job(job_name: str) -> dict[str, Any] | None:
     if stage == "discover":
         from .discovery.service import run_discovery_cycle
 
-        day = datetime.strptime(raw_id, "%Y%m%d").date()
+        day = date.fromisoformat(raw_id)
         result = run_discovery_cycle(mode="SCHEDULED", run_key=f"scheduled:{day.isoformat()}")
         return {
             "module": "calyx_intelligence",
