@@ -185,6 +185,28 @@ are not established by a main-branch event SHA. Default-branch convergence
 requires separate approval. Empty confirmed-claim health is not autonomy success.
 The selected log diagnostics are preserved in `Orchid_R1_Hosted_Diagnosis.json`.
 
+## Zero-execution cycle reason (native provider-free path)
+
+`run_deterministic_program_cycle` previously returned a bare `stop_reason="idle"`
+for every zero-work cycle, so an empty queue was indistinguishable from runnable
+work with no registered executor, an admission rejection, retry backoff,
+dependency waits or capacity limits. Any cycle that completes zero jobs now
+carries a read-only `zero_execution` record (also in `as_dict()`) assembled only
+from existing contracts:
+
+| `source` | `reason_code` origin |
+| --- | --- |
+| `cycle_error` | existing cycle `error.code` |
+| `executor_failure` | existing executor failure `code` (released with backoff/dead letter) |
+| `claim_admission` | `PersistentProgramWorker.diagnose()` `REJECTED_ADMISSION` policy code |
+| `executor_registry` | `AUTHORITATIVE_EXECUTOR_NOT_REGISTERED` for runnable unregistered roles |
+| `scheduler` | most frequent persisted-scheduler decision code (`RETRY_BACKOFF`, `WAITING_FOR_PREREQUISITES`, `*_CAPACITY_REACHED`, ...) |
+| `schedule_projection` | existing schedule projection `ValueError` code |
+| `claim_diagnostic` | `IDLE_NO_CANDIDATE` (genuinely empty) |
+
+The diagnosis takes no lease and commits nothing; a diagnosis exception cannot
+mask the cycle result. No scheduler, queue, executor or reason taxonomy was added.
+
 ## Exact remaining activation requirements
 
 1. **Automation-safe publication approval:** establish a branch/draft-PR path

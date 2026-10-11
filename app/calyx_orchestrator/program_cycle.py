@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .assignment_factory import governed_assignment_from_claimed_job
 from .execution_bridge import LeaseExecutionBridge
 from .executor_registry import AuthoritativeExecutorRegistry, RegisteredExecutor
+from .persisted_scheduler import project_persisted_schedule
+from .program_models import CalyxProgramJob
 from .program_worker import PersistentProgramWorker
 
 
@@ -35,6 +38,10 @@ class AutonomousCycleResult:
     # Executor failures this cycle released (with retry backoff or to dead
     # letter) and then continued past.
     failures: tuple[dict[str, Any], ...] = ()
+    # Machine-readable reason for any cycle that completed zero jobs. Built
+    # only from existing contracts (ClaimDiagnostic, scheduler decision codes,
+    # executor-registry and executor failure codes); None when work completed.
+    zero_execution: dict[str, Any] | None = None
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -47,6 +54,9 @@ class AutonomousCycleResult:
             "jobs": [asdict(item) for item in self.jobs],
             "error": self.error,
             "failures": [dict(item) for item in self.failures],
+            "zero_execution": (
+                None if self.zero_execution is None else dict(self.zero_execution)
+            ),
             "mode": "registered_authoritative_adapters_only",
             "workspace_mutation_performed": any(
                 item.workspace_mutation for item in self.jobs
@@ -90,6 +100,102 @@ def _finalize_workspace_mutation(
     finalize(assignment_id)
 
 
+def _zero_execution_reason(
+    db: Session,
+    *,
+    owner: str,
+    eligible_role_keys: frozenset[str],
+    stop_reason: str,
+    error: dict[str, Any] | None,
+    failures: tuple[dict[str, Any], ...],
+) -> dict[str, Any]:
+    """Read-only explanation for a cycle that completed zero jobs.
+
+    Reuses existing codes only: cycle error codes, executor failure codes,
+    ``PersistentProgramWorker.diagnose`` outcomes, the registry's
+    ``AUTHORITATIVE_EXECUTOR_NOT_REGISTERED`` and persisted-scheduler decision
+    codes. Takes no lease and commits nothing.
+    """
+    record: dict[str, Any] = {
+        "stop_reason": stop_reason,
+        "reason_code": None,
+        "source": None,
+        "claim_diagnostic": None,
+        "scheduler_codes": {},
+        "unregistered_runnable_roles": [],
+        "eligible_role_keys": sorted(eligible_role_keys),
+        "failure_codes": [str(item.get("code")) for item in failures],
+    }
+    schedule_error: str | None = None
+    try:
+        diagnostic = PersistentProgramWorker(db).diagnose(
+            owner=owner,
+            allowed_role_keys=eligible_role_keys,
+        )
+        record["claim_diagnostic"] = {
+            "outcome": diagnostic.outcome,
+            "program_job_id": diagnostic.program_job_id,
+            "reason_code": diagnostic.reason_code,
+            "reason_message": diagnostic.reason_message,
+        }
+        try:
+            schedule = project_persisted_schedule(db, owner=owner)
+        except ValueError as exc:
+            schedule_error = str(exc) or type(exc).__name__
+            schedule = None
+        if schedule is not None:
+            codes: dict[str, int] = {}
+            for decision in schedule.snapshot.decisions:
+                if decision.code in {"RUNNABLE", "TERMINAL"}:
+                    continue
+                codes[decision.code] = codes.get(decision.code, 0) + 1
+            record["scheduler_codes"] = dict(sorted(codes.items()))
+            runnable_ids = schedule.runnable_program_job_ids
+            if runnable_ids:
+                roles = db.scalars(
+                    select(CalyxProgramJob.role_key).where(
+                        CalyxProgramJob.program_job_id.in_(runnable_ids)
+                    )
+                ).all()
+                record["unregistered_runnable_roles"] = sorted(
+                    {role for role in roles if role not in eligible_role_keys}
+                )
+    except Exception as exc:  # noqa: BLE001 - diagnosis must not mask the cycle result
+        db.rollback()
+        record["reason_code"] = "ZERO_EXECUTION_DIAGNOSIS_FAILED"
+        record["source"] = "diagnosis"
+        record["diagnosis_error"] = type(exc).__name__
+        if error is not None:
+            record["reason_code"] = str(error.get("code"))
+            record["source"] = "cycle_error"
+        return record
+
+    claim = record["claim_diagnostic"]
+    if error is not None:
+        record["reason_code"], record["source"] = str(error.get("code")), "cycle_error"
+    elif failures:
+        record["reason_code"] = str(failures[-1].get("code"))
+        record["source"] = "executor_failure"
+    elif claim and claim["outcome"] == "REJECTED_ADMISSION":
+        record["reason_code"], record["source"] = (
+            claim["reason_code"],
+            "claim_admission",
+        )
+    elif record["unregistered_runnable_roles"]:
+        record["reason_code"] = "AUTHORITATIVE_EXECUTOR_NOT_REGISTERED"
+        record["source"] = "executor_registry"
+    elif record["scheduler_codes"]:
+        codes = record["scheduler_codes"]
+        record["reason_code"] = max(sorted(codes), key=lambda code: codes[code])
+        record["source"] = "scheduler"
+    elif schedule_error is not None:
+        record["reason_code"], record["source"] = schedule_error, "schedule_projection"
+    else:
+        record["reason_code"] = claim["outcome"] if claim else "IDLE_NO_CANDIDATE"
+        record["source"] = "claim_diagnostic"
+    return record
+
+
 def run_deterministic_program_cycle(
     db: Session,
     *,
@@ -99,6 +205,41 @@ def run_deterministic_program_cycle(
     lease_seconds: int = 300,
     timeout_seconds: int = 300,
     registry: AuthoritativeExecutorRegistry | None = None,
+) -> AutonomousCycleResult:
+    executor_registry = registry or AuthoritativeExecutorRegistry()
+    result = _run_cycle(
+        db,
+        owner=owner,
+        worker_id=worker_id,
+        max_jobs=max_jobs,
+        lease_seconds=lease_seconds,
+        timeout_seconds=timeout_seconds,
+        executor_registry=executor_registry,
+    )
+    if result.completed_jobs:
+        return result
+    return replace(
+        result,
+        zero_execution=_zero_execution_reason(
+            db,
+            owner=result.owner,
+            eligible_role_keys=executor_registry.eligible_role_keys,
+            stop_reason=result.stop_reason,
+            error=result.error,
+            failures=result.failures,
+        ),
+    )
+
+
+def _run_cycle(
+    db: Session,
+    *,
+    owner: str,
+    worker_id: str,
+    max_jobs: int,
+    lease_seconds: int,
+    timeout_seconds: int,
+    executor_registry: AuthoritativeExecutorRegistry,
 ) -> AutonomousCycleResult:
     normalized_owner = owner.strip()
     normalized_worker = worker_id.strip()
@@ -118,7 +259,6 @@ def run_deterministic_program_cycle(
     if execution_lease_seconds > 3600:
         raise ValueError("AUTONOMY_EXECUTION_LEASE_BUDGET_OUT_OF_RANGE")
 
-    executor_registry = registry or AuthoritativeExecutorRegistry()
     worker = PersistentProgramWorker(db)
     completed: list[CycleJobResult] = []
     failures: list[dict[str, Any]] = []
