@@ -106,6 +106,9 @@ def _observation_provenance(observation: dict[str, Any]) -> dict[str, Any]:
         "contributor_display_name": source.get("contributor_display_name"),
         "attribution_line": source.get("attribution_line"),
         "permission_grant": source.get("permission_grant"),
+        "analysis_id": source.get("analysis_id"),
+        "vision_observation_id": source.get("vision_observation_id"),
+        "image_id": source.get("image_id"),
     }
 
 
@@ -225,6 +228,7 @@ def build_identification_report(
     suggestions = list(session.get("contributor_suggestions", []))
     review_gate: dict[str, Any] = {
         "suggestion_counts": {},
+        "vision_suggestion_counts": {},
         "excluded_from_scoring": [],
     }
     for item in suggestions:
@@ -238,10 +242,35 @@ def build_identification_report(
                     "suggestion_id": item.get("suggestion_id"),
                     "character": item.get("character"),
                     "state": state,
+                    "source": "contributor_extraction",
                     "reason": (
                         "unreviewed machine suggestion"
                         if state in {"pending_review", "needs_mapping"}
                         else "reviewer rejected"
+                    ),
+                }
+            )
+    vision_suggestions = list(session.get("vision_suggestions", []))
+    for item in vision_suggestions:
+        state = str(item.get("state"))
+        review_gate["vision_suggestion_counts"][state] = (
+            review_gate["vision_suggestion_counts"].get(state, 0) + 1
+        )
+        if state in {"pending_review", "needs_mapping", "cannot_determine", "rejected"}:
+            review_gate["excluded_from_scoring"].append(
+                {
+                    "suggestion_id": item.get("suggestion_id"),
+                    "character": item.get("character"),
+                    "state": state,
+                    "source": "vision_ai",
+                    "analysis_id": item.get("analysis_id"),
+                    "reason": (
+                        "unreviewed machine suggestion"
+                        if state in {"pending_review", "needs_mapping"}
+                        else "reviewer rejected"
+                        if state == "rejected"
+                        else "vision analysis could not determine a value; "
+                        "absence is never inferred"
                     ),
                 }
             )
@@ -307,6 +336,42 @@ def build_identification_report(
             f"{len(unobserved_characters)} registry character(s) have no reviewed "
             "observation; the ranking is based on partial evidence."
         )
+    pending_vision = sum(
+        review_gate["vision_suggestion_counts"].get(state, 0)
+        for state in ("pending_review", "needs_mapping")
+    )
+    if pending_vision:
+        limitations.append(
+            f"{pending_vision} Vision AI suggestion(s) await expert review and are "
+            "excluded from scoring; accepting or revising them is a human decision."
+        )
+
+    vision_analyses = session.get("vision_analyses") or {}
+    vision_modes = sorted(
+        {
+            str((item.get("vision_provenance") or {}).get("extraction_mode"))
+            for item in vision_suggestions
+            if (item.get("vision_provenance") or {}).get("extraction_mode")
+        }
+    )
+    extraction_pathway = {
+        "contributor_extractor": {
+            "suggestion_count": len(suggestions),
+            "states": review_gate["suggestion_counts"],
+        },
+        "vision_ai": {
+            "suggestion_count": len(vision_suggestions),
+            "states": review_gate["vision_suggestion_counts"],
+            "analyses": vision_analyses,
+            "extraction_modes": vision_modes,
+            "live_inference_performed": "live" in vision_modes,
+            "honesty_note": (
+                "Fixture-mode extraction replays caller-supplied fixtures through "
+                "the governed pathway; live AI inference is only claimed when "
+                "extraction_modes contains 'live'."
+            ),
+        },
+    }
 
     payload: dict[str, Any] = {
         "schema_version": IDENTIFICATION_REPORT_SCHEMA,
@@ -325,6 +390,7 @@ def build_identification_report(
         "unobserved_characters": unobserved_characters,
         "ambiguity": ambiguity,
         "review_gate": review_gate,
+        "extraction_pathway": extraction_pathway,
         "contributor_images": {
             key: {
                 "submission_id": value.get("submission_id"),
