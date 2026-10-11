@@ -379,3 +379,29 @@ def test_pipeline_failure_is_an_explicit_receipt(tmp_path):
 
 def test_handler_result_carries_taxon_links_field():
     assert HandlerResult(output={}).taxon_links == ()
+
+
+def test_describing_and_planning_never_import_the_database_dependency_module():
+    """``app.candidate_knowledge.dependencies`` builds a repository from
+    DATABASE_URL at import. Describing and planning FIL must not reach it; only
+    running the Calyx step does, exactly as the application itself does."""
+    import os
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "import app.functional_interaction.literature_to_calyx as m\n"
+        "m.plan_chain(); m.chain_registry().view()\n"
+        "print('app.candidate_knowledge.dependencies' in sys.modules)\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "DATABASE_URL"}
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", code],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert result.stdout.strip() == "False"

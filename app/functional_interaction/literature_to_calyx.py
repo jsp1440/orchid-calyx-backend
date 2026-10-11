@@ -54,13 +54,6 @@ from app.literature_extraction.review import (
     build_review_queue,
     refresh_publication_decisions,
 )
-from app.parallel_platform.brain_candidate_handoff import (
-    DOMAIN_KINDS,
-    handoff_brain_candidate,
-)
-from app.parallel_platform.reasoning_contract_bridge import (
-    verification_packet_to_handoff_request,
-)
 from harvesters.execution import _validate_traitbank_record
 from runtime.brain_capability_registry import canonical_brain_registry
 from runtime.knowledge_graph.canonical_taxonomy import (
@@ -98,7 +91,29 @@ _BINOMIAL = re.compile(r"^[A-Z][a-z]+ [a-z][a-z-]+$")
 _HEDGE = re.compile(
     r"\b(?:may|might|possibly|probably|likely|suggests?|appears?)\b", re.IGNORECASE
 )
-_KIND_DOMAIN = {kind.value: domain for domain, kind in DOMAIN_KINDS.items()}
+
+
+def _calyx_bridge():
+    """Import the existing Brain-to-Calyx handoff only when the Calyx step runs.
+
+    ``app.parallel_platform.brain_candidate_handoff`` imports
+    ``app.candidate_knowledge.dependencies``, which builds a repository from
+    ``DATABASE_URL`` at import time (pre-existing behaviour of that module, not
+    FIL's). Importing it lazily keeps describing, planning and governing FIL
+    plans free of any database contact; running the Calyx step reaches that
+    module exactly as the application itself does.
+    """
+    from app.parallel_platform.brain_candidate_handoff import (
+        DOMAIN_KINDS,
+        handoff_brain_candidate,
+    )
+    from app.parallel_platform.reasoning_contract_bridge import (
+        verification_packet_to_handoff_request,
+    )
+
+    kind_domain = {kind.value: domain for domain, kind in DOMAIN_KINDS.items()}
+    return verification_packet_to_handoff_request, handoff_brain_candidate, kind_domain
+
 
 SOURCE = SourceArtifact(
     semantic_type="oc:LiteratureDocumentBatch",
@@ -672,6 +687,7 @@ def build_handlers(
         )
 
     def handoff(payload: Mapping[str, Any]) -> HandlerResult:
+        to_request, admit_candidate, kind_domain = _calyx_bridge()
         repository, service = components_factory()
         atomic = getattr(repository, "atomic", None)
         groups: dict[tuple[int, str], list[dict[str, Any]]] = {}
@@ -723,9 +739,9 @@ def build_handlers(
                     gaps=gap_lines,
                 )
                 first = records[0]["raw"]
-                request = verification_packet_to_handoff_request(
+                request = to_request(
                     packet,
-                    domain=_KIND_DOMAIN[first["kind"]],
+                    domain=kind_domain[first["kind"]],
                     source_object_type=SOURCE_OBJECT_TYPE,
                     source_object_id=first["source_object_id"],
                     revision_id=first["revision_id"],
@@ -733,7 +749,7 @@ def build_handlers(
                 )
 
                 def admit(request=request) -> dict[str, Any]:
-                    return handoff_brain_candidate(request, (repository, service))
+                    return admit_candidate(request, (repository, service))
 
                 result = atomic(admit) if atomic is not None else admit()
                 packets.append(packet)

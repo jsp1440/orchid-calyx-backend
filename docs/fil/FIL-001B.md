@@ -79,7 +79,7 @@ The 6 FIL records were fed to #246's `ingest_traitbank_records` with #246's own 
 
 ## Validation (local)
 
-- `pytest tests/test_fil_001*.py`: **87 passed** (57 FIL-001A + 30 FIL-001B). This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
+- `pytest tests/test_fil_001*.py`: **88 passed** (57 FIL-001A + 31 FIL-001B). This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
 - **Regression suites for reused code: 153 passed.** These were critical-suite coverage, source compiles, the reasoning bridge, candidate handoff, the literature pipeline, the provider reservoir, the Brain capability registry and canonical taxonomy.
 - **Mutation sweep: 13 of 13 FIL-001B guard mutants killed.** The sweep ran with bytecode caching off, an unmutated control was green before and after, and the sources were restored byte for byte. The guards covered:
   - crosswalk unmapped, stale and disagreeing entries;
@@ -102,4 +102,9 @@ The 6 FIL records were fed to #246's `ingest_traitbank_records` with #246's own 
    - `firecrawl-acquisition` is absent from the Brain and frontend mirrors.
    - Naming them is a governance and capability-registry decision.
 5. **Packet producer.** The canonical `oc-verification-handoff-v1` producer is Brain-side (#224 / #239, unmerged). FIL's packets are labelled `producer: fil-001b-offline-fixture-chain`.
-6. **Owner-gated items.** Any production persistence, real-literature ingestion, taxonomy activation or unattended lane execution remains owner-gated. None is enabled here.
+6. **Import-time database contact (pre-existing, owned by the candidate-knowledge lane).**
+   - `app/candidate_knowledge/dependencies.py` builds a repository from `DATABASE_URL` when it is imported. It is reached through `brain_candidate_handoff`, which the existing bridge imports.
+   - This was observed in CI as a refused connection to the conftest placeholder URL.
+   - FIL now imports the bridge lazily. Describing, planning and governing FIL plans never touch it (tested in a subprocess). Only running the Calyx step reaches it, exactly as the application does at startup.
+   - Run the offline chain without a production `DATABASE_URL` in the environment.
+7. **Owner-gated items.** Any production persistence, real-literature ingestion, taxonomy activation or unattended lane execution remains owner-gated. None is enabled here.
