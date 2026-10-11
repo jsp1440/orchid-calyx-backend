@@ -1,0 +1,43 @@
+name: IMAGE-INTEL-001
+
+on:
+  pull_request:
+    paths:
+      - 'runtime/reference_images.py'
+      - 'runtime/image_inventory.py'
+      - 'runtime/image_characters.py'
+      - 'runtime/reference_identification.py'
+      - 'runtime/image_training_partitions.py'
+      - 'runtime/image_evidence_graph.py'
+      - 'runtime/matrix_identification.py'
+      - 'runtime/image_staging.py'
+      - 'app/routers/image_intelligence.py'
+      - 'app/routers/reference_docs.py'
+      - 'tests/test_image_intelligence.py'
+      - 'docs/IMAGE-INTEL-001.md'
+      - '.github/workflows/image-intelligence-001.yml'
+
+permissions:
+  contents: read
+
+env:
+  FILES: >-
+    runtime/reference_images.py runtime/image_inventory.py runtime/image_characters.py
+    runtime/reference_identification.py runtime/image_training_partitions.py
+    runtime/image_evidence_graph.py app/routers/image_intelligence.py
+    tests/test_image_intelligence.py
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
+      - run: python -m ruff check $FILES
+      - run: python -m ruff format --check $FILES
+      - run: python -m pytest -q tests/test_image_intelligence.py tests/test_matrix_identification_mvp_001.py tests/test_app_main_router_registration.py
+      - run: python -m compileall -q $FILES
+      - run: git diff --check
