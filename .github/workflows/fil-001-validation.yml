@@ -18,6 +18,7 @@ on:
       - "app/reasoning_ledger/models.py"
       - "runtime/brain_capability_registry.py"
       - "runtime/knowledge_graph/canonical_taxonomy.py"
+      - "requirements-dev.txt"
       - ".github/workflows/fil-001-validation.yml"
 
 permissions:
@@ -31,7 +32,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: python -m pip install -r requirements.txt -r requirements-dev.txt jsonschema
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt
       - run: python -m ruff check app/functional_interaction tests/test_fil_001_contracts.py tests/test_fil_001_compatibility.py tests/test_fil_001_scientific_demo.py
       - run: python -m ruff format --check app/functional_interaction tests/test_fil_001_contracts.py tests/test_fil_001_compatibility.py tests/test_fil_001_scientific_demo.py
       - run: python -m compileall -q app/functional_interaction

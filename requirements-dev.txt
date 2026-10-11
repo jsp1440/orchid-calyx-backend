@@ -25,3 +25,7 @@ pytest==9.1.1
 # Filed by work discovery as #1592 and proved by the deterministic lane in run
 # 36043971382: calyx-async-acceptance exit 1, 26 failed, 12 passed.
 pytest-asyncio==1.4.0
+# Validates generated records against the JSON Schemas in contracts/ (FIL-001
+# tests import it). Without it the changed-file pytest step of
+# orchid-autonomous-validation.yml fails at collection.
+jsonschema==4.26.0
