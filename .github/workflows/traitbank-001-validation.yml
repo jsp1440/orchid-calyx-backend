@@ -1,0 +1,83 @@
+name: TRAITBANK-001 Validation
+
+on:
+  pull_request:
+    paths:
+      - 'app/traitbank/**'
+      - 'app/routers/health.py'
+      - 'contracts/traitbank_v1.json'
+      - 'contracts/brain/OAO_Term_Registry.csv'
+      - 'migrations/20261011_oc_traitbank_v1.sql'
+      - 'tests/test_traitbank_contract_and_validation.py'
+      - 'tests/test_traitbank_postgres.py'
+      - 'tests/fixtures/traitbank/**'
+      - 'docs/TRAITBANK-001.md'
+      - '.github/workflows/traitbank-001-validation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: traitbank_test
+          POSTGRES_PASSWORD: traitbank_test_only
+          POSTGRES_DB: traitbank_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U traitbank_test -d traitbank_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PYTHONPATH: .
+      TRAITBANK_TEST_DATABASE_URL: postgresql://traitbank_test:traitbank_test_only@localhost:5432/traitbank_test
+      # An absent or unusable database fails this job instead of skipping it.
+      TRAITBANK_REQUIRE_POSTGRES: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install validation dependencies
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt httpx
+      - name: Compile, lint and format
+        run: |
+          python -m compileall -q app/traitbank tests/test_traitbank_contract_and_validation.py tests/test_traitbank_postgres.py
+          python -m ruff check app/traitbank app/routers/health.py tests/test_traitbank_contract_and_validation.py tests/test_traitbank_postgres.py
+          python -m ruff format --check app/traitbank tests/test_traitbank_contract_and_validation.py tests/test_traitbank_postgres.py
+      - name: Contract, validation, provenance and privacy tests
+        run: python -m pytest -q tests/test_traitbank_contract_and_validation.py
+      - name: PostgreSQL-backed integration tests
+        run: python -m pytest -q tests/test_traitbank_postgres.py
+      - name: Controlled ingestion rehearsal (source -> normalize -> store -> query)
+        shell: bash
+        run: |
+          set -euo pipefail
+          export TRAITBANK_DATABASE_URL="$TRAITBANK_TEST_DATABASE_URL"
+          psql "$TRAITBANK_DATABASE_URL" -v ON_ERROR_STOP=1 -q <<'SQL'
+          DROP SCHEMA IF EXISTS oc_traitbank CASCADE;
+          CREATE TABLE IF NOT EXISTS public.orchid_taxonomy (id bigint PRIMARY KEY, scientific_name text NOT NULL, genus text);
+          INSERT INTO public.orchid_taxonomy VALUES (990000002, 'Angraecum sesquipedale', 'Angraecum') ON CONFLICT DO NOTHING;
+          SQL
+          psql "$TRAITBANK_DATABASE_URL" -v ON_ERROR_STOP=1 -q -f migrations/20261011_oc_traitbank_v1.sql
+          python -m app.traitbank.cli load-definitions --apply
+          python -m app.traitbank.cli normalize-paper tests/fixtures/traitbank/darwin_1862_paper_knowledge.json > "$RUNNER_TEMP/batch.json"
+          python -m app.traitbank.cli ingest "$RUNNER_TEMP/batch.json" | tee "$RUNNER_TEMP/dry.json"
+          grep -q '"state": "DRY_RUN_OK"' "$RUNNER_TEMP/dry.json"
+          python -m app.traitbank.cli ingest "$RUNNER_TEMP/batch.json" --apply --ingested-by ci-rehearsal | tee "$RUNNER_TEMP/apply.json"
+          grep -q '"state": "INGESTED"' "$RUNNER_TEMP/apply.json"
+          python -m app.traitbank.cli ingest "$RUNNER_TEMP/batch.json" --apply --ingested-by ci-rehearsal | tee "$RUNNER_TEMP/again.json"
+          grep -q '"state": "ALREADY_INGESTED"' "$RUNNER_TEMP/again.json"
+          test "$(psql "$TRAITBANK_DATABASE_URL" -tAc 'select count(*) from oc_traitbank.assertions')" = 1
+      - name: Governance smoke
+        run: |
+          ! grep -REq 'INSERT INTO[[:space:]]+oc_graph|UPDATE[[:space:]]+oc_graph|DELETE FROM[[:space:]]+oc_graph' app/traitbank migrations/20261011_oc_traitbank_v1.sql
+          ! grep -REq '@router\.(post|put|patch|delete)' app/traitbank/routes.py
+          ! grep -Eq 'or 0\.5|confidence[[:space:]]*=[[:space:]]*0\.5' app/traitbank/*.py
