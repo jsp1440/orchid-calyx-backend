@@ -10,6 +10,7 @@ from app.application_certification.routes import (
     router as application_certification_router,
 )
 from app.atlas_intelligence.api import router as atlas_intelligence_router
+from app.atlas_intelligence.explorer import router as atlas_explorer_router
 from app.brain.routes import router as brain_router
 from app.calyx_conversation.store import ConversationStoreUnavailable
 from app.candidate_knowledge.routes import router as candidate_knowledge_router
@@ -639,6 +640,7 @@ app.include_router(review_api_router)
 app.include_router(engineering_memory_router)
 app.include_router(vision_lexicon_router)
 app.include_router(atlas_intelligence_router)
+app.include_router(atlas_explorer_router)
 app.include_router(mission_control_briefing_router)
 app.include_router(mission_control_release_router)
 app.include_router(executive_telemetry_router)
