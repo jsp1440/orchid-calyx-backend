@@ -59,7 +59,7 @@ B-tree index is the recommended access path.
 ### Locality invariants
 
 - Every point passes through `locality.resolve_location(..., access="public")`, a port of
-  the frontend's `atlasLocalitySafety.ts`; `contracts/atlas_locality_policy_vectors_v1.json`
+  the frontend's `atlasLocalitySafety.ts`; `tests/fixtures/atlas_locality_policy_vectors_v1.json` (canonical copy in the Brain `contracts/`)
   holds parity vectors generated from the TypeScript implementation.
 - Free-text locality, full event date, and `references` are withheld whenever a threat or
   precaution cell applies.

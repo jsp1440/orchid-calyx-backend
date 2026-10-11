@@ -741,6 +741,13 @@ OTHER_APP_ENV: tuple[tuple[str, tuple[str, ...]], ...] = (
             "CALYX_SHOW_CREATE_TABLES",
         ),
     ),
+    (
+        "Atlas Explorer occurrence source (app/atlas_intelligence/occurrences.py); owner-configured, and when unset the Atlas occurrence routes report source_not_configured and serve no records.",
+        (
+            "ATLAS_OCCURRENCE_RELATION",
+            "ATLAS_OCCURRENCE_USE_POSTGIS",
+        ),
+    ),
 )
 OTHER_APP_ENV_NAMES: tuple[str, ...] = tuple(
     n for _, names in OTHER_APP_ENV for n in names

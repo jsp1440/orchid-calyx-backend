@@ -66,7 +66,7 @@ def _service(records: list[OccurrenceRecord]) -> OccurrenceService:
 
 def _vectors() -> list[dict]:
     return json.loads(
-        (CONTRACTS / "atlas_locality_policy_vectors_v1.json").read_text()
+        (Path(__file__).resolve().parent / "fixtures" / "atlas_locality_policy_vectors_v1.json").read_text()
     )["vectors"]
 
 

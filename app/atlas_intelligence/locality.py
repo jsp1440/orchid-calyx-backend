@@ -3,7 +3,7 @@
 This is a deliberate port of the canonical frontend rule in
 ``orchid-continuum-frontend/src/lib/atlasLocalitySafety.ts`` so that the API
 never relies on a browser to protect a sensitive site. The two implementations
-share the parity vectors in ``contracts/atlas_locality_policy_vectors_v1.json``;
+share the parity vectors in ``tests/fixtures/atlas_locality_policy_vectors_v1.json`` (canonical copy: Brain ``contracts/``);
 a change to either side must keep those vectors passing.
 
 Rules (fail closed):
