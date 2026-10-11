@@ -119,7 +119,16 @@ def test_authentication_owner_spoof_and_protocol_rejection_do_not_write(engine):
 
 
 @pytest.mark.parametrize(
-    "failure", ["role", "test_executor", "admission", "dependency"]
+    "failure",
+    [
+        "role",
+        "test_executor",
+        "admission",
+        "mutating",
+        "metadata_mismatch",
+        "input_mismatch",
+        "dependency",
+    ],
 )
 def test_real_producer_rejects_unsupported_work_before_persistence(engine, failure):
     body = payload()
@@ -129,11 +138,18 @@ def test_real_producer_rejects_unsupported_work_before_persistence(engine, failu
         body["metadata"][0]["role_key"] = "autonomy_probe"
     elif failure == "admission":
         body["admissions"][0]["merge_requested"] = True
+    elif failure == "mutating":
+        body["metadata"][0]["mutating"] = True
+    elif failure == "metadata_mismatch":
+        body["metadata"][0]["build_id"] = "MISMATCHED-BUILD"
+    elif failure == "input_mismatch":
+        body["inputs"] = {}
     else:
         body["dependencies"] = [["missing-build", "R1-BUILD-A"]]
     result = post(client(engine), body)
     assert result.status_code == 409, result.text
     with Session(engine) as db:
+        assert db.scalar(select(func.count()).select_from(CalyxProgram)) == 0
         assert db.scalar(select(func.count()).select_from(CalyxProgramJob)) == 0
 
 
