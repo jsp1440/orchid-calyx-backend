@@ -420,8 +420,7 @@ def runner_health():
         "active_mode": ACTIVE_MODE,
         "mode": "build_046_scientific_priority_realignment",
         "runtime_mode": config["worker_mode"],
-        "blockers": config["blockers"],
-        "deployment_actions": config["deployment_actions"],
+        "autonomous_runtime_blocker": autonomous_runtime_config_blocker(),
         "configuration": config,
         "runtime_engine": runtime_engine.status(),
         "allowedActions": runner_allowed_actions(),
@@ -489,10 +488,10 @@ def autonomous_cycle():
 
 @app.post("/api/runner/start", dependencies=RUNTIME_WRITE_AUTH)
 def start_runtime(request: RunnerConfirmRequest | None = None):
-    if not request.confirm:
+    if request is None:
         request = RunnerConfirmRequest()
-    decision = evaluate_runtime_action("start_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
     if not request.confirm:
+        decision = evaluate_runtime_action("start_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
@@ -508,10 +507,10 @@ def start_runtime(request: RunnerConfirmRequest | None = None):
 
 @app.post("/api/runner/stop", dependencies=RUNTIME_WRITE_AUTH)
 def stop_runtime(request: RunnerConfirmRequest | None = None):
-    if not request.confirm:
+    if request is None:
         request = RunnerConfirmRequest()
-    decision = evaluate_runtime_action("stop_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
     if not request.confirm:
+        decision = evaluate_runtime_action("stop_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
@@ -526,10 +525,10 @@ def stop_runtime(request: RunnerConfirmRequest | None = None):
 
 @app.post("/api/runner/restart", dependencies=RUNTIME_WRITE_AUTH)
 def restart_runtime(request: RunnerConfirmRequest | None = None):
-    if not request.confirm:
+    if request is None:
         request = RunnerConfirmRequest()
-    decision = evaluate_runtime_action("restart_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
     if not request.confirm:
+        decision = evaluate_runtime_action("restart_runtime", requested_autonomy_level=int(AutonomyLevel.OWNER_APPROVAL_REQUIRED))
         return {
             "status": "awaiting_owner",
             "decision": decision["decision"],
