@@ -1,0 +1,80 @@
+{
+  "fixture_id": "fil-001-scientific-demo",
+  "fixture_notice": "Synthetic FIL-001 dry-run fixture. Every taxon, passage, document and value is invented for contract testing. It is not scientific evidence and must never be ingested, cited, promoted or published.",
+  "as_of": "2026-10-11T00:00:00+00:00",
+  "taxonomy": {
+    "release_label": "fil-001-fixture-backbone",
+    "load_rows": [
+      {"name": "Fixtureia alpha Fixt.", "taxon_code": "S"},
+      {"name": "Fixtureia delta Fixt.", "taxon_code": "S"}
+    ],
+    "synonym_rows": [
+      {
+        "input_match_name": "Fixtureia beta",
+        "accepted_match_name": "Fixtureia alpha",
+        "input_name": "Fixtureia beta Demo",
+        "relationship": "synonym"
+      }
+    ]
+  },
+  "passages": [
+    {
+      "source_document_id": "fixture-doc-001",
+      "source_object_id": 1,
+      "revision_id": 1,
+      "extraction_run_id": 1,
+      "anchor_id": 101,
+      "subject": "Fixtureia alpha",
+      "text": "In the fixture garden Fixtureia alpha flowers in summer."
+    },
+    {
+      "source_document_id": "fixture-doc-002",
+      "source_object_id": 2,
+      "revision_id": 2,
+      "extraction_run_id": 1,
+      "anchor_id": 201,
+      "subject": "Fixtureia beta",
+      "text": "Fixtureia beta flowers in winter."
+    },
+    {
+      "source_document_id": "fixture-doc-003",
+      "source_object_id": 3,
+      "revision_id": 3,
+      "extraction_run_id": 1,
+      "anchor_id": 301,
+      "subject": "Fixtureia delta",
+      "text": "Fixtureia delta is characterized by fixture trait omega."
+    },
+    {
+      "source_document_id": "fixture-doc-004",
+      "source_object_id": 4,
+      "revision_id": 4,
+      "extraction_run_id": 1,
+      "anchor_id": 401,
+      "subject": "Imaginaria nulla",
+      "text": "Imaginaria nulla flowers in spring."
+    },
+    {
+      "source_document_id": "fixture-doc-005",
+      "source_object_id": 5,
+      "revision_id": 5,
+      "extraction_run_id": 1,
+      "anchor_id": 501,
+      "subject": "Fixtureia delta",
+      "text": "This invented passage contains no extractable statement."
+    }
+  ],
+  "expected": {
+    "plan_steps": [
+      "fil.literature.claim-transducer",
+      "fil.taxonomy.backbone-adaptor",
+      "fil.evidence.candidate-validator",
+      "fil.traitbank.candidate-buffer",
+      "fil.reasoning.ledger-integrator"
+    ],
+    "trait_candidates": 3,
+    "withheld_claims": {"fixture-doc-004:401:0": "TAXON_UNRESOLVED"},
+    "contradictory_groups": [["Fixtureia alpha", "phenology"]],
+    "passages_without_claims": ["fixture-doc-005"]
+  }
+}

@@ -1,0 +1,391 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchid-continuum/contracts/oc-fil-capability-descriptor.v1.json",
+  "title": "oc.fil.capability-descriptor.v1",
+  "description": "FIL-001 OWL-S-style profile (inputs, outputs, preconditions, effects, authority) of one EXISTING function. A description, not a registration: registry_capability must already be classified in app/provider_reservoir/capabilities.py. Grants no execution authority.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "capability_id",
+    "version",
+    "operator_class",
+    "registry_capability",
+    "provider_required",
+    "brain_capability_id",
+    "summary",
+    "implementation",
+    "inputs",
+    "outputs",
+    "preconditions",
+    "effects",
+    "permissions",
+    "autonomy_class",
+    "budget",
+    "provenance",
+    "triggers",
+    "emits",
+    "health"
+  ],
+  "properties": {
+    "schema": {
+      "const": "oc.fil.capability-descriptor.v1"
+    },
+    "capability_id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)$"
+    },
+    "operator_class": {
+      "enum": [
+        "receptor",
+        "scanner",
+        "transducer",
+        "enzyme",
+        "transporter",
+        "adaptor",
+        "integrator",
+        "modulator",
+        "switch",
+        "oscillator",
+        "buffer",
+        "amplifier",
+        "validator",
+        "inhibitor",
+        "repair_operator"
+      ]
+    },
+    "registry_capability": {
+      "type": "string",
+      "minLength": 1
+    },
+    "provider_required": {
+      "type": "boolean"
+    },
+    "brain_capability_id": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1
+    },
+    "implementation": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "inputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "semantic_type",
+          "evidence_states",
+          "schema_ref",
+          "description"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          "semantic_type": {
+            "type": "string",
+            "pattern": "^oc:[A-Z][A-Za-z0-9]*$"
+          },
+          "evidence_states": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "ABSENT",
+                "AVAILABLE",
+                "CONTRADICTORY",
+                "PROVISIONAL",
+                "REJECTED",
+                "SUPERSEDED",
+                "UNAVAILABLE",
+                "UNKNOWN",
+                "VERIFIED",
+                "WITHHELD"
+              ]
+            }
+          },
+          "schema_ref": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "description": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "allOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "semantic_type",
+              "evidence_states",
+              "schema_ref",
+              "description"
+            ],
+            "properties": {
+              "name": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]*$"
+              },
+              "semantic_type": {
+                "type": "string",
+                "pattern": "^oc:[A-Z][A-Za-z0-9]*$"
+              },
+              "evidence_states": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "ABSENT",
+                    "AVAILABLE",
+                    "CONTRADICTORY",
+                    "PROVISIONAL",
+                    "REJECTED",
+                    "SUPERSEDED",
+                    "UNAVAILABLE",
+                    "UNKNOWN",
+                    "VERIFIED",
+                    "WITHHELD"
+                  ]
+                }
+              },
+              "schema_ref": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "description": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "properties": {
+              "evidence_states": {
+                "not": {
+                  "contains": {
+                    "const": "VERIFIED"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "effects": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "allOf": [
+          {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9_]*$"
+          },
+          {
+            "not": {
+              "enum": [
+                "scientifically_published",
+                "knowledge_promoted",
+                "taxonomy_activated",
+                "production_mutated",
+                "evidence_verified"
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "permissions": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "autonomy_class": {
+      "enum": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider_calls_max",
+        "cost_units_max",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "provider_calls_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_units_max": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout_seconds": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requires_upstream_chain",
+        "preserves_chain",
+        "requires_source_anchor"
+      ],
+      "properties": {
+        "requires_upstream_chain": {
+          "type": "boolean"
+        },
+        "preserves_chain": {
+          "type": "boolean"
+        },
+        "requires_source_anchor": {
+          "type": "boolean"
+        }
+      }
+    },
+    "triggers": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "emits": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string"
+      }
+    },
+    "health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "evidence",
+        "failure_reasons"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "OPERATIONAL",
+            "IMPLEMENTED_NOT_INTEGRATED",
+            "PARTIAL",
+            "DOCUMENTED_ONLY",
+            "ABSENT",
+            "BLOCKED"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "failure_reasons": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Z0-9_:]+$"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "autonomy_class": {
+            "const": "A"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider_required": {
+            "const": false
+          },
+          "permissions": {
+            "items": {
+              "enum": [
+                "read_only_research",
+                "candidate_generation"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "provider_required": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "budget": {
+            "properties": {
+              "provider_calls_max": {
+                "const": 0
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

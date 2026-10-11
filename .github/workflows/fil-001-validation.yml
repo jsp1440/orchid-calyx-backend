@@ -1,0 +1,39 @@
+name: FIL-001 Functional Interaction Layer validation
+
+on:
+  pull_request:
+    paths:
+      - "app/functional_interaction/**"
+      - "contracts/oc-fil-*.v1.json"
+      - "tests/test_fil_001_*.py"
+      - "tests/fixtures/functional_interaction/**"
+      - "docs/fil/**"
+      - "app/provider_reservoir/capabilities.py"
+      - "app/calyx_orchestrator/executor.py"
+      - "app/calyx_orchestrator/service.py"
+      - "app/scientific_observability/models.py"
+      - "app/research_traits/service.py"
+      - "app/candidate_knowledge/**"
+      - "app/evidence_aggregation/**"
+      - "app/reasoning_ledger/models.py"
+      - "runtime/brain_capability_registry.py"
+      - "runtime/knowledge_graph/canonical_taxonomy.py"
+      - ".github/workflows/fil-001-validation.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt -r requirements-dev.txt jsonschema
+      - run: python -m ruff check app/functional_interaction tests/test_fil_001_contracts.py tests/test_fil_001_compatibility.py tests/test_fil_001_scientific_demo.py
+      - run: python -m ruff format --check app/functional_interaction tests/test_fil_001_contracts.py tests/test_fil_001_compatibility.py tests/test_fil_001_scientific_demo.py
+      - run: python -m compileall -q app/functional_interaction
+      - run: python -m pytest -q tests/test_fil_001_contracts.py tests/test_fil_001_compatibility.py tests/test_fil_001_scientific_demo.py
+      - run: git diff --check
