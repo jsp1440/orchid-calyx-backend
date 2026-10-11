@@ -261,3 +261,35 @@ Requirement 4 above has one concrete value: programs submitted with the backend 
 owned by `backend_api_key`, so the worker must run with
 `CALYX_PROGRAM_AUTONOMY_OWNER=backend_api_key` to claim them. Activation procedure and
 configuration: Brain `14_ENGINEERING/BRAIN-CALYX-AUTONOMY-PULSE.md`.
+
+## Release-candidate convergence (2026-10-11)
+
+#1806 now targets `oc-autonomous-integration` and carries all of #1795 plus the Brain-driven
+acceptance, so it is the single Calyx release-candidate PR.
+
+**Inherited breakage repaired.** A full-suite comparison against the base `4a2b48d` found
+8 failures and 12 errors that already existed at #1795's head. #1795's CI runs only changed test
+files, so it never ran them. All were stale test fixtures or contracts; no production code changed:
+- GitHub fakes lacked `created_at` and the paginated comment-history endpoint now read by settlement.
+- The wave simulation's deterministic clock was not passed to `settle_worker`.
+- Workflow-text assertions still targeted inline shell that #1795 moved into `oc_swarm_settlement`.
+  They now pin the delegation, plus behavioral checks: a repair-backoff claim is refused with no
+  writes, and a blocked result records `OC-BLOCKED-ON`.
+
+After the repair, the RC's full-suite failures equal the base's (environment-only: the scipy pin,
+psql-CLI migration proofs, validation-command proofs).
+
+**Promotion preview against `main`.** Merging `main` into the RC produces 9 conflicts. The same 9
+conflict without any autonomy change: pre-existing integration/`main` drift. Resolution:
+- Ledger, Firecrawl, refiller and steward files: integration side. `main`'s commits backport
+  integration's own code, and integration's `_as_utc` supersedes `_aware_utc`.
+- Swarm controller: combined, keeping `main`'s scheduled controller routing and summary outputs.
+
+The merged tree passes the ten-cycle acceptance (31/31). Its only additional full-suite failures
+are 4 swarm-controller contract tests that **also fail on `main` itself**: `main`'s #1726 replaced
+the event-revision pinning and `GITHUB_REF` edit guard without updating them. Before promotion the
+owner must choose one scheduled-controller design (integration-head checkout as on `main`, or
+event-revision pinning as on integration); the tests then follow that choice.
+
+**Hosted acceptance** (`brain-calyx-autonomy-acceptance.yml`) fails closed until the Calyx
+repository has an `OC_BRAIN_READ_TOKEN` secret. The first hosted run reported exactly that.
