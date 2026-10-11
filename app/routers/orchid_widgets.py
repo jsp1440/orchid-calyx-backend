@@ -29,6 +29,50 @@ BLOCKED_MEDIA_RE = re.compile(
     re.IGNORECASE,
 )
 
+GENUS_MEDIA_SQL = text("""
+    SELECT
+        i.id AS image_id,
+        i.taxonomy_id,
+        t.scientific_name,
+        t.genus,
+        i.image_url,
+        i.image_source,
+        i.image_license,
+        i.image_rights_holder,
+        i.observer_name,
+        i.gbif_occurrence_key,
+        i.image_type,
+        i.image_description,
+        i.alt_text,
+        i.is_duplicate
+    FROM public.orchid_images AS i
+    JOIN public.orchid_taxonomy AS t ON t.id = i.taxonomy_id
+    WHERE lower(t.genus) = lower(:genus)
+      AND i.image_url IS NOT NULL
+      AND NULLIF(trim(COALESCE(i.image_source, '')), '') IS NOT NULL
+      AND COALESCE(i.is_duplicate, false) = false
+      AND COALESCE(lower(i.image_source), '') NOT LIKE '%inaturalist%'
+    ORDER BY
+      CASE
+        WHEN lower(COALESCE(i.image_source, '')) LIKE '%eol%' THEN 0
+        WHEN lower(COALESCE(i.image_source, '')) LIKE '%gbif%' THEN 1
+        ELSE 2
+      END,
+      i.id ASC
+    LIMIT :scan_limit
+""")
+
+
+def _empty_exclusion_counts() -> dict[str, int]:
+    return {
+        "herbarium_or_specimen": 0,
+        "illustration_or_plate": 0,
+        "document_or_scan": 0,
+        "missing_taxon_link": 0,
+        "unapproved_or_low_confidence": 0,
+        "missing_usable_url": 0,
+    }
+
 
 def _allow_frontend_origin(request: Request, response: Response) -> None:
     """Allow the public Orchid Continuum frontend to read this JSON response.
@@ -69,6 +113,88 @@ def _record_url(source: str | None, occurrence_key: str | None) -> str | None:
     if source and occurrence_key and "gbif" in source.lower():
         return f"https://www.gbif.org/occurrence/{occurrence_key}"
     return None
+
+
+def select_approved_genus_media(
+    rows: list[dict[str, Any]],
+    *,
+    limit: int,
+    exclusion_counts: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Filter canonical media rows into the approved Featured Genus gallery.
+
+    This is the single selection policy for every Featured Genus surface: the
+    `/api/media/genus/{genus}` endpoint and the featured-genus profile composer
+    both call it, so the two can never drift into divergent ideas of what an
+    approved photograph is. One photograph per species, no repeated URLs, no
+    herbarium sheets / plates / document scans, provenance fields mandatory.
+    """
+    items: list[dict[str, Any]] = []
+    seen_urls: set[str] = set()
+    seen_species: set[str] = set()
+    for row in rows:
+        text_fields = " ".join(
+            str(row.get(key) or "")
+            for key in ("image_type", "image_description", "alt_text", "image_url")
+        )
+        if BLOCKED_MEDIA_RE.search(text_fields):
+            if re.search(r"illustration|plate|drawing|lineart", text_fields, re.IGNORECASE):
+                exclusion_counts["illustration_or_plate"] += 1
+            elif re.search(r"pdf|tif|tiff|djvu|docx?|csv|txt", text_fields, re.IGNORECASE):
+                exclusion_counts["document_or_scan"] += 1
+            else:
+                exclusion_counts["herbarium_or_specimen"] += 1
+            continue
+
+        url = _safe_url(row.get("image_url"))
+        if not url:
+            exclusion_counts["missing_usable_url"] += 1
+            continue
+        if url in seen_urls:
+            continue
+        species_key = str(row.get("scientific_name") or "").strip().lower()
+        if species_key and species_key in seen_species:
+            continue
+        seen_urls.add(url)
+        if species_key:
+            seen_species.add(species_key)
+
+        source_name = str(row.get("image_source") or "").strip()
+        items.append(
+            {
+                "media_id": f"oc-image:{row['image_id']}",
+                "taxon_id": str(row["taxonomy_id"]),
+                "scientific_name": str(row["scientific_name"]),
+                "genus": str(row["genus"]),
+                "image_url": url,
+                "thumbnail_url": url,
+                "source_name": source_name,
+                "source_record_url": _record_url(source_name, row.get("gbif_occurrence_key")),
+                "license": row.get("image_license") or None,
+                "attribution": row.get("image_rights_holder") or row.get("observer_name") or None,
+                "media_kind": "photograph",
+                "quality_score": None,
+            }
+        )
+        if len(items) >= limit:
+            break
+    return items
+
+
+def query_approved_genus_media(conn: Any, genus: str, *, limit: int) -> dict[str, Any]:
+    """Run the canonical Featured Genus media selection against a connection.
+
+    Shared by the media endpoint and the profile composer. Returns the
+    selected items plus the exclusion accounting that makes every rejection
+    inspectable.
+    """
+    exclusion_counts = _empty_exclusion_counts()
+    rows = conn.execute(
+        GENUS_MEDIA_SQL,
+        {"genus": genus, "scan_limit": max(limit * 12, 120)},
+    ).mappings().all()
+    items = select_approved_genus_media(rows, limit=limit, exclusion_counts=exclusion_counts)
+    return {"items": items, "exclusion_counts": exclusion_counts}
 
 
 @router.options("/media/genus/{genus}")
@@ -138,52 +264,12 @@ def genus_media(
     """
     _allow_frontend_origin(request, response)
     accepted_genus = _normalize_genus(genus)
-    exclusion_counts = {
-        "herbarium_or_specimen": 0,
-        "illustration_or_plate": 0,
-        "document_or_scan": 0,
-        "missing_taxon_link": 0,
-        "unapproved_or_low_confidence": 0,
-        "missing_usable_url": 0,
-    }
 
     taxonomy_sql = text("""
         SELECT 1
         FROM public.orchid_taxonomy
         WHERE lower(genus) = lower(:genus)
         LIMIT 1
-    """)
-    media_sql = text("""
-        SELECT
-            i.id AS image_id,
-            i.taxonomy_id,
-            t.scientific_name,
-            t.genus,
-            i.image_url,
-            i.image_source,
-            i.image_license,
-            i.image_rights_holder,
-            i.observer_name,
-            i.gbif_occurrence_key,
-            i.image_type,
-            i.image_description,
-            i.alt_text,
-            i.is_duplicate
-        FROM public.orchid_images AS i
-        JOIN public.orchid_taxonomy AS t ON t.id = i.taxonomy_id
-        WHERE lower(t.genus) = lower(:genus)
-          AND i.image_url IS NOT NULL
-          AND NULLIF(trim(COALESCE(i.image_source, '')), '') IS NOT NULL
-          AND COALESCE(i.is_duplicate, false) = false
-          AND COALESCE(lower(i.image_source), '') NOT LIKE '%inaturalist%'
-        ORDER BY
-          CASE
-            WHEN lower(COALESCE(i.image_source, '')) LIKE '%eol%' THEN 0
-            WHEN lower(COALESCE(i.image_source, '')) LIKE '%gbif%' THEN 1
-            ELSE 2
-          END,
-          i.id ASC
-        LIMIT :scan_limit
     """)
 
     try:
@@ -196,65 +282,17 @@ def genus_media(
                     "accepted_genus": None,
                     "generated_at": datetime.now(timezone.utc).isoformat(),
                     "items": [],
-                    "summary": {"eligible_count": 0, "returned_count": 0, "exclusion_counts": exclusion_counts},
+                    "summary": {
+                        "eligible_count": 0,
+                        "returned_count": 0,
+                        "exclusion_counts": _empty_exclusion_counts(),
+                    },
                 }
-            rows = conn.execute(
-                media_sql,
-                {"genus": accepted_genus, "scan_limit": max(limit * 12, 120)},
-            ).mappings().all()
+            selection = query_approved_genus_media(conn, accepted_genus, limit=limit)
     except Exception as exc:
         raise HTTPException(status_code=500, detail="Unable to query canonical Orchid Continuum media.") from exc
 
-    items: list[dict[str, Any]] = []
-    seen_urls: set[str] = set()
-    seen_species: set[str] = set()
-    for row in rows:
-        text_fields = " ".join(
-            str(row.get(key) or "")
-            for key in ("image_type", "image_description", "alt_text", "image_url")
-        )
-        if BLOCKED_MEDIA_RE.search(text_fields):
-            if re.search(r"illustration|plate|drawing|lineart", text_fields, re.IGNORECASE):
-                exclusion_counts["illustration_or_plate"] += 1
-            elif re.search(r"pdf|tif|tiff|djvu|docx?|csv|txt", text_fields, re.IGNORECASE):
-                exclusion_counts["document_or_scan"] += 1
-            else:
-                exclusion_counts["herbarium_or_specimen"] += 1
-            continue
-
-        url = _safe_url(row.get("image_url"))
-        if not url:
-            exclusion_counts["missing_usable_url"] += 1
-            continue
-        if url in seen_urls:
-            continue
-        species_key = str(row.get("scientific_name") or "").strip().lower()
-        if species_key and species_key in seen_species:
-            continue
-        seen_urls.add(url)
-        if species_key:
-            seen_species.add(species_key)
-
-        source_name = str(row.get("image_source") or "").strip()
-        items.append(
-            {
-                "media_id": f"oc-image:{row['image_id']}",
-                "taxon_id": str(row["taxonomy_id"]),
-                "scientific_name": str(row["scientific_name"]),
-                "genus": str(row["genus"]),
-                "image_url": url,
-                "thumbnail_url": url,
-                "source_name": source_name,
-                "source_record_url": _record_url(source_name, row.get("gbif_occurrence_key")),
-                "license": row.get("image_license") or None,
-                "attribution": row.get("image_rights_holder") or row.get("observer_name") or None,
-                "media_kind": "photograph",
-                "quality_score": None,
-            }
-        )
-        if len(items) >= limit:
-            break
-
+    items = selection["items"]
     return {
         "status": "ok" if items else "no_approved_media",
         "requested_genus": genus,
@@ -264,6 +302,6 @@ def genus_media(
         "summary": {
             "eligible_count": len(items),
             "returned_count": len(items),
-            "exclusion_counts": exclusion_counts,
+            "exclusion_counts": selection["exclusion_counts"],
         },
     }
