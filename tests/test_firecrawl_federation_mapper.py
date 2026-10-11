@@ -29,3 +29,19 @@ def test_source_profile_does_not_invent_machine_readable_route():
 
     assert profile.api_download_hints == ()
     assert profile.preferred_ingestion.startswith("reconnaissance_only")
+
+
+def test_source_profile_strips_wfo_jsessionid_before_dedupe():
+    profile = build_source_profile(
+        source_id="wfo",
+        root_url="https://www.worldfloraonline.org/",
+        urls=[
+            "https://www.worldfloraonline.org/taxon/wfo-0000269982;jsessionid=ABC",
+            "https://www.worldfloraonline.org/taxon/wfo-0000269982;jsessionid=XYZ",
+        ],
+    )
+
+    assert profile.urls == (
+        "https://www.worldfloraonline.org/taxon/wfo-0000269982",
+    )
+    assert profile.candidate_identifiers["wfo_id"] == ("wfo-0000269982",)

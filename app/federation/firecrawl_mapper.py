@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 import os
 import re
 from typing import Any, Iterable, Mapping
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 
@@ -123,6 +123,13 @@ class FirecrawlFederationMapper:
         )
 
 
+def _canonicalize_url(url: str) -> str:
+    """Remove transient session state while preserving stable source identity."""
+    parsed = urlparse(url)
+    clean_path = parsed.path.split(";jsessionid=", 1)[0]
+    return urlunparse((parsed.scheme, parsed.netloc, clean_path, "", parsed.query, ""))
+
+
 def _extract_links(payload: Mapping[str, Any]) -> Iterable[str]:
     raw = payload.get("links")
     if raw is None and isinstance(payload.get("data"), Mapping):
@@ -139,7 +146,7 @@ def _extract_links(payload: Mapping[str, Any]) -> Iterable[str]:
         else:
             url = None
         if isinstance(url, str) and url.startswith(("http://", "https://")):
-            links.append(url)
+            links.append(_canonicalize_url(url))
     return tuple(dict.fromkeys(links))
 
 
