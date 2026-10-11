@@ -1,0 +1,9 @@
+# Offline taxon fixture for the scientific workflow.
+# taxon_id values are Orchid Continuum-local fixture identifiers, not production keys.
+# Names and authorships are nomenclatural facts (not copyrightable); synonyms list is
+# intentionally minimal and only supports resolver testing.
+taxon_id,accepted_name,authorship,family,synonyms
+oc-taxon:cypripedium-calceolus,Cypripedium calceolus,L.,Orchidaceae,
+oc-taxon:cattleya-labiata,Cattleya labiata,Lindl.,Orchidaceae,
+oc-taxon:vanda-coerulea,Vanda coerulea,Griff. ex Lindl.,Orchidaceae,
+oc-taxon:rhizanthella-gardneri,Rhizanthella gardneri,R.S.Rogers,Orchidaceae,

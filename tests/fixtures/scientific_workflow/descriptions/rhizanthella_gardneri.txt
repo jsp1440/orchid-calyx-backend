@@ -1,0 +1,10 @@
+---
+fixture_id: FIX-DESC-RHIGAR-001
+taxon_name: Rhizanthella gardneri R.S.Rogers
+source_type: synthetic_test_fixture
+rights_status: open_license
+attribution: Orchid Continuum scientific workflow test fixture, authored 2026-10-11
+license: CC0-1.0
+notes: Authored test fixture, not a published botanical description. Statements herein must not be promoted to verified scientific evidence. Morphology is described in conventional botanical language for extractor testing only.
+---
+Plants subterranean, mycoheterotrophic, lacking chlorophyll, with a fleshy horizontal rhizome; pseudobulbs absent and true leaves absent. Inflorescence a subterranean capitulum of numerous small flowers enclosed by large overlapping bracts. Flowers small, not resupinate, cleistogamous. Sepals and petals reduced, forming a short hood over the column. Labellum reduced, narrow, obscurely lobed, much smaller than the other perianth segments. Floral spur absent. Pollinia 4, in two pairs, without a distinct caudicle. Flowering May to June.

@@ -1,0 +1,10 @@
+---
+fixture_id: FIX-DESC-CATLAB-001
+taxon_name: Cattleya labiata Lindl.
+source_type: synthetic_test_fixture
+rights_status: open_license
+attribution: Orchid Continuum scientific workflow test fixture, authored 2026-10-11
+license: CC0-1.0
+notes: Authored test fixture, not a published botanical description. Statements herein must not be promoted to verified scientific evidence. Morphology is described in conventional botanical language for extractor testing only.
+---
+Plants epiphytic, with clavate pseudobulbs 10-25 cm long borne on a creeping rhizome. Leaf solitary, oblong, leathery, 15-25 cm long, arising from the apex of the pseudobulb. Inflorescence terminal, 2-5-flowered. Flowers resupinate, 12-18 cm across, rose-lilac. Sepals lanceolate; petals broadly elliptic. Labellum 3-lobed, the lateral lobes enclosing the column, the mid-lobe spreading with a crisped margin and a yellow throat marked with purple stripes. Floral spur absent. Pollinia 4, waxy, in two unequal pairs. Flowering in autumn.

@@ -1,0 +1,30 @@
+# OAO curated external accession subset used by the offline terminology service.
+# Derived from Orchid-Continuum-Brain branch discovery/oao-accession-resolution,
+# draft PR #230 (tools/oao_curated_resolution_table.csv), where every accession was
+# verified against the EBI OLS4 API on 2026-10-10. Reused verbatim for the orchid-
+# relevant rows; "extension_required"/"rejected" rows are kept because they are
+# explicit negative evidence and must not be silently dropped.
+role,candidate_key,accession,label,ontology,relation,status
+entity,labellum,FLOPO:0980978,orchid labellum,FLOPO,closeMatch,resolved_curated
+entity,labellum,BTO:0004875,labellum,BTO,none,rejected
+entity,gynostemium / column,,,,none,extension_required
+entity,floral spur / nectary,PO:0025511,petal spur,PO,broadMatch,resolved_curated
+entity,floral spur / nectary,PATO:0002540,spur shaped,PATO,closeMatch,resolved_curated
+entity,pollinium,,,,none,extension_required
+entity,pseudobulb,PO:0025355,corm,PO,none,rejected
+entity,velamen,PO:0006042,velamen,PO,exactMatch,resolved_curated
+entity,rostellum,,,,none,extension_required
+entity,viscidium,,,,none,extension_required
+quality,presence,PATO:0000467,present,PATO,closeMatch,resolved_curated
+quality,absence,PATO:0000462,absent,PATO,closeMatch,resolved_curated
+quality,count,PATO:0000070,amount,PATO,closeMatch,resolved_curated
+quality,length,PATO:0000122,length,PATO,exactMatch,resolved_curated
+quality,shape,PATO:0000052,shape,PATO,exactMatch,resolved_curated
+quality,lobation,PATO:0001979,lobed,PATO,closeMatch,resolved_curated
+state,elliptic,PATO:0000947,elliptic,PATO,exactMatch,resolved_curated
+state,oblong,PATO:0000946,oblong,PATO,exactMatch,resolved_curated
+state,obovate,PATO:0001936,obovate,PATO,exactMatch,resolved_curated
+state,ovate,PATO:0001891,ovate,PATO,exactMatch,resolved_curated
+state,lanceolate,PATO:0001877,lanceolate,PATO,exactMatch,resolved_curated
+state,saccate,,,,none,extension_required
+state,3-lobed,PATO:0001979,lobed,PATO,broadMatch,review_required

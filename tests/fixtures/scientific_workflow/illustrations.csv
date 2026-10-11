@@ -1,0 +1,20 @@
+# Illustration registry fixture for the Illustrated Glossary pathway.
+# status=available means a real, inspectable asset record exists with attribution;
+# status=needs_illustration means NO permitted image is on record and the glossary
+# entry must say so. No image is ever fabricated or implied.
+term_id,status,asset_ref,illustration_class,license,attribution,notes
+resupination,available,orchid-continuum-frontend:src/components/lexicon/Schematics.tsx#ResupinateComparison,D_conceptual_diagram,project_asset,"Famous AI Illustrated Orchid Lexicon schematic, preserved in the migrated Orchid Continuum frontend","Conceptual teaching schematic (Class D); not a measured specimen record."
+labellum,needs_illustration,,,,,"No permitted illustration on record."
+pseudobulb,needs_illustration,,,,,"No permitted illustration on record."
+pollinium,needs_illustration,,,,,"No permitted illustration on record."
+velamen,needs_illustration,,,,,"No permitted illustration on record."
+floral_spur,needs_illustration,,,,,"No permitted illustration on record."
+rostellum,needs_illustration,,,,,"No permitted illustration on record."
+viscidium,needs_illustration,,,,,"No permitted illustration on record."
+gynostemium,needs_illustration,,,,,"No permitted illustration on record."
+staminode,needs_illustration,,,,,"No permitted illustration on record."
+mycoheterotroph,needs_illustration,,,,,"No permitted illustration on record."
+cleistogamy,needs_illustration,,,,,"No permitted illustration on record."
+leaf,needs_illustration,,,,,"No permitted illustration on record."
+rhizome,needs_illustration,,,,,"No permitted illustration on record."
+inflorescence,needs_illustration,,,,,"No permitted illustration on record."

@@ -1,0 +1,10 @@
+---
+fixture_id: FIX-DESC-VANCOE-001
+taxon_name: Vanda coerulea Griff. ex Lindl.
+source_type: synthetic_test_fixture
+rights_status: open_license
+attribution: Orchid Continuum scientific workflow test fixture, authored 2026-10-11
+license: CC0-1.0
+notes: Authored test fixture, not a published botanical description. Statements herein must not be promoted to verified scientific evidence. Morphology is described in conventional botanical language for extractor testing only.
+---
+Plants monopodial epiphytes with an elongate leafy stem 30-60 cm tall; pseudobulbs absent. Leaves distichous, strap-shaped (lorate), leathery, 8-15 cm long, the apex obliquely bilobed. Inflorescence axillary, erect, 10-20-flowered. Flowers resupinate, 7-10 cm across, sky-blue with darker tessellated markings. Sepals and petals similar, obovate, shortly clawed. Labellum small, 3-lobed, spurred at the base; spur conical, 5-7 mm long. Pollinia 2, waxy, globose, borne on a short stipe with a single viscidium. Flowering September to November.

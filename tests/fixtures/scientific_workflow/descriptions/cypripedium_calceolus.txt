@@ -1,0 +1,10 @@
+---
+fixture_id: FIX-DESC-CYPCAL-001
+taxon_name: Cypripedium calceolus L.
+source_type: synthetic_test_fixture
+rights_status: open_license
+attribution: Orchid Continuum scientific workflow test fixture, authored 2026-10-11
+license: CC0-1.0
+notes: Authored test fixture, not a published botanical description. Statements herein must not be promoted to verified scientific evidence. Morphology is described in conventional botanical language for extractor testing only.
+---
+Plants terrestrial, 25-60 cm tall, with a leafy stem and fibrous roots; pseudobulbs absent. Leaves 3-5, elliptic to ovate-lanceolate, plicate, 6-18 cm long. Flower usually solitary, resupinate, fragrant. Sepals and petals maroon-purple, the petals twisted, 3-5 cm long. Labellum inflated, pouch-shaped (saccate), bright yellow, 20-35 mm long, with an inrolled margin. Floral spur absent. Column short, bearing a conspicuous petaloid staminode; pollinia 4, granular, without caudicles. Flowering May to July.

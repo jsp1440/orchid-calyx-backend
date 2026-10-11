@@ -1,0 +1,10 @@
+---
+fixture_id: FIX-DESC-CATLAB-002
+taxon_name: Cattleya labiata Lindl.
+source_type: synthetic_test_fixture
+rights_status: open_license
+attribution: Orchid Continuum scientific workflow test fixture, authored 2026-10-11
+license: CC0-1.0
+notes: Authored conflicting-report test fixture. Deliberately contradicts FIX-DESC-CATLAB-001 on pollinia number so contradiction tracking can be exercised. Not a published observation.
+---
+Cultivated material examined flowered with pollinia 8, in four pairs of two.
