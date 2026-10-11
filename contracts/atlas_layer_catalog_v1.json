@@ -1,0 +1,202 @@
+{
+  "schema": "oc.atlas-layer-catalog.v1",
+  "description": "Canonical catalog of Atlas thematic layers. 'operational' layers are computed from the Atlas occurrence contract with no new acquisition. 'planned' layers are listed so the interface can say what is not yet available and why; they must never be drawn from invented or unlicensed data. Mirrored verbatim in orchid-calyx-backend/contracts and orchid-continuum-frontend/contracts.",
+  "status_vocabulary": {
+    "operational": "Computed from data the Atlas already holds; drawn on request.",
+    "operational_external": "Open, no-key public service rendered client-side with attribution. Availability depends on that service.",
+    "planned": "Scientifically supported but its source has not been acquired, licensed, or approved. Not drawn.",
+    "blocked": "Requires an owner decision, licence, or validated model before it can exist."
+  },
+  "layers": [
+    {
+      "layer_id": "occurrences",
+      "title": "Occurrence records",
+      "group": "biodiversity",
+      "status": "operational",
+      "geometry": "point",
+      "derivation": "Locality-safe projection of Atlas occurrence records (Darwin Core). Clusters at low zoom.",
+      "source": "Atlas occurrence contract (oc-atlas-occurrence-query-v1)",
+      "caveats": ["Records reflect collecting and observation effort, not true absence elsewhere.", "Threatened and unassessed records are generalised to grid cells."]
+    },
+    {
+      "layer_id": "occurrence-density",
+      "title": "Record density",
+      "group": "sampling",
+      "status": "operational",
+      "geometry": "heatmap",
+      "derivation": "Kernel density of locality-safe occurrence positions in the current view.",
+      "source": "Atlas occurrence contract",
+      "caveats": ["Density measures documentation effort as much as orchid abundance."]
+    },
+    {
+      "layer_id": "observed-richness",
+      "title": "Observed taxon richness",
+      "group": "biodiversity",
+      "status": "operational",
+      "geometry": "grid",
+      "derivation": "Count of distinct taxa per grid cell among loaded records.",
+      "source": "Atlas occurrence contract",
+      "caveats": ["Observed richness is a lower bound and is strongly sampling-biased.", "Not a modelled species-richness surface."]
+    },
+    {
+      "layer_id": "sampling-gaps",
+      "title": "Sampling effort",
+      "group": "sampling",
+      "status": "operational",
+      "geometry": "grid",
+      "derivation": "Records per grid cell; empty cells inside the view are unsampled, not orchid-free.",
+      "source": "Atlas occurrence contract",
+      "caveats": ["An empty cell is a knowledge gap, not evidence of absence."]
+    },
+    {
+      "layer_id": "record-age",
+      "title": "Historical vs recent records",
+      "group": "temporal",
+      "status": "operational",
+      "geometry": "point",
+      "derivation": "Records coloured by event year: before 1950, 1950–1999, 2000 and later, undated.",
+      "source": "Atlas occurrence contract",
+      "caveats": ["Historical presence does not establish current persistence."]
+    },
+    {
+      "layer_id": "conservation-assessment",
+      "title": "Conservation assessment",
+      "group": "conservation",
+      "status": "operational",
+      "geometry": "point",
+      "derivation": "Records coloured by the assessment the Continuum could resolve for the name: threatened, not threatened, unresolved.",
+      "source": "Atlas occurrence contract (iucnCategory, assessmentResolved)",
+      "caveats": ["Unresolved means no assessment was reachable, not that the taxon is safe."]
+    },
+    {
+      "layer_id": "terrain",
+      "title": "Terrain and hillshade",
+      "group": "earth",
+      "status": "operational_external",
+      "geometry": "raster-dem",
+      "derivation": "Terrarium-encoded elevation tiles rendered as hillshade and optional 3D terrain.",
+      "source": "AWS Open Data Terrain Tiles (Mapzen terrarium encoding)",
+      "license": "Open data; attribution per https://github.com/tilezen/joerd/blob/master/docs/attribution.md",
+      "caveats": ["Visual relief only; elevation values are not attached to occurrence records by this layer."]
+    },
+    {
+      "layer_id": "elevation-of-records",
+      "title": "Recorded elevation",
+      "group": "earth",
+      "status": "planned",
+      "geometry": "point",
+      "derivation": "Elevation stated on the source record, compared with a DEM sample.",
+      "source": "Requires elevation fields in the approved occurrence projection.",
+      "blocker": "Approved public-safe occurrence projection does not yet carry verbatim elevation."
+    },
+    {
+      "layer_id": "temperature",
+      "title": "Mean annual temperature",
+      "group": "climate",
+      "status": "planned",
+      "geometry": "raster",
+      "source": "WorldClim 2.1 (BIO1) or CHELSA",
+      "blocker": "Bulk raster acquisition and tile hosting require owner approval; no climate tiles are hosted."
+    },
+    {
+      "layer_id": "precipitation",
+      "title": "Annual precipitation",
+      "group": "climate",
+      "status": "planned",
+      "geometry": "raster",
+      "source": "WorldClim 2.1 (BIO12) or CHELSA",
+      "blocker": "Bulk raster acquisition and tile hosting require owner approval."
+    },
+    {
+      "layer_id": "climate-classification",
+      "title": "Köppen–Geiger climate",
+      "group": "climate",
+      "status": "planned",
+      "geometry": "raster",
+      "source": "Beck et al. 2023 Köppen–Geiger maps (CC BY 4.0)",
+      "blocker": "Raster acquisition and tile hosting require owner approval."
+    },
+    {
+      "layer_id": "habitat-vegetation",
+      "title": "Habitat and land cover",
+      "group": "ecology",
+      "status": "planned",
+      "geometry": "raster",
+      "source": "ESA WorldCover 10 m (CC BY 4.0)",
+      "blocker": "Tile hosting requires owner approval."
+    },
+    {
+      "layer_id": "endemism",
+      "title": "Endemism",
+      "group": "biodiversity",
+      "status": "blocked",
+      "geometry": "grid",
+      "source": "Requires accepted native-range data (e.g. WCVP distributions) reconciled to canonical taxon IDs.",
+      "blocker": "No reconciled native-range dataset; occurrence-only endemism would be misleading."
+    },
+    {
+      "layer_id": "protected-areas",
+      "title": "Protected areas",
+      "group": "conservation",
+      "status": "blocked",
+      "geometry": "polygon",
+      "source": "WDPA (Protected Planet)",
+      "blocker": "WDPA terms restrict redistribution and commercial use; owner licence review required."
+    },
+    {
+      "layer_id": "deforestation",
+      "title": "Tree-cover loss",
+      "group": "land-use",
+      "status": "planned",
+      "geometry": "raster",
+      "source": "Hansen/UMD Global Forest Change (CC BY 4.0)",
+      "blocker": "Tile hosting requires owner approval."
+    },
+    {
+      "layer_id": "pollinator-relationships",
+      "title": "Pollinator relationships",
+      "group": "interactions",
+      "status": "planned",
+      "geometry": "link",
+      "source": "Pollination Intelligence interaction records keyed to canonical taxon IDs.",
+      "blocker": "Interaction records are not yet georeferenced; shown as linked module context instead of a map layer."
+    },
+    {
+      "layer_id": "mycorrhizal-associations",
+      "title": "Mycorrhizal associations",
+      "group": "interactions",
+      "status": "planned",
+      "geometry": "link",
+      "source": "Literature-backed mycorrhizal association records.",
+      "blocker": "Associations are taxon-level, not site-level; shown as linked module context instead of a map layer."
+    },
+    {
+      "layer_id": "record-seasonality",
+      "title": "Record seasonality",
+      "group": "temporal",
+      "status": "operational",
+      "geometry": "chart",
+      "derivation": "Month of collection/observation for records in view.",
+      "source": "Atlas occurrence contract (month)",
+      "caveats": ["Event month is not flowering phenology unless the source states the plant was in flower."]
+    },
+    {
+      "layer_id": "environmental-suitability",
+      "title": "Environmental suitability",
+      "group": "models",
+      "status": "blocked",
+      "geometry": "raster",
+      "source": "Species distribution model outputs",
+      "blocker": "No validated distribution model exists; modelled surfaces must not be fabricated."
+    },
+    {
+      "layer_id": "future-climate",
+      "title": "Future climate scenarios",
+      "group": "models",
+      "status": "blocked",
+      "geometry": "raster",
+      "source": "CMIP6-downscaled climate (e.g. WorldClim future)",
+      "blocker": "Requires validated models and owner approval before any projection is shown."
+    }
+  ]
+}
