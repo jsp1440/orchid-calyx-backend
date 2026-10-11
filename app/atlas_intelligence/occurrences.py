@@ -720,8 +720,17 @@ class PostgresOccurrenceRepository:
             def _work(cur: Any) -> list[str] | None:
                 if cur is None:
                     return None
+                # pg_attribute, not information_schema.columns: the latter omits
+                # materialized views, which is the recommended projection shape.
                 cur.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_schema = %s AND table_name = %s",
+                    """
+                    SELECT a.attname AS column_name
+                    FROM pg_attribute a
+                    JOIN pg_class c ON c.oid = a.attrelid
+                    JOIN pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = %s AND c.relname = %s
+                      AND a.attnum > 0 AND NOT a.attisdropped
+                    """,
                     (schema, name),
                 )
                 return [str(row["column_name"]) for row in cur.fetchall()]

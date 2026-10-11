@@ -58,6 +58,21 @@ Set `ATLAS_OCCURRENCE_USE_POSTGIS=true` when the relation also has an indexed
 `geom geometry(Point, 4326)` column; otherwise a `(decimal_latitude, decimal_longitude)`
 B-tree index is the recommended access path.
 
+### Candidate source in the current database
+
+The repository's read-only production diagnostic
+(`docs/evidence/audit-measurement-002/integration-gap-diagnostic.json`) shows
+`public.orchid_occurrence` (580,612 rows; all 109,195 non-null `taxonomy_id`
+values resolve into `public.orchid_taxonomy`) is the only relation with the
+scale, coordinates and canonical taxon link the Atlas needs; `oc_atlas.occurrences`
+(26 rows) does not link to the canonical backbone. It lacks licence, dataset,
+uncertainty and conservation columns, which can only come from `raw_payload`.
+
+`docs/atlas-explorer/` holds an OWNER-APPLIED materialized view
+(`oc_atlas.public_occurrences_v1`) mapping it to this contract, a rollback, and
+`APPLY-ATLAS-PROJECTION.md`. Measure first with the read-only
+`scripts/diagnose_atlas_occurrence_projection.py`.
+
 ### Locality invariants
 
 - Every point passes through `locality.resolve_location(..., access="public")`, a port of
