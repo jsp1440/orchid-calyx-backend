@@ -1,5 +1,16 @@
 """Federated partner-source ingestion helpers."""
 
+from .comparison import compare_evidence_rows
+from .iospe import (
+    IOSPEReconciliationReport,
+    IOSPERecord,
+    IOSPETaxonResolution,
+    build_iospe_dry_run,
+    iospe_evidence_rows,
+    publish_iospe_evidence,
+    read_iospe_workbook,
+    reconcile_iospe_records,
+)
 from .yong_gee import (
     DEFAULT_SHEET,
     SOURCE_KIND,
@@ -32,4 +43,13 @@ __all__ = [
     "read_workbook",
     "reconcile_records",
     "scientific_name_from_row",
+    "IOSPEReconciliationReport",
+    "IOSPERecord",
+    "IOSPETaxonResolution",
+    "build_iospe_dry_run",
+    "iospe_evidence_rows",
+    "publish_iospe_evidence",
+    "read_iospe_workbook",
+    "reconcile_iospe_records",
+    "compare_evidence_rows",
 ]
