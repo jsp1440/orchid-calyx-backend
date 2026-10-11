@@ -46,6 +46,9 @@ MAX_LIMIT = 2000
 DEFAULT_LIMIT = 500
 MAX_SCAN_ROWS = 25_000
 POINT_MODE_MIN_ZOOM = 7
+# A view this small is drawn as individual records at any zoom; points are
+# already locality-safe, so clustering them would only hide detail.
+SMALL_VIEW_POINTS = 250
 POLICY_MAX_CELL_DEG = 1.0
 
 # Cluster cell ladder by zoom. Coarse rungs are whole degrees aligned at 0, so
@@ -416,11 +419,14 @@ class OccurrenceSummaryResponse(_Model):
 
 
 class TaxonMatch(_Model):
-    taxon_id: str
+    # None when the name has not been reconciled to the canonical taxonomy;
+    # an identifier is never invented for it.
+    taxon_id: str | None
     scientific_name: str
     genus: str | None = None
     rank: Literal["genus", "species", "infraspecific", "unknown"]
     identifier_source: str
+    record_count: int | None = None
 
 
 class TaxonSearchResponse(_Model):
@@ -818,33 +824,88 @@ class PostgresOccurrenceRepository:
         return self._db(_work)
 
     def search_taxa(self, text: str, *, limit: int) -> list[TaxonMatch]:
-        pattern = text.strip()
+        """Genera present in the occurrence relation, then canonical names.
 
-        def _work(cur: Any) -> list[TaxonMatch]:
-            if cur is None:
-                return []
-            cur.execute(
-                f"""
-                SELECT id::text AS id, scientific_name, genus
-                FROM {TAXONOMY_RELATION}
-                WHERE scientific_name ILIKE %s
-                ORDER BY (scientific_name ILIKE %s) DESC, length(scientific_name), scientific_name
-                LIMIT %s
-                """,
-                (f"%{_escape_like(pattern)}%", f"{_escape_like(pattern)}%", limit),
+        Species come from the canonical taxonomy when it can be read. If it
+        cannot, names carried by the occurrence relation are offered instead,
+        with whatever ``taxon_id`` the relation itself holds (possibly none).
+        """
+        pattern = _escape_like(text.strip())
+        genera = self._db(
+            lambda cur: (
+                cur.execute(
+                    f"""
+                    SELECT genus, count(*) AS n FROM {self._relation}
+                    WHERE genus ILIKE %s GROUP BY genus ORDER BY n DESC, genus LIMIT 4
+                    """,
+                    (f"{pattern}%",),
+                ),
+                cur.fetchall(),
+            )[1]
+        )
+        matches = [
+            TaxonMatch(
+                taxon_id=None,
+                scientific_name=str(row["genus"]),
+                genus=str(row["genus"]),
+                rank="genus",
+                identifier_source=self._relation,
+                record_count=int(row["n"]),
             )
-            return [
-                TaxonMatch(
-                    taxon_id=str(row["id"]),
-                    scientific_name=str(row["scientific_name"]),
-                    genus=row.get("genus"),
-                    rank=_rank_of(str(row["scientific_name"])),
-                    identifier_source=TAXONOMY_RELATION,
-                )
-                for row in cur.fetchall()
-            ]
+            for row in genera or []
+        ]
+        try:
+            species = self._db(lambda cur: self._canonical_species(cur, pattern, limit))
+        except Exception:  # noqa: BLE001 - canonical taxonomy unreadable here; fall back to the relation
+            species = self._db(lambda cur: self._relation_species(cur, pattern, limit))
+        return (matches + list(species or []))[: limit + 4]
 
-        return self._db(_work) or []
+    @staticmethod
+    def _canonical_species(cur: Any, pattern: str, limit: int) -> list[TaxonMatch]:
+        cur.execute(
+            f"""
+            SELECT id::text AS id, scientific_name, genus
+            FROM {TAXONOMY_RELATION}
+            WHERE scientific_name ILIKE %s
+            ORDER BY (scientific_name ILIKE %s) DESC, length(scientific_name), scientific_name
+            LIMIT %s
+            """,
+            (f"%{pattern}%", f"{pattern}%", limit),
+        )
+        return [
+            TaxonMatch(
+                taxon_id=str(row["id"]),
+                scientific_name=str(row["scientific_name"]),
+                genus=row.get("genus"),
+                rank=_rank_of(str(row["scientific_name"])),
+                identifier_source=TAXONOMY_RELATION,
+            )
+            for row in cur.fetchall()
+        ]
+
+    def _relation_species(self, cur: Any, pattern: str, limit: int) -> list[TaxonMatch]:
+        cur.execute(
+            f"""
+            SELECT scientific_name, genus, min(taxon_id::text) AS taxon_id, count(*) AS n
+            FROM {self._relation}
+            WHERE scientific_name ILIKE %s
+            GROUP BY scientific_name, genus
+            ORDER BY (scientific_name ILIKE %s) DESC, n DESC, scientific_name
+            LIMIT %s
+            """,
+            (f"%{pattern}%", f"{pattern}%", limit),
+        )
+        return [
+            TaxonMatch(
+                taxon_id=row.get("taxon_id"),
+                scientific_name=str(row["scientific_name"]),
+                genus=row.get("genus"),
+                rank=_rank_of(str(row["scientific_name"])),
+                identifier_source=self._relation,
+                record_count=int(row["n"]),
+            )
+            for row in cur.fetchall()
+        ]
 
 
 def _escape_like(value: str) -> str:
@@ -1095,8 +1156,9 @@ class OccurrenceService:
         total, exact = self.repository.count(query, cap=MAX_SCAN_ROWS)
         wants_points = query.mode == "points" or (
             query.mode == "auto"
-            and query.zoom >= POINT_MODE_MIN_ZOOM
+            and exact
             and total <= query.limit
+            and (query.zoom >= POINT_MODE_MIN_ZOOM or total <= SMALL_VIEW_POINTS)
         )
         response = (
             self._points(query, source, bbox, total, exact, after_id)
