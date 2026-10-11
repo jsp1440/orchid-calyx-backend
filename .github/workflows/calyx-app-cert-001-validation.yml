@@ -7,6 +7,9 @@ on:
       - "app/calyx_orchestrator/service.py"
       - "app/main.py"
       - "tests/test_application_certification.py"
+      - "tests/test_edith_app_checks.py"
+      - "scripts/run_edith_bramble_certification.py"
+      - "scripts/edith_app_checks.py"
       - "tests/test_calyx_agent_003.py"
       - ".github/workflows/calyx-app-cert-001-validation.yml"
   workflow_dispatch:
@@ -34,8 +37,8 @@ jobs:
 
       - name: Lint
         run: |
-          ruff check             app/application_certification             app/calyx_orchestrator/service.py             tests/test_application_certification.py             tests/test_calyx_agent_003.py
+          ruff check             app/application_certification             app/calyx_orchestrator/service.py             scripts/run_edith_bramble_certification.py             scripts/edith_app_checks.py             tests/test_application_certification.py             tests/test_edith_app_checks.py             tests/test_calyx_agent_003.py
 
       - name: Focused tests
         run: |
-          pytest -q             tests/test_application_certification.py             tests/test_calyx_agent_003.py
+          pytest -q             tests/test_application_certification.py             tests/test_edith_app_checks.py             tests/test_calyx_agent_003.py

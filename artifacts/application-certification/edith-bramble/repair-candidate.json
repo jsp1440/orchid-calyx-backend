@@ -1,0 +1,11 @@
+{
+  "purpose": "Exact repaired source certified by the candidate job. Not the live runtime.",
+  "source_repository": "jsp1440/edith-bramble-famous-sync",
+  "source_sha": "1655b45b2fef3dbbadd478294e4cae1c975dfa1f",
+  "pull_request": "jsp1440/edith-bramble-famous-sync#1 (draft)",
+  "archive": "repairs/export-9/story-orchids-interactive 9 + certification repairs.zip",
+  "archive_sha256": "8be586257a63691a28ce9a902b21572c7c830bd6cac50fd09fddcf8cd4ee44b4",
+  "base_export": "story-orchids-interactive 9.zip (sha256 a390b803bb6c1c91ce1209df03fdbfcbdcc4b38cf4d1b6bd41579087bfd37a90)",
+  "patch_sha256": "9d3c2c6ffd1a439318f54b01243cc554cd2f1f5f9a77217a408db5006a7b9ad3",
+  "lockfile_sha256": "80486e9b05ea3ceab8a58c98c501e36ab5905e4c2687734d818c2b6028ff7969"
+}
