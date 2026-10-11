@@ -266,3 +266,19 @@ def test_service_end_to_end_protects_locality(
         unresolved.generalisationReason == "unresolved-assessment"
         and unresolved.locality is None
     )
+
+
+def test_taxon_search_falls_back_to_relation_names(
+    repo: PostgresOccurrenceRepository,
+) -> None:
+    # The disposable database has no canonical taxonomy table, so species come
+    # from the relation itself, carrying only the identifiers it holds.
+    matches = repo.search_taxa("Dra", limit=5)
+    assert matches[0].rank == "genus" and matches[0].scientific_name == "Dracula"
+    assert matches[0].taxon_id is None and matches[0].record_count == 2
+    species = [m for m in matches if m.rank == "species"]
+    assert (
+        species
+        and species[0].scientific_name == "Dracula vampira"
+        and species[0].taxon_id == "t1"
+    )

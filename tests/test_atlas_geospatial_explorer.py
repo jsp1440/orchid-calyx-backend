@@ -188,13 +188,23 @@ def test_low_zoom_clusters_never_expose_a_protected_site() -> None:
 
 
 def test_auto_mode_clusters_at_world_zoom_and_points_when_zoomed_in() -> None:
-    records = [_record(f"r{i:03d}", -1 + i * 0.001, -78 + i * 0.001) for i in range(30)]
+    records = [
+        _record(f"r{i:04d}", -1 + i * 0.001, -78 + i * 0.001) for i in range(300)
+    ]
     service = _service(records)
     world = service.query(OccurrenceQuery(bbox=BBox.world(), zoom=1))
     assert world.mode == "clusters" and world.cell_deg == 10.0
-    assert sum(c.count for c in world.clusters) == 30
+    assert sum(c.count for c in world.clusters) == 300
     local = service.query(OccurrenceQuery(bbox=BBox(-79, -2, -77, 0), zoom=10))
-    assert local.mode == "points" and len(local.points) == 30
+    assert local.mode == "points" and len(local.points) == 300
+
+
+def test_small_views_draw_individual_records_at_any_zoom() -> None:
+    records = [_record(f"r{i:03d}", -1 + i * 0.01, -78) for i in range(30)]
+    response = _service(records).query(OccurrenceQuery(bbox=BBox.world(), zoom=1))
+    assert response.mode == "points" and len(response.points) == 30
+    # Assessed, non-threatened records with no stated uncertainty stay precise.
+    assert not any(p.generalised for p in response.points)
 
 
 def test_points_mode_paginates_with_keyset_cursor() -> None:
