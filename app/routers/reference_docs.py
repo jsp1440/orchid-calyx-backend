@@ -10,6 +10,7 @@ from app.schemas import ReferenceDocumentOut, ReferenceDocumentListOut, Referenc
 from app.storage import compute_sha256, save_file, read_file, file_exists
 from app.species_exhibit.routes import router as species_exhibit_router
 from app.routers.matrix_identification import router as matrix_identification_router
+from app.routers.image_intelligence import router as image_intelligence_router
 from app.routers.matrix_identification_registry import router as matrix_identification_registry_router
 from app.routers.matrix_identification_registry_persistence import router as matrix_identification_registry_persistence_router
 from app.routers.matrix_identification_session import router as matrix_identification_session_router
@@ -113,6 +114,7 @@ def update_reference_doc(doc_id: str, update: ReferenceDocumentUpdate, api_key: 
 
 router.include_router(species_exhibit_router)
 router.include_router(matrix_identification_router)
+router.include_router(image_intelligence_router)
 router.include_router(matrix_identification_registry_router)
 router.include_router(matrix_identification_registry_persistence_router)
 router.include_router(matrix_identification_session_router)
