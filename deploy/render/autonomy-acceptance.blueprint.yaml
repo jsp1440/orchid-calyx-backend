@@ -10,6 +10,7 @@ services:
     name: orchid-calyx-autonomy-acceptance
     runtime: python
     plan: starter            # smallest always-on worker; prorated per second
+    region: oregon           # create the Neon project in AWS US West 2 (Oregon) too
     branch: claude/sharp-pasteur-e6c4r1-traitbank
     autoDeploy: false
     buildCommand: pip install -r requirements.txt
@@ -37,7 +38,7 @@ services:
       - key: CALYX_PROGRAM_AUTONOMY_WORKER_ID
         value: render-autonomy-acceptance
       - key: CALYX_PROGRAM_AUTONOMY_POLL_SECONDS
-        value: "60"
+        value: "30"
       - key: CALYX_PROGRAM_AUTONOMY_MAX_JOBS_PER_CYCLE
         value: "2"
       - key: CALYX_PROGRAM_AUTONOMY_LEASE_SECONDS
