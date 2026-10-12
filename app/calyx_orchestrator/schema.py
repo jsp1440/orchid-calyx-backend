@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import weakref
 from threading import Lock
 
 from sqlalchemy import text
@@ -8,6 +9,8 @@ from sqlalchemy.orm import Session
 from .models import CalyxFinding, CalyxJob
 from .program_models import (
     CalyxAutonomyCycle,
+    CalyxBrainPulseLedger,
+    CalyxBrainPulseReceipt,
     CalyxProgram,
     CalyxProgramDependency,
     CalyxProgramJob,
@@ -20,7 +23,10 @@ from .specialist_models import (
 )
 
 _SCHEMA_LOCK = Lock()
-_SCHEMA_READY_ENGINES: set[int] = set()
+# Keyed by the engine object itself (weakly), not ``id(engine)``: ids of freed
+# engines are reused, which made a fresh engine (for example a new database or
+# schema) look already bootstrapped, so its tables were never created.
+_SCHEMA_READY_ENGINES: weakref.WeakSet = weakref.WeakSet()
 
 
 def ensure_orchestrator_schema(db: Session) -> None:
@@ -33,7 +39,7 @@ def ensure_orchestrator_schema(db: Session) -> None:
     """
 
     bind = db.get_bind()
-    engine_key = id(bind)
+    engine_key = getattr(bind, "engine", bind)
     if engine_key in _SCHEMA_READY_ENGINES:
         return
 
@@ -49,6 +55,8 @@ def ensure_orchestrator_schema(db: Session) -> None:
             CalyxProgramJob.__table__,
             CalyxProgramDependency.__table__,
             CalyxAutonomyCycle.__table__,
+            CalyxBrainPulseLedger.__table__,
+            CalyxBrainPulseReceipt.__table__,
             SpecialistMission.__table__,
             SpecialistArtifact.__table__,
             SpecialistReview.__table__,

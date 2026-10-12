@@ -13,8 +13,14 @@ Configuration (all required unless marked optional):
   is ``backend_api_key``.
 * ``OC_BRAIN_CHECKOUT``: an Orchid-Continuum-Brain checkout providing
   ``calyx_brain.autonomy_pulse``.
-* ``OC_BRAIN_WORK_MANIFEST``: reviewed work manifest (``{"work": [...]}``).
-* ``OC_BRAIN_PULSE_LEDGER``: durable pulse ledger path.
+* ``OC_BRAIN_WORK_MANIFEST``: reviewed work manifest (``{"work": [...]}``),
+  **or** ``OC_BRAIN_WORK_SOURCES``: comma-separated governed work sources
+  (``manifest:<path>``, ``traitbank_intake[:<dir>]``; P1). With sources the
+  pulse discovers work every cycle and an empty queue always carries an
+  explicit reason (``WORK_SOURCES_IDLE``/``_DRAINED``/``WORK_SOURCE_FAILED``).
+* ``OC_BRAIN_PULSE_LEDGER``: durable pulse ledger. A file path, or
+  ``database`` / ``database:<key>`` to keep submission records, per-source
+  backoff and budgets in the Calyx database (survives restarts).
 * ``CALYX_BACKEND_BASE_URL`` / ``CALYX_API_KEY``: the Calyx API the pulse
   submits to (https, or http on loopback only).
 * ``CALYX_PROGRAM_AUTONOMY_WORKSPACE`` (optional): read-only checkout the
@@ -22,6 +28,11 @@ Configuration (all required unless marked optional):
 * ``OC_BRAIN_PULSE_MAX_IN_FLIGHT`` (optional, default 1, 1-50).
 * ``OC_BRAIN_PULSE_BACKOFF_BASE_SECONDS`` / ``_MAX_SECONDS`` (optional,
   default 30 / 900): bounded backoff after a backend failure.
+* Admission limits (optional): ``OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_PULSE``,
+  ``OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_DAY``,
+  ``OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE``.
+* ``OC_BRAIN_WORK_BRANCH`` (optional): branch named in source-built packets;
+  defaults to the workspace checkout's branch.
 
 Missing configuration exits 0 after printing one ``configuration_unavailable``
 record. It never starts a partially configured loop.
@@ -50,11 +61,15 @@ from runtime.program_autonomy_worker import (
 
 REQUIRED = (
     "OC_BRAIN_CHECKOUT",
-    "OC_BRAIN_WORK_MANIFEST",
     "OC_BRAIN_PULSE_LEDGER",
     "CALYX_BACKEND_BASE_URL",
     "CALYX_API_KEY",
 )
+LIMITS = {
+    "max_submissions_per_pulse": "OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_PULSE",
+    "max_submissions_per_day": "OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_DAY",
+    "max_in_flight_per_source": "OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE",
+}
 
 
 @dataclass(frozen=True)
@@ -74,9 +89,30 @@ def configuration_problems(env: Mapping[str, str]) -> list[str]:
     ):
         problems.append("OC_BRAIN_CHECKOUT_MISSING_AUTONOMY_PULSE")
     manifest = str(env.get("OC_BRAIN_WORK_MANIFEST", "")).strip()
+    sources = str(env.get("OC_BRAIN_WORK_SOURCES", "")).strip()
+    if not manifest and not sources:
+        problems.append("OC_BRAIN_WORK_MANIFEST_OR_SOURCES_UNSET")
     if manifest and not Path(manifest).is_file():
         problems.append("OC_BRAIN_WORK_MANIFEST_NOT_FOUND")
+    if (
+        sources
+        and checkout
+        and not (Path(checkout) / "calyx_brain" / "work_sources.py").is_file()
+    ):
+        problems.append("OC_BRAIN_CHECKOUT_MISSING_WORK_SOURCES")
+    for key in LIMITS.values():
+        raw = str(env.get(key, "")).strip()
+        if raw and (not raw.isdigit() or not 1 <= int(raw) <= 100_000):
+            problems.append(f"{key}_OUT_OF_RANGE")
     return problems
+
+
+def _workspace_branch(workspace: str) -> str | None:
+    head = Path(workspace) / ".git" / "HEAD"
+    if not head.is_file():
+        return None
+    ref = head.read_text(encoding="ascii").strip()
+    return ref.removeprefix("ref: refs/heads/") if ref.startswith("ref: ") else None
 
 
 def build_worker(env: Mapping[str, str]) -> BrainWorker:
@@ -100,6 +136,7 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
     if checkout not in sys.path:
         sys.path.append(checkout)
     from calyx_brain.autonomy_pulse import (
+        LEDGER_SCHEMA,
         PulseLedger,
         load_manifest,
         run_pulse,
@@ -107,27 +144,63 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
     )
     from calyx_brain.canonical_handoff import urllib_transport
 
-    manifest = load_manifest(Path(env["OC_BRAIN_WORK_MANIFEST"]))
-    ledger = PulseLedger(Path(env["OC_BRAIN_PULSE_LEDGER"]))
+    workspace = str(env.get("CALYX_PROGRAM_AUTONOMY_WORKSPACE", "")).strip()
+    repository = str(env.get("GITHUB_REPOSITORY", "")).strip() or None
+    ledger_spec = str(env["OC_BRAIN_PULSE_LEDGER"]).strip()
+    if ledger_spec == "database" or ledger_spec.startswith("database:"):
+        from app.calyx_orchestrator.pulse_ledger_store import DatabasePulseLedger
+        from app.database import get_session_local
+
+        ledger = DatabasePulseLedger(
+            get_session_local(),
+            key=ledger_spec.partition(":")[2] or "default",
+            ledger_schema=LEDGER_SCHEMA,
+        )
+    else:
+        ledger = PulseLedger(Path(ledger_spec))
     post, get = urllib_transport(timeout=30), urllib_status_transport(timeout=30)
     pulse_env = {key: env[key] for key in ("CALYX_BACKEND_BASE_URL", "CALYX_API_KEY")}
+    limits = {
+        name: int(env[key])
+        for name, key in LIMITS.items()
+        if str(env.get(key, "")).strip()
+    }
+    common = {
+        "ledger": ledger,
+        "transport": post,
+        "status_transport": get,
+        "env": pulse_env,
+        "max_in_flight": max_in_flight,
+        "backoff_base_seconds": backoff_base,
+        "backoff_max_seconds": backoff_max,
+        **limits,
+    }
 
-    def replenish() -> dict[str, Any]:
-        return run_pulse(
-            manifest,
-            ledger=ledger,
-            transport=post,
-            status_transport=get,
-            env=pulse_env,
-            max_in_flight=max_in_flight,
-            backoff_base_seconds=backoff_base,
-            backoff_max_seconds=backoff_max,
+    source_spec = str(env.get("OC_BRAIN_WORK_SOURCES", "")).strip()
+    if source_spec:
+        from calyx_brain.work_sources import discover_all, sources_from_spec
+
+        sources = sources_from_spec(
+            source_spec.split(","),
+            workspace=Path(workspace) if workspace else None,
+            repository=repository,
+            branch=str(env.get("OC_BRAIN_WORK_BRANCH", "")).strip()
+            or (_workspace_branch(workspace) if workspace else None),
         )
 
-    workspace = str(env.get("CALYX_PROGRAM_AUTONOMY_WORKSPACE", "")).strip()
+        def replenish() -> dict[str, Any]:
+            items, reports = discover_all(sources, ledger_state=ledger.load())
+            return run_pulse(items, source_reports=reports, **common)
+
+    else:
+        manifest = load_manifest(Path(env["OC_BRAIN_WORK_MANIFEST"]))
+
+        def replenish() -> dict[str, Any]:
+            return run_pulse(manifest, **common)
+
     registry = AuthoritativeExecutorRegistry(
         workspace_root=Path(workspace) if workspace else None,
-        repository_name=str(env.get("GITHUB_REPOSITORY", "")).strip() or None,
+        repository_name=repository,
     )
     return BrainWorker(policy, replenish, registry, database_recorder(policy.owner))
 

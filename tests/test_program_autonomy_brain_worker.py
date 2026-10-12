@@ -19,11 +19,36 @@ BRAIN = os.environ.get("OC_BRAIN_REPO_PATH", "").strip()
 def test_every_missing_setting_is_named():
     assert configuration_problems({}) == [
         "OC_BRAIN_CHECKOUT_UNSET",
-        "OC_BRAIN_WORK_MANIFEST_UNSET",
         "OC_BRAIN_PULSE_LEDGER_UNSET",
         "CALYX_BACKEND_BASE_URL_UNSET",
         "CALYX_API_KEY_UNSET",
+        "OC_BRAIN_WORK_MANIFEST_OR_SOURCES_UNSET",
     ]
+
+
+def test_work_sources_and_limits_are_validated(tmp_path):
+    checkout = tmp_path / "brain"
+    (checkout / "calyx_brain").mkdir(parents=True)
+    (checkout / "calyx_brain" / "autonomy_pulse.py").write_text("")
+    env = {
+        "OC_BRAIN_CHECKOUT": str(checkout),
+        "OC_BRAIN_PULSE_LEDGER": "database:acceptance",
+        "CALYX_BACKEND_BASE_URL": "http://127.0.0.1:8000",
+        "CALYX_API_KEY": "fixture",
+        "OC_BRAIN_WORK_SOURCES": "traitbank_intake",
+        "OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_DAY": "0",
+        "OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE": "two",
+    }
+    # Sources need a Brain checkout that provides work_sources; limits are bounded.
+    assert configuration_problems(env) == [
+        "OC_BRAIN_CHECKOUT_MISSING_WORK_SOURCES",
+        "OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_DAY_OUT_OF_RANGE",
+        "OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE_OUT_OF_RANGE",
+    ]
+    (checkout / "calyx_brain" / "work_sources.py").write_text("")
+    env["OC_BRAIN_PULSE_MAX_SUBMISSIONS_PER_DAY"] = "200"
+    env["OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE"] = "2"
+    assert configuration_problems(env) == []
 
 
 def test_wrong_paths_are_rejected_before_any_loop(tmp_path):

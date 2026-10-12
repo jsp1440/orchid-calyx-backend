@@ -69,6 +69,10 @@ def _replenishment_summary(record: object) -> dict[str, Any] | None:
         "manifest": record.get("manifest")
         if isinstance(record.get("manifest"), dict)
         else None,
+        # P1 work-source reports (name, status, discovered, detail).
+        "sources": record.get("sources")
+        if isinstance(record.get("sources"), list)
+        else None,
     }
 
 

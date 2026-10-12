@@ -32,6 +32,10 @@ on:
       - "tests/test_oc_autonomy_acceptance_manifest.py"
       - "tests/test_render_autonomy_acceptance_config.py"
       - "tests/test_oc_autonomy_hosted_verify.py"
+      - "tests/test_pulse_ledger_store.py"
+      - "tests/test_p1_work_source_autonomy_cycle.py"
+      - "app/calyx_orchestrator/pulse_ledger_store.py"
+      - "app/calyx_orchestrator/schema.py"
       - "scripts/oc_autonomy_hosted_verify.py"
       - "deploy/render/**"
       - "scripts/oc_autonomy_acceptance_manifest.py"
@@ -50,7 +54,7 @@ concurrency:
 env:
   # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: 82f3df081bf0e40476a0b35290fd8a97b70add68
+  OC_BRAIN_REF: 2c395c17b63b373f64481138b7d2a1682d3da137
 
 jobs:
   acceptance:
@@ -164,6 +168,8 @@ jobs:
           tests/test_oc_autonomy_acceptance_manifest.py
           tests/test_render_autonomy_acceptance_config.py
           tests/test_oc_autonomy_hosted_verify.py
+          tests/test_pulse_ledger_store.py
+          tests/test_p1_work_source_autonomy_cycle.py
 
       - name: Upload acceptance report
         if: always()
