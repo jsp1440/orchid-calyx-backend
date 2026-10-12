@@ -122,3 +122,30 @@ class CalyxAutonomyCycle(Base):
     job_keys_json: Mapped[str] = mapped_column(Text, default="[]")
     replenishment_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     deployment_commit: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+
+class CalyxBrainPulseLedger(Base):
+    """Durable Brain pulse state (one row per ledger key).
+
+    Replaces the container-local JSON ledger when configured, so a restarted
+    worker resumes its submission records instead of replaying the manifest.
+    The document is the Brain pulse ledger verbatim (schema-checked on load).
+    """
+
+    __tablename__ = "calyx_brain_pulse_ledgers"
+
+    ledger_key: Mapped[str] = mapped_column(String(120), primary_key=True)
+    state_json: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+
+class CalyxBrainPulseReceipt(Base):
+    """Append-only Brain pulse receipt (one row per pulse)."""
+
+    __tablename__ = "calyx_brain_pulse_receipts"
+
+    receipt_id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    ledger_key: Mapped[str] = mapped_column(String(120), index=True)
+    pulse_id: Mapped[str] = mapped_column(String(80))
+    receipt_json: Mapped[str] = mapped_column(Text)
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
