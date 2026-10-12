@@ -323,3 +323,41 @@ def test_first_cycle_on_a_fresh_database_is_not_a_scheduler_defect(monkeypatch):
         "category": "no_eligible_work",
         "healthy": True,
     }
+
+
+def test_stop_signal_while_the_event_lock_is_held_does_not_deadlock(monkeypatch):
+    """Regression: a hosted rehearsal hung on SIGTERM in ``Event.set``.
+
+    The handler fired while the main thread held ``stop``'s condition lock
+    inside ``Event.wait``; a direct ``set()`` in the handler can never return.
+    """
+    import threading
+    import time
+
+    import runtime.program_autonomy_worker as worker
+
+    handlers = {}
+    monkeypatch.setattr(
+        worker.signal, "signal", lambda signum, fn: handlers.setdefault(signum, fn)
+    )
+    stop = threading.Event()
+    worker.install_stop_handlers(stop)
+    handler = handlers[worker.signal.SIGTERM]
+
+    held, release = threading.Event(), threading.Event()
+
+    def hold_lock() -> None:
+        with stop._cond:  # what Event.wait holds around its wait
+            held.set()
+            release.wait(5)
+
+    holder = threading.Thread(target=hold_lock, daemon=True)
+    holder.start()
+    assert held.wait(5)
+    started = time.monotonic()
+    handler(worker.signal.SIGTERM, None)
+    assert time.monotonic() - started < 0.5, "handler blocked on the Event lock"
+    assert not stop.is_set()
+    release.set()
+    holder.join(5)
+    assert stop.wait(5)
