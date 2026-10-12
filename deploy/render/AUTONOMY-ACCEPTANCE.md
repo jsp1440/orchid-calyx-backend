@@ -86,16 +86,24 @@ Create a fine-grained personal access token:
      `brain-calyx-autonomy-acceptance` workflow);
    - the Render worker's `OC_BRAIN_READ_TOKEN` field (step 3).
 
-**Current state (2026-10-12):** the Calyx Actions secret `OC_BRAIN_READ_TOKEN` was empty on
-2026-10-11 (the Brain step in `oc-completion-receipt-contract` was skipped). It is now set, but the
-token is refused for the Brain repository. The `acceptance` checkout of
-`jsp1440/Orchid-Continuum-Brain` returns `403 Write access to repository not granted`, which GitHub
-also returns for read requests from a token that is not granted access to that repository. Fix the
-token rather than the workflow:
-- edit the fine-grained token and add `Orchid-Continuum-Brain` under **Only select repositories**,
-  with Contents: Read-only;
-- confirm its resource owner is `jsp1440` and that it has not expired;
-- if it was created as a different kind of token, replace the secret value with one made as above.
+**Current state (verified 2026-10-12 04:07 UTC by the workflow's token preflight).** The
+`acceptance` workflow on #1806 probes the GitHub API with the secret and prints only status codes,
+the token kind and the login:
+- the secret is a **fine-grained personal access token**;
+- `GET /user` returns 200 for `jsp1440`, and the token expires 2026-11-11;
+- `GET /repos/jsp1440/Orchid-Continuum-Brain` and the pinned commit both return **404**.
+
+A fine-grained token answers 404 for every repository outside its selected list. The token is valid
+but was not granted the Brain repository; that is why `actions/checkout` reported `403 Write access
+to repository not granted`. **No new token is needed.** Edit this one:
+1. GitHub → Settings → Developer settings → Fine-grained tokens → the token used for
+   `OC_BRAIN_READ_TOKEN`.
+2. Repository access → **Only select repositories** → add `jsp1440/Orchid-Continuum-Brain`. Keep
+   any repositories it already needs.
+3. Repository permissions → Contents: **Read-only**.
+4. Save.
+
+The token value does not change, so the Actions secret stays as it is. Then re-run `acceptance`.
 
 Equivalent alternative: a GitHub App installed only on the Brain repository
 with Contents: Read-only. Its installation token is short-lived, so it needs a
