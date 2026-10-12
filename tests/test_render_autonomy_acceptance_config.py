@@ -44,7 +44,10 @@ def test_start_refuses_when_a_required_setting_is_missing(missing, tmp_path):
     assert list(tmp_path.iterdir()) == []  # nothing cloned, fetched or started
 
 
-@pytest.mark.parametrize("confirmation", [None, "", "production", "yes"])
+@pytest.mark.parametrize(
+    "confirmation",
+    [None, "", "production", "yes", "non-production:", "production:neondb"],
+)
 def test_start_refuses_an_unconfirmed_database(confirmation, tmp_path):
     env = dict(COMPLETE)
     if confirmation is not None:
@@ -52,6 +55,28 @@ def test_start_refuses_an_unconfirmed_database(confirmation, tmp_path):
     result = _run(env, tmp_path)
     assert result.returncode == 0
     assert '"zero_reason": "configuration_unavailable"' in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_pinned_database_that_cannot_be_read_never_starts(tmp_path):
+    env = dict(COMPLETE)
+    env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"] = "non-production:autonomy_midrun"
+    result = _run(env, tmp_path)
+    assert result.returncode == 1
+    assert "ACCEPTANCE_DATABASE_UNREACHABLE" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.requires_postgres("TEST_DATABASE_URL")
+def test_pinned_database_name_must_match_the_real_connection(tmp_path):
+    """A worker pointed at the wrong database (e.g. the preserved evidence
+    database) refuses before the API, the clone or the worker can run."""
+    env = dict(COMPLETE, DATABASE_URL=os.environ["TEST_DATABASE_URL"])
+    env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"] = "non-production:autonomy_midrun"
+    result = _run(env, tmp_path)
+    assert result.returncode == 0
+    assert "ACCEPTANCE_DATABASE_MISMATCH" in result.stdout
+    assert "expected autonomy_midrun" in result.stdout
     assert list(tmp_path.iterdir()) == []
 
 
@@ -75,3 +100,21 @@ def test_blueprint_is_isolated_cheap_and_never_auto_deployed():
     assert env["OC_GOVERNOR_PAID_EXECUTION_ENABLED"]["value"] == "false"
     assert env["PROVIDER_LAUNCH_AUTHORIZED"]["value"] == "false"
     assert len(env["OC_BRAIN_REF"]["value"]) == 40  # a pinned commit, not a branch
+
+
+@pytest.mark.requires_postgres("TEST_DATABASE_URL")
+def test_pinned_database_name_that_matches_is_confirmed(tmp_path):
+    from sqlalchemy import create_engine, text
+
+    dsn = os.environ["TEST_DATABASE_URL"]
+    engine = create_engine(dsn)
+    with engine.connect() as connection:
+        name = connection.execute(text("SELECT current_database()")).scalar_one()
+    engine.dispose()
+    # A branch that does not exist stops the script right after the guard.
+    env = dict(COMPLETE, DATABASE_URL=dsn)
+    env["CALYX_ACCEPTANCE_SOURCE_BRANCH"] = "no-such-branch-for-guard-test"
+    env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"] = f"non-production:{name}"
+    result = _run(env, tmp_path)
+    assert f'{{"acceptance_database": "{name}", "confirmed": true}}' in result.stdout
+    assert "ACCEPTANCE_DATABASE_MISMATCH" not in result.stdout

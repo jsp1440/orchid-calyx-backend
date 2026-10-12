@@ -16,9 +16,39 @@ if [[ -z "${OC_ACCEPTANCE_BRAIN_DIR:-}" ]]; then
 fi
 : "${OC_BRAIN_REF:?pinned Brain commit required}"
 : "${CALYX_ACCEPTANCE_SOURCE_BRANCH:?branch to verify required}"
-if [[ "${CALYX_ACCEPTANCE_DATABASE_CONFIRMED:-}" != "non-production" ]]; then
-  echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "CALYX_ACCEPTANCE_DATABASE_CONFIRMED must equal non-production"}'
-  exit 0
+# "non-production", or "non-production:<database>" to also pin the database
+# name. A pinned name is checked against the connection the app itself will use
+# before anything (API startup included) can write to it.
+confirmed="${CALYX_ACCEPTANCE_DATABASE_CONFIRMED:-}"
+expected_database=""
+case "$confirmed" in
+  non-production) ;;
+  non-production:?*) expected_database="${confirmed#non-production:}" ;;
+  *)
+    echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "CALYX_ACCEPTANCE_DATABASE_CONFIRMED must equal non-production or non-production:<database>"}'
+    exit 0
+    ;;
+esac
+if [[ -n "$expected_database" ]]; then
+  actual_database="$(python - <<'PY'
+from sqlalchemy import text
+
+from app.database import get_engine
+
+with get_engine().connect() as connection:
+    print(connection.execute(text("SELECT current_database()")).scalar_one())
+PY
+)" || {
+    echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "ACCEPTANCE_DATABASE_UNREACHABLE: could not read current_database(); worker not started"}'
+    exit 1
+  }
+  actual_database="$(printf '%s' "$actual_database" | tail -n 1)"
+  if [[ "$actual_database" != "$expected_database" ]]; then
+    printf '{"started": false, "zero_reason": "configuration_unavailable", "detail": "ACCEPTANCE_DATABASE_MISMATCH: connected to %s, expected %s; worker not started"}\n' \
+      "$actual_database" "$expected_database"
+    exit 0
+  fi
+  printf '{"acceptance_database": "%s", "confirmed": true}\n' "$actual_database"
 fi
 
 work="${TMPDIR:-/tmp}/oc-autonomy-acceptance"

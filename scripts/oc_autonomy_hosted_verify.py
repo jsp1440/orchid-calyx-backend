@@ -67,15 +67,16 @@ def verify(
 
     cycles = db.execute(
         text(
-            "SELECT sequence, productive, healthy, category, replenishment_json "
-            "FROM calyx_program_autonomy_cycles WHERE owner = :owner "
+            "SELECT sequence, productive, healthy, category, replenishment_json, "
+            "job_keys_json FROM calyx_program_autonomy_cycles WHERE owner = :owner "
             "ORDER BY finished_at"
         ),
         {"owner": owner},
     ).all()
     jobs = db.execute(
         text(
-            "SELECT job_key, role_key, status, outcome, attempt_count, evidence_json "
+            "SELECT job_key, role_key, status, outcome, attempt_count, evidence_json, "
+            "lease_owner, lease_expires_at "
             "FROM calyx_engineering_program_jobs ORDER BY created_at"
         )
     ).all()
@@ -131,6 +132,17 @@ def verify(
         receipts_not_delivered=receipts_not_delivered,
         max_attempt_count=max((j.attempt_count for j in jobs), default=0),
     )
+
+    # Leases are fenced claims. Every one must be released when its job
+    # settles: a lease left behind after the run would block or duplicate work.
+    held = [
+        j.job_key
+        for j in jobs
+        if j.lease_owner is not None
+        or j.lease_expires_at is not None
+        or j.status in {"running", "completing"}
+    ]
+    check("no_outstanding_leases", not held, held_or_running=held)
 
     verdicts = []
     for j in jobs:
@@ -201,6 +213,24 @@ def verify(
             ),
             productive_after_restart=resumed,
             replays_after_restart=replayed,
+        )
+
+        def executed(rows: list[Any]) -> list[str]:
+            return [
+                key for c in rows for key in json.loads(c.job_keys_json or "[]") if key
+            ]
+
+        before_keys = executed(cycles[: last_start or 0])
+        after_keys = executed(after)
+        rerun = sorted(set(before_keys) & set(after_keys))
+        # Work finished before the restart must survive it in the database and
+        # must not be executed again by the restarted worker.
+        check(
+            "persistent_state_across_restart",
+            bool(before_keys) and bool(after_keys) and not rerun,
+            jobs_executed_before_restart=len(before_keys),
+            jobs_executed_after_restart=len(after_keys),
+            executed_on_both_sides=rerun,
         )
     tail = cycles[-2:]
     check(
@@ -283,20 +313,32 @@ def export_records(db: Session, *, owner: str) -> dict[str, Any]:
         text(
             "SELECT cycle_id, worker_id, sequence, started_at, finished_at, "
             "productive, category, healthy, productive_jobs, failed_jobs, "
-            "reason_code, replenishment_json, deployment_commit "
+            "reason_code, replenishment_json, job_keys_json, deployment_commit "
             "FROM calyx_program_autonomy_cycles WHERE owner = :owner "
             "ORDER BY finished_at"
         ),
         {"owner": owner},
     ).mappings()
+    # Lease tokens are fencing secrets for live claims and are never exported;
+    # the lease owner and expiry show whether a claim is still held.
     jobs = db.execute(
         text(
-            "SELECT job_key, role_key, status, outcome, attempt_count, "
-            "created_at, completed_at FROM calyx_engineering_program_jobs "
-            "ORDER BY created_at"
+            "SELECT program_job_id, program_id, job_key, role_key, status, outcome, "
+            "attempt_count, max_attempts, lease_owner, lease_expires_at, "
+            "created_at, updated_at, completed_at, evidence_json "
+            "FROM calyx_engineering_program_jobs ORDER BY created_at"
         )
     ).mappings()
+    programs = db.execute(
+        text(
+            "SELECT program_id, status, created_at, completed_at "
+            "FROM calyx_engineering_programs WHERE owner = :owner "
+            "ORDER BY created_at"
+        ),
+        {"owner": owner},
+    ).mappings()
     rows = []
+    executed_in: dict[str, str] = {}
     for row in cycles:
         item = dict(row)
         item["replenishment"] = (
@@ -304,11 +346,32 @@ def export_records(db: Session, *, owner: str) -> dict[str, Any]:
             if row["replenishment_json"]
             else None
         )
+        item["job_keys"] = json.loads(item.pop("job_keys_json") or "[]")
+        for key in item["job_keys"]:
+            executed_in.setdefault(key, item["cycle_id"])
         rows.append(item)
+    job_rows = []
+    for row in jobs:
+        item = dict(row)
+        evidence = json.loads(item.pop("evidence_json") or "null") or {}
+        # Receipt identity only; executor output payloads stay in the database.
+        item["receipt"] = {
+            key: evidence.get(key)
+            for key in (
+                "receipt_type",
+                "executor_key",
+                "state",
+                "input_checksum",
+                "output_checksum",
+            )
+        }
+        item["executed_in_cycle_id"] = executed_in.get(item["job_key"])
+        job_rows.append(item)
     return {
-        "schema": "oc-autonomy-hosted-records.v1",
+        "schema": "oc-autonomy-hosted-records.v2",
         "cycles": rows,
-        "jobs": [dict(row) for row in jobs],
+        "jobs": job_rows,
+        "programs": [dict(row) for row in programs],
     }
 
 
