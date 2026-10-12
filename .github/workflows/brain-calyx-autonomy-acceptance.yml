@@ -75,12 +75,50 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Require the Brain read token
+      - name: Require a Brain read token that can read the Brain repository
         # Fail rather than skip: a hosted acceptance that silently did not run
-        # must never look like a pass.
+        # must never look like a pass. Diagnoses the credential through the
+        # GitHub API and prints only status codes, the token kind and the
+        # authenticated login; never the value (GitHub also masks it).
         run: |
           if [ -z "$OC_BRAIN_READ_TOKEN" ]; then
             echo "::error::OC_BRAIN_READ_TOKEN is not available; the hosted acceptance did not run."
+            exit 1
+          fi
+          case "$OC_BRAIN_READ_TOKEN" in
+            github_pat_*) kind="fine-grained personal access token" ;;
+            ghp_*) kind="classic personal access token" ;;
+            ghs_*) kind="GitHub App installation or Actions token" ;;
+            gho_*|ghu_*) kind="OAuth or GitHub App user token" ;;
+            *) kind="unrecognised format" ;;
+          esac
+          if [ "$OC_BRAIN_READ_TOKEN" != "$(printf '%s' "$OC_BRAIN_READ_TOKEN" | tr -d '[:space:]')" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN contains whitespace or a newline; re-save the secret value without it."
+            exit 1
+          fi
+          api() {
+            curl -sS -o /dev/null -D "$RUNNER_TEMP/h" -w '%{http_code}' \
+              -H "Authorization: Bearer $OC_BRAIN_READ_TOKEN" \
+              -H "Accept: application/vnd.github+json" "https://api.github.com$1"
+          }
+          user_status=$(api /user)
+          login=$(curl -sS -H "Authorization: Bearer $OC_BRAIN_READ_TOKEN" https://api.github.com/user | python3 -c 'import json,sys; print(json.load(sys.stdin).get("login") or "-")' 2>/dev/null || echo "-")
+          scopes=$(grep -i '^x-oauth-scopes:' "$RUNNER_TEMP/h" | cut -d' ' -f2- | tr -d '\r')
+          expiry=$(grep -i '^github-authentication-token-expiration:' "$RUNNER_TEMP/h" | cut -d' ' -f2- | tr -d '\r')
+          repo_status=$(api /repos/jsp1440/Orchid-Continuum-Brain)
+          contents_status=$(api "/repos/jsp1440/Orchid-Continuum-Brain/commits/$OC_BRAIN_REF")
+          rm -f "$RUNNER_TEMP/h"
+          echo "token kind: $kind"
+          echo "GET /user: $user_status (login: $login)"
+          echo "classic scopes: ${scopes:-n/a}; expires: ${expiry:-not reported}"
+          echo "GET /repos/jsp1440/Orchid-Continuum-Brain: $repo_status"
+          echo "GET .../commits/$OC_BRAIN_REF: $contents_status"
+          if [ "$user_status" = "401" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN is rejected by GitHub (401): expired, revoked or mistyped."
+            exit 1
+          fi
+          if [ "$repo_status" != "200" ] || [ "$contents_status" != "200" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN authenticates but cannot read jsp1440/Orchid-Continuum-Brain. Grant that repository Contents: Read-only (fine-grained token), or the repo scope (classic)."
             exit 1
           fi
 
