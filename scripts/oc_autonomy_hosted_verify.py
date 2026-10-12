@@ -38,7 +38,7 @@ from typing import Any
 from urllib.parse import quote, unquote
 
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import ArgumentError
+from sqlalchemy.exc import ArgumentError, ProgrammingError
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -259,7 +259,27 @@ def main() -> int:
             .scalars()
             .all()
         )
-        report = verify(db, owner=args.owner, min_consecutive=args.min_consecutive)
+        try:
+            report = verify(db, owner=args.owner, min_consecutive=args.min_consecutive)
+        except ProgrammingError as exc:
+            # Typically the role was granted in another database, or by a role
+            # that does not own the tables. Report what to fix, not a trace.
+            db.rollback()
+            print(
+                json.dumps(
+                    {
+                        "schema": "oc-autonomy-hosted-verify.v1",
+                        "passed": False,
+                        "error": "VERIFY_ROLE_CANNOT_READ",
+                        "detail": str(getattr(exc, "orig", exc)).splitlines()[0][:200],
+                        "fix": "As the table owner, in the acceptance database: "
+                        "GRANT USAGE ON SCHEMA public TO oc_verify; "
+                        "GRANT SELECT ON ALL TABLES IN SCHEMA public TO oc_verify;",
+                    },
+                    sort_keys=True,
+                )
+            )
+            return 1
         db.rollback()
     report["checks"]["verifier_role_read_only"] = {"passed": not any(can_write)}
     report["passed"] = all(item["passed"] for item in report["checks"].values())
