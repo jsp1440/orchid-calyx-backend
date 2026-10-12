@@ -86,6 +86,17 @@ Create a fine-grained personal access token:
      `brain-calyx-autonomy-acceptance` workflow);
    - the Render worker's `OC_BRAIN_READ_TOKEN` field (step 3).
 
+**Current state (2026-10-12):** the Calyx Actions secret `OC_BRAIN_READ_TOKEN` was empty on
+2026-10-11 (the Brain step in `oc-completion-receipt-contract` was skipped). It is now set, but the
+token is refused for the Brain repository. The `acceptance` checkout of
+`jsp1440/Orchid-Continuum-Brain` returns `403 Write access to repository not granted`, which GitHub
+also returns for read requests from a token that is not granted access to that repository. Fix the
+token rather than the workflow:
+- edit the fine-grained token and add `Orchid-Continuum-Brain` under **Only select repositories**,
+  with Contents: Read-only;
+- confirm its resource owner is `jsp1440` and that it has not expired;
+- if it was created as a different kind of token, replace the secret value with one made as above.
+
 Equivalent alternative: a GitHub App installed only on the Brain repository
 with Contents: Read-only. Its installation token is short-lived, so it needs a
 small token-minting step before the fetch. Use the PAT for this acceptance.
