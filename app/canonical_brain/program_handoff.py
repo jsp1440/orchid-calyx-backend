@@ -21,6 +21,12 @@ from app.calyx_orchestrator.static_validation_executor import (
     STATIC_VALIDATION_ROLE,
     IsolatedWorkspaceStaticValidationExecutor,
 )
+from app.calyx_orchestrator.traitbank_validation_executor import (
+    TRAITBANK_VALIDATION_ROLE,
+)
+from app.calyx_orchestrator.traitbank_validation_executor import (
+    parse_targets as parse_traitbank_targets,
+)
 
 from .build_queue import BuildQueueSnapshot
 from .scheduler_bridge import SchedulerJobMetadata, project_governed_queue
@@ -85,6 +91,14 @@ def persist_governed_queue(
             raise PermissionError("BRAIN_HANDOFF_READ_ONLY_REQUIRED")
         if record.role_key == STATIC_VALIDATION_ROLE:
             _require_executable_validation_targets(inputs[record.build_id])
+        if record.role_key == TRAITBANK_VALIDATION_ROLE:
+            # Same allowlist, digest and count rules the executor applies.
+            try:
+                parse_traitbank_targets(inputs[record.build_id].get("files"))
+            except (TypeError, ValueError, PermissionError) as exc:
+                raise PermissionError(
+                    "BRAIN_HANDOFF_TRAITBANK_TARGET_NOT_ALLOWED"
+                ) from exc
         specs.append(
             ProgramJobSpec(
                 job_key=record.build_id,
