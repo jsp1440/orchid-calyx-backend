@@ -27,6 +27,7 @@ from app.routers.scientific_observability import (
 )
 from app.routers.taxonomy_releases import router as taxonomy_releases_router
 from app.trait_genomics.routes import router as trait_genomics_router
+from app.traitbank.routes import router as traitbank_router
 from runtime.connector_routes import router as connector_router
 from runtime.router_fastapi import config_router, infrastructure_router
 
@@ -243,6 +244,9 @@ router.include_router(
 )
 router.include_router(
     research_traits_router, dependencies=[Depends(add_mission_control_cors_headers)]
+)
+router.include_router(
+    traitbank_router, dependencies=[Depends(add_mission_control_cors_headers)]
 )
 router.include_router(workflow_router)
 router.include_router(executive_intelligence_router)

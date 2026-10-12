@@ -725,6 +725,7 @@ OTHER_APP_ENV: tuple[tuple[str, tuple[str, ...]], ...] = (
             "SCIENTIFIC_LANGUAGE_CANDIDATE_ROOT",
             "SCIENTIFIC_LANGUAGE_FIGURE_REQUEST_ROOT",
             "SCI_OBS_EXPORT_ENABLED",
+            "TRAITBANK_DATABASE_URL",
         ),
     ),
     (
