@@ -1,0 +1,45 @@
+{
+  "contract_version": "oc-traitbank-v1",
+  "knowledge_object": "05_SCIENTIFIC_STANDARDS/KO-0069-orchid-continuum-traitbank.md",
+  "reference_implementation": "traitbank/",
+  "reuses": {
+    "evidence_states": "orchid-calyx-backend/app/research_traits/service.py (oc-research-traits-v1 SAFE_STATES)",
+    "taxonomy": "orchid-calyx-backend/runtime/knowledge_graph/canonical_taxonomy.py (world_plants canonical spine; read-only)",
+    "anatomy": "03_DOMAIN_ONTOLOGIES/OAO/OAO_Term_Registry.csv",
+    "eol_traitbank": "orchid-calyx-backend/harvesters/traitbank.py (normalized record shape)",
+    "literature": "orchid-calyx-backend/app/literature_extraction/models.py (PaperKnowledge)",
+    "matrix": "orchid-calyx-backend/runtime/matrix_relationship.py (RelationshipAssertion, RelationshipState)",
+    "calyx": "calyx_brain/reasoning_contracts.py (oc-parallel-v1 reasoning envelope)"
+  },
+  "vocabularies": {
+    "assertion_levels": ["taxon", "population", "specimen", "observation"],
+    "scope_bases": ["source_reported", "direct", "aggregated_with_justification"],
+    "value_kinds": ["quantitative", "range", "categorical", "missing"],
+    "missing_reasons": ["not_observed", "not_reported", "not_applicable", "indeterminate", "withheld"],
+    "evidence_types": ["direct_measurement", "direct_observation", "literature_reported", "dataset_import", "expert_assertion", "image_annotation", "model_inferred"],
+    "evidence_states": ["AVAILABLE", "PROVISIONAL", "VERIFIED", "CONTRADICTORY", "UNKNOWN", "UNAVAILABLE", "WITHHELD", "ABSENT", "REJECTED", "SUPERSEDED"],
+    "link_domains": ["phenology", "occurrence", "climate", "habitat", "pollinator", "mycorrhizal", "anatomical", "reproductive"],
+    "environment_claim_kinds": ["observed_correlation", "proposed_hypothesis", "tested_hypothesis"]
+  },
+  "required_provenance": ["source_id", "source_kind", "original_record_id", "citation", "license", "evidence_type"],
+  "governance": {
+    "human_review_required": true,
+    "automatic_scientific_publication_allowed": false,
+    "graph_mutation_allowed": false,
+    "database_write_allowed": false,
+    "taxonomy_creation_allowed": false,
+    "specimen_to_taxon_generalization_requires_justification": true,
+    "correlation_may_be_presented_as_adaptation": false,
+    "breeding_prediction_enabled": false
+  },
+  "rules": [
+    "A specimen, population or observation assertion is never presented as a taxon-level value.",
+    "A taxon-level assertion is either reported at that level by its source or aggregated by a curator with a written justification and derived_from links.",
+    "Conflicting assertions about the same subject are preserved, never collapsed or averaged.",
+    "A missing value carries a reason and a non-value evidence state; it is never zero and never absence of the trait.",
+    "Records that cannot be mapped to a registered trait, canonical taxon, stated level or convertible unit are kept as unmapped with their raw content.",
+    "Original values, citations and excerpts are carried verbatim alongside normalized values.",
+    "An observed trait-environment correlation is never rendered as an adaptive or evolutionary explanation; only a tested hypothesis carries a test outcome.",
+    "Cross-module links require a source; co-occurring data is not evidence of a relation."
+  ]
+}

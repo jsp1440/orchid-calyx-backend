@@ -25,6 +25,18 @@ on:
       - "app/calyx_orchestrator/operations.py"
       - "scripts/oc_brain_calyx_autonomy_acceptance.py"
       - "tests/test_brain_calyx_autonomy_acceptance.py"
+      - "app/calyx_orchestrator/traitbank_validation_executor.py"
+      - "app/traitbank/**"
+      - "tests/test_traitbank_autonomy_cycle.py"
+      - "tests/test_traitbank_validation_executor.py"
+      - "tests/test_oc_autonomy_acceptance_manifest.py"
+      - "tests/test_render_autonomy_acceptance_config.py"
+      - "tests/test_oc_autonomy_hosted_verify.py"
+      - "scripts/oc_autonomy_hosted_verify.py"
+      - "deploy/render/**"
+      - "scripts/oc_autonomy_acceptance_manifest.py"
+      - "scripts/oc_render_autonomy_acceptance_start.sh"
+      - "data/traitbank/**"
       - ".github/workflows/brain-calyx-autonomy-acceptance.yml"
   workflow_dispatch:
 
@@ -38,7 +50,7 @@ concurrency:
 env:
   # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: 44726ae130565b0e2e98dc2e9eac0bde852f75af
+  OC_BRAIN_REF: 82f3df081bf0e40476a0b35290fd8a97b70add68
 
 jobs:
   acceptance:
@@ -144,6 +156,14 @@ jobs:
         run: >-
           python -m pytest -q -rs tests/test_brain_calyx_autonomy_acceptance.py
           -k "not ten_consecutive"
+
+      - name: Scientific autonomy cycle (TraitBank validation)
+        run: >-
+          python -m pytest -q -rs tests/test_traitbank_autonomy_cycle.py
+          tests/test_traitbank_validation_executor.py
+          tests/test_oc_autonomy_acceptance_manifest.py
+          tests/test_render_autonomy_acceptance_config.py
+          tests/test_oc_autonomy_hosted_verify.py
 
       - name: Upload acceptance report
         if: always()

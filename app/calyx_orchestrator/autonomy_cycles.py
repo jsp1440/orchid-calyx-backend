@@ -64,6 +64,11 @@ def _replenishment_summary(record: object) -> dict[str, Any] | None:
             for item in record.get("reconciled") or []
             if isinstance(item, dict)
         ],
+        # Brain's per-state manifest counts and first undelivered items, so an
+        # exhausted-but-undelivered run is diagnosable from the receipt alone.
+        "manifest": record.get("manifest")
+        if isinstance(record.get("manifest"), dict)
+        else None,
     }
 
 
