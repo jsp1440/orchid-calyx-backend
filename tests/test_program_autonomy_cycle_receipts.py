@@ -308,3 +308,18 @@ def test_receipt_json_columns_round_trip():
         row = db.scalar(select(CalyxAutonomyCycle))
         assert json.loads(row.job_keys_json) == ["build:7:0"]
         assert json.loads(row.replenishment_json)["submitted"][0]["work_id"] == "work-7"
+
+
+def test_first_cycle_on_a_fresh_database_is_not_a_scheduler_defect(monkeypatch):
+    from sqlalchemy.orm import sessionmaker
+
+    import runtime.program_autonomy_worker as worker
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    monkeypatch.setattr(worker, "get_session_local", lambda: sessionmaker(engine))
+    result = worker.run_once(ProgramAutonomyPolicy(enabled=True, owner="owner"))
+    assert result["classification"] == {
+        "productive": False,
+        "category": "no_eligible_work",
+        "healthy": True,
+    }

@@ -15,6 +15,7 @@ from app.calyx_orchestrator.program_cycle import (
     ZERO_EXECUTION_CATEGORIES,
     run_deterministic_program_cycle,
 )
+from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 from app.database import get_session_local
 
 logger = logging.getLogger(__name__)
@@ -106,6 +107,9 @@ def run_once(
     replenishment = _replenish(replenish)
     SessionLocal = get_session_local()
     with SessionLocal() as db:
+        # Idempotent and cached per engine; a fresh database must not turn the
+        # first scheduled cycle into a scheduler defect.
+        ensure_orchestrator_schema(db)
         result = run_deterministic_program_cycle(
             db,
             owner=active_policy.owner,

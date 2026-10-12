@@ -336,3 +336,22 @@ def test_static_validation_targets_are_checked_before_persistence(
             "BRAIN_HANDOFF_VALIDATION_TARGETS_REQUIRED",
         }
         assert persisted == 0
+
+
+def test_first_submission_on_a_fresh_database_bootstraps_the_schema():
+    """A brand-new non-production database has no orchestrator tables yet."""
+    dsn = os.environ["TEST_DATABASE_URL"]
+    schema = "r1_fresh_" + uuid.uuid4().hex
+    admin = create_engine(dsn)
+    with admin.begin() as conn:
+        conn.execute(text(f'CREATE SCHEMA "{schema}"'))
+    fresh = create_engine(dsn, connect_args={"options": f"-csearch_path={schema}"})
+    try:
+        response = post(client(fresh), payload())
+        assert response.status_code == 200, response.text
+        assert response.json()["submission_outcome"] == "submitted"
+    finally:
+        fresh.dispose()
+        with admin.begin() as conn:
+            conn.execute(text(f'DROP SCHEMA "{schema}" CASCADE'))
+        admin.dispose()

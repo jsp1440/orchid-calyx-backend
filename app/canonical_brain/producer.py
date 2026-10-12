@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
+from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
@@ -37,6 +38,9 @@ def submit_brain_program(
     owner = str(auth.get("subject") or auth.get("actor") or "").strip()
     if not owner:
         raise HTTPException(401, detail={"code": "AUTHENTICATED_OWNER_REQUIRED"})
+    # Same idempotent bootstrap the operational status route uses: a fresh
+    # non-production database must accept its first submission.
+    ensure_orchestrator_schema(db)
     try:
         queue = GovernedBuildQueue()
         admissions = {record.build_id: record for record in payload.admissions}
