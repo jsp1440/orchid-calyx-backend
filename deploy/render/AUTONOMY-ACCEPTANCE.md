@@ -101,7 +101,11 @@ No Render or Neon account API key is used, and nothing production is read or cha
    GRANT CONNECT ON DATABASE neondb TO oc_verify;
    GRANT USAGE ON SCHEMA public TO oc_verify;
    GRANT SELECT ON ALL TABLES IN SCHEMA public TO oc_verify;
+   ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public
+     GRANT SELECT ON TABLES TO oc_verify;
    ```
+   The last statement keeps the role read-only, and able to read, if the tables are recreated
+   (see "Reset for a fresh run").
 2. Build the connection string. Take the A2 string, replace the owner role name and password with
    `oc_verify` and the password from D1, and keep `?sslmode=require`.
 3. GitHub → `jsp1440/orchid-calyx-backend` → Settings → Secrets and variables → Actions → New
@@ -122,6 +126,32 @@ No Render or Neon account API key is used, and nothing production is read or cha
   - the verifier's role cannot write.
 - Claude re-runs it until the run has drained (about 10 minutes after the restart), then asks you
   to suspend. The report is preserved in the PR and as a workflow artifact.
+
+### Redeploying after a code fix (same worker, same database)
+1. Render → worker → **Environment**: confirm `OC_BRAIN_REF` equals the Blueprint's value
+   (`82f3df081bf0e40476a0b35290fd8a97b70add68`). If it doesn't, edit it there.
+2. Render → worker → **Manual Deploy → Deploy latest commit**. Auto-deploy stays off.
+3. The first log lines must be `{"work_items": 17, ...}` and then `{"api": "healthy", "worker": "starting"}`.
+   A `CALYX_API_NOT_HEALTHY` line means the worker refused to start, which is safe; send it to Claude.
+4. Idle cycles now say why:
+   - `no_eligible_work` / `WORK_MANIFEST_COMPLETED` (healthy) means every item was delivered;
+   - `execution_not_delivered` / `WORK_MANIFEST_EXHAUSTED_UNDELIVERED` (needs repair) carries
+     `manifest.undelivered` with the failing items and reasons.
+
+### Reset for a fresh run (acceptance database only)
+Work identities are content-derived. A database that already holds a finished run answers every
+resubmission with `idempotent_replay`: nothing executes again, and no new productive cycles happen.
+For a new mid-run restart test, first empty the acceptance tables. In Neon → the **acceptance**
+project → SQL Editor (database `neondb`; never the production project), run:
+```sql
+DO $$ DECLARE t text; BEGIN
+  FOR t IN SELECT tablename FROM pg_tables
+           WHERE schemaname = 'public' AND tablename LIKE 'calyx\_%' LOOP
+    EXECUTE format('DROP TABLE IF EXISTS %I CASCADE', t);
+  END LOOP;
+END $$;
+```
+Then **Manual Deploy** (or Suspend → Resume). The worker recreates the tables on first use.
 
 ### F. Cleanup (same day)
 1. Render → worker → **Suspend**, then Settings → **Delete Service**. Render → Blueprints →
