@@ -153,12 +153,64 @@ END $$;
 ```
 Then **Manual Deploy** (or Suspend → Resume). The worker recreates the tables on first use.
 
+### G. Hosted mid-run restart (no reset: a new database beside the evidence)
+The first hosted run is preserved as-is: the `neondb` records, the export artifact 11734494216, and
+`deploy/render/evidence/2026-10-12-first-hosted-run.json`. Nothing in this procedure deletes,
+truncates or modifies them. The mid-run run writes to a **new, empty database in the same
+acceptance project**. Each step that changes something is marked OWNER-APPROVAL.
+
+0. **Confirm the environment is the acceptance one (read-only, no approval needed):**
+   - Render: the service is `orchid-calyx-autonomy-acceptance`, a Background Worker on Starter in
+     Oregon, branch `claude/sharp-pasteur-e6c4r1-traitbank`, auto-deploy off. Its `DATABASE_URL`
+     host is the acceptance project's endpoint, not the production project's.
+   - `orchid-calyx-backend` (production) is not part of this Blueprint and is not touched.
+   - Verifier run 38222067445 shows the acceptance database `neondb` holds only 10 `calyx_*` tables.
+1. **OWNER-APPROVAL: create the empty database.** Neon → acceptance project → SQL Editor, connected
+   to `neondb` as `neondb_owner`:
+   ```sql
+   CREATE DATABASE autonomy_midrun OWNER neondb_owner;
+   ```
+   Switch the SQL Editor's database to `autonomy_midrun`, then run:
+   ```sql
+   GRANT CONNECT ON DATABASE autonomy_midrun TO oc_verify;
+   GRANT USAGE ON SCHEMA public TO oc_verify;
+   ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO oc_verify;
+   ```
+2. **Add a separate verification secret.** GitHub → Calyx → Actions secrets → new
+   `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`: the `oc_verify` string with `/neondb` replaced by
+   `/autonomy_midrun`. The existing `OC_ACCEPTANCE_VERIFY_DATABASE_URL` stays, so the first run can
+   still be re-verified.
+3. **OWNER-APPROVAL: point the worker at the new database and deploy the current code.**
+   - Render → worker → Environment: change `DATABASE_URL` only by replacing `/neondb` with
+     `/autonomy_midrun`. Confirm `OC_BRAIN_REF` = `82f3df081bf0e40476a0b35290fd8a97b70add68`.
+     Choose **Save only**.
+   - Render → **Manual Deploy → Deploy latest commit**. Confirm under Events that the commit is
+     the branch head.
+   - The first logs must show `{"work_items": 17, ...}`, then `{"api": "healthy", "worker": "starting"}`,
+     then cycle 1 submitting `traitbank-darwin_1862_batch`.
+4. **OWNER-APPROVAL: restart mid-run.** When the logs show `"sequence": 12` (about 6 minutes at
+   30 s), tap **Suspend**, wait for *Suspended*, then tap **Resume**. Twelve productive cycles before
+   the restart keep the ten-in-a-row criterion independent of the restart.
+5. **Verification (Claude).** About 10 minutes after Resume, Claude adds the label
+   `render-acceptance-verify-midrun`. That runs the verifier with `--require-midrun`. Expected:
+   - productive cycles before and after the restart;
+   - idempotent replays after it;
+   - 34/34 jobs delivered once, max attempt count 1;
+   - Darwin verdict valid;
+   - only `calyx_*` tables.
+   The report and record export are kept 90 days.
+6. **OWNER-APPROVAL: suspend the worker** once the report passes.
+
+Cost: about 25 minutes of Starter time, roughly US$0.005. Neon storage for a few hundred rows is
+negligible. Rollback at any step: suspend the worker. Setting `DATABASE_URL` back to `/neondb`
+restores the original configuration.
+
 ### F. Cleanup (same day)
 1. Render → worker → **Suspend**, then Settings → **Delete Service**. Render → Blueprints →
    `oc-autonomy-acceptance` → delete the Blueprint.
 2. Neon → `oc-autonomy-acceptance` → Settings → **Delete project**. This removes the database and both roles.
-3. GitHub → Actions secrets → delete `OC_ACCEPTANCE_VERIFY_DATABASE_URL`. Keep `OC_BRAIN_READ_TOKEN`,
-   which CI uses.
+3. GitHub → Actions secrets → delete `OC_ACCEPTANCE_VERIFY_DATABASE_URL` and
+   `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`. Keep `OC_BRAIN_READ_TOKEN`, which CI uses.
 4. Confirm:
    - the Render dashboard no longer lists `orchid-calyx-autonomy-acceptance`;
    - `orchid-calyx-backend` shows no new deploy;
