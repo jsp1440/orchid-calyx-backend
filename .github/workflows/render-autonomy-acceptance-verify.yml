@@ -2,9 +2,12 @@ name: Render Autonomy Acceptance Verify
 
 # Owner-triggered, read-only verification of the hosted Render + Neon
 # acceptance run (deploy/render/AUTONOMY-ACCEPTANCE.md). It runs only when a
-# pull request is labelled `render-acceptance-verify`, so ordinary pushes never
-# produce a green check without hosted evidence. It connects to the acceptance
-# database with a temporary SELECT-only role and never contacts Render.
+# pull request is labelled, so ordinary pushes never produce a green check
+# without hosted evidence:
+#   render-acceptance-verify         -> first run's database (OC_ACCEPTANCE_VERIFY_DATABASE_URL)
+#   render-acceptance-verify-midrun  -> mid-run restart database
+#                                       (OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL, --require-midrun)
+# It connects with a temporary SELECT-only role and never contacts Render.
 
 on:
   pull_request:
@@ -19,11 +22,19 @@ concurrency:
 
 jobs:
   verify:
-    if: github.event.label.name == 'render-acceptance-verify'
+    if: >-
+      github.event.label.name == 'render-acceptance-verify' ||
+      github.event.label.name == 'render-acceptance-verify-midrun'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      OC_ACCEPTANCE_VERIFY_DATABASE_URL: ${{ secrets.OC_ACCEPTANCE_VERIFY_DATABASE_URL }}
+      OC_ACCEPTANCE_VERIFY_DATABASE_URL: >-
+        ${{ github.event.label.name == 'render-acceptance-verify-midrun'
+            && secrets.OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL
+            || secrets.OC_ACCEPTANCE_VERIFY_DATABASE_URL }}
+      VERIFY_FLAGS: >-
+        ${{ github.event.label.name == 'render-acceptance-verify-midrun'
+            && '--require-midrun' || '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -32,7 +43,7 @@ jobs:
       - name: Require the read-only verification credential
         run: |
           if [ -z "$OC_ACCEPTANCE_VERIFY_DATABASE_URL" ]; then
-            echo "::error::OC_ACCEPTANCE_VERIFY_DATABASE_URL is not set; no hosted evidence was checked."
+            echo "::error::The verification database secret for label '${{ github.event.label.name }}' is not set; no hosted evidence was checked."
             exit 1
           fi
 
@@ -51,14 +62,17 @@ jobs:
           NO_API_MODE: "true"
         run: >-
           python -B scripts/oc_autonomy_hosted_verify.py
-          --dsn "$OC_ACCEPTANCE_VERIFY_DATABASE_URL"
+          --dsn "$OC_ACCEPTANCE_VERIFY_DATABASE_URL" $VERIFY_FLAGS
+          --export render-acceptance-records.json
           | tee render-acceptance-verify.json
 
       - name: Upload verification report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: render-autonomy-acceptance-verify
-          path: render-acceptance-verify.json
+          name: ${{ github.event.label.name }}-report
+          path: |
+            render-acceptance-verify.json
+            render-acceptance-records.json
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 90
