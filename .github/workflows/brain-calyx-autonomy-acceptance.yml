@@ -48,7 +48,7 @@ concurrency:
 env:
   # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: e3c5fe6b132b8d8b2d8d2554a6fb70b902d74764
+  OC_BRAIN_REF: 82f3df081bf0e40476a0b35290fd8a97b70add68
 
 jobs:
   acceptance:

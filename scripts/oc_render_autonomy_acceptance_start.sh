@@ -55,10 +55,21 @@ python scripts/oc_autonomy_acceptance_manifest.py \
 
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level warning &
 api=$!
-for _ in $(seq 1 120); do
-  curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1 && break
+# Never start the worker against an API that is not up: its submissions would
+# fail, exhaust their retries and dependency-fail the whole manifest. A small
+# instance can take minutes to import the app on a cold start.
+healthy=false
+for _ in $(seq 1 "${CALYX_ACCEPTANCE_API_WAIT_SECONDS:-600}"); do
+  if curl -fsS http://127.0.0.1:8000/health >/dev/null 2>&1; then healthy=true; break; fi
+  kill -0 "$api" 2>/dev/null || break
   sleep 1
 done
+if [[ "$healthy" != true ]]; then
+  echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "CALYX_API_NOT_HEALTHY: the loopback Calyx API never answered /health; worker not started"}'
+  kill -TERM "$api" 2>/dev/null || true
+  exit 1
+fi
+echo '{"api": "healthy", "worker": "starting"}'
 
 export CALYX_BACKEND_BASE_URL=http://127.0.0.1:8000
 export OC_BRAIN_CHECKOUT="$work/brain"

@@ -84,7 +84,7 @@ No Render or Neon account API key is used, and nothing production is read or cha
    - `PROVIDER_LAUNCH_AUTHORIZED=false`;
    - `CALYX_PROGRAM_AUTONOMY_POLL_SECONDS=30`;
    - auto-deploy off;
-   - Brain pinned to `e3c5fe6`.
+   - Brain pinned to `82f3df0`.
 5. **Apply / Deploy Blueprint**. Billing starts when the worker starts.
 
 ### C. Restart mid-run

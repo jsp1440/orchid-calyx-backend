@@ -28,7 +28,7 @@ services:
       - key: OC_BRAIN_READ_TOKEN
         sync: false
       - key: OC_BRAIN_REF
-        value: e3c5fe6b132b8d8b2d8d2554a6fb70b902d74764
+        value: 82f3df081bf0e40476a0b35290fd8a97b70add68
       - key: CALYX_ACCEPTANCE_SOURCE_BRANCH
         value: claude/sharp-pasteur-e6c4r1-traitbank
       - key: CALYX_PROGRAM_AUTONOMY_ENABLED
