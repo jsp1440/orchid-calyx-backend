@@ -223,13 +223,11 @@ should then see (*Expect*) and how to undo it (*Undo*).
   connected to `neondb`, run `DROP DATABASE autonomy_midrun;`. This affects only the new, empty
   database.
 
-**Step 3. Add the separate verification secret (GitHub).**
-- *Check:* Calyx → Settings → Secrets and variables → Actions lists
-  `OC_ACCEPTANCE_VERIFY_DATABASE_URL`. Do not edit it.
-- *Do:* add a new secret `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`: the same `oc_verify`
-  connection string, with `/neondb` replaced by `/autonomy_midrun`.
-- *Expect:* both secrets are listed. The first run can still be re-verified.
-- *Undo:* delete the new secret.
+**Step 3. No new GitHub secret is needed.**
+The `render-acceptance-verify-midrun` label reuses the existing read-only
+`OC_ACCEPTANCE_VERIFY_DATABASE_URL` role and points it at `autonomy_midrun` with `--database`: same
+server, and the SELECT grants from Step 2. A dedicated `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`,
+if one is ever added, takes precedence. Neither existing secret is edited.
 
 **Step 4. Point the worker at the new database and deploy (Render).**
 - *Check:* as in Step 1. The service is still *Suspended*.
@@ -315,7 +313,7 @@ freeze with `ALTER DATABASE neondb CONNECTION LIMIT -1;`.
    `oc-autonomy-acceptance` → delete the Blueprint.
 2. Neon → `oc-autonomy-acceptance` → Settings → **Delete project**. This removes the database and both roles.
 3. GitHub → Actions secrets → delete `OC_ACCEPTANCE_VERIFY_DATABASE_URL` and
-   `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`. Keep `OC_BRAIN_READ_TOKEN`, which CI uses.
+   `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL` (if it was ever added). Keep `OC_BRAIN_READ_TOKEN`, which CI uses.
 4. Confirm:
    - the Render dashboard no longer lists `orchid-calyx-autonomy-acceptance`;
    - `orchid-calyx-backend` shows no new deploy;

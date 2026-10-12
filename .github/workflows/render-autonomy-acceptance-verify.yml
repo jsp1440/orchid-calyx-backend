@@ -5,8 +5,9 @@ name: Render Autonomy Acceptance Verify
 # pull request is labelled, so ordinary pushes never produce a green check
 # without hosted evidence:
 #   render-acceptance-verify         -> first run's database (OC_ACCEPTANCE_VERIFY_DATABASE_URL)
-#   render-acceptance-verify-midrun  -> mid-run restart database
-#                                       (OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL, --require-midrun)
+#   render-acceptance-verify-midrun  -> mid-run restart database, --require-midrun:
+#                                       OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL if set, otherwise
+#                                       the first run's read-only role on database autonomy_midrun
 # It connects with a temporary SELECT-only role and never contacts Render.
 
 on:
@@ -28,13 +29,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
-      OC_ACCEPTANCE_VERIFY_DATABASE_URL: >-
-        ${{ github.event.label.name == 'render-acceptance-verify-midrun'
-            && secrets.OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL
-            || secrets.OC_ACCEPTANCE_VERIFY_DATABASE_URL }}
-      VERIFY_FLAGS: >-
-        ${{ github.event.label.name == 'render-acceptance-verify-midrun'
-            && '--require-midrun' || '' }}
+      # Mid-run without its own secret: the first run's SELECT-only role, pointed
+      # at database autonomy_midrun by --database (same server, same grants).
+      FIRST_RUN_DSN: ${{ secrets.OC_ACCEPTANCE_VERIFY_DATABASE_URL }}
+      MIDRUN_DSN: ${{ secrets.OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL }}
+      MIDRUN: ${{ github.event.label.name == 'render-acceptance-verify-midrun' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -42,7 +41,7 @@ jobs:
 
       - name: Require the read-only verification credential
         run: |
-          if [ -z "$OC_ACCEPTANCE_VERIFY_DATABASE_URL" ]; then
+          if [ -z "$FIRST_RUN_DSN" ] && [ -z "$MIDRUN_DSN" ]; then
             echo "::error::The verification database secret for label '${{ github.event.label.name }}' is not set; no hosted evidence was checked."
             exit 1
           fi
@@ -60,11 +59,24 @@ jobs:
         shell: bash
         env:
           NO_API_MODE: "true"
-        run: >-
-          python -B scripts/oc_autonomy_hosted_verify.py
-          --dsn "$OC_ACCEPTANCE_VERIFY_DATABASE_URL" $VERIFY_FLAGS
-          --export render-acceptance-records.json
-          | tee render-acceptance-verify.json
+        run: |
+          flags=()
+          if [ "$MIDRUN" = "true" ]; then
+            flags+=(--require-midrun)
+            dsn="$MIDRUN_DSN"
+            if [ -z "$dsn" ]; then
+              dsn="$FIRST_RUN_DSN"
+              flags+=(--database autonomy_midrun)
+            fi
+          else
+            dsn="$FIRST_RUN_DSN"
+          fi
+          if [ -z "$dsn" ]; then
+            echo "::error::OC_ACCEPTANCE_VERIFY_DATABASE_URL is not set; no hosted evidence was checked."
+            exit 1
+          fi
+          python -B scripts/oc_autonomy_hosted_verify.py --dsn "$dsn" "${flags[@]}" \
+            --export render-acceptance-records.json | tee render-acceptance-verify.json
 
       - name: Upload verification report
         if: always()

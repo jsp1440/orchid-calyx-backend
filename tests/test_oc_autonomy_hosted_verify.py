@@ -225,3 +225,32 @@ def test_reexecution_across_restart_and_held_leases_fail(tmp_path):
         "passed": False,
         "held_or_running": ["job-w4"],
     }
+
+
+def test_database_override_rejects_unsafe_names(capsys, monkeypatch):
+    module = _module()
+    monkeypatch.setattr(
+        "sys.argv", ["verify", "--dsn", PLAIN, "--database", "x; DROP TABLE y"]
+    )
+    assert module.main() == 1
+    assert "VERIFY_DATABASE_NAME_INVALID" in capsys.readouterr().out
+
+
+@pytest.mark.requires_postgres("TEST_DATABASE_URL")
+def test_database_override_verifies_the_named_database(capsys, monkeypatch):
+    """The mid-run label reuses the first run's role on autonomy_midrun."""
+    import json
+    import os
+
+    from sqlalchemy import create_engine, text
+
+    dsn = os.environ["TEST_DATABASE_URL"]
+    engine = create_engine(dsn)
+    with engine.connect() as connection:
+        name = connection.execute(text("SELECT current_database()")).scalar_one()
+    engine.dispose()
+    elsewhere = str(make_url(dsn).set(database="postgres").render_as_string(False))
+    monkeypatch.setattr("sys.argv", ["verify", "--dsn", elsewhere, "--database", name])
+    _module().main()
+    report = json.loads(capsys.readouterr().out)
+    assert report["environment"]["database"] == name

@@ -28,8 +28,14 @@ Checks (all must hold for ``"passed": true``):
   tables (a production database would hold many others).
 * ``resumed_after_midrun_restart`` (with ``--require-midrun``): productive
   cycles before and after the last worker start, with idempotent replay.
+* ``persistent_state_across_restart`` (with ``--require-midrun``): no job is
+  executed on both sides of the restart.
+* ``no_outstanding_leases``: every lease is released and nothing is left
+  running.
 
-``--export PATH`` writes a non-secret copy of the cycle and job records.
+``--export PATH`` writes a non-secret copy of the cycle, job (lease and
+receipt identity) and program records. ``--database NAME`` verifies another
+database on the same server with the same read-only role.
 
 Prints one JSON report; exit 0 only if every check passed.
 """
@@ -38,18 +44,21 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, ProgrammingError
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 DARWIN_BATCH = "data/traitbank/darwin_1862_batch.json"
+DATABASE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,62}")
 
 
 def _consecutive_productive(flags: list[bool]) -> int:
@@ -388,9 +397,23 @@ def main() -> int:
     parser.add_argument(
         "--export", type=Path, help="write a non-secret copy of the records here"
     )
+    parser.add_argument(
+        "--database",
+        help="verify this database on the same server with the same read-only "
+        "role (e.g. autonomy_midrun beside the preserved neondb)",
+    )
     args = parser.parse_args()
+    if args.database is not None and not DATABASE_NAME.fullmatch(args.database):
+        print(json.dumps({"passed": False, "error": "VERIFY_DATABASE_NAME_INVALID"}))
+        return 1
     dsn = normalize_dsn(args.dsn)
     try:
+        if args.database:
+            dsn = (
+                make_url(dsn)
+                .set(database=args.database)
+                .render_as_string(hide_password=False)
+            )
         engine = create_engine(dsn, pool_pre_ping=True)
     except ArgumentError:
         print(
