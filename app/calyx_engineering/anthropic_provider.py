@@ -58,13 +58,56 @@ def _anthropic_error_code(exc: HTTPError) -> str:
     return ":".join(parts)
 
 
+PROMPT_CACHE_ENV = "OC_ANTHROPIC_PROMPT_CACHE"
+REQUIRED_RESPONSE = {
+    "changes": [
+        {
+            "path": "one supplied repository path",
+            "content": "complete replacement file content",
+            "message": "concise repair message",
+        }
+    ]
+}
+
+
+def prompt_cache_enabled() -> bool:
+    raw = os.getenv(PROMPT_CACHE_ENV, "on").strip().lower()
+    return raw not in {"0", "off", "false", "no", "disabled"}
+
+
+def repair_request_content(payload: AnthropicPatchRequest) -> list[dict]:
+    """Split the repair request into a stable block and a per-attempt block.
+
+    The bounded repair loop re-sends the same objective, constraints and
+    repository files on each of its attempts; only the attempt number and the
+    failure logs change. Keeping those last lets the provider serve the shared
+    prefix from its cache. The cache is keyed on exact bytes, so a file that
+    changed between attempts is a miss and is processed afresh, never replayed.
+    """
+    stable = {
+        "objective": payload.objective,
+        "constraints": payload.constraints,
+        "repository_files": payload.repository_files,
+        "required_response": REQUIRED_RESPONSE,
+    }
+    stable_block: dict = {"type": "text", "text": json.dumps(stable, sort_keys=True)}
+    if prompt_cache_enabled():
+        stable_block["cache_control"] = {"type": "ephemeral"}
+    attempt = {"attempt": payload.attempt, "failure_logs": payload.failure_logs}
+    return [stable_block, {"type": "text", "text": json.dumps(attempt, sort_keys=True)}]
+
+
 def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
     api_key = os.getenv("ANTHROPIC_API_KEY", "").strip()
     if not api_key:
         raise AnthropicPatchProviderError("ANTHROPIC_API_KEY_NOT_CONFIGURED")
-    model = os.getenv("CALYX_ENGINEERING_ANTHROPIC_MODEL", "claude-sonnet-4-20250514").strip()
+    model = os.getenv(
+        "CALYX_ENGINEERING_ANTHROPIC_MODEL", "claude-sonnet-4-20250514"
+    ).strip()
     if not model:
-        raise AnthropicPatchProviderError("CALYX_ENGINEERING_ANTHROPIC_MODEL_NOT_CONFIGURED")
+        raise AnthropicPatchProviderError(
+            "CALYX_ENGINEERING_ANTHROPIC_MODEL_NOT_CONFIGURED"
+        )
 
     system = (
         "You are the governed Calyx engineering patch provider. Return only one JSON object "
@@ -74,28 +117,12 @@ def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
         "secrets, dependencies, or unrelated code. Do not create branches, pull requests, merges, "
         "deployments, or explanatory prose."
     )
-    user_payload = {
-        "objective": payload.objective,
-        "attempt": payload.attempt,
-        "constraints": payload.constraints,
-        "repository_files": payload.repository_files,
-        "failure_logs": payload.failure_logs,
-        "required_response": {
-            "changes": [
-                {
-                    "path": "one supplied repository path",
-                    "content": "complete replacement file content",
-                    "message": "concise repair message",
-                }
-            ]
-        },
-    }
     body = {
         "model": model,
         "max_tokens": 8192,
         "temperature": 0,
         "system": system,
-        "messages": [{"role": "user", "content": json.dumps(user_payload)}],
+        "messages": [{"role": "user", "content": repair_request_content(payload)}],
     }
     request = Request(
         "https://api.anthropic.com/v1/messages",
@@ -117,7 +144,9 @@ def generate_file_changes(payload: AnthropicPatchRequest) -> dict:
     except (URLError, TimeoutError) as exc:
         raise AnthropicPatchProviderError("ANTHROPIC_PROVIDER_UNREACHABLE") from exc
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise AnthropicPatchProviderError("ANTHROPIC_PROVIDER_INVALID_RESPONSE") from exc
+        raise AnthropicPatchProviderError(
+            "ANTHROPIC_PROVIDER_INVALID_RESPONSE"
+        ) from exc
 
     blocks = result.get("content")
     if not isinstance(blocks, list):
