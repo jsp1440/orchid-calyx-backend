@@ -243,11 +243,17 @@ def test_database_override_verifies_the_named_database(capsys, monkeypatch):
     import os
 
     from sqlalchemy import create_engine, text
+    from sqlalchemy.orm import Session
+
+    from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 
     dsn = os.environ["TEST_DATABASE_URL"]
     engine = create_engine(dsn)
     with engine.connect() as connection:
         name = connection.execute(text("SELECT current_database()")).scalar_one()
+    # The verifier reads the Calyx tables; a fresh test database has none yet.
+    with Session(engine) as db:
+        ensure_orchestrator_schema(db)
     engine.dispose()
     elsewhere = str(make_url(dsn).set(database="postgres").render_as_string(False))
     monkeypatch.setattr("sys.argv", ["verify", "--dsn", elsewhere, "--database", name])
