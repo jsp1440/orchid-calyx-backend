@@ -270,7 +270,8 @@ def main() -> int:
                 "lexicon_concept": concept["slug"],
                 "oao_state_id": state["oao_id"],
                 "bridge_kg_record_ids": [r.record_id for r in calyx_validated],
-                "review_state": "human_reviewed",
+                # No human reviewed this fixture observation; say so.
+                "review_state": "review_required",
             },
             actor="convergence-demo",
             access_actor="convergence-demo",

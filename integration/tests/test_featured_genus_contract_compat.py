@@ -45,6 +45,13 @@ fg_missing = pytest.mark.skipif(
 )
 
 if str(FG_ROOT) not in sys.path:
+    # The #1803 tree must win for `app` (its app.routers.orchid_widgets differs
+    # from this tree's), but it is based on main and also ships a `runtime`
+    # package. Pin this tree's `runtime` first, so prepending FG_ROOT cannot
+    # shadow it for test modules collected later (otherwise collection fails:
+    # ModuleNotFoundError: runtime.matrix_taxon_resolution).
+    import runtime  # noqa: F401
+
     sys.path.insert(0, str(FG_ROOT))
 
 

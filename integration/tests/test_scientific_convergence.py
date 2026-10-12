@@ -194,7 +194,7 @@ def test_matrix_registry_session_report_roundtrip(tmp_path):
         character="labellum_margin",
         value="fimbriate",
         certainty="certain",
-        source={"kind": "botanical_description", "review_state": "human_reviewed"},
+        source={"kind": "botanical_description", "review_state": "review_required"},
         actor="integration-test",
         access_actor="integration-test",
         root=session_root,
