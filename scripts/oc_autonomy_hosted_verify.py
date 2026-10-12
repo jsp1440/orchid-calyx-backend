@@ -35,8 +35,10 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, unquote
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.exc import ArgumentError
 from sqlalchemy.orm import Session
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -177,14 +179,69 @@ def verify(db: Session, *, owner: str, min_consecutive: int) -> dict[str, Any]:
     }
 
 
+def normalize_dsn(raw: str) -> str:
+    """Accept the forms a connection string is usually pasted in.
+
+    Neon's Connect panel offers ``psql 'postgresql://...'``; secrets are often
+    saved with quotes or a trailing newline; generated passwords may contain
+    URL-reserved characters. The password is percent-encoded so any of them
+    parses. Nothing here is logged.
+    """
+    value = raw.strip()
+    if value.startswith("psql "):
+        value = value[len("psql ") :].strip()
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in "'\"":
+        value = value[1:-1].strip()
+    for prefix in ("postgres://", "postgresql+psycopg2://", "postgresql+psycopg://"):
+        if value.startswith(prefix):
+            value = "postgresql://" + value[len(prefix) :]
+    if not value.startswith("postgresql://"):
+        return value
+    rest = value[len("postgresql://") :]
+    if "@" not in rest:
+        return value
+    userinfo, hostpart = rest.rsplit("@", 1)  # the host part never contains '@'
+    user, sep, password = userinfo.partition(":")
+    if sep:
+        password = quote(unquote(password), safe="")
+        userinfo = f"{user}:{password}"
+    return f"postgresql://{userinfo}@{hostpart}"
+
+
+def dsn_shape(value: str) -> dict[str, Any]:
+    """Non-secret description of why a DSN may not parse."""
+    return {
+        "length": len(value),
+        "scheme": value.split("://", 1)[0] if "://" in value else None,
+        "has_whitespace": any(ch.isspace() for ch in value),
+        "at_signs": value.count("@"),
+        "has_query": "?" in value.rsplit("@", 1)[-1],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--dsn", required=True, help="read-only role connection URL")
     parser.add_argument("--owner", default="backend_api_key")
     parser.add_argument("--min-consecutive", type=int, default=10)
     args = parser.parse_args()
-    dsn = args.dsn.replace("postgres://", "postgresql://", 1)
-    engine = create_engine(dsn, pool_pre_ping=True)
+    dsn = normalize_dsn(args.dsn)
+    try:
+        engine = create_engine(dsn, pool_pre_ping=True)
+    except ArgumentError:
+        print(
+            json.dumps(
+                {
+                    "schema": "oc-autonomy-hosted-verify.v1",
+                    "passed": False,
+                    "error": "VERIFY_DSN_UNPARSEABLE",
+                    "dsn_shape": dsn_shape(dsn),
+                    "expected": "postgresql://oc_verify:<password>@<host>/neondb?sslmode=require",
+                },
+                sort_keys=True,
+            )
+        )
+        return 1
     with Session(engine) as db:
         db.execute(text("SET TRANSACTION READ ONLY"))
         # Least privilege is part of the evidence: the verifying role must not
