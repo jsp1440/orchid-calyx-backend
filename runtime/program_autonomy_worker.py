@@ -209,9 +209,20 @@ def database_recorder(owner: str) -> Recorder:
 def install_stop_handlers(stop: threading.Event) -> None:
     """SIGTERM/SIGINT request a graceful stop after the current cycle."""
 
-    def request_stop(signum: int, _frame: object) -> None:
+    def finish_stop(signum: int) -> None:
         logger.info("program autonomy stop requested by signal %s", signum)
         stop.set()
+
+    def request_stop(signum: int, _frame: object) -> None:
+        # A handler runs on the main thread between bytecodes, possibly while
+        # that thread holds the Event's (non-reentrant) lock inside
+        # ``stop.wait()``; logging takes locks too. Calling either here can
+        # deadlock the worker so it ignores SIGTERM until SIGKILL. Hand both
+        # to a short-lived thread, which proceeds once the main thread
+        # releases the lock.
+        threading.Thread(
+            target=finish_stop, args=(signum,), name="autonomy-stop", daemon=True
+        ).start()
 
     signal.signal(signal.SIGTERM, request_stop)
     signal.signal(signal.SIGINT, request_stop)
