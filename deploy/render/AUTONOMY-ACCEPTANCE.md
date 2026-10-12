@@ -154,56 +154,161 @@ END $$;
 Then **Manual Deploy** (or Suspend → Resume). The worker recreates the tables on first use.
 
 ### G. Hosted mid-run restart (no reset: a new database beside the evidence)
-The first hosted run is preserved as-is: the `neondb` records, the export artifact 11734494216, and
-`deploy/render/evidence/2026-10-12-first-hosted-run.json`. Nothing in this procedure deletes,
-truncates or modifies them. The mid-run run writes to a **new, empty database in the same
-acceptance project**. Each step that changes something is marked OWNER-APPROVAL.
 
-0. **Confirm the environment is the acceptance one (read-only, no approval needed):**
-   - Render: the service is `orchid-calyx-autonomy-acceptance`, a Background Worker on Starter in
-     Oregon, branch `claude/sharp-pasteur-e6c4r1-traitbank`, auto-deploy off. Its `DATABASE_URL`
-     host is the acceptance project's endpoint, not the production project's.
-   - `orchid-calyx-backend` (production) is not part of this Blueprint and is not touched.
-   - Verifier run 38222067445 shows the acceptance database `neondb` holds only 10 `calyx_*` tables.
-1. **OWNER-APPROVAL: create the empty database.** Neon → acceptance project → SQL Editor, connected
-   to `neondb` as `neondb_owner`:
-   ```sql
-   CREATE DATABASE autonomy_midrun OWNER neondb_owner;
-   ```
-   Switch the SQL Editor's database to `autonomy_midrun`, then run:
-   ```sql
-   GRANT CONNECT ON DATABASE autonomy_midrun TO oc_verify;
-   GRANT USAGE ON SCHEMA public TO oc_verify;
-   ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO oc_verify;
-   ```
-2. **Add a separate verification secret.** GitHub → Calyx → Actions secrets → new
-   `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`: the `oc_verify` string with `/neondb` replaced by
-   `/autonomy_midrun`. The existing `OC_ACCEPTANCE_VERIFY_DATABASE_URL` stays, so the first run can
-   still be re-verified.
-3. **OWNER-APPROVAL: point the worker at the new database and deploy the current code.**
-   - Render → worker → Environment: change `DATABASE_URL` only by replacing `/neondb` with
-     `/autonomy_midrun`. Confirm `OC_BRAIN_REF` = `82f3df081bf0e40476a0b35290fd8a97b70add68`.
-     Choose **Save only**.
-   - Render → **Manual Deploy → Deploy latest commit**. Confirm under Events that the commit is
-     the branch head.
-   - The first logs must show `{"work_items": 17, ...}`, then `{"api": "healthy", "worker": "starting"}`,
-     then cycle 1 submitting `traitbank-darwin_1862_batch`.
-4. **OWNER-APPROVAL: restart mid-run.** When the logs show `"sequence": 12` (about 6 minutes at
-   30 s), tap **Suspend**, wait for *Suspended*, then tap **Resume**. Twelve productive cycles before
-   the restart keep the ten-in-a-row criterion independent of the restart.
-5. **Verification (Claude).** About 10 minutes after Resume, Claude adds the label
-   `render-acceptance-verify-midrun`. That runs the verifier with `--require-midrun`. Expected:
-   - productive cycles before and after the restart;
-   - idempotent replays after it;
-   - 34/34 jobs delivered once, max attempt count 1;
-   - Darwin verdict valid;
-   - only `calyx_*` tables.
-   The report and record export are kept 90 days.
-6. **OWNER-APPROVAL: suspend the worker** once the report passes.
+Owner-approved on 2026-10-12, subject to these safeguards:
+- only the dedicated acceptance worker and acceptance database are used;
+- all existing evidence is preserved;
+- the idle worker is suspended until the environment is ready;
+- every manual change is checked for target, current value, expected effect and rollback first.
+
+**Preserved evidence. Nothing below deletes, truncates or modifies it:**
+- the `neondb` records in the acceptance project;
+- export artifact 11734494216;
+- `deploy/render/evidence/2026-10-12-first-hosted-run.json`.
+
+The mid-run run writes only to a **new, empty database `autonomy_midrun` in the same acceptance
+project**.
+
+**Production is out of reach:**
+- The production web service `orchid-calyx-backend` is not in this Blueprint.
+- The worker's only database credential is the acceptance project's `DATABASE_URL`.
+- The verifier's credential is SELECT-only, and the verifier fails if that role can write.
+
+Every step lists what to check before changing anything (*Check*), the change (*Do*), what you
+should then see (*Expect*) and how to undo it (*Undo*).
+
+**Step 0. Suspend the idle worker now.**
+- *Check:* Render → service `orchid-calyx-autonomy-acceptance` (Background Worker, Starter, Oregon,
+  branch `claude/sharp-pasteur-e6c4r1-traitbank`, Auto-Deploy *No*). Its status is *Live*.
+- *Do:* tap **Suspend** and confirm.
+- *Expect:* status *Suspended*; compute billing stops. `neondb` is untouched: the worker finished
+  its work hours ago, and a graceful stop only settles leases, of which there are none.
+- *Undo:* **Resume**.
+
+**Step 1. Read-only confirmation of the environment (no change).**
+- *Check:* Render → worker → Environment → `DATABASE_URL`. Without revealing the password, confirm:
+  - its host is the endpoint of the Neon project `oc-autonomy-acceptance`, shown in Neon →
+    that project → Connection details;
+  - it is **not** the endpoint of any production project;
+  - it ends in `/neondb`.
+- *Check:* `OC_BRAIN_REF` = `82f3df081bf0e40476a0b35290fd8a97b70add68`, and
+  `CALYX_ACCEPTANCE_DATABASE_CONFIRMED` = `non-production`.
+- *Check:* Render → `orchid-calyx-backend` (production) → Events shows no recent deploy.
+- Verifier run 38222067445 already showed that `neondb` holds only 10 `calyx_*` tables.
+
+**Step 2. Create the empty database (Neon, acceptance project only).**
+- *Check:* the Neon console header names the project `oc-autonomy-acceptance`, and the database
+  list shows only `neondb`.
+- *Do:* SQL Editor, database `neondb`, role `neondb_owner`:
+  ```sql
+  CREATE DATABASE autonomy_midrun OWNER neondb_owner;
+  ```
+  Switch the SQL Editor's database to `autonomy_midrun`, then run:
+  ```sql
+  GRANT CONNECT ON DATABASE autonomy_midrun TO oc_verify;
+  GRANT USAGE ON SCHEMA public TO oc_verify;
+  ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO oc_verify;
+  ```
+- *Do:* still connected to `autonomy_midrun`, **freeze the evidence database** for the duration of
+  the test:
+  ```sql
+  ALTER DATABASE neondb CONNECTION LIMIT 0;
+  ```
+  No non-superuser role, including the worker's, can then open a new connection to `neondb`. This
+  holds even if Render restarts an old deploy with its old environment, so nothing can append to
+  or change the preserved records. Their data is not touched.
+- *Expect:* the database list shows `neondb` and `autonomy_midrun`. `neondb` is unchanged, and
+  `SELECT datconnlimit FROM pg_database WHERE datname = 'neondb';` returns `0`.
+- *Undo:* run `ALTER DATABASE neondb CONNECTION LIMIT -1;` from `autonomy_midrun`. Then, while
+  connected to `neondb`, run `DROP DATABASE autonomy_midrun;`. This affects only the new, empty
+  database.
+
+**Step 3. Add the separate verification secret (GitHub).**
+- *Check:* Calyx → Settings → Secrets and variables → Actions lists
+  `OC_ACCEPTANCE_VERIFY_DATABASE_URL`. Do not edit it.
+- *Do:* add a new secret `OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL`: the same `oc_verify`
+  connection string, with `/neondb` replaced by `/autonomy_midrun`.
+- *Expect:* both secrets are listed. The first run can still be re-verified.
+- *Undo:* delete the new secret.
+
+**Step 4. Point the worker at the new database and deploy (Render).**
+- *Check:* as in Step 1. The service is still *Suspended*.
+- *Do:* Environment → edit two variables, then choose **Save only** (not "Save, rebuild and
+  deploy"):
+  - `DATABASE_URL`: replace only `/neondb` with `/autonomy_midrun`. Leave the host, user,
+    password and `?sslmode=require` as they are.
+  - `CALYX_ACCEPTANCE_DATABASE_CONFIRMED`: `non-production` → `non-production:autonomy_midrun`.
+    The new start script then refuses to run unless the app's own connection reports
+    `current_database() = autonomy_midrun`. The previously deployed script requires exactly
+    `non-production`, so it refuses too.
+- *Do:* **Resume**, then **Manual Deploy → Deploy latest commit**. Under Events, confirm the
+  commit is the current head of `claude/sharp-pasteur-e6c4r1-traitbank`.
+- Between Resume and the end of the new deploy, the old instance may log a
+  `configuration_unavailable` refusal or a connection error. That is the guard and the freeze
+  working; it writes nothing.
+- *Expect:* the new deploy's first logs show:
+  1. `{"acceptance_database": "autonomy_midrun", "confirmed": true}`;
+  2. `{"work_items": 17, ...}`;
+  3. `{"api": "healthy", "worker": "starting"}`;
+  4. cycle 1 submitting `traitbank-darwin_1862_batch`.
+- Cycles then run every 30 s by themselves; nobody triggers them by hand.
+- *Stop condition:* if the logs show `ACCEPTANCE_DATABASE_MISMATCH` or a database name other than
+  `autonomy_midrun`, tap **Suspend** and report it. Do not continue.
+- *Undo:* **Suspend**, then set both variables back (`/neondb`, `non-production`) with **Save only**.
+
+**Step 5. Restart mid-run (Render).**
+- *Check:* the logs show `"sequence": 12` (about 6 minutes after the first cycle) and the manifest
+  still has queued work.
+- *Do:* tap **Suspend**, wait for *Suspended*, then tap **Resume**.
+- *Expect:*
+  - the worker logs one graceful stop, then a fresh start with `"sequence": 1`;
+  - finished programs answer `idempotent_replay`;
+  - the remaining work then executes.
+  Twelve productive scheduled cycles before the restart keep the ten-in-a-row criterion
+  independent of the restart.
+- *Undo:* not needed; Suspend stops everything.
+
+**Step 6. Verification (Claude, read-only).**
+About 10 minutes after Resume, Claude adds the label `render-acceptance-verify-midrun` on
+jsp1440/orchid-calyx-backend#1813. The verifier runs with `--require-midrun`.
+
+Required checks:
+
+| Check | Requirement |
+|---|---|
+| `ten_consecutive_productive` | at least 10 productive scheduled cycles in a row |
+| `restart_observed` | at least 2 worker starts |
+| `resumed_after_midrun_restart` | productive cycles before and after the restart, plus replays after it |
+| `persistent_state_across_restart` | no job executed on both sides of the restart |
+| `replay_without_reexecution` | at least 1 idempotent replay |
+| `no_duplicate_execution` | 34 distinct jobs, each delivered once, max attempt count 1 |
+| `no_outstanding_leases` | every lease released |
+| `traitbank_verdict` | Darwin batch valid, all side effects off |
+| `no_defect_cycles` | no unhealthy cycle |
+| `drained` | the last cycles are healthy `no_eligible_work` |
+| `status_consistent` | status is `productive` or `healthy_waiting` |
+| `dedicated_acceptance_database` | the database holds only `calyx_*` tables |
+| `verifier_role_read_only` | the verifier's role cannot write |
+
+The record export (schema `oc-autonomy-hosted-records.v2`) is kept 90 days. It holds:
+- every cycle ID, worker, sequence and executed job keys;
+- every job's program, executing cycle ID, lease owner and expiry (both null once released),
+  attempt count and receipt identity (executor, state, input and output checksums);
+- every program.
+
+Lease tokens and executor payloads are not exported.
+
+**Step 7. Suspend the worker and unfreeze the evidence database.**
+- *Do:* Render → **Suspend**.
+- *Do:* Neon → SQL Editor on `autonomy_midrun`: `ALTER DATABASE neondb CONNECTION LIMIT -1;`
+- *Expect:* the worker shows *Suspended*. `neondb` accepts connections again; the first run can be
+  re-verified with the `render-acceptance-verify` label. Both databases keep their records for
+  audit.
+- *Undo:* **Resume**.
 
 Cost: about 25 minutes of Starter time, roughly US$0.005. Neon storage for a few hundred rows is
-negligible. Rollback at any step: suspend the worker. Setting `DATABASE_URL` back to `/neondb`
-restores the original configuration.
+negligible. Rollback at any point: **Suspend**, set both variables back with **Save only**, then lift the
+freeze with `ALTER DATABASE neondb CONNECTION LIMIT -1;`.
 
 ### F. Cleanup (same day)
 1. Render → worker → **Suspend**, then Settings → **Delete Service**. Render → Blueprints →
