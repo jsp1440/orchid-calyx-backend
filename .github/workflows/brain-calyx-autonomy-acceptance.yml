@@ -30,6 +30,8 @@ on:
       - "tests/test_traitbank_autonomy_cycle.py"
       - "tests/test_traitbank_validation_executor.py"
       - "tests/test_oc_autonomy_acceptance_manifest.py"
+      - "tests/test_render_autonomy_acceptance_config.py"
+      - "deploy/render/**"
       - "scripts/oc_autonomy_acceptance_manifest.py"
       - "scripts/oc_render_autonomy_acceptance_start.sh"
       - "data/traitbank/**"
@@ -158,6 +160,7 @@ jobs:
           python -m pytest -q -rs tests/test_traitbank_autonomy_cycle.py
           tests/test_traitbank_validation_executor.py
           tests/test_oc_autonomy_acceptance_manifest.py
+          tests/test_render_autonomy_acceptance_config.py
 
       - name: Upload acceptance report
         if: always()

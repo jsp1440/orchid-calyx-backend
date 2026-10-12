@@ -39,8 +39,12 @@ if [[ -n "${OC_ACCEPTANCE_BRAIN_DIR:-}" ]]; then
 else
   auth="$(printf 'x-access-token:%s' "$OC_BRAIN_READ_TOKEN" | base64 | tr -d '\n')"
   git init -q "$work/brain"
-  git -C "$work/brain" -c "http.extraheader=AUTHORIZATION: basic $auth" \
-    fetch -q --depth 1 https://github.com/jsp1440/Orchid-Continuum-Brain "$OC_BRAIN_REF"
+  if ! git -C "$work/brain" -c "http.extraheader=AUTHORIZATION: basic $auth" \
+    fetch -q --depth 1 https://github.com/jsp1440/Orchid-Continuum-Brain "$OC_BRAIN_REF"; then
+    # A fine-grained token not granted the Brain repository gets 403/404 here.
+    echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "OC_BRAIN_READ_TOKEN cannot fetch jsp1440/Orchid-Continuum-Brain at OC_BRAIN_REF; grant the token that repository (Contents: Read-only)"}'
+    exit 1
+  fi
   git -C "$work/brain" checkout -q FETCH_HEAD
   unset auth
 fi
