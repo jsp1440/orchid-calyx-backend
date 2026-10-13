@@ -333,7 +333,13 @@ It uses the same worker and acceptance project, and a **new, empty database
   ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO oc_verify;
   ALTER DATABASE neondb CONNECTION LIMIT 0;
   ```
-  The last statement freezes the original evidence for the duration, exactly as in section G.
+  Default privileges apply only in the database where they are set, and only to tables the
+  named role creates. So, **after the worker's first start** (its tables then exist), in
+  `autonomy_loop` as the table owner, also run:
+  ```sql
+  GRANT SELECT ON ALL TABLES IN SCHEMA public TO oc_verify;
+  ```
+  `ALTER DATABASE neondb CONNECTION LIMIT 0` freezes the original evidence for the duration, exactly as in section G.
 - *Undo:* run `ALTER DATABASE neondb CONNECTION LIMIT -1;`, then `DROP DATABASE autonomy_loop;`.
 
 **Step 2. Point the worker at the loop build** (Render, worker
