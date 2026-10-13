@@ -35,18 +35,9 @@ MAX_QUESTION_LENGTH = 500
 #: private fields never travel into a packet.
 PAYLOAD_ALLOWLIST: frozenset[str] = frozenset({"claim_provenance"})
 
-#: Keys that must never appear anywhere in a returned result.
-FORBIDDEN_RESULT_KEYS: frozenset[str] = frozenset(
-    {
-        "latitude",
-        "longitude",
-        "decimal_latitude",
-        "decimal_longitude",
-        "coordinates",
-        "locality",
-        "verbatim_locality",
-    }
-)
+#: Locality boundary: results are checked with the repository-wide
+#: ``app.calyx_flywheel.locality.assert_no_sensitive_locality`` (case-insensitive,
+#: nested), not a local list.
 
 
 class Facet(StrEnum):

@@ -95,6 +95,8 @@ def test_round_trip_preserves_every_field():
         (lambda p: p[PAYLOAD_KEY].update(confidence_is_probability=True), "CONFIDENCE_IS_NOT_A_PROBABILITY"),
         (lambda p: p[PAYLOAD_KEY].update(assertion_id=""), "ASSERTION_ID_MISSING"),
         (lambda p: p[PAYLOAD_KEY]["anchors"][0].update(locator={"latitude": 1.0}), "FORBIDDEN_LOCALITY_KEYS:latitude"),
+        (lambda p: p[PAYLOAD_KEY]["anchors"][0].update(locator={"decimalLatitude": 1.0}), "FORBIDDEN_LOCALITY_KEYS:decimalLatitude"),
+        (lambda p: p[PAYLOAD_KEY]["anchors"][0].update(locator={"gps": "x"}), "FORBIDDEN_LOCALITY_KEYS:gps"),
     ],
 )
 def test_validation_fails_closed_and_names_the_violation(mutate, violation):
