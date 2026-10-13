@@ -128,9 +128,7 @@ class ConflictDisposition:
             )
         object.__setattr__(self, "rationale", rationale)
         object.__setattr__(self, "actor", actor)
-        object.__setattr__(
-            self, "effective_at", self.effective_at.astimezone(UTC)
-        )
+        object.__setattr__(self, "effective_at", self.effective_at.astimezone(UTC))
 
 
 # ---------------------------------------------------------------------------
