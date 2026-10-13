@@ -30,6 +30,10 @@ def isolated(monkeypatch):
     provider = CapturingProvider()
     monkeypatch.setattr(speak_routes, "STORE", store)
     monkeypatch.setattr(speak_routes, "configured_reply_provider", lambda: provider)
+    # Retrieval is stubbed empty only to isolate what reaches the provider; the evidence-free
+    # abstention rule (tests/test_calyx_speak_evidence_free_abstention.py) is
+    # out of scope here, so treat the turn as evidence-bearing.
+    monkeypatch.setattr(speak_routes, "_evidence_free_turn", lambda **_: False)
     monkeypatch.setattr(
         speak_routes,
         "_retrieval",

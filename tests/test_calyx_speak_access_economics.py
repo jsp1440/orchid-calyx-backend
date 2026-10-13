@@ -71,6 +71,10 @@ def isolated_store(monkeypatch):
     no semantic index, external literature or climate provider calls."""
     store = ConversationStore(dsn="")
     monkeypatch.setattr(speak_routes, "STORE", store)
+    # Retrieval is stubbed empty only to isolate access economics; the evidence-free
+    # abstention rule (tests/test_calyx_speak_evidence_free_abstention.py) is
+    # out of scope here, so treat the turn as evidence-bearing.
+    monkeypatch.setattr(speak_routes, "_evidence_free_turn", lambda **_: False)
     monkeypatch.setattr(
         speak_routes,
         "_retrieval",
