@@ -60,9 +60,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244).
+  # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244) and the
+  # autonomy loop with module signals (Brain PR #255 head).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: e15d696b31b213b1c219ed79c207e840d4cb267c
+  OC_BRAIN_REF: 8d9668bb29b3618ea52d1a1854a4b186b167b1d0
 
 jobs:
   acceptance:

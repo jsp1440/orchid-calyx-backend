@@ -277,7 +277,7 @@ def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
     checks: dict[str, dict[str, Any]] = {}
     cycles = db.execute(
         text(
-            "SELECT productive, healthy, poll_seconds, replenishment_json "
+            "SELECT sequence, productive, healthy, poll_seconds, replenishment_json "
             "FROM calyx_program_autonomy_cycles WHERE owner = :owner "
             "ORDER BY finished_at"
         ),
@@ -318,6 +318,50 @@ def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
             "new_work_ids": new,
             "productive_cycles_after_refresh": productive_after,
         }
+    # Every refresh that brought in new commits, and whether new work followed
+    # before the next one: the loop must keep discovering, not just once.
+    updates = [
+        index
+        for index, summary in enumerate(summaries)
+        if (summary.get("workspace_refresh") or {}).get("status") == "updated"
+    ]
+    discovered = []
+    for position, index in enumerate(updates):
+        end = updates[position + 1] if position + 1 < len(updates) else len(summaries)
+        earlier = set(submitted(summaries[:index]))
+        fresh = sorted(set(submitted(summaries[index:end])) - earlier)
+        discovered.append(
+            {
+                "refresh": summaries[index].get("workspace_refresh"),
+                "new_work_ids": fresh,
+            }
+        )
+    checks["subsequent_new_input_discovered"] = {
+        "passed": sum(1 for item in discovered if item["new_work_ids"]) >= 2,
+        "refreshes_with_new_work": sum(
+            1 for item in discovered if item["new_work_ids"]
+        ),
+        "refreshes": discovered[:10],
+    }
+    starts = [index for index, c in enumerate(cycles) if c.sequence == 1]
+    after_restart = cycles[starts[-1] :] if len(starts) >= 2 else []
+    checks["restart_recovered"] = {
+        "passed": len(starts) >= 2
+        and bool(after_restart)
+        and all(c.healthy for c in after_restart),
+        "worker_starts": len(starts),
+        "cycles_after_last_restart": len(after_restart),
+    }
+    best = run_length = 0
+    for c in cycles:
+        run_length = run_length + 1 if c.healthy else 0
+        best = max(best, run_length)
+    checks["ten_consecutive_healthy_cycles"] = {
+        "passed": best >= 10,
+        "longest_healthy_run": best,
+        "cycles": len(cycles),
+        "productive_cycles": sum(1 for c in cycles if c.productive),
+    }
     all_submitted = submitted(summaries)
     duplicates = sorted({w for w in all_submitted if all_submitted.count(w) > 1})
     checks["work_created_once"] = {

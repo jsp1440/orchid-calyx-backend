@@ -126,7 +126,7 @@ export CALYX_BACKEND_BASE_URL=http://127.0.0.1:8000
 export OC_BRAIN_CHECKOUT="$work/brain"
 if [[ "$mode" == loop ]]; then
   queue="$work/brain/14_ENGINEERING/autonomy_mission_queue_v1.json"
-  default_observers="scientific_batches,repository_changes:app/traitbank/*.py,completion_feedback,calyx_health"
+  default_observers="scientific_batches,repository_changes:app/traitbank/*.py,completion_feedback,calyx_health,module_signals"
   if [[ -f "$queue" ]]; then
     default_observers="$default_observers,engineering_objectives:$queue"
   fi

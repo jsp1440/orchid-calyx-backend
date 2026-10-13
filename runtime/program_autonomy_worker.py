@@ -33,8 +33,10 @@ Replenisher = Callable[[], dict[str, Any]]
 #: in the cycle result and never stops the loop.
 Recorder = Callable[[dict[str, Any]], str]
 
-#: Healthy zero-execution categories that back off when they persist.
-_BACKOFF_CATEGORIES = frozenset({"no_eligible_work", "owner_gate"})
+#: Healthy zero-execution categories that back off when they persist: nothing
+#: changes until something external does (new work, a human approval, or a
+#: provider authorization for an approved, lane-gated item).
+_BACKOFF_CATEGORIES = frozenset({"no_eligible_work", "owner_gate", "provider_budget"})
 
 # Upstream reasons that explain an idle cycle better than "no eligible work".
 _UPSTREAM_REASONS = frozenset(ZERO_EXECUTION_CATEGORIES) - {"no_eligible_work"}

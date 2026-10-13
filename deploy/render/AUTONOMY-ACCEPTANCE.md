@@ -363,10 +363,20 @@ It uses the same worker and acceptance project, and a **new, empty database
   report it.
 - *Undo:* **Suspend**, then restore the branch and variables with **Save only**.
 
-**Step 3. New input (Claude).** After the gated idle, Claude commits one genuine, harmless source
-change to the input branch. Within about 5–15 minutes (refresh interval plus idle backoff) the
-logs show a cycle with `"workspace_refresh": {"status": "updated", ...}` that submits and
+**Step 3. First new input (Claude).** After the gated idle, Claude commits one genuine, harmless
+source change to the input branch. Within about 5–15 minutes (refresh interval plus idle backoff)
+the logs show a cycle with `"workspace_refresh": {"status": "updated", ...}` that submits and
 executes exactly one new maintenance verification. The worker then returns to the gated idle.
+
+**Step 3a. Restart mid-run (owner).** Once the worker is back at the gated idle, tap **Suspend**,
+wait for *Suspended*, then **Resume**.
+- *Expect:* a fresh start (`"sequence": 1`). Nothing already delivered is submitted again: the
+  ledger and the verified baseline live in `autonomy_loop`. The worker returns to the same gated
+  idle.
+
+**Step 3b. Second new input (Claude).** Claude commits a second harmless change. Expect another
+`updated` refresh, exactly one new verification, then the gated idle again. By then at least ten
+consecutive healthy cycles (productive or explained idle) have been recorded.
 
 **Step 4. Verification (Claude, read-only).** Claude adds the label
 `render-acceptance-verify-loop` on jsp1440/orchid-calyx-backend#1818. The verifier then runs
@@ -375,6 +385,9 @@ with `--require-loop --database autonomy_loop` and checks:
 | Check | Requirement |
 |---|---|
 | `new_input_discovered_and_executed` | new work after the refresh, then a productive cycle |
+| `subsequent_new_input_discovered` | at least two refreshes, each followed by new work |
+| `restart_recovered` | two worker starts; every cycle after the restart is healthy |
+| `ten_consecutive_healthy_cycles` | at least ten consecutive healthy cycles, productive or idle |
 | `work_created_once` | no work id is freshly submitted twice |
 | `loop_learned_from_outcomes` | verified baseline and settled candidates in the durable ledger |
 | `idle_cycles_name_their_cause` | every idle cycle carries an explicit reason |

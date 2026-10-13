@@ -248,8 +248,12 @@ def test_continuous_loop_details_have_explicit_supply_states(detail, supply):
         )
 
 
-def test_owner_gate_backs_off_like_no_eligible_work(monkeypatch):
-    gate = {"productive": False, "category": "owner_gate", "healthy": True}
+@pytest.mark.parametrize("category", ["owner_gate", "provider_budget"])
+def test_external_waits_back_off_like_no_eligible_work(monkeypatch, category):
+    """Regression (interaction of #1817 backoff and #1818 lane gating):
+    approved work waiting on a paid-provider authorization must not poll at
+    full cadence forever."""
+    gate = {"productive": False, "category": category, "healthy": True}
     plan = iter([gate, gate, gate, DEFECT])
     monkeypatch.setattr(
         worker,

@@ -265,7 +265,17 @@ def test_database_override_verifies_the_named_database(capsys, monkeypatch):
 # --- Continuous-loop acceptance ------------------------------------------------
 
 
-def _loop_db(tmp_path, *, refresh=True, duplicate=False, silent=False, learned=True):
+def _loop_db(
+    tmp_path,
+    *,
+    refresh=True,
+    duplicate=False,
+    silent=False,
+    learned=True,
+    second_input=True,
+    restart=True,
+    unhealthy_after_restart=False,
+):
     import json
     from datetime import UTC, datetime, timedelta
 
@@ -282,34 +292,58 @@ def _loop_db(tmp_path, *, refresh=True, duplicate=False, silent=False, learned=T
     db = Session(engine)
     ensure_orchestrator_schema(db)
     start = datetime.now(UTC) - timedelta(minutes=30)
+
+    def sub(work_id):
+        return {"submitted": [{"work_id": work_id, "outcome": "submitted"}]}
+
+    gate = {"detail": "AWAITING_APPROVAL:1", "zero_reason": "owner_gate"}
+    # (sequence, productive, healthy, summary)
     plan = [
-        # (productive, summary)
-        (True, {"submitted": [{"work_id": "loop:sci:a", "outcome": "submitted"}]}),
-        (True, {"submitted": [{"work_id": "loop:maint:b", "outcome": "submitted"}]}),
-        (False, {"detail": "AWAITING_APPROVAL:1", "zero_reason": "owner_gate"}),
+        (1, True, True, sub("loop:sci:a")),
+        (2, True, True, sub("loop:maint:b")),
+        (3, False, True, gate),
         (
+            4,
+            True,
             True,
             {
                 "workspace_refresh": {"status": "updated" if refresh else "current"},
-                "submitted": [{"work_id": "loop:sci:c", "outcome": "submitted"}],
+                **sub("loop:maint:c"),
             },
         ),
-        (False, {"detail": None if silent else "AWAITING_APPROVAL:1"}),
+        (5, False, True, {"detail": None} if silent else gate),
+        (6, False, True, gate),
     ]
-    if duplicate:
-        plan.append(
-            (True, {"submitted": [{"work_id": "loop:sci:a", "outcome": "submitted"}]})
+    seq = 7
+    if restart:
+        seq = 1  # the worker restarted: its sequence starts again
+    plan.append((seq, False, not unhealthy_after_restart, gate))
+    plan.append(
+        (
+            seq + 1,
+            True,
+            True,
+            {
+                "workspace_refresh": {
+                    "status": "updated" if second_input else "current"
+                },
+                **sub("loop:maint:d"),
+            },
         )
-    for n, (productive, summary) in enumerate(plan):
+    )
+    plan += [(seq + 2, False, True, gate), (seq + 3, False, True, gate)]
+    if duplicate:
+        plan.append((seq + 4, True, True, sub("loop:sci:a")))
+    for n, (sequence, productive, healthy, summary) in enumerate(plan):
         db.add(
             CalyxAutonomyCycle(
                 owner=OWNER,
                 worker_id="w",
-                sequence=n + 1,
+                sequence=sequence,
                 poll_seconds=30,
                 finished_at=start + timedelta(minutes=n),
                 productive=productive,
-                healthy=True,
+                healthy=healthy,
                 category=None if productive else "owner_gate",
                 replenishment_json=json.dumps(summary),
             )
@@ -332,7 +366,13 @@ def _loop_db(tmp_path, *, refresh=True, duplicate=False, silent=False, learned=T
 def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path):
     checks = _module().verify_loop(_loop_db(tmp_path), owner=OWNER)
     assert all(c["passed"] for c in checks.values()), checks
-    assert checks["new_input_discovered_and_executed"]["new_work_ids"] == ["loop:sci:c"]
+    assert checks["new_input_discovered_and_executed"]["new_work_ids"] == [
+        "loop:maint:c",
+        "loop:maint:d",
+    ]
+    assert checks["subsequent_new_input_discovered"]["refreshes_with_new_work"] == 2
+    assert checks["restart_recovered"]["worker_starts"] == 2
+    assert checks["ten_consecutive_healthy_cycles"]["longest_healthy_run"] == 10
     assert checks["loop_learned_from_outcomes"]["proposals"] == {"awaiting_approval": 1}
     assert checks["idle_polling_backs_off"]["applicable"] is False
 
@@ -340,10 +380,17 @@ def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path)
 @pytest.mark.parametrize(
     ("kwargs", "failing"),
     [
-        ({"refresh": False}, "new_input_discovered_and_executed"),
+        (
+            {"refresh": False, "second_input": False},
+            "new_input_discovered_and_executed",
+        ),
         ({"duplicate": True}, "work_created_once"),
         ({"silent": True}, "idle_cycles_name_their_cause"),
         ({"learned": False}, "loop_learned_from_outcomes"),
+        ({"second_input": False}, "subsequent_new_input_discovered"),
+        ({"restart": False}, "restart_recovered"),
+        ({"unhealthy_after_restart": True}, "restart_recovered"),
+        ({"unhealthy_after_restart": True}, "ten_consecutive_healthy_cycles"),
     ],
 )
 def test_loop_acceptance_fails_closed(tmp_path, kwargs, failing):
