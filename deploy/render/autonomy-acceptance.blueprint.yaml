@@ -33,7 +33,7 @@ services:
       - key: OC_BRAIN_READ_TOKEN
         sync: false
       - key: OC_BRAIN_REF
-        value: 7ab95c8d9322db49b4837f0198eba7de7e565035  # = acceptance workflow pin
+        value: 78858693e108389d3de2e5595bead426342645a4  # = acceptance workflow pin
       # New inputs arrive here; the worker refreshes its workspace from it.
       - key: CALYX_ACCEPTANCE_SOURCE_BRANCH
         value: claude/sharp-pasteur-e6c4r1-loop-inputs
