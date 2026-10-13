@@ -2,8 +2,9 @@
 
 Contract: `oc-capability-registry-v1` · Observation date: 2026-10-13 · Author: Kimi (A3 assignment)
 
-This document accompanies the populated registry at `registry/capability_registry.json`
-and the engine at `runtime/oc_capability_registry.py`. Verified findings are
+This document accompanies the populated registry at `registry/capability_registry.json`,
+the engine at `runtime/oc_capability_registry.py`, and the read-only Brain
+interface at `runtime/oc_registry_query.py`. Verified findings are
 separated from assumptions and inaccessible information throughout.
 
 ---
@@ -100,7 +101,7 @@ Extends the existing capability-memory mechanism rather than replacing it.
 
 ## 4. Population (Phase 4)
 
-49 nodes (1 platform, 4 divisions, 15 modules, 29 capabilities) and 15 typed
+50 nodes (1 platform, 4 divisions, 15 modules, 30 capabilities) and 16 typed
 edges, populated from observed GitHub evidence only, covering Brain, Calyx,
 the autonomy engine, Knowledge Graph, and scientific modules (Atlas, Matrix,
 Vision AI, Literature, Lexicon, TraitBank, plus Harvesters, Conservatory,
@@ -109,9 +110,10 @@ Field Journal). Every status-bearing node carries evidence with source, ref
 
 Notable evidence-pinned findings:
 
-- `calyx.capability-memory` is the only capability graded `test: passing` from
-  direct artifact inspection (pinned test file SHA `34b39255`); the new
-  registry engine's own tests pass (26/26, offline runner).
+- `calyx.capability-memory` is the only pre-existing capability graded
+  `test: passing` from direct artifact inspection (pinned test file SHA
+  `34b39255`); the new registry engine's own tests pass (44/44 across both
+  suites, offline runner).
 - The **implemented-but-unintegrated** set is large: autonomy loop, TraitBank
   v1, Vision AI slice, Literature evidence slice, OAO resolution, KG bridge,
   Atlas explorer API, Matrix contributor intake, Field Journal MVP — all open
@@ -210,8 +212,87 @@ Read-only consumption path, no new scheduler/queue/executor:
 - Tests: `tests/test_oc_capability_registry.py` — 26 tests covering schema
   correctness, stable identities, parent-child rules, dependency integrity,
   deduplication, idempotent imports, provenance, unknown-state honesty, and
-  no-credential hygiene. **26/26 passing** (offline runner; repo CI will run
-  them under pytest).
+  no-credential hygiene; `tests/test_oc_registry_query.py` — 18 contract
+  tests for the Brain interface. **44/44 passing** (offline runner; repo CI
+  will run them under pytest).
 - Draft PR opened against `main`; not merged. Claude's active branches
   (`claude/sharp-pasteur-e6c4r1*`, Calyx #1815/#1817/#1818, Brain #255) were
   not touched. No Neon mutation, no deployment, no costly CI triggered.
+
+---
+
+## 9. Verification & integration readiness (follow-up pass, 2026-10-13)
+
+Second-pass verification on the same branch — no rebuild, no new research.
+
+### 9.1 Test results (re-run)
+
+- `tests/test_oc_capability_registry.py`: **26/26 passing** (offline runner;
+  repo CI runs real pytest).
+- `tests/test_oc_registry_query.py` (new): **18/18 passing** — contract
+  envelope on every response, discovery filters, fail-closed unknown handling,
+  provenance, deterministic task lists, Mission Control bundle consistency,
+  no-mutation guarantee, and `calyx-brain-capability-registry-v1` backward
+  compatibility.
+- Total: **44/44 passing.**
+- `scripts/export_capability_registry.py` re-run is byte-identical to the
+  previously delivered exports (determinism re-confirmed); `exports/` is now
+  committed on the branch.
+
+### 9.2 Inventory refresh (Phase 2)
+
+- Calyx main HEAD unchanged: `6444eb696f46ed57daf5c45b6abed8c19e3ee471`;
+  Brain main HEAD unchanged: `b6833c056dceb6678b586cbbaddb96d4a26a9e85`.
+  No drift since the registry was populated; all registry evidence remains
+  current.
+- All cited PRs (#1815/#1817/#1818, #1811/#1813, #1802, #1801, #1785,
+  #1793–#1796, #1716, #1771, Brain #230/#232/#233/#235/#240/#246/#247/
+  #253/#255) remain open, nearly all drafts. New since the first pass:
+  Calyx #1819 (graph-grounded reasoning pilot), Calyx #1814 / Brain #252
+  (BRAIN-EFFICIENCY-001 prompt caching), Brain #251 (event-driven CI to fit
+  included Actions minutes — corroborates the resource audit).
+- **Neon remains inaccessible** (`list_projects` → `[]`, connection
+  unscoped). Deployment/operational statuses stay `unverified`.
+- **Render:** no Render connector exists in this environment; Render-side
+  deployment state could not be inspected. Recorded as an access limitation.
+
+### 9.3 Brain-consumable interface (Phase 3)
+
+New module `runtime/oc_registry_query.py` (interface version
+`oc-registry-query-v1`) — a read-only facade over an immutable
+`CapabilityRegistry` snapshot. Brain consumes it via
+`RegistryQuery.from_default_store()`; every response is a JSON-serializable
+dict carrying `contract`, `interface`, `compatible_with`, `read_only: true`,
+`execution_authority: false`, `publication_authority: false`.
+
+| Method | Purpose |
+|---|---|
+| `discover_capabilities(query, module_id=, statuses=)` | capability discovery by text/module/status filters |
+| `status_lookup(node_id)` | full five-axis status + evidence + fail-closed eligibility; unknown id returns explicit `found: false` with all-unknown statuses |
+| `module_relationships(node_id)` | children + incoming/outgoing typed edges with edge evidence |
+| `missing_and_blocked()` | absent/unknown capabilities, blocker-bearing capabilities, implemented-but-unmerged work |
+| `provenance(node_id)` | node evidence trail plus evidence on touching edges |
+| `next_engineering_tasks()` | deterministic aggregate of recorded blockers + next actions |
+| `mission_control_export()` | internally consistent hierarchy + graph + summary bundle from one snapshot |
+| `autonomy_brief()` | pass-through of the engine's read-only autonomy export |
+
+Boundaries kept: the interface exposes **no mutation methods**
+(`import_records` stays on the engine and returns a new object), introduces
+**no scheduler, queue, lease, owner-gate, or policy logic**, and never infers
+deployment/operational truth. Brain's scheduler, queues, leasing, and
+policies are untouched.
+
+### 9.4 Merge-conflict check
+
+All A3 files are new paths (`runtime/oc_capability_registry.py`,
+`runtime/oc_registry_query.py`, `registry/`, `exports/`, `tests/test_oc_*`,
+`docs/CAPABILITY_REGISTRY_A3.md`, `scripts/export_capability_registry.py`);
+main has not moved since the branch point. **No merge conflicts expected.**
+
+### 9.5 Remaining blockers (unchanged)
+
+1. Neon access (needed to convert `unverified` deployment/operational into
+   verified states).
+2. Owner review of draft PR #1820.
+3. Merge decisions on the stacked autonomy/science PR chains remain with
+   their owners (Claude's branches untouched).
