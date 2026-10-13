@@ -56,6 +56,7 @@ env:
     tests/test_ledger_exact_revision_retrieval.py
     tests/test_reasoning_ledger_exact_revision.py
     tests/test_reasoning_ledger_exact_service.py
+    tests/test_pulse_ledger_store.py
   # app/security.py, owner-only routes, member read access, credentials,
   # CORS, redaction, show-day judging lock, calyx_core owner-only show
   # management, and governed-authorization suites.

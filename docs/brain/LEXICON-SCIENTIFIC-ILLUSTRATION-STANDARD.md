@@ -1,6 +1,6 @@
 # Orchid Botanical Lexicon — Scientific Illustration & Visual Evidence Standard
 
-Status: governing project guidance  
+Status: governing project guidance
 Scope: Illustrated Orchid Lexicon, Vision-Lexicon, scientific figures, species imagery, conceptual diagrams, and related educational assets.
 
 ## Purpose

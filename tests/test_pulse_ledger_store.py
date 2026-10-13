@@ -82,6 +82,7 @@ def test_postgres_advisory_lock_excludes_other_connections():
     assert (url.username, url.hostname) in {
         ("oc_local", "127.0.0.1"),
         ("ocvalidate", "localhost"),
+        ("occritical", "localhost"),  # oc-critical-suites postgres-ledger service
     }
     schema = "pulse_ledger_" + uuid.uuid4().hex
     admin = create_engine(dsn)
