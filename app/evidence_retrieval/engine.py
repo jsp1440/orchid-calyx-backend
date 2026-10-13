@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -8,6 +9,71 @@ from dataclasses import asdict
 from hashlib import sha256
 
 from .models import RetrievalQuery
+
+# Lexical matching works on whole word tokens.  Matching raw query words as
+# substrings made "a", "the" and "of" match almost every document, and kept
+# trailing punctuation ("nivea?") from matching at all.
+_TOKEN = re.compile(r"[^\W_]+(?:['-][^\W_]+)*")
+STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "as",
+        "at",
+        "be",
+        "by",
+        "can",
+        "do",
+        "does",
+        "for",
+        "from",
+        "has",
+        "have",
+        "how",
+        "in",
+        "is",
+        "it",
+        "its",
+        "of",
+        "on",
+        "or",
+        "that",
+        "the",
+        "their",
+        "there",
+        "these",
+        "this",
+        "to",
+        "was",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "who",
+        "why",
+        "with",
+    }
+)
+#: Shorter terms must equal a document token; longer ones may also match as a
+#: prefix ("orchid" -> "orchids").
+MIN_PREFIX_TERM_LENGTH = 4
+
+
+def tokenize(text):
+    return _TOKEN.findall(text.casefold())
+
+
+def query_terms(text):
+    return list(dict.fromkeys(t for t in tokenize(text) if t not in STOPWORDS))
+
+
+def term_occurrences(term, tokens):
+    if len(term) < MIN_PREFIX_TERM_LENGTH:
+        return sum(1 for token in tokens if token == term)
+    return sum(1 for token in tokens if token.startswith(term))
 
 
 def cosine(a, b):
@@ -20,7 +86,7 @@ def cosine(a, b):
 
 class RetrievalEngine:
     def __init__(
-        self, repository, provider, parents=None, ranking_version="085b-rank-1"
+        self, repository, provider, parents=None, ranking_version="085b-rank-2"
     ):
         self.repo = repository
         self.provider = provider
@@ -35,7 +101,7 @@ class RetrievalEngine:
         elif hasattr(self.repo, "refresh"):
             self.repo.refresh()
         started = time.perf_counter()
-        terms = q.text.casefold().split()
+        terms = query_terms(q.text)
         query_vector = (
             self.provider.embed_batch([q.text])[0]
             if q.mode in {"SEMANTIC", "HYBRID"}
@@ -58,6 +124,8 @@ class RetrievalEngine:
             )
             text = lexical.get("normalized_text", "")
             title = (lexical.get("title") or "").casefold()
+            text_tokens = tokenize(text)
+            title_tokens = tokenize(title)
             if q.collections and not set(q.collections) & set(
                 meta.get("collections", [])
             ):
@@ -90,10 +158,14 @@ class RetrievalEngine:
             ):
                 excluded["EXPIRED"] += 1
                 continue
-            matches = [t for t in terms if t in text or t in title]
+            matches = [
+                t
+                for t in terms
+                if term_occurrences(t, text_tokens) or term_occurrences(t, title_tokens)
+            ]
             ls = (
-                sum(text.count(t) for t in terms)
-                + 3 * sum(title.count(t) for t in terms)
+                sum(term_occurrences(t, text_tokens) for t in terms)
+                + 3 * sum(term_occurrences(t, title_tokens) for t in terms)
             ) / max(1, len(terms))
             vector = next(
                 (

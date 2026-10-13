@@ -12,6 +12,7 @@ on:
       - "tests/test_build_085c_retrieval_validation.py"
       - "tests/test_build_085d_durable_retrieval.py"
       - "tests/test_semantic_exact_provenance_brain_bridge.py"
+      - "tests/test_evidence_retrieval_lexical_tokens.py"
       - ".github/workflows/calyx-semantic-exact-provenance-validation.yml"
 
 permissions:
@@ -47,8 +48,8 @@ jobs:
             tests/test_semantic_exact_provenance_brain_bridge.py
       - name: Ruff
         run: |
-          ruff check app/evidence_retrieval/engine.py tests/test_semantic_exact_provenance_brain_bridge.py
-          ruff format --check app/evidence_retrieval/engine.py tests/test_semantic_exact_provenance_brain_bridge.py
+          ruff check app/evidence_retrieval/engine.py tests/test_semantic_exact_provenance_brain_bridge.py tests/test_evidence_retrieval_lexical_tokens.py
+          ruff format --check app/evidence_retrieval/engine.py tests/test_semantic_exact_provenance_brain_bridge.py tests/test_evidence_retrieval_lexical_tokens.py
       - name: Semantic and retrieval regressions
         run: |
           python -m pytest -q \
@@ -56,7 +57,8 @@ jobs:
             tests/test_build_085b_hybrid_retrieval.py \
             tests/test_build_085c_retrieval_validation.py \
             tests/test_build_085d_durable_retrieval.py \
-            tests/test_semantic_exact_provenance_brain_bridge.py
+            tests/test_semantic_exact_provenance_brain_bridge.py \
+            tests/test_evidence_retrieval_lexical_tokens.py
       - name: Provenance boundary
         run: |
           python - <<'PY'
