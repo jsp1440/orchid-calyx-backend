@@ -186,6 +186,22 @@ def check_edge(
         input_port,
         no_api_mode=no_api_mode,
     )
+    provider, requirer = producer.taxon_resolution, consumer.taxon_resolution
+    if (
+        provider is not None
+        and requirer is not None
+        and provider.role == "provides"
+        and requirer.role == "requires"
+    ):
+        if provider.authority != requirer.authority:
+            blocking = (*blocking, f"TAXON_AUTHORITY_MISMATCH:{provider.authority}")
+        withheld = sorted(
+            set(provider.admitted_statuses) - set(requirer.admitted_statuses)
+        )
+        if withheld:
+            # Checked again per link at run time; links outside the requirer's
+            # admitted statuses are refused, never silently passed.
+            advisories = (*advisories, f"TAXON_STATUSES_FILTERED:{','.join(withheld)}")
     return FunctionalEdge(
         producer=producer,
         output_port=output_port,

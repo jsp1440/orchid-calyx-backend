@@ -29,8 +29,11 @@ the existing PostgreSQL snapshot repository when a caller supplies one.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
+import os
 import re
+import sys
 from collections.abc import Callable, Mapping
 from dataclasses import asdict
 from pathlib import Path
@@ -62,6 +65,7 @@ from runtime.knowledge_graph.canonical_taxonomy import (
     canonical_name_of,
 )
 
+from . import value_semantics
 from .contracts import (
     AutonomyClass,
     CapabilityDescriptor,
@@ -93,16 +97,48 @@ _HEDGE = re.compile(
 )
 
 
-def _calyx_bridge():
-    """Import the existing Brain-to-Calyx handoff only when the Calyx step runs.
+_DEPENDENCIES_MODULE = "app.candidate_knowledge.dependencies"
+#: Present only in the lazy form of that module (issue #1826 / draft PR #1827).
+_LAZY_DEPENDENCIES_MARKER = "def resolve_components("
+_DATABASE_ENV = ("DATABASE_URL", "TEST_DATABASE_URL")
+
+
+def import_time_database_contact_risk() -> tuple[str, ...]:
+    """Database variables FIL's first import of the bridge would connect with.
 
     ``app.parallel_platform.brain_candidate_handoff`` imports
-    ``app.candidate_knowledge.dependencies``, which builds a repository from
-    ``DATABASE_URL`` at import time (pre-existing behaviour of that module, not
-    FIL's). Importing it lazily keeps describing, planning and governing FIL
-    plans free of any database contact; running the Calyx step reaches that
-    module exactly as the application itself does.
+    ``app.candidate_knowledge.dependencies``. In its current eager form, that
+    module builds a repository from ``DATABASE_URL`` / ``TEST_DATABASE_URL``
+    *at import time*: it connects and, if the schema is absent, creates it.
+    The risk is empty when the module is already imported (FIL would cause no
+    new contact), when no database variable is set, or when the installed
+    module is the lazy form. The module source is read, never executed, to
+    decide.
     """
+    if _DEPENDENCIES_MODULE in sys.modules:
+        return ()
+    configured = tuple(name for name in _DATABASE_ENV if os.getenv(name))
+    if not configured:
+        return ()
+    spec = importlib.util.find_spec(_DEPENDENCIES_MODULE)
+    origin = Path(spec.origin) if spec is not None and spec.origin else None
+    if origin is not None and _LAZY_DEPENDENCIES_MARKER in origin.read_text():
+        return ()
+    return configured
+
+
+def _calyx_bridge(*, allow_import_time_database_contact: bool = False):
+    """Import the existing Brain-to-Calyx handoff only when the Calyx step runs.
+
+    Describing, planning and governing FIL plans never import it. Running the
+    Calyx step refuses to trigger the eager module's import-time connection
+    unless the caller explicitly allows it: an offline run must not reach
+    whatever database the environment happens to name. The refusal surfaces
+    as a BLOCKED receipt, not a silent skip.
+    """
+    risk = import_time_database_contact_risk()
+    if risk and not allow_import_time_database_contact:
+        raise RuntimeError(f"IMPORT_TIME_DATABASE_CONTACT_REFUSED:{','.join(risk)}")
     from app.parallel_platform.brain_candidate_handoff import (
         DOMAIN_KINDS,
         handoff_brain_candidate,
@@ -348,6 +384,7 @@ def build_handlers(
         [], tuple[MemoryCandidateRepository, CandidateExtractionService]
     ]
     | None = None,
+    allow_import_time_database_contact: bool = False,
 ) -> dict[str, Handler]:
     taxonomy = manifest["taxonomy"]
     backbone = build_canonical_registry(taxonomy["load_rows"], taxonomy["synonym_rows"])
@@ -441,7 +478,12 @@ def build_handlers(
                 taxon = backbone.resolve(name)
                 if taxon is None:
                     unknown.append(name)
-                else:
+                elif (
+                    taxon.canonical_id not in taxa
+                    or canonical_name_of(name) == taxon.canonical_name
+                ):
+                    # The accepted spelling wins over a synonym of the same
+                    # taxon, independent of name order.
                     taxa[taxon.canonical_id] = (taxon, name)
             link: dict[str, Any] = {
                 "submitted_names": names,
@@ -461,15 +503,25 @@ def build_handlers(
                     canonical_name=taxon.canonical_name,
                     reason=None,
                 )
-            elif len(taxa) + len(unknown) > 1:
-                link.update(status="ambiguous", reason="TAXON_AMBIGUOUS")
+            elif len(taxa) > 1:
+                # Several resolved taxa: each name is exact, but the claim's
+                # subject cannot be attributed to one taxon. Not a name conflict.
+                link.update(status="ambiguous", reason="MULTIPLE_SUBJECT_TAXA")
+            elif taxa and unknown:
+                # One backbone taxon plus a declared name outside the backbone
+                # (e.g. a pollinator): the subject is undetermined, not guessed.
+                link.update(status="ambiguous", reason="SUBJECT_TAXON_UNDETERMINED")
+            elif len(unknown) > 1:
+                link.update(status="unresolved", reason="TAXON_UNRESOLVED")
             else:
                 link.update(
                     status="unresolved",
                     reason="TAXON_UNRESOLVED" if names else "NO_TAXON_NAME_IN_CLAIM",
                 )
             linked.append({**claim, "taxon_link": link})
-        conflicts = any(item["taxon_link"]["status"] == "ambiguous" for item in linked)
+        # Exact matching against one backbone cannot produce a name conflict;
+        # multi-subject attribution is recorded per claim, not as an event.
+        conflicts = False
         resolved = any(
             item["taxon_link"]["status"] in {"accepted", "synonym"} for item in linked
         )
@@ -688,7 +740,9 @@ def build_handlers(
         )
 
     def handoff(payload: Mapping[str, Any]) -> HandlerResult:
-        to_request, admit_candidate, kind_domain = _calyx_bridge()
+        to_request, admit_candidate, kind_domain = _calyx_bridge(
+            allow_import_time_database_contact=allow_import_time_database_contact
+        )
         repository, service = components_factory()
         atomic = getattr(repository, "atomic", None)
         groups: dict[tuple[int, str], list[dict[str, Any]]] = {}
@@ -705,25 +759,31 @@ def build_handlers(
         states: set[str] = set()
         variation: list[dict[str, Any]] = []
         for (taxon_id, predicate), members in sorted(groups.items()):
+            # Values are compared after normalization (case, separators, length
+            # units); only mutually exclusive categorical values contradict.
             by_value: dict[str, list[dict[str, Any]]] = {}
+            keys: dict[str, value_semantics.ValueKey] = {}
             for record in members:
-                by_value.setdefault(_value_key(record), []).append(record)
-            measured = all(r["raw"]["kind"] == "MEASUREMENT" for r in members)
-            contradictory = len(by_value) > 1 and not measured
-            if len(by_value) > 1 and measured:
+                key = _value_key(record)
+                keys[value_semantics.display(key)] = key
+                by_value.setdefault(value_semantics.display(key), []).append(record)
+            comparison = value_semantics.classify(predicate, keys.values())
+            contradictory = comparison == value_semantics.CONTRADICTION
+            differs = comparison not in {
+                value_semantics.AGREEMENT,
+                value_semantics.CONTRADICTION,
+            }
+            if differs:
                 variation.append(
                     {
                         "taxon_id": taxon_id,
                         "predicate": predicate,
                         "values": sorted(by_value),
-                        "assessment": "VARIATION_AT_UNSTATED_LEVEL",
+                        "assessment": comparison,
                         "sources": sorted({r["reference_raw"] for r in members}),
                     }
                 )
-            ids = {
-                value: f"fil001b:{taxon_id}:{predicate}:{_slug(value)}"
-                for value in by_value
-            }
+            ids = _candidate_ids(taxon_id, predicate, keys)
             for value, records in sorted(by_value.items()):
                 state = "CONTRADICTORY" if contradictory else "PROVISIONAL"
                 states.add(state)
@@ -736,7 +796,7 @@ def build_handlers(
                     )
                     if contradictory
                     else [],
-                    variation=len(by_value) > 1 and measured,
+                    variation=comparison == value_semantics.VARIATION_AT_UNSTATED_LEVEL,
                     gaps=gap_lines,
                 )
                 first = records[0]["raw"]
@@ -776,6 +836,9 @@ def build_handlers(
                         "taxon_link": records[0]["taxon_link"],
                     }
                 )
+        candidate_ids = [h["candidate_id"] for h in handoffs]
+        if len(candidate_ids) != len(set(candidate_ids)):
+            raise ValueError("CANDIDATE_ID_COLLISION")
         return HandlerResult(
             output={
                 "fixture_id": payload["fixture_id"],
@@ -831,16 +894,41 @@ def build_handlers(
     }
 
 
-def _value_key(record: Mapping[str, Any]) -> str:
+def _value_key(record: Mapping[str, Any]) -> value_semantics.ValueKey:
     value = record["value_raw"]
-    unit = record["units_raw"]
-    if isinstance(value, float):
-        value = f"{value:g}"
-    return f"{value} {unit}".strip() if unit else str(value)
+    numeric = isinstance(value, int | float) and not isinstance(value, bool)
+    return value_semantics.value_key(
+        object_value=None if numeric else str(value),
+        numeric_value=value if numeric else None,
+        unit=record["units_raw"] or None,
+    )
 
 
 def _slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", value.casefold()).strip("-")
+
+
+def _candidate_ids(
+    taxon_id: int, predicate: str, keys: Mapping[str, value_semantics.ValueKey]
+) -> dict[str, str]:
+    """Readable, collision-free candidate ids for one (taxon, predicate) group.
+
+    Distinct normalized values whose slugs coincide get a deterministic suffix
+    derived from the comparison key, so no two candidates share an id.
+    """
+    slugs: dict[str, list[str]] = {}
+    for display in keys:
+        slugs.setdefault(_slug(display), []).append(display)
+    ids: dict[str, str] = {}
+    for slug, displays in slugs.items():
+        for display in displays:
+            suffix = (
+                f"-{canonical_checksum(list(keys[display]))[:8]}"
+                if len(displays) > 1
+                else ""
+            )
+            ids[display] = f"fil001b:{taxon_id}:{predicate}:{slug}{suffix}"
+    return ids
 
 
 def _packet(
@@ -926,10 +1014,19 @@ def run_chain(
         [], tuple[MemoryCandidateRepository, CandidateExtractionService]
     ]
     | None = None,
+    allow_import_time_database_contact: bool = False,
 ) -> DryRunReport:
-    """Plan, govern and run the chain over the fixture. Offline and deterministic."""
+    """Plan, govern and run the chain over the fixture. Offline and deterministic.
+
+    See :func:`import_time_database_contact_risk` for the one pre-existing
+    import that can connect, and why it is refused unless explicitly allowed.
+    """
     manifest = manifest if manifest is not None else load_manifest()
     plan = plan_chain()
     decision = evaluate_plan(plan)
-    handlers = build_handlers(manifest, candidate_components=candidate_components)
+    handlers = build_handlers(
+        manifest,
+        candidate_components=candidate_components,
+        allow_import_time_database_contact=allow_import_time_database_contact,
+    )
     return execute_dry_run(plan, decision, handlers, source_payload(manifest))

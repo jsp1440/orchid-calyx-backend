@@ -55,7 +55,11 @@ CHAIN = [
 
 @pytest.fixture(scope="module")
 def report():
-    return run_chain()
+    # In-process, the test environment's DATABASE_URL is conftest's
+    # placeholder; allowing the bridge import keeps candidate_knowledge's
+    # pre-existing import behaviour identical for the rest of the session. The
+    # zero-contact default is proven in a clean subprocess below.
+    return run_chain(allow_import_time_database_contact=True)
 
 
 @pytest.fixture(scope="module")
@@ -123,11 +127,15 @@ def test_requirer_without_a_taxon_provider_upstream_cannot_be_planned():
 
 def test_chain_is_deterministic_and_offline(report, monkeypatch):
     def refuse(*args, **kwargs):
-        raise AssertionError("FIL-001B attempted a network connection")
+        raise AssertionError("FIL-001B attempted a database connection")
 
+    # libpq bypasses Python sockets, so the sentinel sits on psycopg itself.
+    import psycopg
+
+    monkeypatch.setattr(psycopg, "connect", refuse)
     monkeypatch.setattr(socket.socket, "connect", refuse)
     monkeypatch.setattr(socket, "create_connection", refuse)
-    again = run_chain()
+    again = run_chain(allow_import_time_database_contact=True)
     assert again.run_digest == report.run_digest
     for receipt in again.to_dict()["receipts"]:
         jsonschema.validate(receipt, RECEIPT_SCHEMA)
@@ -161,8 +169,10 @@ def test_taxonomy_resolves_exactly_and_never_guesses(output):
     assert withheld["doi:10.5555/fil.001b.paper-c#claim-1"]["reasons"] == [
         "TAXON_UNRESOLVED"
     ]
+    # Two exact backbone names in one claim: subject attribution is ambiguous,
+    # which is recorded precisely rather than as a taxonomic name conflict.
     assert withheld["doi:10.5555/fil.001b.paper-a#claim-3"]["reasons"] == [
-        "TAXON_AMBIGUOUS"
+        "MULTIPLE_SUBJECT_TAXA"
     ]
     for handoff in output["handoffs"]:
         link = handoff["taxon_link"]
@@ -405,3 +415,61 @@ def test_describing_and_planning_never_import_the_database_dependency_module():
         check=True,
     )
     assert result.stdout.strip() == "False"
+
+
+_CONNECT_PROBE = """
+import json, sys
+import psycopg
+calls = []
+def sentinel(*args, **kwargs):
+    calls.append(1)
+    raise RuntimeError("probe: connection refused by sentinel")
+psycopg.connect = sentinel
+from app.functional_interaction.literature_to_calyx import run_chain
+report = run_chain()
+print(json.dumps({
+    "connects": len(calls),
+    "succeeded": report.succeeded,
+    "reasons": [r.failure_reason for r in report.receipts],
+}))
+"""
+
+
+def _probe(env_overrides):
+    import os
+    import subprocess
+    import sys
+
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"DATABASE_URL", "TEST_DATABASE_URL"}
+    }
+    env.update(env_overrides)
+    result = subprocess.run(
+        [sys.executable, "-B", "-c", _CONNECT_PROBE],
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return json.loads(result.stdout.strip().splitlines()[-1])
+
+
+def test_offline_chain_opens_no_database_connection_by_default():
+    probe = _probe({})
+    assert probe == {"connects": 0, "succeeded": True, "reasons": [None] * 5}
+
+
+@pytest.mark.parametrize("variable", ["DATABASE_URL", "TEST_DATABASE_URL"])
+def test_offline_chain_refuses_to_trigger_import_time_database_contact(variable):
+    probe = _probe({variable: "postgresql://prod-like.invalid:5432/orchid"})
+    assert probe["connects"] == 0
+    assert probe["succeeded"] is False
+    calyx = probe["reasons"][-1]
+    assert calyx.startswith(
+        "HANDLER_ERROR:RuntimeError:IMPORT_TIME_DATABASE_CONTACT_REFUSED:"
+    )
+    assert variable in calyx
+    assert probe["reasons"][:-1] == [None] * 4

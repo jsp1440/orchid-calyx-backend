@@ -427,6 +427,19 @@ class CapabilityDescriptor:
                 f"TAXON_POLICY_CONDITIONS_UNDECLARED:{self.taxon_resolution.role}:{','.join(missing)}",
             )
 
+        # The authority condition is reserved: only a declared provider may
+        # establish it. Every requirer needs it, so a policy-less function cannot
+        # satisfy a requirer's preconditions.
+        reserved = sorted(
+            effect for effect in self.effects if effect.startswith("taxon_authority_")
+        )
+        if reserved:
+            _require(
+                self.taxon_resolution is not None
+                and self.taxon_resolution.role == "provides",
+                f"TAXON_CONDITION_WITHOUT_PROVIDER_POLICY:{','.join(reserved)}",
+            )
+
         known_events = {item.value for item in ObservationEventType}
         for name, values in (("TRIGGER", self.triggers), ("EMITTED_EVENT", self.emits)):
             unknown = sorted(set(values) - known_events)

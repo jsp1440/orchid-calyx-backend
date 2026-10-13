@@ -232,7 +232,12 @@ def _taxon_violation(
     """
     policy = descriptor.taxon_resolution
     if policy is None:
-        return None
+        # Only a declared provider may emit taxon links.
+        return (
+            "TAXON_RESOLUTION_VIOLATION:links_without_policy"
+            if result.taxon_links
+            else None
+        )
     for link in result.taxon_links:
         status = link.get("status")
         if policy.role == "provides":

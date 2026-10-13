@@ -1,7 +1,9 @@
 """FIL-001B: Calyx candidates persist through the existing PostgreSQL snapshot store.
 
-Runs against a disposable test database only (TEST_DATABASE_URL, then
-DATABASE_URL). In CI an unusable database fails the run rather than skipping.
+Runs against a disposable test database named by TEST_DATABASE_URL only. It
+deliberately does not fall back to DATABASE_URL, so a developer shell that
+exports a production DATABASE_URL never receives synthetic fixture candidates.
+In CI an unusable database fails the run rather than skipping.
 """
 
 from __future__ import annotations
@@ -14,8 +16,8 @@ from app.candidate_knowledge.postgres_repository import PostgresCandidateReposit
 from app.candidate_knowledge.service import CandidateExtractionService
 from app.functional_interaction.literature_to_calyx import run_chain
 
-pytestmark = pytest.mark.requires_postgres
-DSN = os.getenv("TEST_DATABASE_URL") or os.getenv("DATABASE_URL")
+pytestmark = pytest.mark.requires_postgres("TEST_DATABASE_URL")
+DSN = os.getenv("TEST_DATABASE_URL")
 
 
 def _components():
@@ -24,7 +26,9 @@ def _components():
 
 
 def test_candidates_persist_reload_with_provenance_and_replay_idempotently():
-    first = run_chain(candidate_components=_components)
+    first = run_chain(
+        candidate_components=_components, allow_import_time_database_contact=True
+    )
     assert first.succeeded, [r.failure_reason for r in first.receipts]
     handoffs = first.final_output["handoffs"]
     ids = {cid for h in handoffs for cid in h["calyx_candidate_ids"]}
@@ -54,7 +58,9 @@ def test_candidates_persist_reload_with_provenance_and_replay_idempotently():
         ), anchors
 
     before = len(fresh.candidates)
-    second = run_chain(candidate_components=_components)
+    second = run_chain(
+        candidate_components=_components, allow_import_time_database_contact=True
+    )
     assert second.succeeded
     assert [h["calyx_candidate_ids"] for h in second.final_output["handoffs"]] == [
         h["calyx_candidate_ids"] for h in handoffs
