@@ -12,7 +12,7 @@ Nothing here adds a scheduler, queue, database or paid service. Nothing touches 
 |---|---|
 | Versioned price table | `config/provider-pricing-v1.json`. Schema `oc.provider-pricing.v1`, version `2026-10-13.1`, sourced from the Anthropic pricing page retrieved on 2026-10-13. |
 | Pricing (pure, stdlib only) | `runtime/swarm/pricing.py` |
-| Receipt integration | `scripts/swarm_anthropic_direct.py`: `requestUsage` (per turn) and `cost` (`oc.execution-cost.v1`) in the execution result and `[OC-DIRECT-RECEIPT]`. `estimated_cost_usd`, `cost_basis` and `pricing_version` in GitHub outputs. |
+| Receipt integration | `scripts/swarm_anthropic_direct.py`: `requestUsage` (per turn) and `cost` (`oc.execution-cost.v1`) in the execution result and `[OC-DIRECT-RECEIPT]`. `list_price_estimate_usd`, `cost_basis` and `pricing_version` in GitHub outputs. The name deliberately differs from the lane's `steps.route.outputs.estimated_cost_usd`, which is the router's budget reservation. |
 | Re-price / verify CLI | `scripts/oc_execution_cost.py --execution-file … [--verify]` |
 
 ### Estimate vs. billed
@@ -141,7 +141,7 @@ Neither integration may be described as operational until a test proves the writ
 
 ## 6. Follow-ups (not done here)
 
-1. **Post-run wiring** (autonomy-recovery owners; coordination note posted on #1806): record `estimated_cost_usd` and `cost_basis` from the executor outputs in the governor ledger as a separately labelled estimate. It must never be passed as `OC_GOVERNOR_ACTUAL_COST_USD` or `actual_usd`, both of which mean verified billed spend.
+1. **Post-run wiring** (autonomy-recovery owners; coordination note posted on #1806): record `list_price_estimate_usd` and `cost_basis` from the executor outputs in the governor ledger as a separately labelled estimate. It must never be passed as `OC_GOVERNOR_ACTUAL_COST_USD` or `actual_usd`, both of which mean verified billed spend.
 2. **Billed reconciliation:** reconcile estimates against invoices through the Usage & Cost Admin API. This needs an admin credential, which is owner-gated.
 3. **EVALS-001C:** integrate the strategy router with the canonical orchestrator. **EVALS-001D:** persist memory summaries in Scientific Memory. Both are not integrated today; see the integration status above.
 4. **Scientific task classes:** literature and taxonomic extraction against the #1182 gold set, and evidence-grounded synthesis.

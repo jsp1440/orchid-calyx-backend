@@ -317,7 +317,9 @@ def test_executor_writes_verifiable_cost_block(monkeypatch, tmp_path) -> None:
     assert cost["pricing_version"] == TABLE.version
     assert len(result["requestUsage"]) == 2
     assert result["total_cost_usd"] is None  # still no billed/client-reported total
-    assert "estimated_cost_usd=0.012400" in outputs
+    assert "list_price_estimate_usd=0.012400" in outputs
+    # The router's reservation output keeps its own name; the executor never reuses it.
+    assert "estimated_cost_usd=" not in outputs
     assert "cost_basis=list_price_estimate" in outputs
     assert cost_cli.verify_execution(result) == []
 

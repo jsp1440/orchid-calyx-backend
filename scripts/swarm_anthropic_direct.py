@@ -475,7 +475,9 @@ def _cost_block(model: str, request_usages: list[dict[str, Any]]) -> dict[str, A
 
 def _github_cost(cost: dict[str, Any]) -> dict[str, str]:
     return {
-        "estimated_cost_usd": cost.get("estimated_usd") or "",
+        # Deliberately not "estimated_cost_usd": the completion lane already uses
+        # that name for the router's budget reservation (steps.route.outputs).
+        "list_price_estimate_usd": cost.get("estimated_usd") or "",
         "cost_basis": str(cost.get("basis") or "unavailable"),
         "pricing_version": str(cost.get("pricing_version") or ""),
     }
