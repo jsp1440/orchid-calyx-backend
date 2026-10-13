@@ -25,7 +25,6 @@ contract and this interface version so consumers can pin compatibility.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Iterable
 
 from runtime.oc_capability_registry import (
     COMPAT_CONTRACT,
@@ -102,7 +101,7 @@ class RegistryQuery:
         self._registry = registry
 
     @classmethod
-    def from_default_store(cls, path: str | Path | None = None) -> "RegistryQuery":
+    def from_default_store(cls, path: str | Path | None = None) -> RegistryQuery:
         """Load the version-controlled store shipped in this repository."""
         return cls(CapabilityRegistry.from_json(path or DEFAULT_STORE))
 
@@ -120,7 +119,7 @@ class RegistryQuery:
         axis values. Empty filters list every capability."""
         results: list[dict] = []
         for node in sorted(
-            self._registry._nodes.values(), key=lambda n: n.node_id  # noqa: SLF001
+            self._registry._nodes.values(), key=lambda n: n.node_id
         ):
             if node.kind not in ("capability", "subcapability"):
                 continue
@@ -175,7 +174,7 @@ class RegistryQuery:
         outgoing: list[dict] = []
         incoming: list[dict] = []
         for edge in sorted(
-            self._registry._edges.values(), key=Edge.key  # noqa: SLF001
+            self._registry._edges.values(), key=Edge.key
         ):
             view = {
                 "from_id": edge.from_id,
@@ -207,7 +206,7 @@ class RegistryQuery:
         inference."""
         missing, blocked, unmerged = [], [], []
         for node in sorted(
-            self._registry._nodes.values(), key=lambda n: n.node_id  # noqa: SLF001
+            self._registry._nodes.values(), key=lambda n: n.node_id
         ):
             if node.kind not in ("capability", "subcapability"):
                 continue
@@ -243,7 +242,7 @@ class RegistryQuery:
                 "edge_type": e.edge_type,
                 "evidence": _evidence_view(e),
             }
-            for e in sorted(self._registry._edges.values(), key=Edge.key)  # noqa: SLF001
+            for e in sorted(self._registry._edges.values(), key=Edge.key)
             if node_id in (e.from_id, e.to_id) and e.evidence
         ]
         return _envelope(
@@ -263,7 +262,7 @@ class RegistryQuery:
         scheduler's job."""
         tasks: list[dict] = []
         for node in sorted(
-            self._registry._nodes.values(), key=lambda n: n.node_id  # noqa: SLF001
+            self._registry._nodes.values(), key=lambda n: n.node_id
         ):
             for action in sorted(node.next_actions):
                 tasks.append({
@@ -301,4 +300,4 @@ class RegistryQuery:
         return self._registry.autonomy_brief()
 
 
-__all__ = ["INTERFACE", "RegistryQuery", "DEFAULT_STORE"]
+__all__ = ["DEFAULT_STORE", "INTERFACE", "RegistryQuery"]

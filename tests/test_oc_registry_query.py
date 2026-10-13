@@ -10,7 +10,7 @@ calyx-brain-capability-registry-v1.
 
 import pytest
 
-from runtime.oc_capability_registry import CONTRACT, CapabilityRegistry
+from runtime.oc_capability_registry import CONTRACT
 from runtime.oc_registry_query import INTERFACE, RegistryQuery
 
 AXES = ("implementation", "test", "merge", "deployment", "operational")
@@ -50,16 +50,16 @@ def test_interface_exposes_no_mutation_methods():
 
 
 def test_repeated_queries_do_not_mutate_registry(query):
-    before = query._registry.to_dict()  # noqa: SLF001
+    before = query._registry.to_dict()
     query.discover_capabilities(query="matrix")
     query.status_lookup("oc.module.calyx")
     query.missing_and_blocked()
     query.mission_control_export()
-    assert query._registry.to_dict() == before  # noqa: SLF001
+    assert query._registry.to_dict() == before
 
 
 def test_default_store_loader_reads_repo_layout(query):
-    summary = query._registry.summary()  # noqa: SLF001
+    summary = query._registry.summary()
     assert summary["contract"] == CONTRACT
     assert summary["node_count"] > 0
 

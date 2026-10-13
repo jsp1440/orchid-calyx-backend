@@ -17,7 +17,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from runtime.oc_capability_registry import CapabilityRegistry  # noqa: E402
+from runtime.oc_capability_registry import CapabilityRegistry
 
 
 def main() -> int:
