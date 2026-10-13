@@ -66,6 +66,11 @@ EVIDENCE_STATES = frozenset(
     }
 )
 
+#: Authority recorded on taxon links produced from FIL's *invented* fixture
+#: backbones. They are built with the World Plants spine builder but are not a
+#: World Plants release, so fixture output must never claim ``world_plants``.
+FIXTURE_TAXON_AUTHORITY = "fil_fixture_backbone"
+
 #: States no automated function may assign. VERIFIED requires human review.
 HUMAN_ONLY_EVIDENCE_STATES = frozenset({"VERIFIED"})
 

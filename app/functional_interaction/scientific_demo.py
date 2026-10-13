@@ -42,7 +42,6 @@ from app.reasoning_ledger.models import (
 )
 from runtime.brain_capability_registry import canonical_brain_registry
 from runtime.knowledge_graph.canonical_taxonomy import (
-    CANONICAL_AUTHORITY,
     build_canonical_registry,
     canonical_name_of,
 )
@@ -50,6 +49,7 @@ from runtime.knowledge_graph.canonical_taxonomy import (
 from . import value_semantics
 from .compatibility import check_edge
 from .contracts import (
+    FIXTURE_TAXON_AUTHORITY,
     AutonomyClass,
     BudgetRequirement,
     CapabilityDescriptor,
@@ -359,7 +359,7 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
                 }
             link.update(
                 submitted_name=claim["subject"],
-                authority=CANONICAL_AUTHORITY,
+                authority=FIXTURE_TAXON_AUTHORITY,
                 release=release,
                 method="exact_canonical_name",
                 automatic_fuzzy_matching=False,

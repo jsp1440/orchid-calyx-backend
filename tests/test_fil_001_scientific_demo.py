@@ -312,3 +312,14 @@ def test_all_unresolved_fixture_produces_no_candidates_and_records_every_gap(fix
         sum(1 for gap in output["evidence_gaps"] if gap["kind"] == "CLAIM_WITHHELD")
         == 4
     )
+
+
+def test_fixture_demo_never_claims_world_plants_provenance():
+    # The fixture backbone is invented; claiming the canonical authority would
+    # fabricate taxonomy provenance for fictional taxa.
+    record = run_demonstration()
+    text = json.dumps(record, default=str)
+    assert "world_plants" not in text
+    taxonomy_step = run_dry_run(load_fixture()).receipts[1].execution.output["artifact"]
+    authorities = {c["taxon_link"]["authority"] for c in taxonomy_step["claims"]}
+    assert authorities == {"fil_fixture_backbone"}
