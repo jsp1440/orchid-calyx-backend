@@ -63,7 +63,7 @@ env:
   # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244) and the
   # autonomy loop with module signals (Brain PR #255 head).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: e348bc08eadf97bae93a75b1bfbf73bd18fbc758
+  OC_BRAIN_REF: 7ab95c8d9322db49b4837f0198eba7de7e565035
 
 jobs:
   acceptance:
