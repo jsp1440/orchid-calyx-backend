@@ -38,6 +38,14 @@ from .models import (
 from .taxa import CanonicalTaxa, PostgresCanonicalTaxa
 
 MAX_READ_ROWS = 5000
+SUPERSESSION_KINDS = (
+    "corrected",
+    "reidentified",
+    "reanalysed",
+    "duplicate_of",
+    "retracted",
+)
+SOURCE_RECORD_KINDS = ("measurement", "claim", "dataset_record", "curated")
 
 
 class TraitBankRefused(ValueError):
@@ -58,6 +66,18 @@ def record_sha256(
     model: AssertionIn | EnvironmentRelationIn | TraitDefinitionIn,
 ) -> str:
     return _sha256(model.model_dump(mode="json"))
+
+
+def default_crosswalk(producer: str, a: AssertionIn) -> dict[str, Any]:
+    """Crosswalk entry when the producer supplied none. Never guesses a KG key."""
+    kind = {"eol_traitbank": "dataset_record", "curated": "curated"}.get(producer)
+    if kind is None:  # literature without an adapter-supplied crosswalk
+        kind = "measurement" if a.value.kind in ("quantitative", "range") else "claim"
+    return {
+        "source_record_kind": kind,
+        "kg_object_key": None,
+        "source_document_id": a.provenance.source_id,
+    }
 
 
 def _v(code: str, where: str) -> dict[str, str]:
@@ -357,9 +377,24 @@ class TraitBankRepository:
         ingested_by: str,
         live: bool = True,
         dry_run: bool = False,
+        crosswalk: dict[str, dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
         if not ingested_by.strip():
             raise TraitBankRefused([_v("INGESTED_BY_REQUIRED", "ingested_by")])
+        crosswalk = dict(crosswalk or {})
+        unknown = sorted(set(crosswalk) - {a.assertion_id for a in batch.assertions})
+        if unknown:
+            raise TraitBankRefused(
+                [
+                    _v("CROSSWALK_NAMES_UNKNOWN_ASSERTION", f"assertion:{i}")
+                    for i in unknown
+                ]
+            )
+        for assertion_id, entry in crosswalk.items():
+            if entry.get("source_record_kind") not in SOURCE_RECORD_KINDS:
+                raise TraitBankRefused(
+                    [_v("CROSSWALK_KIND_INVALID", f"assertion:{assertion_id}")]
+                )
         violations = [v.as_dict() for v in guards.check_batch(batch, live=live)]
         if violations:
             raise TraitBankRefused(violations)
@@ -514,6 +549,20 @@ class TraitBankRepository:
                     ),
                 )
                 report["inserted_assertions"].append(a.assertion_id)
+                entry = crosswalk.get(a.assertion_id) or default_crosswalk(
+                    batch.producer, a
+                )
+                conn.execute(
+                    "INSERT INTO oc_traitbank.evidence_crosswalk "
+                    "(assertion_id, source_record_kind, kg_object_key, source_document_id) "
+                    "VALUES (%s,%s,%s,%s)",
+                    (
+                        a.assertion_id,
+                        entry["source_record_kind"],
+                        entry.get("kg_object_key"),
+                        entry.get("source_document_id") or prov.source_id,
+                    ),
+                )
             for r, digest in pending_relations:
                 p = r.provenance
                 conn.execute(
@@ -576,33 +625,48 @@ class TraitBankRepository:
         source_id: str | None = None,
         assertion_id: str | None = None,
         habitat: str | None = None,
+        current_only: bool = False,
         limit: int = MAX_READ_ROWS,
     ) -> list[dict[str, Any]]:
+        """Stored assertions with their supersession and crosswalk, never rewritten.
+
+        ``current_only`` drops assertions that a later decision superseded or
+        retracted; the stored rows themselves are unchanged either way.
+        """
         conditions, params = [], []
+        if current_only:
+            conditions.append("s.superseded_assertion_id IS NULL")
         if taxon_ids is not None:
-            conditions.append("taxon_id = ANY(%s)")
+            conditions.append("a.taxon_id = ANY(%s)")
             params.append([int(t) for t in taxon_ids])
         if trait_id:
-            conditions.append("trait_id = %s")
+            conditions.append("a.trait_id = %s")
             params.append(trait_id)
         if source_id:
-            conditions.append("source_id = %s")
+            conditions.append("a.source_id = %s")
             params.append(source_id)
         if assertion_id:
-            conditions.append("assertion_id = %s")
+            conditions.append("a.assertion_id = %s")
             params.append(assertion_id)
         if habitat:
             conditions.append(
-                "(lower(%s) = ANY(SELECT lower(h) FROM unnest(habitats) h) OR EXISTS ("
-                "SELECT 1 FROM jsonb_array_elements(links) l WHERE l->>'domain' = 'habitat' "
+                "(lower(%s) = ANY(SELECT lower(h) FROM unnest(a.habitats) h) OR EXISTS ("
+                "SELECT 1 FROM jsonb_array_elements(a.links) l WHERE l->>'domain' = 'habitat' "
                 "AND lower(l->>'target_label') = lower(%s)))"
             )
             params.extend([habitat, habitat])
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         params.append(min(max(limit, 1), MAX_READ_ROWS))
         return self._read(
-            f"SELECT a.*, b.batch_key, b.producer FROM oc_traitbank.assertions a "
-            f"JOIN oc_traitbank.ingestion_batches b USING (batch_pk) {where} "
+            f"SELECT a.*, b.batch_key, b.producer, "
+            f"s.superseding_assertion_id AS superseded_by, s.kind AS supersession_kind, "
+            f"s.reason AS supersession_reason, s.review_reference AS supersession_review_reference, "
+            f"s.decided_by AS supersession_decided_by, s.created_at AS superseded_at, "
+            f"c.source_record_kind, c.kg_object_key, c.source_document_id "
+            f"FROM oc_traitbank.assertions a "
+            f"JOIN oc_traitbank.ingestion_batches b USING (batch_pk) "
+            f"LEFT JOIN oc_traitbank.assertion_supersessions s ON s.superseded_assertion_id = a.assertion_id "
+            f"LEFT JOIN oc_traitbank.evidence_crosswalk c ON c.assertion_id = a.assertion_id {where} "
             f"ORDER BY a.taxon_id, a.trait_id, a.assertion_id LIMIT %s",
             tuple(params),
         )
@@ -625,8 +689,186 @@ class TraitBankRepository:
             with conn.cursor(row_factory=tuple_row) as cur:
                 return self.taxa.resolve_species(cur, name)
 
+    def taxon_graph_nodes(self, taxon_ids: list[str]) -> dict[str, Any] | None:
+        from .interop import taxon_graph_nodes
+
+        with self._connect() as conn, conn.transaction():
+            conn.execute("SET TRANSACTION READ ONLY")
+            with conn.cursor(row_factory=tuple_row) as cur:
+                return taxon_graph_nodes(cur, taxon_ids)
+
     def genus_ids(self, genus: str) -> list[str]:
         with self._connect() as conn, conn.transaction():
             conn.execute("SET TRANSACTION READ ONLY")
             with conn.cursor(row_factory=tuple_row) as cur:
                 return self.taxa.genus_ids(cur, genus)
+
+    # ------------------------------------------------------------ supersession
+    def supersede(
+        self,
+        *,
+        superseded_assertion_id: str,
+        superseding_assertion_id: str | None,
+        kind: str,
+        reason: str,
+        review_reference: str,
+        decided_by: str,
+        dry_run: bool = False,
+    ) -> dict[str, Any]:
+        """Record that a stored assertion is no longer current. Never edits it.
+
+        The original keeps its value, citation, level and evidence state; this
+        writes one append-only decision row naming why, who decided, under
+        which review, and (unless retracted) which stored assertion replaces it.
+        """
+        violations: list[dict[str, str]] = []
+        if kind not in SUPERSESSION_KINDS:
+            violations.append(_v("SUPERSESSION_KIND_INVALID", kind))
+        if len(reason.strip()) < 10:
+            violations.append(_v("SUPERSESSION_REASON_REQUIRED", "reason"))
+        if not review_reference.strip():
+            violations.append(_v("REVIEW_REFERENCE_REQUIRED", "review_reference"))
+        if not decided_by.strip():
+            violations.append(_v("DECIDED_BY_REQUIRED", "decided_by"))
+        if kind == "retracted" and superseding_assertion_id:
+            violations.append(
+                _v("RETRACTION_HAS_NO_SUCCESSOR", "superseding_assertion_id")
+            )
+        if kind != "retracted" and not superseding_assertion_id:
+            violations.append(_v("SUCCESSOR_REQUIRED", "superseding_assertion_id"))
+        if superseding_assertion_id == superseded_assertion_id:
+            violations.append(_v("SUPERSESSION_NOT_SELF", superseded_assertion_id))
+        for field, text in (("reason", reason), ("review_reference", review_reference)):
+            violations += [
+                v.as_dict()
+                for v in guards.privacy_violations(f"supersession.{field}", text)
+            ]
+        if violations:
+            raise TraitBankRefused(violations)
+        record = {
+            "superseded_assertion_id": superseded_assertion_id,
+            "superseding_assertion_id": superseding_assertion_id,
+            "kind": kind,
+            "reason": reason.strip(),
+            "review_reference": review_reference.strip(),
+            "decided_by": decided_by.strip(),
+        }
+        digest = _sha256(record)
+        with self._connect() as conn, conn.transaction() as tx:
+            # One decision per original at a time, and successor checks run
+            # against the state this transaction will commit on top of.
+            conn.execute(
+                "SELECT pg_advisory_xact_lock(hashtext(%s))",
+                (f"traitbank:supersede:{superseded_assertion_id}",),
+            )
+            ids = [superseded_assertion_id] + (
+                [superseding_assertion_id] if superseding_assertion_id else []
+            )
+            rows = {
+                r["assertion_id"]: r
+                for r in conn.execute(
+                    "SELECT a.assertion_id, a.trait_id, a.taxon_id, s.superseding_assertion_id, "
+                    "s.superseded_assertion_id IS NOT NULL AS is_superseded, s.record_sha256 "
+                    "FROM oc_traitbank.assertions a LEFT JOIN oc_traitbank.assertion_supersessions s "
+                    "ON s.superseded_assertion_id = a.assertion_id WHERE a.assertion_id = ANY(%s)",
+                    (ids,),
+                ).fetchall()
+            }
+            original = rows.get(superseded_assertion_id)
+            if original is None:
+                raise TraitBankRefused(
+                    [_v("UNKNOWN_ASSERTION", superseded_assertion_id)]
+                )
+            if original["is_superseded"]:
+                if original["record_sha256"] == digest:
+                    return {
+                        **record,
+                        "state": "ALREADY_RECORDED",
+                        "record_sha256": digest,
+                    }
+                raise TraitBankRefused(
+                    [_v("ALREADY_SUPERSEDED", superseded_assertion_id)]
+                )
+            if superseding_assertion_id:
+                successor = rows.get(superseding_assertion_id)
+                if successor is None:
+                    violations.append(_v("UNKNOWN_SUCCESSOR", superseding_assertion_id))
+                else:
+                    if successor["is_superseded"]:
+                        violations.append(
+                            _v("SUCCESSOR_NOT_CURRENT", superseding_assertion_id)
+                        )
+                    if successor["trait_id"] != original["trait_id"]:
+                        violations.append(
+                            _v("SUCCESSOR_TRAIT_MISMATCH", superseding_assertion_id)
+                        )
+                    taxon_changed = successor["taxon_id"] != original["taxon_id"]
+                    # Only a re-identification may move evidence to another
+                    # taxon, and a re-identification must actually move it.
+                    if taxon_changed and kind != "reidentified":
+                        violations.append(
+                            _v(
+                                "TAXON_CHANGE_REQUIRES_REIDENTIFIED",
+                                superseding_assertion_id,
+                            )
+                        )
+                    if kind == "reidentified" and not taxon_changed:
+                        violations.append(
+                            _v(
+                                "REIDENTIFIED_REQUIRES_TAXON_CHANGE",
+                                superseding_assertion_id,
+                            )
+                        )
+            if violations:
+                raise TraitBankRefused(violations)
+            conn.execute(
+                "INSERT INTO oc_traitbank.assertion_supersessions (superseded_assertion_id, "
+                "superseding_assertion_id, kind, reason, review_reference, decided_by, record_sha256) "
+                "VALUES (%s,%s,%s,%s,%s,%s,%s)",
+                (
+                    superseded_assertion_id,
+                    superseding_assertion_id,
+                    kind,
+                    record["reason"],
+                    record["review_reference"],
+                    record["decided_by"],
+                    digest,
+                ),
+            )
+            result = {
+                **record,
+                "state": "DRY_RUN_OK" if dry_run else "RECORDED",
+                "record_sha256": digest,
+            }
+            if dry_run:
+                raise psycopg.Rollback(tx)
+        return result
+
+    def supersession_history(self, assertion_id: str) -> list[dict[str, Any]]:
+        """The full linear chain this assertion belongs to, oldest first."""
+        rows = self._read(
+            "SELECT superseded_assertion_id, superseding_assertion_id, kind, reason, "
+            "review_reference, decided_by, created_at FROM oc_traitbank.assertion_supersessions "
+            "LIMIT %s",
+            (MAX_READ_ROWS,),
+        )
+        forward = {r["superseded_assertion_id"]: r for r in rows}
+        backward = {
+            r["superseding_assertion_id"]: r
+            for r in rows
+            if r["superseding_assertion_id"]
+        }
+        head = assertion_id
+        seen = {head}
+        while (
+            head in backward and backward[head]["superseded_assertion_id"] not in seen
+        ):
+            head = backward[head]["superseded_assertion_id"]
+            seen.add(head)
+        chain, cursor, visited = [], head, set()
+        while cursor in forward and cursor not in visited:
+            visited.add(cursor)
+            decision = forward[cursor]
+            chain.append({**decision, "created_at": decision["created_at"].isoformat()})
+            cursor = decision["superseding_assertion_id"]
+        return chain

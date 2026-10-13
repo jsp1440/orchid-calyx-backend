@@ -140,6 +140,12 @@ def _verified_requires_review(
     return []
 
 
+def privacy_violations(where: str, text: str) -> list[Violation]:
+    """Privacy screen for free text outside a batch (e.g. supersession reasons)."""
+    owner, _, field = where.rpartition(".")
+    return _privacy(owner or where, field or "text", text)
+
+
 def check_batch(batch: TraitBankBatch, *, live: bool) -> list[Violation]:
     violations: list[Violation] = []
     for a in batch.assertions:

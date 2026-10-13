@@ -25,6 +25,7 @@ from typing import Any
 from app.literature_extraction.models import PaperKnowledge
 
 from .contract import CONTRACT_VERSION
+from .interop import kg_claim_key, kg_measurement_key
 from .models import STATISTICS, TraitBankBatch, TraitDefinitionIn
 
 TaxonResolver = Callable[[str], "str | None"]
@@ -44,6 +45,10 @@ UNIT_ALIASES = {
     "centimetre": "cm",
     "meter": "m",
     "metre": "m",
+    # Units Ontology length terms as EOL exports them (``units_term``).
+    "http://purl.obolibrary.org/obo/uo_0000016": "mm",
+    "http://purl.obolibrary.org/obo/uo_0000015": "cm",
+    "http://purl.obolibrary.org/obo/uo_0000008": "m",
 }
 RANGE_RE = re.compile(
     r"^\s*(-?\d+(?:\.\d+)?)\s*(?:-|–|to)\s*(-?\d+(?:\.\d+)?)\s*([A-Za-z]*)\s*$"
@@ -119,6 +124,8 @@ class TraitIndex:
 class Normalized:
     batch: TraitBankBatch | None
     unmapped: list[dict[str, Any]]
+    # assertion_id -> evidence_crosswalk entry (KG key shared with #901).
+    crosswalk: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
 def _unmapped(source_id: str, record_id: str, reason: str, raw: Any) -> dict[str, Any]:
@@ -184,6 +191,7 @@ def from_paper_knowledge(
     license_ = RIGHTS_TO_LICENSE[paper.source.rights_status]
     entities = {e.entity_id: e for e in paper.entities}
     evidence = {e.evidence_id: e for e in paper.evidence}
+    crosswalk: dict[str, dict[str, Any]] = {}
     unmapped: list[dict[str, Any]] = []
     assertions: list[dict[str, Any]] = []
     relations: list[dict[str, Any]] = []
@@ -373,6 +381,11 @@ def from_paper_knowledge(
                 "n": m.sample_size,
                 "verbatim": m.value_text,
             }
+        crosswalk[f"tb:lit:{paper.paper_id}:{m.measurement_id}"] = {
+            "source_record_kind": "measurement",
+            "kg_object_key": kg_measurement_key(paper.paper_id, m.measurement_id),
+            "source_document_id": source_id,
+        }
         assertions.append(
             {
                 "assertion_id": f"tb:lit:{paper.paper_id}:{m.measurement_id}",
@@ -419,6 +432,13 @@ def from_paper_knowledge(
             state = _state_for_review(claim.provenance.review_status)
             if claim.polarity == "uncertain" and state == "VERIFIED":
                 state = "PROVISIONAL"
+            crosswalk[f"tb:lit:{paper.paper_id}:{claim.claim_id}"] = {
+                "source_record_kind": "claim",
+                "kg_object_key": kg_claim_key(
+                    paper.paper_id, claim.claim_id, claim.claim_type
+                ),
+                "source_document_id": source_id,
+            }
             assertions.append(
                 {
                     "assertion_id": f"tb:lit:{paper.paper_id}:{claim.claim_id}",
@@ -504,10 +524,38 @@ def from_paper_knowledge(
             **payload,
         }
     )
-    return Normalized(batch, unmapped)
+    return Normalized(batch, unmapped, crosswalk)
 
 
 # ----------------------------------------------------------------- EOL TraitBank
+#: EOL TraitBank keeps a measured value in ``measurement`` (source units) and
+#: ``normal_measurement`` (normalized units), and a categorical value as an
+#: ontology term (``value_uri`` / ``object_term``) or ``literal``
+#: (EOL/publishing ``doc/trait-schema.md``). ``TraitBankHarvester._normalize``
+#: reads only ``value``/``measurementValue``/``object``, so on a real EOL
+#: export its ``value_raw`` is empty. Pairs are checked in order and a value is
+#: always taken with its own unit, never mixed across pairs.
+EOL_VALUE_PAIRS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("measurement", ("units", "units_term", "units_uri")),
+    ("normal_measurement", ("normal_units", "normal_units_term", "normal_units_uri")),
+    ("value_uri", ()),
+    ("object_term", ()),
+    ("literal", ()),
+)
+
+
+def _eol_value_and_units(rec: dict[str, Any], raw: dict[str, Any]) -> tuple[Any, str]:
+    value = rec.get("value_raw")
+    if value not in (None, ""):
+        return value, rec.get("units_raw") or ""
+    for value_key, unit_keys in EOL_VALUE_PAIRS:
+        candidate = raw.get(value_key)
+        if candidate not in (None, ""):
+            unit = next((str(raw[k]).strip() for k in unit_keys if raw.get(k)), "")
+            return str(candidate).strip(), unit
+    return None, ""
+
+
 def _http_url(value: Any) -> str | None:
     text = str(value or "").strip()
     return text if text.startswith(("https://", "http://")) else None
@@ -558,12 +606,21 @@ def from_traitbank_harvester(
                 )
             )
             continue
-        value_raw = rec.get("value_raw")
-        units_raw = rec.get("units_raw") or ""
+        value_raw, units_raw = _eol_value_and_units(rec, raw)
         verbatim = (
             " ".join(x for x in (str(value_raw or ""), units_raw) if x).strip() or None
         )
-        statistic = _norm(raw.get("statistical_method")) or "single"
+        reported_statistic = _norm(
+            raw.get("statistical_method") or raw.get("statistical_method_term")
+        )
+        if reported_statistic and reported_statistic not in STATISTICS:
+            # A reported method (often an ontology URI in EOL) that is not
+            # mapped must not be silently read as a single value.
+            unmapped.append(
+                _unmapped(source_id, record_id, "statistical_method_not_mapped", raw)
+            )
+            continue
+        statistic = reported_statistic or "single"
         sample_size = _number(raw.get("sample_size"))
         if value_raw in (None, ""):
             value: dict[str, Any] = {
@@ -647,4 +704,15 @@ def from_traitbank_harvester(
             "assertions": assertions,
         }
     )
-    return Normalized(batch, unmapped)
+    return Normalized(
+        batch,
+        unmapped,
+        {
+            a.assertion_id: {
+                "source_record_kind": "dataset_record",
+                "kg_object_key": None,
+                "source_document_id": a.provenance.source_id,
+            }
+            for a in batch.assertions
+        },
+    )

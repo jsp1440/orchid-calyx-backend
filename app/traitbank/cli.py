@@ -4,6 +4,9 @@
     python -m app.traitbank.cli normalize-paper PAPER.json  > batch.json
     python -m app.traitbank.cli normalize-eol TRAITBANK.tsv --dataset-citation ... --dataset-license ...
     python -m app.traitbank.cli ingest BATCH.json [--apply --ingested-by NAME]
+    python -m app.traitbank.cli ingest-literature-root ROOT [--limit N --after ID --apply --ingested-by NAME]
+    python -m app.traitbank.cli supersede ASSERTION_ID --kind KIND [--by SUCCESSOR_ID]
+        --reason TEXT --review-reference REF --decided-by NAME [--apply]
 
 Safety rails:
 
@@ -28,8 +31,9 @@ from typing import Any
 from app.literature_extraction.models import PaperKnowledge
 
 from .adapters import TraitIndex, from_paper_knowledge, from_traitbank_harvester
+from .handoff import ingest_literature_root
 from .models import TraitBankBatch, TraitDefinitionIn
-from .repository import TraitBankRefused, TraitBankRepository
+from .repository import SUPERSESSION_KINDS, TraitBankRefused, TraitBankRepository
 
 DEFINITIONS_PATH = Path(__file__).with_name("definitions_v1.json")
 
@@ -94,6 +98,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     ingest.add_argument("--ingested-by", default="")
     ingest.add_argument("--fixture-mode", action="store_true")
 
+    sup = sub.add_parser("supersede")
+    sup.add_argument("assertion_id")
+    sup.add_argument("--by", dest="superseding", default=None)
+    sup.add_argument("--kind", required=True, choices=SUPERSESSION_KINDS)
+    sup.add_argument("--reason", required=True)
+    sup.add_argument("--review-reference", required=True)
+    sup.add_argument("--decided-by", required=True)
+    sup.add_argument("--apply", action="store_true")
+
+    lit = sub.add_parser("ingest-literature-root")
+    lit.add_argument("root", type=Path)
+    lit.add_argument("--limit", type=int, default=50)
+    lit.add_argument("--after", default=None)
+    lit.add_argument("--apply", action="store_true")
+    lit.add_argument("--ingested-by", default="")
+
     args = parser.parse_args(argv)
     repo = TraitBankRepository(_database_url(args))
     try:
@@ -130,6 +150,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if result.batch
                     else None,
                     "unmapped": result.unmapped,
+                    "crosswalk": result.crosswalk,
                 }
             )
             return 0
@@ -147,7 +168,35 @@ def main(argv: Sequence[str] | None = None) -> int:
                     if result.batch
                     else None,
                     "unmapped": result.unmapped,
+                    "crosswalk": result.crosswalk,
                 }
+            )
+            return 0
+        if args.command == "supersede":
+            _emit(
+                repo.supersede(
+                    superseded_assertion_id=args.assertion_id,
+                    superseding_assertion_id=args.superseding,
+                    kind=args.kind,
+                    reason=args.reason,
+                    review_reference=args.review_reference,
+                    decided_by=args.decided_by,
+                    dry_run=not args.apply,
+                )
+            )
+            return 0
+        if args.command == "ingest-literature-root":
+            if args.apply and not args.ingested_by.strip():
+                raise SystemExit("--apply requires --ingested-by")
+            _emit(
+                ingest_literature_root(
+                    repo,
+                    args.root,
+                    ingested_by=args.ingested_by or "dry-run",
+                    apply=args.apply,
+                    limit=args.limit,
+                    after_paper_id=args.after,
+                )
             )
             return 0
         payload = json.loads(args.path.read_text(encoding="utf-8"))
@@ -163,6 +212,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             ingested_by=args.ingested_by or "dry-run",
             live=not args.fixture_mode,
             dry_run=not args.apply,
+            crosswalk=payload.get("crosswalk") if "batch" in payload else None,
         )
         _emit(report)
         return 0

@@ -59,6 +59,8 @@ MEMBER_READABLE_ROUTES = {
     ("GET", "/api/traitbank/conflicts"),
     ("GET", "/api/traitbank/taxa/{taxon_id}/calyx/{trait_id}"),
     ("GET", "/api/traitbank/matrix"),
+    ("GET", "/api/traitbank/taxa/{taxon_id}/evidence"),
+    ("GET", "/api/traitbank/pairwise"),
     ("GET", "/api/literature-extraction/papers"),
     ("GET", "/api/evidence-aggregation/health"),
     ("GET", "/api/evidence-aggregation/registry"),

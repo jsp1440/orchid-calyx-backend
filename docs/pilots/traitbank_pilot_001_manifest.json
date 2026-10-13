@@ -1,0 +1,46 @@
+{
+  "pilot": "TRAITBANK-PILOT-001",
+  "status": "awaiting_owner_approval",
+  "purpose": "Small, reproducible real-data ingestion into a separate pilot database, to validate TraitBank against real EOL TraitBank rows and real literature before any production use.",
+  "approval_required_for": [
+    "fetching any source marked approved_for_fetch (network download)",
+    "creating and writing the separate pilot database",
+    "loading a canonical taxonomy subset into the pilot database (a read-only export of public.orchid_taxonomy, or a named genus subset)"
+  ],
+  "never_in_scope": [
+    "production database or Knowledge Graph writes",
+    "scheduling or recurring jobs",
+    "paid services",
+    "committing downloaded data to any repository"
+  ],
+  "sources": [
+    {
+      "source_id": "eol-all-trait-data-zenodo-13305577",
+      "kind": "dataset",
+      "description": "EOL 'All trait data' archive (pages.csv, traits.csv, metadata.csv, inferred.csv, terms.csv).",
+      "record_url": "https://zenodo.org/records/13305577",
+      "url": null,
+      "filename": "eol_all_trait_data.zip",
+      "reported_size": "about 592 MB according to the record description seen in a web search result; not verified from this environment (zenodo.org does not resolve here)",
+      "max_bytes": 700000000,
+      "sha256": null,
+      "license": "unverified: read from the Zenodo record and confirm before approval",
+      "citation": "Encyclopedia of Life. All trait data. Zenodo record 13305577 (version and DOI to be confirmed from the record before approval).",
+      "status": "awaiting_owner_approval",
+      "concern": "Exceeds a 'small' pilot. The archive must be downloaded whole even though only Orchidaceae rows are kept. Approve only if a smaller per-resource or per-taxon export cannot be obtained."
+    },
+    {
+      "source_id": "darwin-1862-literature-fixture",
+      "kind": "publication",
+      "description": "Darwin (1862), Angraecum sesquipedale nectary statement, already in the repository as a PaperKnowledge fixture (public domain, verbatim excerpt). Needs no download.",
+      "record_url": null,
+      "url": null,
+      "filename": "tests/fixtures/traitbank/darwin_1862_paper_knowledge.json",
+      "max_bytes": 0,
+      "sha256": null,
+      "license": "public domain",
+      "citation": "Charles Darwin (1862). On the Various Contrivances by which British and Foreign Orchids are Fertilised by Insects. John Murray.",
+      "status": "available_offline"
+    }
+  ]
+}
