@@ -14,6 +14,7 @@ from runtime.oc_capability_registry import (
     CONTRACT,
     CapabilityRegistry,
     Edge,
+    Evidence,
     Node,
     RegistryValidationError,
 )

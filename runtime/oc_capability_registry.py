@@ -25,10 +25,9 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Iterable, Literal
 
 CONTRACT = "oc-capability-registry-v1"
 COMPAT_CONTRACT = "calyx-brain-capability-registry-v1"
@@ -209,7 +208,7 @@ class CapabilityRegistry:
                 current = self._nodes[current].parent_id
 
     @classmethod
-    def from_dict(cls, payload: dict) -> CapabilityRegistry:
+    def from_dict(cls, payload: dict) -> "CapabilityRegistry":
         if payload.get("contract") != CONTRACT:
             raise RegistryValidationError(
                 f"contract must be {CONTRACT!r}, got {payload.get('contract')!r}"
@@ -247,7 +246,7 @@ class CapabilityRegistry:
         return cls(nodes, edges)
 
     @classmethod
-    def from_json(cls, path: str | Path) -> CapabilityRegistry:
+    def from_json(cls, path: str | Path) -> "CapabilityRegistry":
         with open(path, encoding="utf-8") as handle:
             return cls.from_dict(json.load(handle))
 
@@ -298,7 +297,7 @@ class CapabilityRegistry:
     # deterministic, idempotent evidence import
     # ------------------------------------------------------------------ #
 
-    def import_records(self, records: Iterable[dict]) -> CapabilityRegistry:
+    def import_records(self, records: Iterable[dict]) -> "CapabilityRegistry":
         """Merge evidence records into a new registry.
 
         Deterministic: output depends only on input content, never on wall
@@ -331,7 +330,8 @@ class CapabilityRegistry:
                 if current in _UNINFORMED or value not in _UNINFORMED:
                     # later informed evidence wins; informed state is never
                     # downgraded to unknown/unverified
-                    status[axis] = value
+                    if not (current not in _UNINFORMED and value in _UNINFORMED):
+                        status[axis] = value
             nodes[node_id] = Node(
                 node_id=existing.node_id,
                 kind=existing.kind,
