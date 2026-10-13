@@ -90,7 +90,9 @@ class WorkflowPlan:
             "source": self.source.to_dict(),
             "goal_type": self.goal_type,
             "no_api_mode": self.no_api_mode,
-            "steps": [f"{step.capability_id}@{step.version}" for step in self.steps],
+            # The full descriptor, not just id@version: any material change to a
+            # step (permissions, autonomy class, health, budget) changes the id.
+            "steps": [step.to_dict() for step in self.steps],
         }
         return "fil-plan-" + canonical_checksum(material)[:16]
 

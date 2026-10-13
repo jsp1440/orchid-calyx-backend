@@ -193,3 +193,78 @@ def test_value_semantics_only_calls_exclusive_categories_a_contradiction(
 ):
     keys = [vs.value_key(object_value=o, numeric_value=n, unit=u) for o, n, u in values]
     assert vs.classify(predicate, keys) == expected
+
+
+# --- Copilot review (#1808) -------------------------------------------------
+
+
+def test_plan_id_binds_every_material_descriptor_field():
+    plan = _plan()
+    for change in (
+        {"autonomy_class": AutonomyClass.PROPOSAL_ONLY},
+        {"permissions": ("candidate_generation", "read_only_research")},
+        {"health": replace(plan.steps[0].health, evidence=("changed",))},
+    ):
+        changed = replace(
+            plan, steps=(replace(plan.steps[0], **change), *plan.steps[1:])
+        )
+        assert changed.plan_id != plan.plan_id
+        stale = evaluate_plan(plan)
+        with pytest.raises(ValueError, match="GOVERNANCE_DECISION_PLAN_MISMATCH"):
+            execute_dry_run(changed, stale, {}, {})
+
+
+@pytest.mark.parametrize("reason", ["BAD REASON", "BAD-REASON", "bad_reason", ""])
+def test_failure_reasons_must_match_the_schema_pattern(reason):
+    from app.functional_interaction.contracts import ContractError, HealthSpec
+
+    with pytest.raises(ContractError, match="INVALID_FAILURE_REASON"):
+        HealthSpec(status="PARTIAL", failure_reasons=(reason,))
+
+
+def test_blocked_receipt_never_records_the_rejected_evidence_state():
+    import json as _json
+    from pathlib import Path
+
+    import jsonschema
+
+    schema = _json.loads(
+        (
+            Path(__file__).resolve().parents[1]
+            / "contracts"
+            / "oc-fil-execution-receipt.v1.json"
+        ).read_text()
+    )
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), evidence_states=("VERIFIED",)
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    blocked = report.receipts[1]
+    assert blocked.failure_reason == "UNDECLARED_EVIDENCE_STATE:VERIFIED"
+    assert blocked.evidence_states == () and blocked.established == ()
+    for receipt in report.receipts:
+        jsonschema.validate(receipt.to_dict(), schema)
+
+
+def test_reasoning_draft_keeps_each_claims_exact_anchor():
+    fixture = load_fixture()
+    report = execute_dry_run(
+        _plan(),
+        evaluate_plan(_plan()),
+        build_handlers(fixture),
+        source_payload(fixture),
+    )
+    assert report.succeeded
+    for entry in report.final_output["entries"]:
+        assert entry["evidence_anchors"]
+        for anchor in entry["evidence_anchors"]:
+            assert anchor["source_anchor_ids"]
+            assert anchor["source_document_id"] in entry["source_document_ids"]
+            assert anchor["provenance"]

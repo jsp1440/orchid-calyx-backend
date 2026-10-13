@@ -164,9 +164,15 @@ def _receipt(
         step_index=index,
         descriptor=descriptor,
         execution=execution,
-        established=tuple(sorted(set(result.established))) if result else (),
+        # A blocked step establishes nothing and carries no evidence state; what
+        # it attempted is named in its failure reason, never recorded as state.
+        established=tuple(sorted(set(result.established)))
+        if result and not failure
+        else (),
         would_emit=tuple(sorted(set(result.events))) if result and not failure else (),
-        evidence_states=tuple(sorted(set(result.evidence_states))) if result else (),
+        evidence_states=tuple(sorted(set(result.evidence_states)))
+        if result and not failure
+        else (),
         notes=dict(result.notes) if result else {},
     )
 

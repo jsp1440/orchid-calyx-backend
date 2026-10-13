@@ -94,6 +94,7 @@ FORBIDDEN_EFFECTS = frozenset(
 _ID = re.compile(r"^[a-z][a-z0-9]*(?:[.-][a-z0-9]+)+$")
 _SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 _SEMANTIC_TYPE = re.compile(r"^oc:[A-Z][A-Za-z0-9]*$")
+_REASON_CODE = re.compile(r"^[A-Z0-9_:]+$")
 _CONDITION = re.compile(r"^[a-z][a-z0-9_]*$")
 
 
@@ -254,8 +255,10 @@ class HealthSpec:
             f"UNKNOWN_CAPABILITY_STATUS:{self.status}",
         )
         for reason in self.failure_reasons:
+            # Same pattern as the descriptor schema, so every accepted object
+            # serializes to its declared schema.
             _require(
-                reason == reason.upper() and bool(reason.strip()),
+                bool(_REASON_CODE.match(reason)),
                 f"INVALID_FAILURE_REASON:{reason}",
             )
 

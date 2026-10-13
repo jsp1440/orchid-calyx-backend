@@ -541,6 +541,19 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
             values = sorted({value_semantics.display(k) for k in keys})
             comparison = value_semantics.classify(key[1], keys)
             documents = sorted({m["source_document_id"] for m in members})
+            # Each member's exact evidence span stays traceable from the draft.
+            anchors = sorted(
+                (
+                    {
+                        "candidate_id": m["candidate_id"],
+                        "source_document_id": m["source_document_id"],
+                        "source_anchor_ids": list(m["source_anchor_ids"]),
+                        "provenance": m["metadata"]["provenance"],
+                    }
+                    for m in members
+                ),
+                key=lambda a: a["candidate_id"],
+            )
             contradictory = comparison == value_semantics.CONTRADICTION
             states.add("CONTRADICTORY" if contradictory else "PROVISIONAL")
             first = min(members, key=lambda m: m["candidate_id"])
@@ -567,7 +580,10 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
                     source_id=first["source_document_id"],
                     retrieved_at=as_of,
                     collector=EXECUTOR_KEY,
-                    extra={"source_document_ids": documents},
+                    extra={
+                        "source_document_ids": documents,
+                        "evidence_anchors": anchors,
+                    },
                 ),
                 uncertainty=UncertaintyMarker(
                     confidence=min(m["confidence"] for m in members),
@@ -599,6 +615,7 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
                     "values": values,
                     "value_comparison": comparison,
                     "source_document_ids": documents,
+                    "evidence_anchors": anchors,
                     "confidence": entry.uncertainty.confidence
                     if entry.uncertainty
                     else None,
