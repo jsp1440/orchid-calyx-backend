@@ -37,10 +37,29 @@ def test_plan_reconciles_stale_leases_before_building_the_snapshot():
 
 
 def test_controller_pins_trusted_code_to_the_event_revision():
+    # #1726: scheduled runs check out the integration head; every other trigger
+    # its own event revision. Workers run exactly the SHA the planner recorded.
     jobs = _doc()["jobs"]
-    for job in ("plan", "provider_free_workers"):
-        checkout = next(s for s in jobs[job]["steps"] if str(s.get("uses", "")).startswith("actions/checkout"))
-        assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert jobs["plan"]["env"]["CONTROLLER_REF"] == (
+        "${{ github.event_name == 'schedule' && 'oc-autonomous-integration' || github.sha }}"
+    )
+
+    def checkout(job):
+        return next(
+            s
+            for s in jobs[job]["steps"]
+            if str(s.get("uses", "")).startswith("actions/checkout")
+        )
+
+    assert checkout("plan")["with"]["ref"] == "${{ env.CONTROLLER_REF }}"
+    assert (
+        checkout("provider_free_workers")["with"]["ref"]
+        == "${{ needs.plan.outputs.controller_sha }}"
+    )
+    record = next(
+        s for s in jobs["plan"]["steps"] if s.get("id") == "controller_revision"
+    )
+    assert 'integration_sha=$(git rev-parse "origin/$INTEGRATION_BRANCH")' in record["run"]
 
 
 def test_provider_free_and_paid_lanes_are_split_by_confirmed_claim_matrices():

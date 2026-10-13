@@ -15,10 +15,15 @@ def test_swarm_workflow_uses_bounded_parallel_matrix():
 def test_swarm_workflow_targets_integration_not_main():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "INTEGRATION_BRANCH: oc-autonomous-integration" in text
-    # Trusted controls are pinned to the controller event revision. The canonical
-    # dispatch runs on oc-autonomous-integration, so that revision is the
-    # integration head; a mixed checkout of a mutable branch is never used.
-    assert "ref: ${{ github.sha }}" in text
+    # Trusted controls are pinned to one controller revision (#1726): scheduled
+    # runs check out the integration head, other triggers their own event SHA,
+    # and workers run exactly the SHA the planner recorded. Edit work requires
+    # that SHA to equal the integration head; a mixed checkout is never used.
+    assert (
+        "CONTROLLER_REF: ${{ github.event_name == 'schedule' && "
+        "'oc-autonomous-integration' || github.sha }}" in text
+    )
+    assert "ref: ${{ needs.plan.outputs.controller_sha }}" in text
     assert "ref: main" not in text
     assert "gh pr merge" not in text
     assert "production deploy: disabled" in text.lower()

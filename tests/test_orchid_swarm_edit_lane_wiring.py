@@ -58,7 +58,9 @@ def test_checkout_has_history_and_a_pushable_remote():
 def test_the_edit_lane_runs_only_on_a_run_of_the_integration_ref():
     run = _step("Execute deterministic provider-free work")["run"]
     edit_block = run.split('if [[ "$mode" == "edit" ]]; then', maxsplit=1)[1]
-    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then'
+    # Canonical-head guard (#1726): the planner records whether the checked-out
+    # controller SHA is exactly the integration branch head.
+    guard = 'if [[ "$CANONICAL_INTEGRATION_RUN" != "true" ]]; then'
     assert guard in edit_block
     # The guard fails the step (the fail-closed release parks the issue with
     # evidence) before the lane can create a worktree, push or open a PR.
@@ -292,7 +294,10 @@ def test_runs_off_the_integration_ref_defer_edit_mode_in_the_planner():
     assert plan_job["env"]["INTEGRATION_BRANCH"] == "oc-autonomous-integration"
     step = next(s for s in plan_job["steps"] if s.get("name") == "Plan dependency-aware resource wave")
     run = step["run"]
-    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then\n  provider_args+=(--defer-edit-mode)'
+    guard = (
+        'if [[ "${{ steps.controller_revision.outputs.canonical_integration }}" '
+        '!= "true" ]]; then\n  provider_args+=(--defer-edit-mode)'
+    )
     assert guard in run
     assert run.index("--defer-edit-mode") < run.index("scripts/oc_swarm_controller.py")
 
