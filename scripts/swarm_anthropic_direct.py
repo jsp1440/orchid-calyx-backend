@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.util
 import json
 import os
 import re
@@ -38,6 +39,22 @@ EXECUTOR_SYSTEM = (
     "credentials, secrets, production state, scientific data, taxonomy activation, or "
     "publication controls. Run focused tests. When implementation is complete, stop; the "
     "wrapper will commit, push, and open the draft PR."
+)
+# Versioned list-price pricing (runtime/swarm/pricing.py, config/provider-pricing-v1.json).
+# Loaded by path so the executor does not import the runtime package and its
+# services. Pricing can only ever annotate a receipt: any failure to load or
+# price yields a cost block with basis "unavailable", never an executor error.
+PRICING_MODULE = (
+    Path(__file__).resolve().parent.parent / "runtime" / "swarm" / "pricing.py"
+)
+REQUEST_USAGE_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "service_tier",
+    "inference_geo",
+    "speed",
 )
 USAGE_FIELDS = (
     ("input_tokens", "inputTokens"),
@@ -363,6 +380,56 @@ def _accumulate_usage(totals: dict[str, int], usage: dict[str, Any]) -> None:
         totals[wire] = totals.get(wire, 0) + int(usage.get(wire) or 0)
 
 
+def _request_usage(usage: dict[str, Any]) -> dict[str, Any]:
+    """The per-request usage fields pricing needs, and nothing else."""
+    kept: dict[str, Any] = {k: usage[k] for k in REQUEST_USAGE_KEYS if k in usage}
+    breakdown = usage.get("cache_creation")
+    if isinstance(breakdown, dict):
+        kept["cache_creation"] = {
+            k: breakdown[k]
+            for k in ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+            if k in breakdown
+        }
+    return kept
+
+
+def _load_pricing():
+    spec = importlib.util.spec_from_file_location("oc_provider_pricing", PRICING_MODULE)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {PRICING_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("oc_provider_pricing", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _cost_block(model: str, request_usages: list[dict[str, Any]]) -> dict[str, Any]:
+    try:
+        pricing = _load_pricing()
+    except Exception as exc:  # noqa: BLE001 - pricing must never fail the run
+        return {
+            "schema": "oc.execution-cost.v1",
+            "basis": "unavailable",
+            "billed_usd": None,
+            "estimated_usd": None,
+            "complete": False,
+            "unpriced_reasons": [f"pricing module unavailable: {type(exc).__name__}"],
+        }
+    try:
+        table = pricing.load_table()
+        return pricing.estimate(model, request_usages, table).to_jsonable()
+    except Exception as exc:  # noqa: BLE001
+        return pricing.unavailable_cost(f"pricing failed: {type(exc).__name__}: {exc}")
+
+
+def _github_cost(cost: dict[str, Any]) -> dict[str, str]:
+    return {
+        "estimated_cost_usd": cost.get("estimated_usd") or "",
+        "cost_basis": str(cost.get("basis") or "unavailable"),
+        "pricing_version": str(cost.get("pricing_version") or ""),
+    }
+
+
 def _model_usage(totals: dict[str, int]) -> dict[str, int]:
     return {name: int(totals.get(wire, 0)) for wire, name in USAGE_FIELDS}
 
@@ -548,6 +615,7 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
             "num_turns",
             "modelUsage",
             "promptCache",
+            "cost",
             "pr_url",
             "branch",
             "partial_branch",
@@ -593,6 +661,7 @@ def main() -> int:
     execution_path = Path(args.execution_file)
 
     usage_totals: dict[str, int] = {}
+    request_usages: list[dict[str, Any]] = []
     cache = prompt_cache_enabled()
     calls = 0
     branch = ""
@@ -629,6 +698,7 @@ def main() -> int:
             )
             calls += 1
             _accumulate_usage(usage_totals, response.get("usage") or {})
+            request_usages.append(_request_usage(response.get("usage") or {}))
             content = response.get("content") or []
             final_text = _content_text(content) or final_text
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
@@ -687,6 +757,7 @@ def main() -> int:
             error_kind = "no_durable_change"
             raise DirectExecutorError("model completed without repository changes")
 
+        cost = _cost_block(args.model, request_usages)
         result = {
             "type": "result",
             "subtype": "success",
@@ -695,6 +766,8 @@ def main() -> int:
             "total_cost_usd": None,
             "modelUsage": {args.model: _model_usage(usage_totals)},
             "promptCache": "enabled" if cache else "disabled",
+            "requestUsage": request_usages,
+            "cost": cost,
             "result": final_text,
             "pr_url": pr_url,
             "branch": branch,
@@ -707,6 +780,7 @@ def main() -> int:
                 "session_id": run_id,
                 "pr_url": pr_url,
                 **_github_usage(usage_totals),
+                **_github_cost(cost),
             }
         )
         return 0
@@ -776,6 +850,7 @@ def main() -> int:
                     file=sys.stderr,
                 )
 
+        cost = _cost_block(args.model, request_usages)
         result = {
             "type": "result",
             "subtype": "error",
@@ -784,6 +859,8 @@ def main() -> int:
             "total_cost_usd": None,
             "modelUsage": ({args.model: _model_usage(usage_totals)} if calls else {}),
             "promptCache": "enabled" if cache else "disabled",
+            "requestUsage": request_usages,
+            "cost": cost,
             "error": error_kind,
             "api_error_status": error_status or None,
             "result": error_message or str(exc),
@@ -798,6 +875,7 @@ def main() -> int:
                 "session_id": run_id,
                 "pr_url": "",
                 **_github_usage(usage_totals),
+                **_github_cost(cost),
             }
         )
         print(
