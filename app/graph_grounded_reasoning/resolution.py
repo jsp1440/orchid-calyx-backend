@@ -27,10 +27,23 @@ _BINOMIAL = re.compile(
 )
 
 
+#: Capitalised question and command words that the binomial pattern would
+#: otherwise read as a genus ("Which pollinators", "Describe the").
+_NON_GENUS_WORDS = frozenset(
+    {
+        "Are", "Can", "Compare", "Could", "Describe", "Did", "Do", "Does", "Explain",
+        "Give", "How", "In", "Is", "List", "On", "Please", "Should", "Show", "Summarize",
+        "Tell", "The", "What", "When", "Where", "Which", "Who", "Why", "Would",
+    }
+)
+
+
 def mentioned_names(text: str) -> tuple[str, ...]:
     seen: list[str] = []
     for match in _BINOMIAL.finditer(text):
         name = " ".join(match.group(1).split())
+        if name.split()[0] in _NON_GENUS_WORDS:
+            continue
         if name not in seen:
             seen.append(name)
     return tuple(seen)
@@ -68,7 +81,11 @@ def resolve_question_taxon(text: str, registry: CanonicalRegistry) -> TaxonResol
     }
     if not accepted_ids:
         return TaxonResolution(state=ResolutionState.UNRESOLVED, **common)
-    if len(accepted_ids) > 1 or len(candidates) > MAX_TAXA_PER_QUESTION:
+    # A taxon-like mention the registry cannot resolve, beside one it can,
+    # must not be dropped: answering for the known taxon alone would silently
+    # change the question.
+    unresolved_mentions = len(names) > len(candidates)
+    if len(accepted_ids) > 1 or unresolved_mentions or len(candidates) > MAX_TAXA_PER_QUESTION:
         return TaxonResolution(state=ResolutionState.AMBIGUOUS, **common)
     chosen = candidates[0]
     synonym = next(

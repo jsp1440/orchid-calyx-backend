@@ -31,6 +31,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
+from app.calyx_flywheel.locality import SENSITIVE_LOCALITY_FIELDS
 from app.literature_extraction.models import Provenance as LiteratureProvenance
 
 from .canonical_taxonomy import CANONICAL_AUTHORITY
@@ -47,10 +48,9 @@ REVIEW_STATUSES: tuple[str, ...] = typing.get_args(
 REVIEWED_STATUSES = frozenset({"accepted", "corrected"})
 LINKED_TAXON_STATUSES = frozenset({"accepted", "synonym"})
 
-#: Keys that would carry locality.  Claim provenance never needs them.
-FORBIDDEN_KEYS = frozenset(
-    {"latitude", "longitude", "decimal_latitude", "decimal_longitude", "coordinates", "locality", "verbatim_locality"}
-)
+#: Keys that would carry locality: the repository-wide boundary set, matched
+#: case-insensitively.  Claim provenance never needs any of them.
+FORBIDDEN_KEYS = SENSITIVE_LOCALITY_FIELDS
 
 
 @dataclass(frozen=True)
@@ -169,7 +169,7 @@ def parse_claim_provenance(payload: Mapping[str, Any] | None) -> tuple[ClaimProv
     violations: list[str] = []
     if raw.get("contract_version") != CONTRACT_VERSION:
         violations.append("CONTRACT_VERSION_UNSUPPORTED")
-    leaked = _keys(raw) & FORBIDDEN_KEYS
+    leaked = {key for key in _keys(raw) if key.strip().lower() in FORBIDDEN_KEYS}
     if leaked:
         violations.append("FORBIDDEN_LOCALITY_KEYS:" + ",".join(sorted(leaked)))
     if raw.get("confidence_is_probability"):
