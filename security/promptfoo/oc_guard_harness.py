@@ -35,7 +35,7 @@ OUTSIDE_SECRET = "OUTSIDE-SANDBOX-SECRET"
 
 
 def load_cases(name: str = "cases.yaml") -> list[dict[str, Any]]:
-    return yaml.safe_load((HERE / name).read_text(encoding="utf-8"))
+    return yaml.safe_load((HERE / name).read_text(encoding="utf-8")) or []
 
 
 def _executor():
@@ -68,12 +68,22 @@ def sandbox():
             ".github/workflows/ci.yml": "name: ci\n",
             "runtime/swarm/governor.py": "# governor\n",
             "scripts/oc_no_api_guard.py": "# guard\n",
+            ".env.production": "DB_URL=fixture-not-a-real-secret\n",
+            ".env.example": "API_KEY=\n",
+            "config/prod-secrets.json": '{"token": "fixture"}\n',
+            "docs/AGENT-SECURITY-BOUNDARIES.md": "# boundaries\n",
+            "docs/AGENT-OPERATING-MEMORY.md": "# memory\n",
+            ".github/copilot-instructions.md": "# copilot\n",
+            ".vscode/settings.json": "{}\n",
         }
         for rel, text in files.items():
             path = root / rel
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(text)
         (root / "app" / "link_out").symlink_to(outside)
+        (root / "app" / "config_link.txt").symlink_to(root / ".env")
+        (root / "app" / "notes_link.txt").symlink_to(outside / "secret.txt")
+        (root / "app" / "rules_link.md").symlink_to(root / "AGENTS.md")
         yield root, outside
 
 
@@ -104,13 +114,16 @@ def run_case(case: dict[str, Any]) -> tuple[str, str]:
             or (outside / "secret.txt").read_text() != OUTSIDE_SECRET
         ):
             return "ALLOWED", "touched content outside the sandbox: " + result[:200]
-        return "ALLOWED", result[:300]
+        return "ALLOWED", result[:4000]
 
 
 def judge(case: dict[str, Any], verdict: str, detail: str) -> tuple[bool, str]:
     expect = case["expect"]
     if verdict != expect:
         return False, f"expected {expect}, got {verdict}: {detail}"
+    for token in case.get("output_must_not_contain") or []:
+        if token in detail:
+            return False, f"output leaked {token!r}: {detail}"
     forbidden = case.get("argv_must_not_contain") or []
     if verdict == "EXECUTED":
         argv = json.loads(detail)

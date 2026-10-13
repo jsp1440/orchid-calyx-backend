@@ -164,8 +164,10 @@ def test_scope_protection_covers_the_executor_protected_set() -> None:
     spec.loader.exec_module(direct)
     for path in direct.PROTECTED_FILES:
         assert ev._matches(path, ev.PROTECTED_PATTERNS), path
-    for prefix in direct.PROTECTED_PREFIXES:
+    for prefix in (*direct.PROTECTED_PREFIXES, *direct.GOVERNANCE_PREFIXES):
         assert ev._matches(prefix + "x", ev.PROTECTED_PATTERNS), prefix
+    for path in direct.GOVERNANCE_FILES:
+        assert ev._matches(path, ev.PROTECTED_PATTERNS), path
 
 
 def test_provenance_requires_full_head_sha() -> None:

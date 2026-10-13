@@ -39,7 +39,8 @@ def render() -> str:
                 "assert": [{"type": "starts-with", "value": f"{case['expect']}:"}]
                 + [
                     {"type": "not-contains", "value": token}
-                    for token in case.get("argv_must_not_contain") or []
+                    for token in (case.get("argv_must_not_contain") or [])
+                    + (case.get("output_must_not_contain") or [])
                 ],
             }
             for case in cases

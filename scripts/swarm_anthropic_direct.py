@@ -99,6 +99,25 @@ PROTECTED_BASENAMES = {
     ".env.local",
     "secrets.json",
 }
+# Governance/security-control paths that require an owner checkpoint
+# (docs/AGENT-SECURITY-BOUNDARIES.md, "Restricted paths"). The executor may
+# read them -- they are its instructions -- but never write them; changes go
+# through an owner-reviewed pull request instead.
+GOVERNANCE_FILES = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".github/copilot-instructions.md",
+    ".github/workflows/agent-security-guard.yml",
+    "scripts/agent_security_guard.py",
+    "docs/AGENT-SECURITY-BOUNDARIES.md",
+}
+GOVERNANCE_PREFIXES = (".agents/", ".claude/", ".cursor/", ".vscode/")
+# Credential files are neither read nor written: their contents would enter the
+# provider request and could be echoed into a commit or PR. Templates that by
+# convention hold no secrets stay readable.
+CREDENTIAL_BASENAMES = {".env", "secrets.json"}
+CREDENTIAL_SUFFIXES = (".secrets.json", "-secrets.json", "_secrets.json")
+CREDENTIAL_TEMPLATES = {".env.example", ".env.sample", ".env.template", ".env.dist"}
 
 TOOLS = [
     {
@@ -186,9 +205,34 @@ def _relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
 
+def _is_credential_file(path: Path) -> bool:
+    """Credential files by name, checked on the resolved path (symlinks included)."""
+    name = path.name.lower()
+    if name in CREDENTIAL_TEMPLATES:
+        return False
+    return (
+        name in CREDENTIAL_BASENAMES
+        or name.startswith(".env.")
+        or name.endswith(CREDENTIAL_SUFFIXES)
+    )
+
+
+def _is_governance_path(rel: str) -> bool:
+    return rel in GOVERNANCE_FILES or any(
+        rel == prefix.rstrip("/") or rel.startswith(prefix)
+        for prefix in GOVERNANCE_PREFIXES
+    )
+
+
+def _readable(path: Path) -> bool:
+    return not _is_credential_file(path)
+
+
 def _writable(path: Path) -> bool:
     rel = _relative(path)
     if path.name in PROTECTED_BASENAMES or rel in PROTECTED_FILES:
+        return False
+    if _is_credential_file(path) or _is_governance_path(rel):
         return False
     return not any(
         rel == prefix.rstrip("/") or rel.startswith(prefix)
@@ -217,6 +261,8 @@ def _truncate(text: str, limit: int = 12000) -> str:
 
 def _tool_read_file(args: dict[str, Any]) -> str:
     path = _safe_path(str(args["path"]))
+    if not _readable(path):
+        return f"ERROR: credential file is not readable: {_relative(path)}"
     if not path.is_file():
         return f"ERROR: file not found: {_relative(path)}"
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -252,6 +298,9 @@ def _tool_search_text(args: dict[str, Any]) -> str:
             continue
         rel = _relative(path)
         if not fnmatch.fnmatch(rel, pattern):
+            continue
+        resolved = path.resolve()
+        if not resolved.is_relative_to(REPO_ROOT.resolve()) or not _readable(resolved):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -291,6 +340,8 @@ def _safe_target(raw: str | None) -> str:
     target = raw.strip()
     if not re.fullmatch(r"[A-Za-z0-9_./*?\-\[\]]+", target):
         raise ValueError("unsafe validation target")
+    if _is_credential_file(Path(target)):
+        raise ValueError("validation target names a credential file")
     return target
 
 

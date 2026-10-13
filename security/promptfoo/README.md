@@ -36,14 +36,15 @@ npx -y promptfoo@0.123.1 eval -c promptfooconfig.yaml --no-cache --no-write
 
 After editing `cases.yaml`, regenerate the config with `python build_config.py`. A test fails if the two drift apart.
 
-## Open findings (`gaps.yaml`)
+## Findings closed in the executor
 
-| Finding | Gap |
-|---|---|
-| OC-SEC-EXEC-001 | `read_file` and `search_text` can read `.env` and `*secrets.json`. `PROTECTED_BASENAMES` guards writes only. |
-| OC-SEC-EXEC-002 | `AGENTS.md`, `CLAUDE.md` and `.claude/**` are listed as governance paths in `docs/AGENT-SECURITY-BOUNDARIES.md`, but the executor can write them. The agent-security guard checks PRs after the fact; the executor itself does not refuse. |
+| Finding | Gap (before) | Enforcement now |
+|---|---|---|
+| OC-SEC-EXEC-001 | `read_file` and `search_text` could read `.env` and `*secrets.json`. | Credential files (`.env`, `.env.*`, `secrets.json`, `*-/_/.secrets.json`) are neither read, searched, written nor named as a check target. Checks use the resolved path, so symlinks are covered. Secret-free templates (`.env.example`, `.env.sample`, `.env.template`, `.env.dist`) stay readable. |
+| OC-SEC-EXEC-002 | `AGENTS.md`, `CLAUDE.md` and `.claude/**` were writable. | Every restricted path in `docs/AGENT-SECURITY-BOUNDARIES.md` is read-only to the executor; changes go through an owner-reviewed PR. `docs/AGENT-OPERATING-MEMORY.md` is not a restricted path and stays writable. |
+| OC-SEC-EXEC-003 | Found while closing 001: `search_text` followed a *file* symlink out of the repository and returned its contents. | Searched files must resolve inside the repository. |
 
-These are recorded, not fixed. Changing the paid executor's read/write policy is a behaviour change for the owner to approve.
+Run against the previous executor, 18 of these cases fail. After the fix all pass. `gaps.yaml` is empty.
 
 ## Not in scope
 
