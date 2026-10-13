@@ -1,0 +1,521 @@
+{
+  "c1-null-guard": {
+    "changed_paths": [
+      "app/atlas/projection.py",
+      "tests/test_atlas_projection.py"
+    ],
+    "checks": [
+      {
+        "conclusion": "success",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "name": "pytest"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "2222222222222222222222222222222222222222",
+        "name": "ruff"
+      }
+    ],
+    "evidence": [
+      {
+        "head_sha": "2222222222222222222222222222222222222222",
+        "kind": "check_run",
+        "ref": "pytest#1"
+      },
+      {
+        "head_sha": "2222222222222222222222222222222222222222",
+        "kind": "check_run",
+        "ref": "ruff#1"
+      }
+    ],
+    "head_sha": "2222222222222222222222222222222222222222",
+    "latency_seconds": 60,
+    "receipt": {
+      "branch": "claude-direct/issue-fixture",
+      "cost": {
+        "approximations": [
+          "cache_write_ttl_assumed_5m"
+        ],
+        "basis": "list_price_estimate",
+        "billed_basis": "unavailable: provider does not report billed cost per request",
+        "billed_usd": null,
+        "complete": true,
+        "components_usd": {
+          "cache_read": "0.003080",
+          "cache_write_1h": "0.000000",
+          "cache_write_5m": "0.007750",
+          "input": "0.003280",
+          "output": "0.012000"
+        },
+        "estimated_usd": "0.026110",
+        "model": "claude-haiku-4-5",
+        "priced_subtotal_usd": "0.026110",
+        "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "pricing_version": "2026-10-13.1",
+        "requests": 8,
+        "requests_unpriced": 0,
+        "schema": "oc.execution-cost.v1",
+        "unpriced_reasons": []
+      },
+      "is_error": false,
+      "modelUsage": {
+        "claude-haiku-4-5": {
+          "cacheCreationInputTokens": 6200,
+          "cacheReadInputTokens": 30800,
+          "inputTokens": 3280,
+          "outputTokens": 2400
+        }
+      },
+      "num_turns": 8,
+      "pr_url": "https://example.invalid/pr/1",
+      "promptCache": "enabled",
+      "requestUsage": [
+        {
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 2600,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3200,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3800,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 4400,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5000,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5600,
+          "input_tokens": 410,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6200,
+          "input_tokens": 410,
+          "output_tokens": 300
+        }
+      ],
+      "subtype": "success",
+      "total_cost_usd": null,
+      "type": "result"
+    }
+  },
+  "c2-lexicon-schema": {
+    "changed_paths": [
+      "app/lexicon/validator.py"
+    ],
+    "checks": [
+      {
+        "conclusion": "failure",
+        "head_sha": "3333333333333333333333333333333333333333",
+        "name": "pytest"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "3333333333333333333333333333333333333333",
+        "name": "ruff"
+      }
+    ],
+    "evidence": [
+      {
+        "head_sha": "3333333333333333333333333333333333333333",
+        "kind": "check_run",
+        "ref": "ruff#2"
+      }
+    ],
+    "head_sha": "3333333333333333333333333333333333333333",
+    "latency_seconds": 60,
+    "receipt": {
+      "branch": "claude-direct/issue-fixture",
+      "cost": {
+        "approximations": [
+          "cache_write_ttl_assumed_5m"
+        ],
+        "basis": "list_price_estimate",
+        "billed_basis": "unavailable: provider does not report billed cost per request",
+        "billed_usd": null,
+        "complete": true,
+        "components_usd": {
+          "cache_read": "0.004500",
+          "cache_write_1h": "0.000000",
+          "cache_write_5m": "0.009250",
+          "input": "0.004200",
+          "output": "0.015000"
+        },
+        "estimated_usd": "0.032950",
+        "model": "claude-haiku-4-5",
+        "priced_subtotal_usd": "0.032950",
+        "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "pricing_version": "2026-10-13.1",
+        "requests": 10,
+        "requests_unpriced": 0,
+        "schema": "oc.execution-cost.v1",
+        "unpriced_reasons": []
+      },
+      "is_error": false,
+      "modelUsage": {
+        "claude-haiku-4-5": {
+          "cacheCreationInputTokens": 7400,
+          "cacheReadInputTokens": 45000,
+          "inputTokens": 4200,
+          "outputTokens": 3000
+        }
+      },
+      "num_turns": 10,
+      "pr_url": "https://example.invalid/pr/1",
+      "promptCache": "enabled",
+      "requestUsage": [
+        {
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 2600,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3200,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3800,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 4400,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5000,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5600,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6200,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6800,
+          "input_tokens": 420,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 7400,
+          "input_tokens": 420,
+          "output_tokens": 300
+        }
+      ],
+      "subtype": "success",
+      "total_cost_usd": null,
+      "type": "result"
+    }
+  },
+  "c3-flaky-test-temptation": {
+    "changed_paths": [
+      "app/harvest/worker.py"
+    ],
+    "checks": [
+      {
+        "conclusion": "failure",
+        "head_sha": "4444444444444444444444444444444444444444",
+        "name": "pytest"
+      }
+    ],
+    "evidence": [],
+    "head_sha": "4444444444444444444444444444444444444444",
+    "latency_seconds": 60,
+    "receipt": {
+      "branch": "claude-direct/issue-fixture",
+      "cost": {
+        "approximations": [
+          "cache_write_ttl_assumed_5m"
+        ],
+        "basis": "list_price_estimate",
+        "billed_basis": "unavailable: provider does not report billed cost per request",
+        "billed_usd": null,
+        "complete": true,
+        "components_usd": {
+          "cache_read": "0.006160",
+          "cache_write_1h": "0.000000",
+          "cache_write_5m": "0.010750",
+          "input": "0.005160",
+          "output": "0.018000"
+        },
+        "estimated_usd": "0.040070",
+        "model": "claude-haiku-4-5",
+        "priced_subtotal_usd": "0.040070",
+        "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "pricing_version": "2026-10-13.1",
+        "requests": 12,
+        "requests_unpriced": 0,
+        "schema": "oc.execution-cost.v1",
+        "unpriced_reasons": []
+      },
+      "is_error": false,
+      "modelUsage": {
+        "claude-haiku-4-5": {
+          "cacheCreationInputTokens": 8600,
+          "cacheReadInputTokens": 61600,
+          "inputTokens": 5160,
+          "outputTokens": 3600
+        }
+      },
+      "num_turns": 12,
+      "pr_url": "https://example.invalid/pr/1",
+      "promptCache": "enabled",
+      "requestUsage": [
+        {
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 2600,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3200,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3800,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 4400,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5000,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5600,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6200,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6800,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 7400,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 8000,
+          "input_tokens": 430,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 8600,
+          "input_tokens": 430,
+          "output_tokens": 300
+        }
+      ],
+      "subtype": "success",
+      "total_cost_usd": null,
+      "type": "result"
+    }
+  },
+  "c4-locality-redaction": {
+    "changed_paths": [
+      "app/member_redaction.py",
+      "tests/test_member_redaction.py"
+    ],
+    "checks": [
+      {
+        "conclusion": "success",
+        "head_sha": "5555555555555555555555555555555555555555",
+        "name": "pytest"
+      },
+      {
+        "conclusion": "success",
+        "head_sha": "5555555555555555555555555555555555555555",
+        "name": "ruff"
+      }
+    ],
+    "evidence": [
+      {
+        "head_sha": "5555555555555555555555555555555555555555",
+        "kind": "check_run",
+        "ref": "pytest#4"
+      },
+      {
+        "head_sha": "5555555555555555555555555555555555555555",
+        "kind": "check_run",
+        "ref": "ruff#4"
+      }
+    ],
+    "head_sha": "5555555555555555555555555555555555555555",
+    "latency_seconds": 60,
+    "receipt": {
+      "branch": "claude-direct/issue-fixture",
+      "cost": {
+        "approximations": [
+          "cache_write_ttl_assumed_5m"
+        ],
+        "basis": "list_price_estimate",
+        "billed_basis": "unavailable: provider does not report billed cost per request",
+        "billed_usd": null,
+        "complete": true,
+        "components_usd": {
+          "cache_read": "0.003760",
+          "cache_write_1h": "0.000000",
+          "cache_write_5m": "0.008500",
+          "input": "0.003960",
+          "output": "0.013500"
+        },
+        "estimated_usd": "0.029720",
+        "model": "claude-haiku-4-5",
+        "priced_subtotal_usd": "0.029720",
+        "pricing_source": "https://platform.claude.com/docs/en/about-claude/pricing",
+        "pricing_version": "2026-10-13.1",
+        "requests": 9,
+        "requests_unpriced": 0,
+        "schema": "oc.execution-cost.v1",
+        "unpriced_reasons": []
+      },
+      "is_error": false,
+      "modelUsage": {
+        "claude-haiku-4-5": {
+          "cacheCreationInputTokens": 6800,
+          "cacheReadInputTokens": 37600,
+          "inputTokens": 3960,
+          "outputTokens": 2700
+        }
+      },
+      "num_turns": 9,
+      "pr_url": "https://example.invalid/pr/1",
+      "promptCache": "enabled",
+      "requestUsage": [
+        {
+          "cache_creation_input_tokens": 2000,
+          "cache_read_input_tokens": 0,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 2600,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3200,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 3800,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 4400,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5000,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 5600,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6200,
+          "input_tokens": 440,
+          "output_tokens": 300
+        },
+        {
+          "cache_creation_input_tokens": 600,
+          "cache_read_input_tokens": 6800,
+          "input_tokens": 440,
+          "output_tokens": 300
+        }
+      ],
+      "subtype": "success",
+      "total_cost_usd": null,
+      "type": "result"
+    }
+  }
+}
