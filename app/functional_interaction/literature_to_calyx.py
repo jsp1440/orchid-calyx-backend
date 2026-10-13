@@ -66,6 +66,7 @@ from runtime.knowledge_graph.canonical_taxonomy import (
 
 from . import value_semantics
 from .contracts import (
+    FIXTURE_TAXON_AUTHORITY,
     AutonomyClass,
     CapabilityDescriptor,
     HealthSpec,
@@ -155,13 +156,10 @@ SOURCE = SourceArtifact(
     evidence_states=("UNKNOWN",),
     conditions=("source_content_addressed",),
 )
-#: The fixture backbone is invented and built with the World Plants spine
-#: builder; it is NOT a World Plants release. Links, conditions and subject ids
-#: therefore name this fixture authority, never ``world_plants``, so no fixture
-#: output can be mistaken for canonical taxonomy provenance. A real run must
-#: resolve against a pinned World Plants release under the contract default
-#: authority (FIL-001C).
-FIXTURE_TAXON_AUTHORITY = "fil_fixture_backbone"
+# The fixture backbone is invented (see ``contracts.FIXTURE_TAXON_AUTHORITY``):
+# links, conditions and subject ids name the fixture authority, never
+# ``world_plants``. A real run must resolve against a pinned World Plants
+# release under the contract default authority (FIL-001C).
 TAXON_PROVIDER = TaxonResolutionPolicy(
     role="provides", authority=FIXTURE_TAXON_AUTHORITY
 )
