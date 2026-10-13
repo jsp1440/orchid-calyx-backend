@@ -250,3 +250,69 @@ def test_loop_mode_worker_reports_an_explicit_cause_when_nothing_runs(tmp_path):
         "AWAITING_APPROVAL:1",
     )
     assert record["loop"]["generated"] == {"engineering_development": 1}
+
+
+@pytest.mark.skipif(
+    not BRAIN or not (Path(BRAIN) / "calyx_brain" / "autonomy_loop.py").is_file(),
+    reason="OC_BRAIN_REPO_PATH must name a Brain checkout with autonomy_loop.py",
+)
+def test_calyx_health_observer_is_wired_from_the_loop_spec(tmp_path, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+
+    from app import database
+    from app.calyx_orchestrator.program_models import (
+        CalyxAutonomyCycle,
+        CalyxProgram,
+        CalyxProgramJob,
+    )
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'calyx.db'}")
+    database.Base.metadata.create_all(
+        engine,
+        tables=[
+            CalyxAutonomyCycle.__table__,
+            CalyxProgram.__table__,
+            CalyxProgramJob.__table__,
+        ],
+    )
+    factory = sessionmaker(engine)
+    with factory() as db:
+        for n in range(3):
+            db.add(
+                CalyxAutonomyCycle(
+                    owner="backend_api_key",
+                    worker_id="w",
+                    sequence=n,
+                    poll_seconds=30,
+                    finished_at=datetime(2026, 10, 13, tzinfo=UTC)
+                    + timedelta(seconds=n),
+                    productive=False,
+                    healthy=False,
+                    category="no_executor",
+                    reason_code="AUTHORITATIVE_EXECUTOR_NOT_REGISTERED",
+                )
+            )
+        db.commit()
+    monkeypatch.setattr(database, "get_session_local", lambda: factory)
+    worker = build_worker(
+        {
+            "OC_BRAIN_CHECKOUT": BRAIN,
+            "OC_BRAIN_LOOP_OBSERVERS": "calyx_health",
+            "OC_BRAIN_PULSE_LEDGER": str(tmp_path / "ledger.json"),
+            "CALYX_BACKEND_BASE_URL": "http://127.0.0.1:9",
+            "CALYX_API_KEY": "fixture",
+            "CALYX_PROGRAM_AUTONOMY_ENABLED": "true",
+            "CALYX_PROGRAM_AUTONOMY_OWNER": "backend_api_key",
+        }
+    )
+    record = worker.replenish()
+    assert record["loop"]["observers"] == [
+        {"name": "calyx_health", "status": "ok", "gaps": 1}
+    ]
+    assert (record["zero_reason"], record["detail"]) == (
+        "owner_gate",
+        "AWAITING_APPROVAL:1",
+    )

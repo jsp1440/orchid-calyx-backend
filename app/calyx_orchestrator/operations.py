@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from .approved_tasks import task_profile, task_provider_status
 from .autonomy_cycles import autonomy_status
+from .autonomy_observers import proposals_summary
 from .models import CalyxJob, utcnow
 from .persisted_scheduler import persisted_schedule_status
 from .program_models import CalyxProgram, CalyxProgramJob
@@ -82,7 +83,9 @@ def renew_lease(
     return {
         "job_id": job.job_id,
         "worker_id": worker_id,
-        "lease_expires_at": job.lease_expires_at.isoformat() if job.lease_expires_at else None,
+        "lease_expires_at": job.lease_expires_at.isoformat()
+        if job.lease_expires_at
+        else None,
         "renewed": True,
     }
 
@@ -116,7 +119,8 @@ def _engineering_program_status(db: Session, *, owner: str) -> dict:
             "repository": job.repository,
             "branch": job.branch,
             "blocker": job.blocker or "UNSPECIFIED_BLOCKER",
-            "human_action": job.human_action or "Review the authoritative program job evidence.",
+            "human_action": job.human_action
+            or "Review the authoritative program job evidence.",
         }
         for job in blocked
     ]
@@ -159,6 +163,8 @@ def _engineering_program_status(db: Session, *, owner: str) -> dict:
         "schedule": persisted_schedule_status(db, owner=owner),
         # Recorded scheduled cycles: heartbeat freshness vs delivered work.
         "autonomy": autonomy_status(db, owner=owner),
+        # Continuous-loop proposals awaiting approval (read-only).
+        "autonomy_proposals": proposals_summary(db),
         "recent_programs": [
             {
                 "program_id": program.program_id,
@@ -166,8 +172,12 @@ def _engineering_program_status(db: Session, *, owner: str) -> dict:
                 "status": program.status,
                 "paused": program.paused,
                 "max_active_jobs": program.max_active_jobs,
-                "created_at": program.created_at.isoformat() if program.created_at else None,
-                "completed_at": program.completed_at.isoformat() if program.completed_at else None,
+                "created_at": program.created_at.isoformat()
+                if program.created_at
+                else None,
+                "completed_at": program.completed_at.isoformat()
+                if program.completed_at
+                else None,
             }
             for program in programs[:25]
         ],

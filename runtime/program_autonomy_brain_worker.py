@@ -36,7 +36,8 @@ Configuration (all required unless marked optional):
 * ``OC_BRAIN_LOOP_OBSERVERS`` (optional): run the continuous autonomy loop
   (``calyx_brain.autonomy_loop``) instead of a manifest or plain sources, e.g.
   ``scientific_batches,repository_changes:app/*.py,completion_feedback,
-  engineering_objectives:<mission queue path>``. ``OC_BRAIN_LOOP_APPROVALS``
+  engineering_objectives:<mission queue path>,calyx_health`` (``calyx_health``
+  turns recurring unhealthy cycles and blocked jobs into repair proposals). ``OC_BRAIN_LOOP_APPROVALS``
   (optional) names the reviewed approvals file for gated work classes.
 * ``OC_BRAIN_WORKSPACE_REFRESH_SECONDS`` / ``OC_BRAIN_WORKSPACE_REFRESH_REF``
   (optional, sources mode only, 60-86400 s): periodically refresh the
@@ -215,13 +216,27 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
 
         from app.calyx_orchestrator.workspace_refresh import refresher_from_env
 
-        observers = observers_from_spec(
-            loop_spec.split(","),
-            workspace=Path(workspace) if workspace else None,
-            repository=repository,
-            branch=str(env.get("OC_BRAIN_WORK_BRANCH", "")).strip()
-            or (_workspace_branch(workspace) if workspace else None),
-        )
+        entries = [entry.strip() for entry in loop_spec.split(",") if entry.strip()]
+        # ``calyx_health`` is observed from Calyx's own records; every other
+        # observer is Brain's.
+        calyx_health = "calyx_health" in entries
+        brain_entries = [entry for entry in entries if entry != "calyx_health"]
+        observers = []
+        if brain_entries:
+            observers = observers_from_spec(
+                brain_entries,
+                workspace=Path(workspace) if workspace else None,
+                repository=repository,
+                branch=str(env.get("OC_BRAIN_WORK_BRANCH", "")).strip()
+                or (_workspace_branch(workspace) if workspace else None),
+            )
+        if calyx_health:
+            from app.calyx_orchestrator.autonomy_observers import CalyxHealthObserver
+            from app.database import get_session_local
+
+            observers.append(
+                CalyxHealthObserver(get_session_local(), owner=policy.owner)
+            )
         approvals_raw = str(env.get("OC_BRAIN_LOOP_APPROVALS", "")).strip()
         approvals_path = Path(approvals_raw) if approvals_raw else None
         loop_refresher = refresher_from_env(env, workspace=workspace)
