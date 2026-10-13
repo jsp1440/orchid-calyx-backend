@@ -26,7 +26,11 @@ from app.calyx_orchestrator.executor import PROHIBITED_CAPABILITIES
 from app.provider_reservoir.capabilities import classify_capabilities
 
 from .compatibility import check_edge
-from .contracts import DRY_RUN_EXECUTABLE_STATUSES, AutonomyClass
+from .contracts import (
+    DRY_RUN_EXECUTABLE_STATUSES,
+    SAFE_AUTONOMOUS_PERMISSIONS,
+    AutonomyClass,
+)
 from .planner import WorkflowPlan, source_edge
 
 DRY_RUN_MODE = "dry_run"
@@ -175,6 +179,16 @@ def evaluate_plan(
                     f"AUTONOMY_CLASS_C_PROPOSAL_ONLY:{step.capability_id}",
                 )
             )
+        # Re-checked here, not trusted from descriptor construction.
+        if step.autonomy_class is AutonomyClass.SAFE_AUTONOMOUS:
+            unsafe = sorted(set(step.permissions) - SAFE_AUTONOMOUS_PERMISSIONS)
+            if unsafe:
+                findings.append(
+                    (
+                        GovernanceAction.REFUSE,
+                        f"CLASS_A_PERMISSION_NOT_SAFE:{step.capability_id}:{','.join(unsafe)}",
+                    )
+                )
         prohibited = sorted(set(step.permissions) & PROHIBITED_CAPABILITIES)
         if prohibited:
             findings.append(

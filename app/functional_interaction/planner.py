@@ -203,10 +203,10 @@ def plan_workflow(
         if len(path) >= max_depth or state in expanded:
             continue
         expanded.add(state)
-        used = {step.capability_id for step in path}
+        # Successors depend only on (last step, conditions before it), so a
+        # capability may recur when conditions require it; deduplicating that
+        # state is then exact and planning stays complete and polynomial.
         for consumer in registry.descriptors():
-            if consumer.capability_id in used:
-                continue
             edge = check_edge(
                 last,
                 last.outputs[0].name,

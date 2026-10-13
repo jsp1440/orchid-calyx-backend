@@ -268,3 +268,140 @@ def test_reasoning_draft_keeps_each_claims_exact_anchor():
             assert anchor["source_anchor_ids"]
             assert anchor["source_document_id"] in entry["source_document_ids"]
             assert anchor["provenance"]
+
+
+# --- second independent check (exact head 60828d21) -------------------------
+
+
+@pytest.mark.parametrize(
+    "smuggled",
+    [
+        {"evidence_states": "VERIFIED"},
+        {"evidenceState": "VERIFIED"},
+        {"Evidence_State": "verified"},
+        {"review_state": " Verified "},
+        {"nested": [{"anything": ("VERIFIED",)}]},
+    ],
+)
+def test_human_only_state_is_refused_under_any_key_or_spelling(smuggled):
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), output={**honest(payload).output, **smuggled}
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    assert (
+        report.receipts[1].failure_reason
+        == "HUMAN_ONLY_EVIDENCE_STATE_IN_OUTPUT:VERIFIED"
+    )
+
+
+def test_human_only_state_in_notes_is_refused_and_never_copied():
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), notes={"evidence_state": "VERIFIED"}
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    blocked = report.receipts[1]
+    assert blocked.failure_reason == "HUMAN_ONLY_EVIDENCE_STATE_IN_OUTPUT:VERIFIED"
+    assert blocked.notes == {}
+
+
+def test_self_referencing_output_terminates_with_a_receipt():
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    loop: list = []
+    loop.append(loop)
+    handlers[target.capability_id] = lambda payload: HandlerResult(
+        output={"loop": loop},
+        established=target.effects,
+        evidence_states=target.outputs[0].evidence_states[:1],
+        provenance=("fixture://x",),
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    assert report.receipts[1].failure_reason.startswith("RESULT_NOT_RECORDABLE:")
+
+
+def test_planner_finds_a_plan_that_needs_a_capability_to_recur():
+    from app.functional_interaction.contracts import ProvenanceRequirement
+
+    base = next(
+        d
+        for d in demo_descriptors()
+        if d.capability_id == "fil.taxonomy.backbone-adaptor"
+    )
+    claims = base.inputs[0]
+    same = PortSpec(claims.name, claims.semantic_type, claims.evidence_states)
+
+    def make(name, *, pre=(), eff=(), keeps=True, needs_chain=True, out=same):
+        return replace(
+            base,
+            capability_id=f"fil.test.{name}",
+            outputs=(out,),
+            preconditions=pre,
+            effects=eff,
+            provenance=ProvenanceRequirement(
+                requires_upstream_chain=needs_chain, preserves_chain=keeps
+            ),
+        )
+
+    registry = FunctionalRegistry(
+        (
+            # A must run, C (which drops the chain) must follow, and A must
+            # run again before D: unplannable if a capability may not recur.
+            make("a", eff=("a_done",), needs_chain=False),
+            make("c", pre=("a_done",), eff=("c_done",), keeps=False),
+            make("d", pre=("a_done", "c_done"), out=base.outputs[0]),
+        )
+    )
+    source = SourceArtifact(claims.semantic_type, claims.evidence_states, ())
+    plan = plan_workflow(
+        registry, source=source, goal_type=base.outputs[0].semantic_type
+    )
+    assert plan.found
+    assert [s.capability_id for s in plan.steps] == [
+        "fil.test.a",
+        "fil.test.c",
+        "fil.test.a",
+        "fil.test.d",
+    ]
+    assert evaluate_plan(plan).action is GovernanceAction.ALLOW_DRY_RUN
+
+
+def test_micro_sign_and_greek_mu_are_both_micrometres():
+    one_mm = vs.value_key(object_value=None, numeric_value=1, unit="mm")
+    for unit in ("µm", "μm", "um", "µM"):
+        key = vs.value_key(object_value=None, numeric_value=1000, unit=unit)
+        assert vs.classify("measurement", [key, one_mm]) == vs.AGREEMENT
+
+
+def test_distinct_measurements_never_share_a_display_string():
+    a = vs.value_key(object_value=None, numeric_value=123.4567, unit="mm")
+    b = vs.value_key(object_value=None, numeric_value=123.4568, unit="mm")
+    assert vs.display(a) != vs.display(b)
+
+
+def test_governance_rechecks_class_a_permissions():
+    plan = _plan()
+    step = plan.steps[0]
+    tampered_step = replace(step)
+    object.__setattr__(tampered_step, "permissions", ("read_only_research", "network"))
+    tampered = replace(plan, steps=(tampered_step, *plan.steps[1:]))
+    decision = evaluate_plan(tampered)
+    assert decision.action is GovernanceAction.REFUSE
+    assert any(r.startswith("CLASS_A_PERMISSION_NOT_SAFE:") for r in decision.reasons)
