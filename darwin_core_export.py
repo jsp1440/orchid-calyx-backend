@@ -44,7 +44,7 @@ import logging
 import os
 import zipfile
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 logging.basicConfig(level=logging.INFO)
@@ -273,7 +273,7 @@ def to_dwc_record(
         "collectionCode": source,
         "catalogNumber": source_id,
         "datasetName": dataset_name,
-        "modified": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "modified": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
 
@@ -315,7 +315,7 @@ def build_eml_xml(
     record_count: int,
     exact_coordinates_included: bool = False,
 ) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     location_statement = (
         "Exact decimal coordinates are included under explicit locality-disclosure authorization."
         if exact_coordinates_included

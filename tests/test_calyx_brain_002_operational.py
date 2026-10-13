@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -261,7 +261,7 @@ def test_conflict_disposition_persistence_history_gate_and_approval_invalidation
 
 
 def test_conflict_disposition_hash_distinguishes_resolved_from_superseded():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     project_id = str(uuid4())
     conflict = _entry("owner-a", project_id, LedgerEntryKind.CONFLICT)
     base = {
@@ -340,7 +340,7 @@ def test_literature_reference_validation_preserves_roles(tmp_path: Path):
         "analysis_manifest": {
             "analysis_id": "analysis-1",
             "analysis_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "pipeline_version": "test",
             "status": "completed",
         },

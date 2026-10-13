@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .context import PipelineContext
 from .extractors.base import Extractor
@@ -25,9 +25,9 @@ class PipelineRunner:
             current.analysis_manifest.extractors.append(run)
             if run.status == "failed":
                 current.analysis_manifest.status = "failed"
-                current.analysis_manifest.completed_at = datetime.now(timezone.utc)
+                current.analysis_manifest.completed_at = datetime.now(UTC)
                 return current
 
         current.analysis_manifest.status = "completed"
-        current.analysis_manifest.completed_at = datetime.now(timezone.utc)
+        current.analysis_manifest.completed_at = datetime.now(UTC)
         return current
