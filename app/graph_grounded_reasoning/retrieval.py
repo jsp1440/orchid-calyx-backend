@@ -125,7 +125,7 @@ def assemble_packet(
     question: ScientificQuestion,
     resolution: TaxonResolution,
     graph: ReadableGraph | None,
-    taxon_node_key: Callable[[int], str],
+    taxon_node_key: Callable[[int], str | None],
     search: SearchFn | None = None,
 ) -> EvidencePacket:
     gaps: list[str] = []
@@ -140,6 +140,8 @@ def assemble_packet(
 
     view = ReadOnlyGraphView(graph)
     key = taxon_node_key(int(resolution.accepted_canonical_id))
+    if key is None:
+        return _empty(question, resolution, None, ["TAXON_GRAPH_LINK_UNVERIFIED"])
     focal = view.get_node_by_key(key)
     if focal is None:
         return _empty(question, resolution, key, ["FOCAL_TAXON_NODE_NOT_IN_GRAPH"])

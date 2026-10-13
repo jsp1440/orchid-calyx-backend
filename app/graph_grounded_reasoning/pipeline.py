@@ -24,9 +24,11 @@ from .validation import validate
 class GraphGroundedReasoner:
     """Answer one typed scientific question from read-only graph and index reads.
 
-    ``taxon_node_key`` maps a registry ``canonical_id`` to the graph node key.
+    ``taxon_node_key`` maps a registry ``canonical_id`` to the graph node key,
+    or to ``None`` when no verified link exists (``TAXON_GRAPH_LINK_UNVERIFIED``).
     It is required: registry ids are assigned per registry build and are not
-    graph ``source_pk`` values, so no mapping may be assumed.  The focal node
+    graph ``source_pk`` values, so no mapping may be assumed.  Use
+    ``runtime.knowledge_graph.canonical_graph_mapping`` to build one.  The focal node
     must also carry the accepted canonical name, otherwise the packet reports
     ``FOCAL_NODE_IDENTITY_MISMATCH`` instead of reading another taxon's edges.
     """
@@ -35,7 +37,7 @@ class GraphGroundedReasoner:
         self,
         registry: CanonicalRegistry,
         graph: ReadableGraph | None,
-        taxon_node_key: Callable[[int], str],
+        taxon_node_key: Callable[[int], str | None],
         search: SearchFn | None = None,
         composer: Composer = compose,
     ):
