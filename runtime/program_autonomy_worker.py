@@ -33,6 +33,9 @@ Replenisher = Callable[[], dict[str, Any]]
 #: in the cycle result and never stops the loop.
 Recorder = Callable[[dict[str, Any]], str]
 
+#: Healthy zero-execution categories that back off when they persist.
+_BACKOFF_CATEGORIES = frozenset({"no_eligible_work", "owner_gate"})
+
 # Upstream reasons that explain an idle cycle better than "no eligible work".
 _UPSTREAM_REASONS = frozenset(ZERO_EXECUTION_CATEGORIES) - {"no_eligible_work"}
 
@@ -169,11 +172,13 @@ def run_forever(
                 "error": {"exception_type": type(exc).__name__},
                 "classification": classify_cycle(None, None, reason="cycle_failed"),
             }
-        # Only healthy "nothing to do" cycles back off. Defects, capacity and
-        # dependency waits keep the normal cadence so repairs are noticed.
+        # Only healthy "nothing to do until something external changes"
+        # cycles back off: no eligible work, or work awaiting human approval.
+        # Defects, capacity and dependency waits keep the normal cadence so
+        # repairs are noticed.
         classification = result.get("classification") or {}
         if (
-            classification.get("category") == "no_eligible_work"
+            classification.get("category") in _BACKOFF_CATEGORIES
             and classification.get("healthy") is True
             and classification.get("productive") is not True
         ):

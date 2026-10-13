@@ -218,3 +218,70 @@ def test_receipt_without_a_replenisher_says_so():
         status = autonomy_status(db, owner="owner", now=NOW)
     assert status["idle"]["work_supply"] == "no_replenisher"
     assert json.dumps(status)  # JSON-safe
+
+
+@pytest.mark.parametrize(
+    ("detail", "supply"),
+    [
+        ("AWAITING_APPROVAL:3", "awaiting_approval"),
+        ("APPROVED_WORK_HAS_NO_EXECUTOR:1", "approved_work_has_no_executor"),
+        ("RECONCILED_UNDELIVERED:2", "recent_work_undelivered"),
+        ("ORIGINS_SUPPRESSED:repository_changes", "origins_suppressed"),
+        ("LOOP_NO_GAPS_DETECTED", "no_gaps_detected"),
+        ("APPROVALS_UNREADABLE", "approvals_unreadable"),
+    ],
+)
+def test_continuous_loop_details_have_explicit_supply_states(detail, supply):
+    with _db() as db:
+        record_cycle(
+            db,
+            _receipt(1, finished=NOW, classification=IDLE, detail=detail),
+            owner="owner",
+        )
+        assert (
+            autonomy_status(db, owner="owner", now=NOW)["idle"]["work_supply"] == supply
+        )
+
+
+def test_owner_gate_backs_off_like_no_eligible_work(monkeypatch):
+    gate = {"productive": False, "category": "owner_gate", "healthy": True}
+    plan = iter([gate, gate, gate, DEFECT])
+    monkeypatch.setattr(
+        worker,
+        "run_once",
+        lambda _policy, **_kw: {"executed": True, "classification": dict(next(plan))},
+    )
+    sleeps: list[float] = []
+    stop = threading.Event()
+    seen: list[dict] = []
+
+    def on_cycle(result):
+        seen.append(result)
+        if len(seen) == 4:
+            stop.set()
+
+    worker.run_forever(_policy(), sleeper=sleeps.append, on_cycle=on_cycle, stop=stop)
+    assert sleeps == [30, 60, 100]
+
+
+def test_loop_summary_is_kept_in_the_receipt_without_rationale_text():
+    with _db() as db:
+        result = _receipt(
+            1, finished=NOW, classification=IDLE, detail="AWAITING_APPROVAL:1"
+        )
+        result["replenishment"]["loop"] = {
+            "observers": [
+                {"name": "engineering_objectives", "status": "ok", "gaps": 1}
+            ],
+            "generated": {"engineering_development": 1},
+            "rejected": {},
+            "proposals": {"awaiting_approval": 1},
+            "submitted_candidates": [],
+        }
+        record_cycle(db, result, owner="owner")
+        status = autonomy_status(db, owner="owner", now=NOW)
+    assert status["last_cycle"]["replenishment"]["loop"] == {
+        "observers": [{"name": "engineering_objectives", "status": "ok", "gaps": 1}],
+        "generated": {"engineering_development": 1},
+        "proposals": {"awaiting_approval": 1},
+    }

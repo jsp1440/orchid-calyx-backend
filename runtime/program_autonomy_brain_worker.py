@@ -33,6 +33,11 @@ Configuration (all required unless marked optional):
   ``OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE``.
 * ``OC_BRAIN_WORK_BRANCH`` (optional): branch named in source-built packets;
   defaults to the workspace checkout's branch.
+* ``OC_BRAIN_LOOP_OBSERVERS`` (optional): run the continuous autonomy loop
+  (``calyx_brain.autonomy_loop``) instead of a manifest or plain sources, e.g.
+  ``scientific_batches,repository_changes:app/*.py,completion_feedback,
+  engineering_objectives:<mission queue path>``. ``OC_BRAIN_LOOP_APPROVALS``
+  (optional) names the reviewed approvals file for gated work classes.
 * ``OC_BRAIN_WORKSPACE_REFRESH_SECONDS`` / ``OC_BRAIN_WORKSPACE_REFRESH_REF``
   (optional, sources mode only, 60-86400 s): periodically refresh the
   workspace clone from ``origin/<ref>``, only while nothing is in flight, so
@@ -95,8 +100,18 @@ def configuration_problems(env: Mapping[str, str]) -> list[str]:
         problems.append("OC_BRAIN_CHECKOUT_MISSING_AUTONOMY_PULSE")
     manifest = str(env.get("OC_BRAIN_WORK_MANIFEST", "")).strip()
     sources = str(env.get("OC_BRAIN_WORK_SOURCES", "")).strip()
-    if not manifest and not sources:
+    loop = str(env.get("OC_BRAIN_LOOP_OBSERVERS", "")).strip()
+    if not manifest and not sources and not loop:
         problems.append("OC_BRAIN_WORK_MANIFEST_OR_SOURCES_UNSET")
+    if (
+        loop
+        and checkout
+        and not (Path(checkout) / "calyx_brain" / "autonomy_loop.py").is_file()
+    ):
+        problems.append("OC_BRAIN_CHECKOUT_MISSING_AUTONOMY_LOOP")
+    approvals = str(env.get("OC_BRAIN_LOOP_APPROVALS", "")).strip()
+    if approvals and not loop:
+        problems.append("OC_BRAIN_LOOP_APPROVALS_REQUIRES_LOOP_OBSERVERS")
     if manifest and not Path(manifest).is_file():
         problems.append("OC_BRAIN_WORK_MANIFEST_NOT_FOUND")
     if (
@@ -112,7 +127,7 @@ def configuration_problems(env: Mapping[str, str]) -> list[str]:
     if str(env.get("OC_BRAIN_WORKSPACE_REFRESH_SECONDS", "")).strip() not in {"", "0"}:
         from app.calyx_orchestrator.workspace_refresh import refresher_from_env
 
-        if not sources:
+        if not sources and not loop:
             problems.append("OC_BRAIN_WORKSPACE_REFRESH_REQUIRES_WORK_SOURCES")
         try:
             refresher_from_env(
@@ -194,7 +209,33 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
     }
 
     source_spec = str(env.get("OC_BRAIN_WORK_SOURCES", "")).strip()
-    if source_spec:
+    loop_spec = str(env.get("OC_BRAIN_LOOP_OBSERVERS", "")).strip()
+    if loop_spec:
+        from calyx_brain.autonomy_loop import observers_from_spec, run_cycle
+
+        from app.calyx_orchestrator.workspace_refresh import refresher_from_env
+
+        observers = observers_from_spec(
+            loop_spec.split(","),
+            workspace=Path(workspace) if workspace else None,
+            repository=repository,
+            branch=str(env.get("OC_BRAIN_WORK_BRANCH", "")).strip()
+            or (_workspace_branch(workspace) if workspace else None),
+        )
+        approvals_raw = str(env.get("OC_BRAIN_LOOP_APPROVALS", "")).strip()
+        approvals_path = Path(approvals_raw) if approvals_raw else None
+        loop_refresher = refresher_from_env(env, workspace=workspace)
+
+        def replenish() -> dict[str, Any]:
+            refreshed = (
+                loop_refresher.refresh(ledger.load()) if loop_refresher else None
+            )
+            record = run_cycle(observers, approvals_path=approvals_path, **common)
+            if refreshed is not None:
+                record["workspace_refresh"] = refreshed
+            return record
+
+    elif source_spec:
         from calyx_brain.work_sources import discover_all, sources_from_spec
 
         sources = sources_from_spec(

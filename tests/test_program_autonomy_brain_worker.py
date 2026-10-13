@@ -193,3 +193,60 @@ def test_sources_worker_refreshes_its_workspace_and_discovers_new_commits(tmp_pa
     )
     # Within the interval the clone is not touched.
     assert worker.replenish()["workspace_refresh"] == {"status": "not_due"}
+
+
+def test_loop_mode_configuration_is_validated(tmp_path):
+    checkout = tmp_path / "brain"
+    (checkout / "calyx_brain").mkdir(parents=True)
+    (checkout / "calyx_brain" / "autonomy_pulse.py").write_text("")
+    env = {
+        "OC_BRAIN_CHECKOUT": str(checkout),
+        "OC_BRAIN_PULSE_LEDGER": "database:loop",
+        "CALYX_BACKEND_BASE_URL": "http://127.0.0.1:8000",
+        "CALYX_API_KEY": "fixture",
+        "OC_BRAIN_LOOP_OBSERVERS": "completion_feedback",
+    }
+    assert configuration_problems(env) == ["OC_BRAIN_CHECKOUT_MISSING_AUTONOMY_LOOP"]
+    (checkout / "calyx_brain" / "autonomy_loop.py").write_text("")
+    assert configuration_problems(env) == []
+    no_loop = {k: v for k, v in env.items() if k != "OC_BRAIN_LOOP_OBSERVERS"}
+    no_loop["OC_BRAIN_WORK_SOURCES"] = "traitbank_intake"
+    (checkout / "calyx_brain" / "work_sources.py").write_text("")
+    assert configuration_problems(
+        {**no_loop, "OC_BRAIN_LOOP_APPROVALS": str(tmp_path / "a.json")}
+    ) == ["OC_BRAIN_LOOP_APPROVALS_REQUIRES_LOOP_OBSERVERS"]
+
+
+@pytest.mark.skipif(
+    not BRAIN or not (Path(BRAIN) / "calyx_brain" / "autonomy_loop.py").is_file(),
+    reason="OC_BRAIN_REPO_PATH must name a Brain checkout with autonomy_loop.py",
+)
+def test_loop_mode_worker_reports_an_explicit_cause_when_nothing_runs(tmp_path):
+    queue = tmp_path / "queue.json"
+    queue.write_text(
+        json.dumps(
+            {
+                "schema": "oc.autonomy-mission-queue.v1",
+                "lanes": [
+                    {"id": "atlas", "missions": [{"id": "A-1", "objective": "x"}]}
+                ],
+            }
+        )
+    )
+    worker = build_worker(
+        {
+            "OC_BRAIN_CHECKOUT": BRAIN,
+            "OC_BRAIN_LOOP_OBSERVERS": f"completion_feedback,engineering_objectives:{queue}",
+            "OC_BRAIN_PULSE_LEDGER": str(tmp_path / "ledger.json"),
+            "CALYX_BACKEND_BASE_URL": "http://127.0.0.1:9",
+            "CALYX_API_KEY": "fixture",
+            "CALYX_PROGRAM_AUTONOMY_ENABLED": "true",
+            "CALYX_PROGRAM_AUTONOMY_OWNER": "backend_api_key",
+        }
+    )
+    record = worker.replenish()
+    assert (record["zero_reason"], record["detail"]) == (
+        "owner_gate",
+        "AWAITING_APPROVAL:1",
+    )
+    assert record["loop"]["generated"] == {"engineering_development": 1}

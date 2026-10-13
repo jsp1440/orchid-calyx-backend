@@ -34,7 +34,13 @@ on:
       - "tests/test_oc_autonomy_hosted_verify.py"
       - "tests/test_pulse_ledger_store.py"
       - "tests/test_p1_work_source_autonomy_cycle.py"
+      - "tests/test_autonomy_loop_cycle.py"
+      - "tests/test_program_autonomy_brain_worker.py"
+      - "tests/test_program_autonomy_idle_backoff.py"
+      - "tests/test_workspace_refresh.py"
       - "app/calyx_orchestrator/pulse_ledger_store.py"
+      - "app/calyx_orchestrator/workspace_refresh.py"
+      - "app/calyx_orchestrator/autonomy_policy.py"
       - "app/calyx_orchestrator/schema.py"
       - "scripts/oc_autonomy_hosted_verify.py"
       - "deploy/render/**"
@@ -54,7 +60,7 @@ concurrency:
 env:
   # Brain revision carrying calyx_brain/autonomy_pulse.py (Brain PR #244).
   # Move this pin to Brain main once that chain is merged.
-  OC_BRAIN_REF: 2c395c17b63b373f64481138b7d2a1682d3da137
+  OC_BRAIN_REF: 37beffa7ccc46c8db00ee6887a6c5fce3b9db7d3
 
 jobs:
   acceptance:
@@ -170,6 +176,10 @@ jobs:
           tests/test_oc_autonomy_hosted_verify.py
           tests/test_pulse_ledger_store.py
           tests/test_p1_work_source_autonomy_cycle.py
+          tests/test_autonomy_loop_cycle.py
+          tests/test_program_autonomy_brain_worker.py
+          tests/test_program_autonomy_idle_backoff.py
+          tests/test_workspace_refresh.py
 
       - name: Upload acceptance report
         if: always()

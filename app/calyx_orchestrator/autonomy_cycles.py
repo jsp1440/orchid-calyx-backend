@@ -73,10 +73,32 @@ def _replenishment_summary(record: object) -> dict[str, Any] | None:
         "sources": record.get("sources")
         if isinstance(record.get("sources"), list)
         else None,
+        # Continuous-loop stage counts (observers, generated, rejected,
+        # proposals by state); bounded, no rationale text.
+        "loop": _loop_summary(record.get("loop")),
         # Opt-in workspace refresh result (status, commits), when configured.
         "workspace_refresh": record.get("workspace_refresh")
         if isinstance(record.get("workspace_refresh"), dict)
         else None,
+    }
+
+
+def _loop_summary(loop: object) -> dict[str, Any] | None:
+    if not isinstance(loop, dict):
+        return None
+    return {
+        key: loop.get(key)
+        for key in (
+            "observers",
+            "generated",
+            "rejected",
+            "proposals",
+            "suppressed_origins",
+            "submitted_candidates",
+            "reconciled_undelivered",
+            "approvals_error",
+        )
+        if loop.get(key) not in (None, [], {})
     }
 
 
@@ -142,6 +164,15 @@ WORK_SUPPLY_STATES = {
     "WORK_MANIFEST_EMPTY": "static_manifest_empty",
     "WORK_SOURCES_DRAINED": "sources_drained",
     "WORK_SOURCES_IDLE": "sources_idle",
+    "LOOP_NO_GAPS_DETECTED": "no_gaps_detected",
+    "APPROVALS_UNREADABLE": "approvals_unreadable",
+}
+#: Continuous-loop details that carry a count or names after a colon.
+WORK_SUPPLY_PREFIXES = {
+    "AWAITING_APPROVAL": "awaiting_approval",
+    "APPROVED_WORK_HAS_NO_EXECUTOR": "approved_work_has_no_executor",
+    "RECONCILED_UNDELIVERED": "recent_work_undelivered",
+    "ORIGINS_SUPPRESSED": "origins_suppressed",
 }
 
 
@@ -184,6 +215,8 @@ def _idle_view(
         supply = "replenisher_error"
     elif isinstance(detail, str) and detail.startswith("WORK_SOURCE_FAILED"):
         supply = "source_failed"
+    elif isinstance(detail, str) and detail.split(":", 1)[0] in WORK_SUPPLY_PREFIXES:
+        supply = WORK_SUPPLY_PREFIXES[detail.split(":", 1)[0]]
     else:
         supply = WORK_SUPPLY_STATES.get(str(detail), "unknown")
     return {
