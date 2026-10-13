@@ -308,6 +308,87 @@ Cost: about 25 minutes of Starter time, roughly US$0.005. Neon storage for a few
 negligible. Rollback at any point: **Suspend**, set both variables back with **Save only**, then lift the
 freeze with `ALTER DATABASE neondb CONNECTION LIMIT -1;`.
 
+### H. Hosted continuous-loop acceptance (new inputs, not a fixed list)
+
+This step shows on Render what the local and CI tests show: the worker discovers a
+**genuinely new input** committed while it is running, creates the work **once**, executes it
+with the existing read-only executors, learns the result, and then reports why it is idle.
+It uses the same worker and acceptance project, and a **new, empty database
+`autonomy_loop`**. `neondb` and `autonomy_midrun` are not touched. Each step lists *Check*,
+*Do*, *Expect* and *Undo*.
+
+**Step 0. Suspend the worker** (if it is running).
+- *Undo:* **Resume**.
+
+**Step 1. Create the loop database** (Neon, acceptance project only).
+- *Check:* the project is `oc-autonomy-acceptance`.
+- *Do:* SQL Editor on `neondb` as `neondb_owner`:
+  ```sql
+  CREATE DATABASE autonomy_loop OWNER neondb_owner;
+  ```
+  Switch the SQL Editor's database to `autonomy_loop`, then run:
+  ```sql
+  GRANT CONNECT ON DATABASE autonomy_loop TO oc_verify;
+  GRANT USAGE ON SCHEMA public TO oc_verify;
+  ALTER DEFAULT PRIVILEGES FOR ROLE neondb_owner IN SCHEMA public GRANT SELECT ON TABLES TO oc_verify;
+  ALTER DATABASE neondb CONNECTION LIMIT 0;
+  ```
+  The last statement freezes the original evidence for the duration, exactly as in section G.
+- *Undo:* run `ALTER DATABASE neondb CONNECTION LIMIT -1;`, then `DROP DATABASE autonomy_loop;`.
+
+**Step 2. Point the worker at the loop build** (Render, worker
+`orchid-calyx-autonomy-acceptance`).
+- *Do:* Settings → Branch → `claude/sharp-pasteur-e6c4r1-autonomy-loop`, the code under review
+  in jsp1440/orchid-calyx-backend#1818. Auto-Deploy stays **No**.
+- *Do:* Environment, then **Save only**:
+
+  | Variable | Value |
+  |---|---|
+  | `DATABASE_URL` | replace only `/neondb` (or `/autonomy_midrun`) with `/autonomy_loop` |
+  | `CALYX_ACCEPTANCE_DATABASE_CONFIRMED` | `non-production:autonomy_loop` |
+  | `CALYX_ACCEPTANCE_WORK_MODE` | `loop` (new variable) |
+  | `CALYX_ACCEPTANCE_SOURCE_BRANCH` | `claude/sharp-pasteur-e6c4r1-loop-inputs` (the branch new inputs arrive on) |
+  | `OC_BRAIN_REF` | the Brain commit pinned in `.github/workflows/brain-calyx-autonomy-acceptance.yml` on that branch |
+
+- *Do:* **Resume**, then **Manual Deploy → Deploy latest commit**.
+- *Expect:* the first logs show, in order:
+  1. `{"acceptance_database": "autonomy_loop", "confirmed": true}`;
+  2. `{"api": "healthy", "worker": "starting"}`;
+  3. `{"work_mode": "loop", ...}`.
+
+  Then two productive cycles (the committed TraitBank batch, then the `app/traitbank` source
+  verification), then `owner_gate / AWAITING_APPROVAL:<n>`: the Brain mission-queue objectives,
+  held for approval and never executed. Idle waits then back off.
+- *Stop condition:* any other database name, or `ACCEPTANCE_DATABASE_MISMATCH`. **Suspend** and
+  report it.
+- *Undo:* **Suspend**, then restore the branch and variables with **Save only**.
+
+**Step 3. New input (Claude).** After the gated idle, Claude commits one genuine, harmless source
+change to the input branch. Within about 5–15 minutes (refresh interval plus idle backoff) the
+logs show a cycle with `"workspace_refresh": {"status": "updated", ...}` that submits and
+executes exactly one new maintenance verification. The worker then returns to the gated idle.
+
+**Step 4. Verification (Claude, read-only).** Claude adds the label
+`render-acceptance-verify-loop` on jsp1440/orchid-calyx-backend#1818. The verifier then runs
+with `--require-loop --database autonomy_loop` and checks:
+
+| Check | Requirement |
+|---|---|
+| `new_input_discovered_and_executed` | new work after the refresh, then a productive cycle |
+| `work_created_once` | no work id is freshly submitted twice |
+| `loop_learned_from_outcomes` | verified baseline and settled candidates in the durable ledger |
+| `idle_cycles_name_their_cause` | every idle cycle carries an explicit reason |
+| `idle_polling_backs_off` | long idle runs wait longer than the base poll |
+
+Plus the standard checks: `no_duplicate_execution`, `no_outstanding_leases`, `no_defect_cycles`,
+`status_consistent`, `dedicated_acceptance_database` and `verifier_role_read_only`.
+
+**Step 5. Suspend and unfreeze.**
+- *Do:* Render → **Suspend**. Neon on `autonomy_loop`: `ALTER DATABASE neondb CONNECTION LIMIT -1;`.
+
+Cost: about 30–45 minutes of Starter time, roughly US$0.01. No paid provider is reachable:
+`NO_API_MODE` stays true, so the coding lane reports `provider_blocked / no-api-mode`.
+
 ### F. Cleanup (same day)
 1. Render → worker → **Suspend**, then Settings → **Delete Service**. Render → Blueprints →
    `oc-autonomy-acceptance` → delete the Blueprint.
