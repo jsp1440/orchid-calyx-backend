@@ -162,7 +162,7 @@ findings are from GitHub configuration and repo metadata.
    large majority drafts, in deep stacked chains (up to 5 deep).
 4. **Redundant/repeated development:** ≥8 backend-ish repos and ≥5
    frontend/site repos with overlapping scope; typo duplicate
-   `Orchid_Continiuum_Backend` (sic); `Orchid-continuum-clean`,
+   `Orchid_Continiuum_Backend`; `Orchid-continuum-clean`,
    `-orchid-continuum-backend-clean` as rebuild artifacts.
 5. **Repo hygiene:** accidental committed artifacts — file named
    `app → main.py` (0 B), file named `python oc_system_check_v2.py` (28 KB),
