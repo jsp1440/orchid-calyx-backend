@@ -240,15 +240,16 @@ def _taxon_violation(
         )
     for link in result.taxon_links:
         status = link.get("status")
-        if policy.role == "provides":
-            if status not in TAXON_LINK_STATUSES:
-                return f"TAXON_RESOLUTION_VIOLATION:unknown_status:{status}"
-            if link.get("authority") != policy.authority:
-                return f"TAXON_RESOLUTION_VIOLATION:authority:{link.get('authority')}"
-            if link.get("automatic_fuzzy_matching") is not False:
-                return "TAXON_RESOLUTION_VIOLATION:fuzzy_matching_not_excluded"
-        elif status not in policy.admitted_statuses:
+        if policy.role == "provides" and status not in TAXON_LINK_STATUSES:
+            return f"TAXON_RESOLUTION_VIOLATION:unknown_status:{status}"
+        if policy.role == "requires" and status not in policy.admitted_statuses:
             return f"TAXON_RESOLUTION_VIOLATION:inadmissible_status:{status}"
+        # Authority and no-fuzzy guarantees are re-checked at every policy
+        # holder, so a link corrupted between provider and requirer is refused.
+        if link.get("authority") != policy.authority:
+            return f"TAXON_RESOLUTION_VIOLATION:authority:{link.get('authority')}"
+        if link.get("automatic_fuzzy_matching") is not False:
+            return "TAXON_RESOLUTION_VIOLATION:fuzzy_matching_not_excluded"
     return None
 
 

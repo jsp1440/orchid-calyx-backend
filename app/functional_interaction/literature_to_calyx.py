@@ -60,7 +60,6 @@ from app.literature_extraction.review import (
 from harvesters.execution import _validate_traitbank_record
 from runtime.brain_capability_registry import canonical_brain_registry
 from runtime.knowledge_graph.canonical_taxonomy import (
-    CANONICAL_AUTHORITY,
     build_canonical_registry,
     canonical_name_of,
 )
@@ -156,9 +155,20 @@ SOURCE = SourceArtifact(
     evidence_states=("UNKNOWN",),
     conditions=("source_content_addressed",),
 )
-TAXON_PROVIDER = TaxonResolutionPolicy(role="provides")
+#: The fixture backbone is invented and built with the World Plants spine
+#: builder; it is NOT a World Plants release. Links, conditions and subject ids
+#: therefore name this fixture authority, never ``world_plants``, so no fixture
+#: output can be mistaken for canonical taxonomy provenance. A real run must
+#: resolve against a pinned World Plants release under the contract default
+#: authority (FIL-001C).
+FIXTURE_TAXON_AUTHORITY = "fil_fixture_backbone"
+TAXON_PROVIDER = TaxonResolutionPolicy(
+    role="provides", authority=FIXTURE_TAXON_AUTHORITY
+)
 TAXON_ADMISSION = TaxonResolutionPolicy(
-    role="requires", admitted_statuses=("accepted", "synonym")
+    role="requires",
+    authority=FIXTURE_TAXON_AUTHORITY,
+    admitted_statuses=("accepted", "synonym"),
 )
 _TAXON_CONDITIONS = TAXON_ADMISSION.conditions
 
@@ -210,7 +220,7 @@ def chain_descriptors() -> tuple[CapabilityDescriptor, ...]:
             preconditions=("claims_anchored",),
             effects=(
                 "taxon_resolution_recorded",
-                f"taxon_authority_{CANONICAL_AUTHORITY}",
+                f"taxon_authority_{FIXTURE_TAXON_AUTHORITY}",
             ),
             autonomy_class=AutonomyClass.SAFE_AUTONOMOUS,
             taxon_resolution=TAXON_PROVIDER,
@@ -387,6 +397,9 @@ def build_handlers(
     allow_import_time_database_contact: bool = False,
 ) -> dict[str, Handler]:
     taxonomy = manifest["taxonomy"]
+    if taxonomy.get("authority") != FIXTURE_TAXON_AUTHORITY:
+        # Refuse rather than label any backbone with an authority it may not have.
+        raise ValueError(f"TAXONOMY_AUTHORITY_MISMATCH:{taxonomy.get('authority')}")
     backbone = build_canonical_registry(taxonomy["load_rows"], taxonomy["synonym_rows"])
     release = taxonomy["release_label"]
     backbone_names = sorted(backbone.name_index, key=lambda name: (-len(name), name))
@@ -487,7 +500,7 @@ def build_handlers(
                     taxa[taxon.canonical_id] = (taxon, name)
             link: dict[str, Any] = {
                 "submitted_names": names,
-                "authority": CANONICAL_AUTHORITY,
+                "authority": FIXTURE_TAXON_AUTHORITY,
                 "release": release,
                 "method": "exact_canonical_name",
                 "automatic_fuzzy_matching": False,
@@ -529,7 +542,7 @@ def build_handlers(
             output={**_carry(payload), "claims": linked},
             established=(
                 "taxon_resolution_recorded",
-                f"taxon_authority_{CANONICAL_AUTHORITY}",
+                f"taxon_authority_{FIXTURE_TAXON_AUTHORITY}",
             ),
             evidence_states=("UNKNOWN",),
             events=tuple(
@@ -953,7 +966,7 @@ def _packet(
     independent_sources = {r["reference_raw"] for r in records}
     candidate = {
         "candidate_id": candidate_id,
-        "subject_id": f"taxon:{CANONICAL_AUTHORITY}:{first['raw']['canonical_taxon_id']}",
+        "subject_id": f"taxon:{FIXTURE_TAXON_AUTHORITY}:{first['raw']['canonical_taxon_id']}",
         "predicate": first["trait_raw"],
         "object_id": f"value:{value}",
         "evidence_ids": sorted(r["raw"]["record_id"] for r in records),

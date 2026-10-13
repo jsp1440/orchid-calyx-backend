@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from dataclasses import replace
 
 import pytest
@@ -75,12 +76,16 @@ def test_admitted_statuses_are_checked_when_the_edge_is_planned():
         buffer,
         taxon_resolution=other,
         preconditions=(
-            *[p for p in buffer.preconditions if p != "taxon_authority_world_plants"],
+            *[
+                p
+                for p in buffer.preconditions
+                if p != "taxon_authority_fil_fixture_backbone"
+            ],
             "taxon_authority_gbif",
         ),
     )
     edge = check_edge(adaptor, adaptor.outputs[0].name, foreign, foreign.inputs[0].name)
-    assert "TAXON_AUTHORITY_MISMATCH:world_plants" in edge.blocking_reasons
+    assert "TAXON_AUTHORITY_MISMATCH:fil_fixture_backbone" in edge.blocking_reasons
 
 
 # --- contradiction semantics and candidate identity -----------------------
@@ -188,3 +193,50 @@ def test_value_key_normalizes_case_separators_and_length_units():
     assert _value_key(record("pale-yellow")) == _value_key(record("pale yellow"))
     assert _value_key(record(3.0, "cm")) == _value_key(record(30.0, "mm"))
     assert _value_key(record(12.0, "mm")) != _value_key(record(12.0, "cm"))
+
+
+# --- Copilot review (#1810): requirer re-checks; fixture authority honesty --
+
+
+@pytest.mark.parametrize(
+    ("change", "reason"),
+    [
+        (
+            {"authority": "world_plants"},
+            "TAXON_RESOLUTION_VIOLATION:authority:world_plants",
+        ),
+        (
+            {"automatic_fuzzy_matching": True},
+            "TAXON_RESOLUTION_VIOLATION:fuzzy_matching_not_excluded",
+        ),
+    ],
+)
+def test_requirer_rechecks_authority_and_fuzzy_matching(change, reason):
+    buffer = _descriptor(BUFFER)
+    link = {
+        "status": "accepted",
+        "authority": "fil_fixture_backbone",
+        "automatic_fuzzy_matching": False,
+    }
+    assert (
+        _taxon_violation(buffer, HandlerResult(output={}, taxon_links=(link,))) is None
+    )
+    corrupted = HandlerResult(output={}, taxon_links=({**link, **change},))
+    assert _taxon_violation(buffer, corrupted) == reason
+
+
+def test_fixture_chain_never_claims_world_plants_provenance():
+    report = run_chain(allow_import_time_database_contact=True)
+    assert report.succeeded
+    text = json.dumps(report.to_dict())
+    assert "world_plants" not in text
+    for packet in report.final_output["packets"]:
+        subject = packet["reasoning"]["candidate_knowledge"]["subject_id"]
+        assert subject.startswith("taxon:fil_fixture_backbone:")
+
+
+def test_manifest_must_declare_the_fixture_authority():
+    manifest = load_manifest()
+    manifest["taxonomy"] = {**manifest["taxonomy"], "authority": "world_plants"}
+    with pytest.raises(ValueError, match="TAXONOMY_AUTHORITY_MISMATCH:world_plants"):
+        build_handlers(manifest)

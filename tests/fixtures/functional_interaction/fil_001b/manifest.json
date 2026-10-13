@@ -9,6 +9,8 @@
     {"file": "paper_c.txt", "source_object_id": 9103, "revision_id": 1, "extraction_run_id": 1}
   ],
   "taxonomy": {
+    "authority": "fil_fixture_backbone",
+    "authority_note": "Invented backbone built with the World Plants spine builder; not a World Plants release.",
     "release_label": "fil-001b-fixture-backbone",
     "load_rows": [
       {"name": "Fixtureia alpha Fixt.", "taxon_code": "S"},

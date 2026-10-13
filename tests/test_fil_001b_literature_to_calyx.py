@@ -177,7 +177,7 @@ def test_taxonomy_resolves_exactly_and_never_guesses(output):
     for handoff in output["handoffs"]:
         link = handoff["taxon_link"]
         assert link["status"] in {"accepted", "synonym"}
-        assert link["authority"] == "world_plants"
+        assert link["authority"] == "fil_fixture_backbone"
         assert link["automatic_fuzzy_matching"] is False
     synonym = [h for h in output["handoffs"] if h["taxon_link"]["status"] == "synonym"]
     assert {h["subject"] for h in synonym} == {"Fixtureia alpha"}
