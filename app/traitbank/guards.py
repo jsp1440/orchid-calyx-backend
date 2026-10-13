@@ -205,3 +205,6 @@ def check_definition(definition: TraitDefinitionIn, *, live: bool) -> list[Viola
         for alias in definition.aliases:
             violations += _placeholder(where, "aliases", alias)
     return violations
+
+# Hosted autonomy-loop acceptance input 1 (2026-10-13): a harmless source change
+# the Render worker must discover, verify exactly once and learn.
