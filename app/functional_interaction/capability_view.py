@@ -66,6 +66,22 @@ EXECUTOR_ROLE_CROSSWALK: dict[str, Crosswalk] = {
     "isolated_workspace_static_validator": Crosswalk(
         (), f"AST syntax check of an isolated patch; {_ENGINEERING}"
     ),
+    "traitbank_batch_validator": Crosswalk(
+        ("schema-validation",),
+        "read-only validation of TraitBank batch files against oc-traitbank-v1",
+    ),
+}
+
+#: Crosswalk entries for members that an open pull request introduces, keyed by
+#: (vocabulary, member) with the PR that adds them. While such a member is not
+#: yet live its entry is not reported stale, so neither side's merge order breaks
+#: the other's CI; once it is live it is checked exactly like every other entry.
+#: Remove an item here when its PR lands.
+PENDING_MEMBERS: dict[tuple[str, str], str] = {
+    (
+        "executor_roles",
+        "traitbank_batch_validator",
+    ): "jsp1440/orchid-calyx-backend#1813",
 }
 
 EXECUTOR_CAPABILITY_CROSSWALK: dict[str, Crosswalk] = {
@@ -156,7 +172,7 @@ def _check(
         problems += [
             f"STALE_CROSSWALK_ENTRY:{vocabulary}:{k}"
             for k in sorted(crosswalk)
-            if k not in members
+            if k not in members and (vocabulary, k) not in PENDING_MEMBERS
         ]
         for member, entry in sorted(crosswalk.items()):
             problems += [

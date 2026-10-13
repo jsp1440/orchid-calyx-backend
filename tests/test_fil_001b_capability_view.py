@@ -45,7 +45,12 @@ def test_every_live_vocabulary_member_is_mapped_or_explicitly_unmapped():
 
 def test_coverage_reports_the_real_gaps():
     coverage = canonical_capability_view(ALL)["coverage"]
-    assert coverage["executor_roles"] == {"members": 4, "mapped": 0}
+    # Four engineering roles map to no scientific capability; #1813's TraitBank
+    # batch validator, once live, maps to schema-validation.
+    if "traitbank_batch_validator" in _live_vocabularies()["executor_roles"]:
+        assert coverage["executor_roles"] == {"members": 5, "mapped": 1}
+    else:
+        assert coverage["executor_roles"] == {"members": 4, "mapped": 0}
     assert coverage["brain_capabilities"] == {"members": 6, "mapped": 2}
     assert coverage["canonical_with_fil_descriptor"]["members"] == len(CAPABILITIES)
 
@@ -139,3 +144,23 @@ def test_declaration_refuses_an_empty_plan():
     )
     with pytest.raises(ValueError, match="NO_PLAN_TO_DECLARE"):
         declaration_body(plan)
+
+
+def test_pending_member_is_not_stale_before_its_pr_and_is_checked_after():
+    from app.functional_interaction.capability_view import PENDING_MEMBERS
+
+    assert ("executor_roles", "traitbank_batch_validator") in PENDING_MEMBERS
+    live = _live_vocabularies()
+    before = canonical_capability_view(ALL, live=live)
+    pending_live = "traitbank_batch_validator" in live["executor_roles"]
+    if not pending_live:
+        live = {
+            **live,
+            "executor_roles": (*live["executor_roles"], "traitbank_batch_validator"),
+        }
+    after = canonical_capability_view(ALL, live=live)
+    rows = {row["name"]: row for row in after["capabilities"]}
+    assert "traitbank_batch_validator" in rows["schema-validation"]["executor_roles"]
+    assert after["coverage"]["executor_roles"]["mapped"] == before["coverage"][
+        "executor_roles"
+    ]["mapped"] + (0 if pending_live else 1)

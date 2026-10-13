@@ -364,7 +364,8 @@ def build_handlers(
             if status != "completed":
                 raise RuntimeError(f"PIPELINE_INCOMPLETE:{document['file']}:{status}")
             content_hash = paper["source"]["content_hash"]
-            source_id = _doi(paper) or paper["paper_id"]
+            # Same fallback form as app/traitbank/adapters.py (#1811): doi:<doi>, else paper:<id>.
+            source_id = _doi(paper) or f"paper:{paper['paper_id']}"
             papers.append(
                 {
                     "paper_id": paper["paper_id"],
