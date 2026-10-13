@@ -162,7 +162,7 @@ findings are from GitHub configuration and repo metadata.
    large majority drafts, in deep stacked chains (up to 5 deep).
 4. **Redundant/repeated development:** ≥8 backend-ish repos and ≥5
    frontend/site repos with overlapping scope; typo duplicate
-   `Orchid_Continiuum_Backend`; `Orchid-continuum-clean`,
+   `Orchid_Continiuum_Backend` (sic); `Orchid-continuum-clean`,
    `-orchid-continuum-backend-clean` as rebuild artifacts.
 5. **Repo hygiene:** accidental committed artifacts — file named
    `app → main.py` (0 B), file named `python oc_system_check_v2.py` (28 KB),
@@ -238,6 +238,14 @@ Second-pass verification on the same branch — no rebuild, no new research.
 - `scripts/export_capability_registry.py` re-run is byte-identical to the
   previously delivered exports (determinism re-confirmed); `exports/` is now
   committed on the branch.
+- Post-lint re-verification: commit `1b912116` ("fix(registry): satisfy Ruff
+  checks", copilot-swe-agent, 2026-10-13) applied style-only changes to the
+  five Python files (import modernization, dead inner-guard removal in
+  `import_records` — provably unreachable under the outer condition,
+  `noqa` cleanup, `__all__` sorting). All five files were re-fetched and
+  confirmed byte-identical locally via git blob SHA1; the full suite was
+  re-run against the linted code (**44/44 passing**) and the three exports
+  regenerate byte-identical to their committed blobs. No behavior change.
 
 ### 9.2 Inventory refresh (Phase 2)
 
