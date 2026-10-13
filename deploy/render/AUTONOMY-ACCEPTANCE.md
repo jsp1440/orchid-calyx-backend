@@ -337,19 +337,23 @@ It uses the same worker and acceptance project, and a **new, empty database
 - *Undo:* run `ALTER DATABASE neondb CONNECTION LIMIT -1;`, then `DROP DATABASE autonomy_loop;`.
 
 **Step 2. Point the worker at the loop build** (Render, worker
-`orchid-calyx-autonomy-acceptance`).
-- *Do:* Settings → Branch → `claude/sharp-pasteur-e6c4r1-autonomy-loop`, the code under review
-  in jsp1440/orchid-calyx-backend#1818. Auto-Deploy stays **No**.
-- *Do:* Environment, then **Save only**:
-
-  | Variable | Value |
-  |---|---|
-  | `DATABASE_URL` | replace only `/neondb` (or `/autonomy_midrun`) with `/autonomy_loop` |
-  | `CALYX_ACCEPTANCE_DATABASE_CONFIRMED` | `non-production:autonomy_loop` |
-  | `CALYX_ACCEPTANCE_WORK_MODE` | `loop` (new variable) |
-  | `CALYX_ACCEPTANCE_SOURCE_BRANCH` | `claude/sharp-pasteur-e6c4r1-loop-inputs` (the branch new inputs arrive on) |
-  | `OC_BRAIN_REF` | the Brain commit pinned in `.github/workflows/brain-calyx-autonomy-acceptance.yml` on that branch |
-
+`orchid-calyx-autonomy-acceptance`, service `srv-db67bgo473hc73ddmt90`, Blueprint-managed).
+The service is managed by the Blueprint `deploy/render/autonomy-acceptance.blueprint.yaml`, so
+configure it through the Blueprint. Edits made only in the dashboard would be reverted by the
+next sync. On the loop branch the Blueprint already sets the branch,
+`CALYX_ACCEPTANCE_WORK_MODE=loop`, `CALYX_ACCEPTANCE_DATABASE_CONFIRMED=non-production:autonomy_loop`,
+the input branch and the Brain pin (asserted equal to the CI pin by a test).
+- *Do (1):* worker → Environment → `DATABASE_URL`: replace only the database name `/neondb`
+  (or `/autonomy_midrun`) with `/autonomy_loop`, keeping the host, role and `?sslmode=require`.
+  Then **Save only**. This is the only secret edit; `DATABASE_URL` is `sync: false`, so the
+  Blueprint never overwrites it.
+- *Do (2):* Blueprints → this Blueprint → Settings → Branch →
+  `claude/sharp-pasteur-e6c4r1-autonomy-loop`, then **Manual Sync** and review the diff. Expect
+  changes only to the branch, `CALYX_ACCEPTANCE_DATABASE_CONFIRMED`,
+  `CALYX_ACCEPTANCE_WORK_MODE` (new), `CALYX_ACCEPTANCE_SOURCE_BRANCH` and `OC_BRAIN_REF`.
+  Anything else, or any other service: cancel and report it.
+- *Safety interlock:* if `DATABASE_URL` still names another database, the start script exits
+  with `ACCEPTANCE_DATABASE_MISMATCH` and never starts the worker.
 - *Do:* **Resume**, then **Manual Deploy → Deploy latest commit**.
 - *Expect:* the first logs show, in order:
   1. `{"acceptance_database": "autonomy_loop", "confirmed": true}`;
@@ -361,7 +365,9 @@ It uses the same worker and acceptance project, and a **new, empty database
   held for approval and never executed. Idle waits then back off.
 - *Stop condition:* any other database name, or `ACCEPTANCE_DATABASE_MISMATCH`. **Suspend** and
   report it.
-- *Undo:* **Suspend**, then restore the branch and variables with **Save only**.
+- *Undo:* **Suspend**, set the Blueprint branch back to `claude/sharp-pasteur-e6c4r1-traitbank`
+  and **Manual Sync** (this restores the previous branch, pin and variables), then put the original
+  database name back in `DATABASE_URL` with **Save only**.
 
 **Step 3. First new input (Claude).** After the gated idle, Claude commits one genuine, harmless
 source change to the input branch. Within about 5–15 minutes (refresh interval plus idle backoff)

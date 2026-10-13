@@ -95,11 +95,22 @@ def test_blueprint_is_isolated_cheap_and_never_auto_deployed():
     assert env["DATABASE_URL"] == {"key": "DATABASE_URL", "sync": False}
     assert env["OC_BRAIN_READ_TOKEN"] == {"key": "OC_BRAIN_READ_TOKEN", "sync": False}
     assert env["CALYX_API_KEY"].get("generateValue") is True
-    assert env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"]["value"] == "non-production"
+    # Bound to the dedicated loop database, so a stale DATABASE_URL refuses to start.
+    assert (
+        env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"]["value"]
+        == "non-production:autonomy_loop"
+    )
+    assert env["CALYX_ACCEPTANCE_WORK_MODE"]["value"] == "loop"
     assert env["NO_API_MODE"]["value"] == "true"
     assert env["OC_GOVERNOR_PAID_EXECUTION_ENABLED"]["value"] == "false"
     assert env["PROVIDER_LAUNCH_AUTHORIZED"]["value"] == "false"
     assert len(env["OC_BRAIN_REF"]["value"]) == 40  # a pinned commit, not a branch
+    # A Blueprint sync must deploy the same Brain revision CI accepted.
+    workflow = (
+        REPO_ROOT / ".github" / "workflows" / "brain-calyx-autonomy-acceptance.yml"
+    )
+    pinned = yaml.safe_load(workflow.read_text(encoding="utf-8"))["env"]["OC_BRAIN_REF"]
+    assert env["OC_BRAIN_REF"]["value"] == pinned
 
 
 @pytest.mark.requires_postgres("TEST_DATABASE_URL")
