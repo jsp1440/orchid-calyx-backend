@@ -497,3 +497,6 @@ def candidate_handoff_requests(
             )
         )
     return requests, withheld
+
+# Hosted autonomy-loop acceptance input 3 (2026-10-13), pushed after the Brain
+# 7ab95c8 redeploy: discovered, verified once, with the paid lane recorded as gated.
