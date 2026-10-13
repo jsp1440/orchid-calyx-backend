@@ -76,6 +76,10 @@ def _replenishment_summary(record: object) -> dict[str, Any] | None:
         # Continuous-loop stage counts (observers, generated, rejected,
         # proposals by state); bounded, no rationale text.
         "loop": _loop_summary(record.get("loop")),
+        # Paid coding lane gate for this cycle (state, gate); loop mode only.
+        "coding_lane": record.get("coding_lane")
+        if isinstance(record.get("coding_lane"), dict)
+        else None,
         # Opt-in workspace refresh result (status, commits), when configured.
         "workspace_refresh": record.get("workspace_refresh")
         if isinstance(record.get("workspace_refresh"), dict)

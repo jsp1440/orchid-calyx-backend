@@ -400,6 +400,7 @@ with `--require-loop --database autonomy_loop` and checks:
 | `subsequent_new_input_discovered` | at least two refreshes, each followed by new work |
 | `restart_recovered` | two worker starts; every cycle after the restart is healthy |
 | `ten_consecutive_healthy_cycles` | at least ten consecutive healthy cycles, productive or idle |
+| `paid_execution_gated` | every cycle receipt records the coding-lane gate, and none was open (`queued`) |
 | `work_created_once` | no work id is freshly submitted twice |
 | `loop_learned_from_outcomes` | verified baseline and settled candidates in the durable ledger |
 | `idle_cycles_name_their_cause` | every idle cycle carries an explicit reason |

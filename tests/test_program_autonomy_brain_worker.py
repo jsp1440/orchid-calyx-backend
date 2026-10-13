@@ -250,6 +250,12 @@ def test_loop_mode_worker_reports_an_explicit_cause_when_nothing_runs(tmp_path):
         "AWAITING_APPROVAL:1",
     )
     assert record["loop"]["generated"] == {"engineering_development": 1}
+    # The cycle records the paid coding lane's gate (NO_API_MODE unset: blocked),
+    # and the durable receipt summary keeps it.
+    assert record["coding_lane"] == {"state": "provider_blocked", "gate": "no-api-mode"}
+    from app.calyx_orchestrator.autonomy_cycles import _replenishment_summary
+
+    assert _replenishment_summary(record)["coding_lane"] == record["coding_lane"]
 
 
 @pytest.mark.skipif(

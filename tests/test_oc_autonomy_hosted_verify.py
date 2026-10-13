@@ -275,6 +275,7 @@ def _loop_db(
     second_input=True,
     restart=True,
     unhealthy_after_restart=False,
+    lane="provider_blocked",
 ):
     import json
     from datetime import UTC, datetime, timedelta
@@ -335,6 +336,8 @@ def _loop_db(
     if duplicate:
         plan.append((seq + 4, True, True, sub("loop:sci:a")))
     for n, (sequence, productive, healthy, summary) in enumerate(plan):
+        if lane:
+            summary = {**summary, "coding_lane": {"state": lane, "gate": "no-api-mode"}}
         db.add(
             CalyxAutonomyCycle(
                 owner=OWNER,
@@ -375,6 +378,8 @@ def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path)
     assert checks["ten_consecutive_healthy_cycles"]["longest_healthy_run"] == 10
     assert checks["loop_learned_from_outcomes"]["proposals"] == {"awaiting_approval": 1}
     assert checks["idle_polling_backs_off"]["applicable"] is False
+    assert checks["paid_execution_gated"]["gates"] == ["no-api-mode"]
+    assert checks["paid_execution_gated"]["cycles_recording_gate"] == 10
 
 
 @pytest.mark.parametrize(
@@ -391,6 +396,8 @@ def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path)
         ({"restart": False}, "restart_recovered"),
         ({"unhealthy_after_restart": True}, "restart_recovered"),
         ({"unhealthy_after_restart": True}, "ten_consecutive_healthy_cycles"),
+        ({"lane": "queued"}, "paid_execution_gated"),
+        ({"lane": None}, "paid_execution_gated"),
     ],
 )
 def test_loop_acceptance_fails_closed(tmp_path, kwargs, failing):

@@ -273,6 +273,9 @@ def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
       nor executed carries an explicit reason.
     * ``idle_polling_backs_off``: a long idle run waited longer than the base
       poll interval (not applicable when no long idle run happened).
+    * ``paid_execution_gated``: cycle receipts record the paid coding lane's
+      gate, and no recorded cycle had it open (``queued``). Fails closed when
+      no cycle recorded the gate.
     """
     checks: dict[str, dict[str, Any]] = {}
     cycles = db.execute(
@@ -417,6 +420,17 @@ def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
         "applicable": applicable,
         "longest_idle_run": len(longest_idle),
         "poll_seconds_range": [min(polls), max(polls)] if polls else None,
+    }
+    lanes = [
+        s["coding_lane"] for s in summaries if isinstance(s.get("coding_lane"), dict)
+    ]
+    open_lane = [lane for lane in lanes if lane.get("state") != "provider_blocked"]
+    checks["paid_execution_gated"] = {
+        "passed": bool(lanes) and not open_lane,
+        "cycles_recording_gate": len(lanes),
+        "cycles": len(cycles),
+        "gates": sorted({str(lane.get("gate")) for lane in lanes}),
+        "open": open_lane[:5],
     }
     return checks
 

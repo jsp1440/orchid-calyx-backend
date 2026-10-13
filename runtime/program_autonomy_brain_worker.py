@@ -247,12 +247,20 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
             refreshed = (
                 loop_refresher.refresh(ledger.load()) if loop_refresher else None
             )
+            lanes = coding_lane_status(env)
             record = run_cycle(
                 observers,
                 approvals_path=approvals_path,
-                external_lanes=coding_lane_status(env),
+                external_lanes=lanes,
                 **common,
             )
+            # The paid coding lane's gate as configured for this cycle, so the
+            # durable receipt proves whether paid execution was reachable.
+            lane = lanes.get("engineering_development") or {}
+            record["coding_lane"] = {
+                "state": lane.get("state"),
+                "gate": lane.get("gate"),
+            }
             if refreshed is not None:
                 record["workspace_refresh"] = refreshed
             return record
