@@ -130,3 +130,44 @@ class StagingTests(unittest.TestCase):
                     server.server_close()
                 for worker in workers:
                     worker.join()
+
+    def test_github_outage_does_not_prevent_local_lease_recovery(self):
+        from coordination.staging import run_cycle
+        from coordination.store import Principal, Store
+
+        with tempfile.TemporaryDirectory() as d:
+            clock = [1000.0]
+            store = Store(str(Path(d) / "outage.db"), clock=lambda: clock[0])
+            store.initialize()
+            owner = Principal("owner", "owner")
+            agent = Principal("agent", "claude")
+            store.apply(
+                {
+                    "version": 1,
+                    "event_id": "outage-a",
+                    "kind": "assign",
+                    "task_id": "outage-t",
+                    "agent": "claude",
+                    "action": "engineering",
+                    "objective": "https://github.com/jsp1440/orchid-calyx-backend/issues/1823",
+                },
+                owner,
+            )
+            store.apply(
+                {
+                    "version": 1,
+                    "event_id": "outage-c",
+                    "kind": "claim",
+                    "task_id": "outage-t",
+                },
+                agent,
+            )
+
+            class UnavailableGitHub:
+                def cycle(self):
+                    raise OSError("network unavailable")
+
+            clock[0] += 61
+            result = run_cycle(store, UnavailableGitHub())
+            self.assertEqual(result["reason"], "transport_unavailable")
+            self.assertEqual(store.task("outage-t")["state"], "retry")

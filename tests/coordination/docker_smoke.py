@@ -132,7 +132,7 @@ def main():
             assert result["state"] == "blocked"
             assert (disk / "acs-staging.sqlite3").is_file()
             print(
-                "Docker smoke passed: TLS-edge contract, signature refusal, mounted SQLite, restart lease recovery; GitHub transport correctly not ready without credential."
+                "Docker smoke passed: public-edge contract, signature refusal, mounted SQLite, restart lease recovery; GitHub transport correctly not ready without credential."
             )
         finally:
             subprocess.run(

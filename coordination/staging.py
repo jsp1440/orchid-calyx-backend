@@ -49,6 +49,25 @@ def validate_config(env, data_dir, *, mounted):
     return keys
 
 
+def run_cycle(store, bridge):
+    try:
+        result = (
+            {"status": "cycle", **bridge.cycle()}
+            if bridge
+            else {
+                "status": "owner_gate",
+                "reason": "github_reporter_credential_missing",
+            }
+        )
+    except Exception:  # noqa: BLE001 - sanitize transport errors without disabling local recovery
+        result = {"status": "blocked", "reason": "transport_unavailable"}
+    try:
+        store.tick()
+    except Exception:  # noqa: BLE001 - independent local-store recovery boundary
+        return {"status": "blocked", "reason": "store_unavailable"}
+    return result
+
+
 def main():
     data_dir = Path("/var/data")
     keys = validate_config(os.environ, data_dir, mounted=os.path.ismount(data_dir))
@@ -95,35 +114,13 @@ def main():
     try:
         while not stop.is_set():
             wake.clear()
-            try:
-                if bridge:
-                    result = bridge.cycle()
-                    last_success[0] = (
-                        time.time() if not result["report_failed"] else 0.0
-                    )
-                    print(json.dumps({"status": "cycle", **result}), flush=True)
-                else:
-                    print(
-                        json.dumps(
-                            {
-                                "status": "owner_gate",
-                                "reason": "github_reporter_credential_missing",
-                            }
-                        ),
-                        flush=True,
-                    )
-                store.tick()
-            except Exception:  # noqa: BLE001 - sanitized staging service boundary
-                last_success[0] = 0.0
-                print(
-                    json.dumps(
-                        {
-                            "status": "blocked",
-                            "reason": "transport_or_store_unavailable",
-                        }
-                    ),
-                    flush=True,
-                )
+            result = run_cycle(store, bridge)
+            last_success[0] = (
+                time.time()
+                if result["status"] == "cycle" and not result["report_failed"]
+                else 0.0
+            )
+            print(json.dumps(result), flush=True)
             wake.wait(60)
     finally:
         for server in servers:
