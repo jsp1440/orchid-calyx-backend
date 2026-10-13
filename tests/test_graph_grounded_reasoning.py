@@ -121,7 +121,7 @@ def test_every_citation_resolves_to_revision_anchor_and_content_hash():
         ("Which pollinators visit Exemplaria nivea?", Facet.POLLINATION, "NO_GRAPH_EVIDENCE_FOR_FACET:POLLINATION"),
         ("Which mycorrhizal fungi associate with Exemplaria aurea?", Facet.MYCORRHIZA, "NO_ANCHORED_SOURCE_FOR_FACET"),
         ("What is the labellum colour of Exemplaria rubra?", Facet.MORPHOLOGY, "NO_ANCHORED_SOURCE_FOR_FACET"),
-        ("Where does Exemplaria obscura occur?", Facet.DISTRIBUTION, "FOCAL_TAXON_NODE_NOT_IN_GRAPH"),
+        ("Where does Exemplaria obscura occur?", Facet.DISTRIBUTION, "TAXON_GRAPH_LINK_UNVERIFIED"),
     ],
 )
 def test_insufficient_evidence_is_an_explicit_abstention(text, facet, gap):

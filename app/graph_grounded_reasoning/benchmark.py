@@ -23,6 +23,7 @@ from app.evidence_retrieval.engine import RetrievalEngine
 from app.evidence_retrieval.models import RetrievalQuery
 from app.semantic_index.memory_repository import MemoryIndexRepository
 from app.semantic_index.provider import DeterministicLocalProvider
+from runtime.knowledge_graph.canonical_graph_mapping import build_taxon_graph_mapping
 from runtime.knowledge_graph.canonical_taxonomy import (
     WorldPlantsRelease,
     build_canonical_registry,
@@ -137,16 +138,17 @@ def build_environment(fixture: dict[str, Any]):
     return registry, graph, engine
 
 
-def fixture_taxon_node_key(fixture: dict[str, Any], registry) -> Callable[[int], str]:
-    """Map registry ids to fixture graph keys by accepted name, never by id."""
+def fixture_taxon_node_key(fixture: dict[str, Any], registry) -> Callable[[int], str | None]:
+    """Registry id -> graph key through the verified name mapping, else None."""
 
-    by_name = {n["label"]: n["key"] for n in fixture["graph"]["nodes"] if n["type"] == "taxon"}
-
-    def key(canonical_id: int) -> str:
-        name = registry.taxa[canonical_id].canonical_name
-        return by_name.get(name, f"taxon:unmapped:{canonical_id}")
-
-    return key
+    reg = fixture["registry"]
+    mapping = build_taxon_graph_mapping(
+        reg["load_rows"],
+        reg["synonym_rows"],
+        [{"canonical_key": n["key"], "node_type": n["type"], "display_label": n["label"]} for n in fixture["graph"]["nodes"]],
+        release={"snapshot_id": reg["release"]["snapshot_id"]},
+    )
+    return mapping.taxon_node_key(registry)
 
 
 def baseline_answer(engine: RetrievalEngine, question: ScientificQuestion) -> dict[str, Any]:
