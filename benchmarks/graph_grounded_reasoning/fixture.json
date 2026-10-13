@@ -134,10 +134,44 @@
     "from": 1,
     "to": 10,
     "payload": {
-     "assertion_id": "a-syn-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-tax-1"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-syn-1",
+      "source": {
+       "document_id": "doc-tax-1",
+       "revision_id": "doc-tax-1@r1",
+       "content_hash": "a3ebdf43c09a99a8dc42d3ba171450404927b4e8b29da62f0fe9b9257df46980"
+      },
+      "anchors": [
+       {
+        "page_start": 1,
+        "page_end": 1
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -146,14 +180,48 @@
     "from": 1,
     "to": 11,
     "payload": {
-     "assertion_id": "a-pol-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-pol-1",
-     "conflicting_assertion_ids": [
-      "a-pol-2"
-     ],
-     "qualifier": "field observation, site A"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-pol-1",
+      "source": {
+       "document_id": "doc-pol-1",
+       "revision_id": "doc-pol-1@r1",
+       "content_hash": "206940d733800d6817c567a656d6a4fb6ef285f4bab49afbb8f0113943b954c4"
+      },
+      "anchors": [
+       {
+        "page_start": 3,
+        "page_end": 3
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [
+       "field observation, site A"
+      ],
+      "lineage": {
+       "conflicting_assertion_ids": [
+        "a-pol-2"
+       ],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -162,14 +230,48 @@
     "from": 1,
     "to": 12,
     "payload": {
-     "assertion_id": "a-pol-2",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-pol-2",
-     "conflicting_assertion_ids": [
-      "a-pol-1"
-     ],
-     "qualifier": "exclusive pollinator claim"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-pol-2",
+      "source": {
+       "document_id": "doc-pol-2",
+       "revision_id": "doc-pol-2@r1",
+       "content_hash": "21e789e2a557dd9944129100aea2175f542ea6d4dd8a588f9d0bfb1cf059a161"
+      },
+      "anchors": [
+       {
+        "page_start": 7,
+        "page_end": 7
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [
+       "exclusive pollinator claim"
+      ],
+      "lineage": {
+       "conflicting_assertion_ids": [
+        "a-pol-1"
+       ],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -178,10 +280,44 @@
     "from": 1,
     "to": 13,
     "payload": {
-     "assertion_id": "a-tr-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-desc-1"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-tr-1",
+      "source": {
+       "document_id": "doc-desc-1",
+       "revision_id": "doc-desc-1@r1",
+       "content_hash": "52aa25e0a3d3710a12679f89cf90e0f79639e0eec6eb090bb9cd90003c8f96f5"
+      },
+      "anchors": [
+       {
+        "page_start": 12,
+        "page_end": 12
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -190,10 +326,46 @@
     "from": 1,
     "to": 14,
     "payload": {
-     "assertion_id": "a-tr-2",
-     "review_state": "PENDING",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-desc-1"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-tr-2",
+      "source": {
+       "document_id": "doc-desc-1",
+       "revision_id": "doc-desc-1@r1",
+       "content_hash": "52aa25e0a3d3710a12679f89cf90e0f79639e0eec6eb090bb9cd90003c8f96f5"
+      },
+      "anchors": [
+       {
+        "page_start": 12,
+        "page_end": 12
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.5,
+      "confidence_is_probability": false,
+      "uncertainty": [
+       "fixture: not yet reviewed"
+      ],
+      "review_status": "unreviewed",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -202,10 +374,44 @@
     "from": 1,
     "to": 15,
     "payload": {
-     "assertion_id": "a-geo-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-geo-1"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-geo-1",
+      "source": {
+       "document_id": "doc-geo-1",
+       "revision_id": "doc-geo-1@r1",
+       "content_hash": "5a187ffc13f9b4a96e06f686ed8da068ba236c67689b254a05767babcec7e99b"
+      },
+      "anchors": [
+       {
+        "page_start": 2,
+        "page_end": 2
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -214,10 +420,44 @@
     "from": 1,
     "to": 16,
     "payload": {
-     "assertion_id": "a-geo-2",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-geo-1",
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-geo-2",
+      "source": {
+       "document_id": "doc-geo-1",
+       "revision_id": "doc-geo-1@r1",
+       "content_hash": "5a187ffc13f9b4a96e06f686ed8da068ba236c67689b254a05767babcec7e99b"
+      },
+      "anchors": [
+       {
+        "page_start": 2,
+        "page_end": 2
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     },
      "sensitive_locality": true,
      "latitude": -1.0,
      "longitude": -78.0
@@ -228,11 +468,7 @@
     "type": "associated_with_mycorrhiza",
     "from": 1,
     "to": 17,
-    "payload": {
-     "assertion_id": "a-myc-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED"
-    }
+    "payload": {}
    },
    {
     "id": 109,
@@ -240,10 +476,44 @@
     "from": 1,
     "to": 18,
     "payload": {
-     "assertion_id": "a-lit-1",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-desc-1"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-lit-1",
+      "source": {
+       "document_id": "doc-desc-1",
+       "revision_id": "doc-desc-1@r1",
+       "content_hash": "52aa25e0a3d3710a12679f89cf90e0f79639e0eec6eb090bb9cd90003c8f96f5"
+      },
+      "anchors": [
+       {
+        "page_start": 12,
+        "page_end": 12
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria aurea",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:1",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -252,10 +522,44 @@
     "from": 2,
     "to": 19,
     "payload": {
-     "assertion_id": "a-myc-2",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-myc-2"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-myc-2",
+      "source": {
+       "document_id": "doc-myc-2",
+       "revision_id": "doc-myc-2@r1",
+       "content_hash": "86e9a8564656bef45ea87aea00a4161927f1309972844f6414b491942a5548f2"
+      },
+      "anchors": [
+       {
+        "page_start": 5,
+        "page_end": 5
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria rubra",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:2",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -264,10 +568,44 @@
     "from": 2,
     "to": 20,
     "payload": {
-     "assertion_id": "a-tr-3",
-     "review_state": "APPROVED",
-     "verification_state": "VERIFIED",
-     "source_document_id": "doc-desc-2"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-tr-3",
+      "source": {
+       "document_id": "doc-desc-2",
+       "revision_id": "doc-desc-2@r1",
+       "content_hash": "5276589d7905e7cda3ee89b356902c3279c92bb3548cad61b69715285e3c00be"
+      },
+      "anchors": [
+       {
+        "page_start": 1,
+        "page_end": 1
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria rubra",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:2",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.9,
+      "confidence_is_probability": false,
+      "uncertainty": [],
+      "review_status": "accepted",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    },
    {
@@ -276,10 +614,46 @@
     "from": 2,
     "to": 11,
     "payload": {
-     "assertion_id": "a-pol-3",
-     "review_state": "APPROVED",
-     "verification_state": "UNVERIFIED",
-     "source_document_id": "doc-pol-3"
+     "claim_provenance": {
+      "contract_version": "oc-claim-provenance-v1",
+      "assertion_id": "a-pol-3",
+      "source": {
+       "document_id": "doc-pol-3",
+       "revision_id": "doc-pol-3@r1",
+       "content_hash": "e1dd7812deaacc0b445df599f67956463746f3102fb3b65e85d20411ee13060c"
+      },
+      "anchors": [
+       {
+        "page_start": 1,
+        "page_end": 1
+       }
+      ],
+      "taxon": {
+       "canonical_name": "Exemplaria rubra",
+       "link_status": "accepted",
+       "taxonomy_release": "fixture-release",
+       "node_key": "taxon:2",
+       "authority": "world_plants"
+      },
+      "extraction": {
+       "method": "human_annotated",
+       "extractor": "fixture",
+       "extractor_version": "1"
+      },
+      "confidence": 0.5,
+      "confidence_is_probability": false,
+      "uncertainty": [
+       "fixture: not yet reviewed"
+      ],
+      "review_status": "unreviewed",
+      "qualifiers": [],
+      "lineage": {
+       "conflicting_assertion_ids": [],
+       "interpretation_ids": [],
+       "evidence_packet_ids": [],
+       "normalized_record_ids": []
+      }
+     }
     }
    }
   ]

@@ -85,6 +85,12 @@ def compose(packet: EvidencePacket) -> Composition:
     ]
     if unreviewed:
         uncertainty.append(f"UNREVIEWED_OR_UNVERIFIED_ASSERTIONS:{len(unreviewed)}")
+    model_extracted = [i for i in anchored if i.extraction_method == "model_extracted"]
+    if model_extracted:
+        uncertainty.append(f"MODEL_EXTRACTED_ASSERTIONS:{len(model_extracted)}")
+    declared = [i for i in anchored if i.uncertainty]
+    if declared:
+        uncertainty.append(f"DECLARED_SOURCE_UNCERTAINTY:{len(declared)}")
     if conflicts:
         uncertainty.append(f"DECLARED_CONFLICTS:{len(conflicts)}")
         state = ResultState.CONFLICT_REVIEW_REQUIRED

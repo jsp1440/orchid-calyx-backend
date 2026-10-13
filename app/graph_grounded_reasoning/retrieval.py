@@ -8,6 +8,7 @@ from typing import Any, Protocol
 from app.evidence_retrieval.models import RetrievalQuery
 from runtime.knowledge_graph.canonical_taxonomy import canonical_name_of
 from runtime.knowledge_graph.causal_vocabulary import causal_relation_semantics
+from runtime.knowledge_graph.claim_provenance import parse_claim_provenance
 from runtime.knowledge_graph.models import Edge, Node
 from runtime.knowledge_graph.vocabulary import domain_for_edge_type
 
@@ -116,6 +117,22 @@ def _anchor(search: SearchFn | None, document_id: str | None, accepted_name: str
     return AnchorState.ANCHOR_UNAVAILABLE, None
 
 
+def _taxon_matches(record, accepted_name: str | None, node_key: str) -> bool:
+    """The claim must be about the resolved accepted taxon and its graph node."""
+
+    if canonical_name_of(record.taxon.canonical_name) != accepted_name:
+        return False
+    return record.taxon.node_key in (None, node_key)
+
+
+def _same_source(record, citation: dict[str, Any]) -> bool:
+    """Declared revision and content hash must match what the index holds."""
+
+    if record.source_revision_id is not None and str(citation.get("revision_id")) != record.source_revision_id:
+        return False
+    return record.content_hash is None or citation.get("source_content_hash") == record.content_hash
+
+
 def assemble_packet(
     question: ScientificQuestion,
     resolution: TaxonResolution,
@@ -157,14 +174,27 @@ def assemble_packet(
         if _withheld(edge, target):
             withheld += 1
             continue
-        payload = {k: v for k, v in (edge.payload or {}).items() if k in PAYLOAD_ALLOWLIST}
-        document_id = payload.get("source_document_id")
-        if document_id and anchors_used >= MAX_EVIDENCE_RECORDS:
+        record, violations = parse_claim_provenance(
+            {k: v for k, v in (edge.payload or {}).items() if k in PAYLOAD_ALLOWLIST}
+        )
+        document_id = record.source_document_id if record else None
+        if record is None:
+            anchor_state = (
+                AnchorState.SOURCE_UNDECLARED
+                if violations == ("CLAIM_PROVENANCE_ABSENT",)
+                else AnchorState.PROVENANCE_INVALID
+            )
+            citation = None
+        elif not _taxon_matches(record, resolution.accepted_name, key):
+            anchor_state, citation = AnchorState.TAXON_BINDING_MISMATCH, None
+        elif anchors_used >= MAX_EVIDENCE_RECORDS:
             anchor_state, citation = AnchorState.ANCHOR_UNAVAILABLE, None
             truncated = True
         else:
-            anchors_used += 1 if document_id else 0
+            anchors_used += 1
             anchor_state, citation = _anchor(search, document_id, subject)
+            if anchor_state == AnchorState.ANCHORED and not _same_source(record, citation):
+                anchor_state, citation = AnchorState.SOURCE_REVISION_MISMATCH, None
         items.append(
             EvidenceItem(
                 ref=f"kg_edge:{edge.kg_edge_id}",
@@ -175,18 +205,24 @@ def assemble_packet(
                 or f"kg_node:{edge.to_node_id}",
                 polarity=_polarity(edge.edge_type),
                 evidence_class=edge.evidence_class,
-                review_state=payload.get("review_state"),
-                verification_state=payload.get("verification_state"),
+                review_state=(
+                    None if record is None else "APPROVED" if record.reviewed else record.review_status.upper()
+                ),
+                verification_state="VERIFIED" if anchor_state == AnchorState.ANCHORED else None,
                 source_table=edge.source_table,
                 source_pk=edge.source_pk,
                 source_document_id=document_id,
-                assertion_id=payload.get("assertion_id"),
-                conflicting_assertion_ids=tuple(
-                    str(x) for x in payload.get("conflicting_assertion_ids") or ()
-                ),
-                qualifier=payload.get("qualifier"),
+                assertion_id=record.assertion_id if record else None,
+                conflicting_assertion_ids=record.conflicting_assertion_ids if record else (),
+                qualifier="; ".join(record.qualifiers) if record and record.qualifiers else None,
                 anchor_state=anchor_state,
                 citation=citation,
+                extraction_method=record.extraction_method if record else None,
+                confidence=record.confidence if record else None,
+                uncertainty=record.uncertainty if record else (),
+                declared_anchors=tuple(a.to_dict() for a in record.anchors) if record else (),
+                taxon_binding=record.taxon.to_dict() if record else None,
+                provenance_violations=violations,
             )
         )
 
