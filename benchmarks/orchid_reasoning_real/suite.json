@@ -1,0 +1,7 @@
+{
+ "benchmark_version": "oc-orchid-reasoning-real-v1",
+ "label_source": "INDEPENDENT_EXPERT_REVIEW",
+ "status": "AWAITING_CASES",
+ "notice": "Real orchid questions with independent expert reviews only. No case, answer or label in this directory may be authored by a model or derived from a fixture. Until cases and reviews are added, scoring refuses (REFUSED_NO_SCORABLE_CASES) and no accuracy is reported. Protocol: docs/architecture/ORCHID-REASONING-BENCHMARK.md.",
+ "related": ["#1182 botanical gold set", "#1379-#1383 app/evals EvaluationCase", "#1819 graph-grounded pilot"]
+}

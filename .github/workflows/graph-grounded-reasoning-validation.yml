@@ -14,6 +14,10 @@ on:
       - "runtime/knowledge_graph/claim_provenance.py"
       - "tests/test_claim_provenance.py"
       - "docs/architecture/CLAIM-PROVENANCE-CONTRACT.md"
+      - "benchmarks/orchid_reasoning_real/**"
+      - "scripts/validate_orchid_reasoning_benchmark.py"
+      - "tests/test_orchid_reasoning_real_benchmark.py"
+      - "docs/architecture/ORCHID-REASONING-BENCHMARK.md"
       - "docs/architecture/GRAPH-GROUNDED-REASONING-PILOT.md"
       - ".github/workflows/graph-grounded-reasoning-validation.yml"
   workflow_dispatch:
@@ -44,13 +48,16 @@ jobs:
           python -m pip install -r requirements.txt pytest ruff
 
       - name: Compile pilot package
-        run: python -m compileall -q app/graph_grounded_reasoning runtime/knowledge_graph/canonical_graph_mapping.py runtime/knowledge_graph/claim_provenance.py scripts/run_graph_grounded_benchmark.py scripts/build_taxon_graph_mapping.py
+        run: python -m compileall -q app/graph_grounded_reasoning runtime/knowledge_graph/canonical_graph_mapping.py runtime/knowledge_graph/claim_provenance.py scripts/run_graph_grounded_benchmark.py scripts/build_taxon_graph_mapping.py scripts/validate_orchid_reasoning_benchmark.py
 
       - name: Lint pilot package, script and tests
-        run: python -m ruff check app/graph_grounded_reasoning runtime/knowledge_graph/canonical_graph_mapping.py runtime/knowledge_graph/claim_provenance.py scripts/run_graph_grounded_benchmark.py scripts/build_taxon_graph_mapping.py tests/test_graph_grounded_reasoning.py tests/test_canonical_graph_mapping.py tests/test_claim_provenance.py
+        run: python -m ruff check app/graph_grounded_reasoning runtime/knowledge_graph/canonical_graph_mapping.py runtime/knowledge_graph/claim_provenance.py scripts/run_graph_grounded_benchmark.py scripts/build_taxon_graph_mapping.py scripts/validate_orchid_reasoning_benchmark.py tests/test_graph_grounded_reasoning.py tests/test_canonical_graph_mapping.py tests/test_claim_provenance.py tests/test_orchid_reasoning_real_benchmark.py
 
       - name: Run focused tests
-        run: python -m pytest -q -p no:cacheprovider tests/test_graph_grounded_reasoning.py tests/test_canonical_graph_mapping.py tests/test_claim_provenance.py tests/test_canonical_taxonomy.py
+        run: python -m pytest -q -p no:cacheprovider tests/test_graph_grounded_reasoning.py tests/test_canonical_graph_mapping.py tests/test_claim_provenance.py tests/test_orchid_reasoning_real_benchmark.py tests/test_canonical_taxonomy.py
 
       - name: Run provider-free contract benchmark
         run: python scripts/run_graph_grounded_benchmark.py --output "$RUNNER_TEMP/ggr-benchmark.json"
+
+      - name: Validate the real-question benchmark (refuses fabricated labels)
+        run: python scripts/validate_orchid_reasoning_benchmark.py
