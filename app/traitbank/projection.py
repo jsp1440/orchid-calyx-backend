@@ -424,6 +424,8 @@ def candidate_handoff_requests(
         reason = None
         if a.evidence_state in INACTIVE_STATES:
             reason = "INACTIVE_EVIDENCE_STATE"
+        elif a.evidence_state in NON_VALUE_STATES:
+            reason = "NON_VALUE_EVIDENCE_STATE"
         elif a.value.kind == "missing":
             reason = "MISSING_VALUE_IS_NOT_A_CANDIDATE"
         elif a.confidence is None:

@@ -146,6 +146,10 @@ CREATE TABLE IF NOT EXISTS oc_traitbank.environment_relations (
     evidence_type text NOT NULL,
     locator text,
     original_text text,
+    -- The complete provenance record as submitted (source kind, contributor,
+    -- URL, review status, ...). Read back verbatim so a relation's provenance
+    -- is never reconstructed by inference from its evidence type.
+    provenance jsonb NOT NULL CHECK (jsonb_typeof(provenance) = 'object'),
     record_sha256 text NOT NULL,
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT traitbank_relation_kind CHECK (

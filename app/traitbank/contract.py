@@ -59,6 +59,7 @@ def load_contract(
     for flag in (
         "automatic_scientific_publication_allowed",
         "graph_mutation_allowed",
+        "database_write_allowed",
         "taxonomy_creation_allowed",
         "correlation_may_be_presented_as_adaptation",
         "breeding_prediction_enabled",

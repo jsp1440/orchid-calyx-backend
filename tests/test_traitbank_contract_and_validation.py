@@ -636,3 +636,197 @@ def test_conflicts_are_preserved_and_variation_is_not_conflict():
         )
     )
     assert projection.conflicts([AssertionIn.model_validate(_assertion()), s2]) == []
+
+
+# -- review hardening (PR #1811) ----------------------------------------------------------
+
+
+def _relation(**overrides) -> dict:
+    data = {
+        "relation_id": "rel-1",
+        "trait_id": "oc:trait:spur_length",
+        "environment_variable": "elevation",
+        "claim_kind": "observed_correlation",
+        "statement": "Spur length correlates with elevation.",
+        "provenance": _assertion()["provenance"],
+    }
+    for key, value in overrides.items():
+        if isinstance(value, dict) and isinstance(data.get(key), dict):
+            data[key] = {**data[key], **value}
+        else:
+            data[key] = value
+    return data
+
+
+@pytest.mark.parametrize(
+    "assertion_overrides",
+    [
+        {"provenance": {"license": "CC BY 4.0; collector grower@mail.net"}},
+        {"provenance": {"extraction_method": "lat: 12.3"}},
+        {"provenance": {"original_text": "call +1 415 555 0100 for the site"}},
+        {"provenance": {"source_url": "https://host.net/?lat=12.3"}},
+        {"subject": {"verbatim_taxon_name": "Angraecum sesquipedale grower@mail.net"}},
+        {"value": {"verbatim": "280 mm at 12" + "°20' N"}},
+        {"scope_justification": "lat: 12.3", "scope_basis": "source_reported"},
+        {"life_stage": "adult +44 20 7946 0958"},
+    ],
+)
+def test_every_assertion_text_field_is_privacy_screened(assertion_overrides):
+    codes = _violations(_batch(_assertion(**assertion_overrides)), live=False)
+    assert codes & {"COORDINATES_REFUSED", "PRIVATE_CONTACT_REFUSED"}
+
+
+@pytest.mark.parametrize(
+    "relation_overrides",
+    [
+        {"effect_size": "r = 0.4, lat: 12.3"},
+        {"direction": "grower@mail.net"},
+        {"environment_variable": "elevation +1 415 555 0100"},
+        {"provenance": {"license": "CC BY; grower@mail.net"}},
+        {"provenance": {"extraction_method": "lat: 12.3"}},
+        {"provenance": {"original_text": "ring +1 415 555 0100"}},
+    ],
+)
+def test_every_relation_text_field_is_privacy_screened(relation_overrides):
+    batch = _batch(environment_relations=[_relation(**relation_overrides)])
+    codes = _violations(batch, live=False)
+    assert codes & {"COORDINATES_REFUSED", "PRIVATE_CONTACT_REFUSED"}
+
+
+def test_phone_screen_exempts_only_citations_urls_and_identifiers():
+    long_ids = _assertion(
+        provenance={
+            "original_record_id": "K000123456789",
+            "citation": "Ann. Bot. 12 (1998) 1234567890-1234567899.",
+        }
+    )
+    assert _violations(_batch(long_ids)) == set()
+
+
+@pytest.mark.parametrize(
+    "field", ["relation_id", "provenance.source_id", "provenance.original_record_id"]
+)
+def test_live_ingestion_refuses_fixture_style_relation_ids(field):
+    if field == "relation_id":
+        relation = _relation(relation_id="fx-rel-1")
+    else:
+        relation = _relation(provenance={field.split(".")[1]: "fixture-rel-1"})
+    batch = _batch(environment_relations=[relation])
+    found = {(v.code, v.where) for v in guards.check_batch(batch, live=True)}
+    assert (
+        "FIXTURE_ID_REFUSED_IN_LIVE",
+        f"relation:{relation['relation_id']}.{field}",
+    ) in found
+    assert "FIXTURE_ID_REFUSED_IN_LIVE" not in _violations(batch, live=False)
+
+
+@pytest.mark.parametrize(
+    "flag",
+    ["database_write_allowed", "graph_mutation_allowed", "taxonomy_creation_allowed"],
+)
+def test_an_authority_granting_contract_flag_is_refused_even_when_pinned(
+    tmp_path: Path, flag: str
+):
+    contract = json.loads(CONTRACT_PATH.read_text())
+    contract["governance"][flag] = True
+    granted = tmp_path / "traitbank_v1.json"
+    granted.write_text(json.dumps(contract))
+    with pytest.raises(TraitBankContractError, match=flag):
+        load_contract(granted, hashlib.sha256(granted.read_bytes()).hexdigest())
+
+
+def test_unresolved_relation_scope_is_kept_unmapped_not_broadened():
+    paper = _paper().model_copy(deep=True)
+    trait_entity = next(e for e in paper.entities if e.attributes.get("taxon_scope"))
+    # One name resolves, one does not: dropping the unresolved one would
+    # narrow the claim, and dropping both would broaden it to every taxon.
+    trait_entity.attributes["taxon_scope"] = [
+        "Angraecum sesquipedale",
+        "Angraecum eburneum",
+    ]
+    result = from_paper_knowledge(paper, TraitIndex(_definitions()), _resolver)
+    assert result.batch.environment_relations == ()
+    assert [u["reason"] for u in result.unmapped] == ["taxon_scope_not_resolved"]
+    # The stored assertion itself is unaffected.
+    assert len(result.batch.assertions) == 1
+
+
+def _eol(**raw) -> dict:
+    base = {
+        "eol_pk": "R9",
+        "resource_id": "694",
+        "scientific_name": "Angraecum sesquipedale",
+        "predicate": "nectar spur length",
+        "value": "30",
+        "units": "cm",
+    }
+    return TraitBankHarvester()._normalize({**base, **raw}, source_path="local.tsv")
+
+
+@pytest.mark.parametrize(
+    "raw,reason",
+    [
+        ({"resource_id": ""}, "resource_id_missing"),
+        ({"sample_size": "5.9"}, "sample_size_not_a_count"),
+        ({"sample_size": "-2"}, "sample_size_not_a_count"),
+    ],
+)
+def test_eol_rows_with_unattributable_or_malformed_provenance_are_unmapped(raw, reason):
+    result = from_traitbank_harvester(
+        [_eol(**raw)],
+        TraitIndex(_definitions()),
+        _resolver,
+        dataset_citation="EOL TraitBank.",
+        dataset_license="see resource",
+    )
+    assert [u["reason"] for u in result.unmapped] == [reason]
+    assert result.batch is None or result.batch.assertions == ()
+
+
+def test_integer_valued_sample_size_is_kept():
+    result = from_traitbank_harvester(
+        [_eol(sample_size="5.0")],
+        TraitIndex(_definitions()),
+        _resolver,
+        dataset_citation="EOL TraitBank.",
+        dataset_license="see resource",
+    )
+    (a,) = result.batch.assertions
+    assert a.value.n == 5
+
+
+@pytest.mark.parametrize("state", ["WITHHELD", "UNAVAILABLE", "UNKNOWN", "ABSENT"])
+def test_candidate_handoff_withholds_every_non_value_state(state):
+    definition = _definitions()["oc:trait:spur_length"]
+    darwin, _ = _members()
+    held = AssertionIn.model_validate(
+        {**darwin.model_dump(mode="json"), "evidence_state": state}
+    )
+    requests, withheld = projection.candidate_handoff_requests(
+        definition, [_row(held, assertion_pk=1, batch_pk=1)]
+    )
+    assert requests == []
+    assert withheld == [
+        {"assertion_id": held.assertion_id, "reason": "NON_VALUE_EVIDENCE_STATE"}
+    ]
+
+
+def test_traitbank_routes_are_owner_only():
+    from app.member_auth import MEMBER_READABLE_ATTR
+    from app.traitbank import routes as traitbank_routes
+
+    for route in traitbank_routes.router.routes:
+        assert not getattr(route.endpoint, MEMBER_READABLE_ATTR, False), route.path
+
+
+def test_repository_uses_only_the_dedicated_database_variable(monkeypatch):
+    from app.traitbank.repository import TraitBankRepository
+
+    monkeypatch.setenv("DATABASE_URL", "postgresql://unrelated/production")
+    monkeypatch.delenv("TRAITBANK_DATABASE_URL", raising=False)
+    assert TraitBankRepository(connection_factory=None).database_url is None
+    monkeypatch.setenv("TRAITBANK_DATABASE_URL", "postgresql://tb/traitbank")
+    assert (
+        TraitBankRepository(connection_factory=None).database_url
+        == "postgresql://tb/traitbank"
+    )

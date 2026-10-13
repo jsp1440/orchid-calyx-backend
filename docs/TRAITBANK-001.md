@@ -15,7 +15,7 @@
 | Controlled ingestion | `app/traitbank/repository.py`, `app/traitbank/cli.py` | One transaction per batch. Guards and reference checks run first, and any violation refuses the whole batch (see the next section). |
 | Literature pathway | `app/traitbank/adapters.py::from_paper_knowledge` | Consumes the existing `PaperKnowledge` model. |
 | EOL TraitBank pathway | `app/traitbank/adapters.py::from_traitbank_harvester` | Consumes `TraitBankHarvester` records, parsed with the harvester's own parser. Local files only; nothing is downloaded. |
-| Read-only API | `app/traitbank/routes.py` (`/api/traitbank`) | GET only, behind the same default-deny `owner_or_member_read` as `/api/research/traits`. |
+| Read-only API | `app/traitbank/routes.py` (`/api/traitbank`) | GET only, behind the same default-deny `owner_or_member_read` as `/api/research/traits`. Owner-only: no route opts into member reads until a fail-closed member projection exists. Reads that exceed the 5,000-row cap return `RESULT_TOO_LARGE`, never a truncated result. The database comes from `TRAITBANK_DATABASE_URL` only. |
 | Matrix | `projection.matrix_assertions`, `GET /api/traitbank/matrix` | Produces `RelationshipAssertion` records, built with the existing `build_relationship_matrix`. Taxon-level assertions use the `trait` dimension (same `trait:{name}={value}` identity as the governed source). Lower levels use `trait_individual_evidence`. |
 | Calyx | `projection.calyx_envelope`, `GET /api/traitbank/taxa/{id}/calyx/{trait}` | Returns an `oc-parallel-v1` reasoning envelope, plus `BrainCandidateHandoffRequest` previews for the existing candidate-knowledge pipeline (review REQUIRED, unpublished, no graph mutation). |
 
