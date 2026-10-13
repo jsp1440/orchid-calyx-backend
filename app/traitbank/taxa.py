@@ -89,3 +89,6 @@ class PostgresCanonicalTaxa:
 
     def genus_ids(self, cur: Any, genus: str) -> list[str]:
         return self._rt._resolve_taxon_ids(cur, rank="genus", name=genus)
+
+# Hosted autonomy-loop acceptance input 2 (2026-10-13), pushed after the controlled
+# restart: the resumed worker must discover and verify it exactly once.
