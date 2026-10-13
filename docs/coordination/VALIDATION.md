@@ -4,7 +4,7 @@ Maker: ChatGPT / Codex, 2026-10-13. No independent checker acceptance is claimed
 
 ## Executed locally
 - Test-first store and transport cases initially failed for missing implementation. Later replay regressions demonstrably failed for edited-comment assignment injection and previously refused claims executing after timeout. Both were fixed with an atomic durable inbox ledger.
-- `python -m pytest -q tests/coordination`: 26 passed, 4 skipped. Skips are precisely the four local PostgreSQL integration tests, not safety/auth tests.
+- `python -m pytest -q tests/coordination`: 30 passed, 4 skipped. Skips are precisely the four local PostgreSQL integration tests, not safety/auth tests.
 - `python -B -m unittest discover -s tests/coordination -v`: equivalent SQLite, signed HTTP and fake-GitHub coverage. A real loopback HTTP server exercised signed assignment, claim, heartbeat, response, wakeup, webhook scope and replay.
 - SQLite restart/dedup, simultaneous claims via two separate connections, stale-token/attempt fencing, timeout retries/dead letter, hard deadline, exact owner digest/expiry, unknown/stale health, outbox recovery and uncertain POST reconciliation are covered.
 - Lint uses repository-pinned ruff 0.16.8. Broad exception handlers are intentionally limited to service error-sanitization boundaries; they report fixed errors without leaking secrets.
@@ -16,10 +16,13 @@ Maker: ChatGPT / Codex, 2026-10-13. No independent checker acceptance is claimed
 An earlier branch collection run had an extra import-name collision with tests/kernel/test_runtime.py. Renaming the new test modules to test_acs_* removed it; the subsequent compared error sets are identical.
 
 ## Explicitly unverified
-- PostgreSQL backend execution: no local server was available. System package installation failed under process/identity restrictions; a user-space bundled server also could not initialize its required OS identity. No permission escalation occurred. Four guarded tests are prepared for the workflow's disposable PostgreSQL 16 service, and reject any remote/production test URL.
-- Hosted CI: pending until actual workflow/job evidence on the published head is inspected. Skipped/no-runner/zero-step results are never passing evidence.
+- Local PostgreSQL backend execution: no local server was available. System package installation failed under process/identity restrictions; a user-space bundled server also could not initialize its required OS identity. No permission escalation occurred. Four guarded tests are prepared for the workflow's disposable PostgreSQL 16 service, and reject any remote/production test URL.
+- Current hosted status is recorded by exact head in PR #1833 checks/comments. Initial implementation head b0e0217ec21a130a5d07c7d9e0ef801e69f854ee ran 30 tests with no skips, including all four real PostgreSQL 16.15 tests, in run 38485025373/job 115596475848. Logs were retrieved and inspected; lint/format/compile passed. Current tree adds four review regressions and therefore expects 34 hosted tests. Skipped/no-runner/zero-step results are never passing evidence.
 - Live GitHub bridge delivery with production credentials; live webhook registration; real ChatGPT/Claude/Kimi/Copilot/Calyx adapters.
 - Hosted persistence, cost/capacity and TLS/proxy acceptance.
 
 ## Owner boundary
 No merge, Render activation, Neon SQL/migration, production database change, provider call or paid infrastructure creation occurred. GitHub progress comments and draft code publication are authorized. Running the service persistently requires an approved host/schema and distinct agent identities; current consumer-chat sessions cannot be assumed to be callable background agents.
+
+## Independent review corrections
+The independent reviewer reproduced two defects on b0e0217e: event/internal report-ID collisions and final ambiguous POST exhaustion before reconciliation. Four regression cases were added; three demonstrably failed against that head. Event reports now use an event: namespace, separate from generated timeout/expiry records. Final uncertain deliveries retain a reconciliation-only lease; they can confirm a prior post without making an additional POST beyond the send budget. The fourth case proves an unsent final crash cannot cause an extra POST. Local suite after correction: 30 passed, 4 PostgreSQL skipped. Independent re-review and hosted status are linked on PR #1833.

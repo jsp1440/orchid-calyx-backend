@@ -230,3 +230,35 @@ class TransportTests(unittest.TestCase):
         self.b.cycle()
         with self.assertRaises(ValueError):
             self.s.task("injected")
+
+    def test_final_ambiguous_delivery_reconciles(self):
+        self.s.max_attempts = 1
+        self.add(self.assignment())
+        self.gh.fail_after_post = True
+        self.b.cycle()
+        count = len(self.gh.items)
+        self.clock[0] += 10
+        self.b.cycle()
+        self.assertEqual(len(self.gh.items), count)
+        self.assertEqual(self.s.reports()[0]["state"], "sent")
+
+    def test_final_post_crash_reconciles_without_another_send(self):
+        self.s.max_attempts = 1
+        self.add(self.assignment())
+        self.b.ingest(self.gh.items[0])
+        report = self.s.take_report()
+        self.gh.post(report["body"])
+        self.clock[0] += 61
+        self.b.cycle()
+        self.assertEqual(self.s.reports()[0]["state"], "sent")
+        self.assertEqual(len(self.gh.items), 2)
+
+    def test_final_unsent_crash_dead_letters_without_another_send(self):
+        self.s.max_attempts = 1
+        self.add(self.assignment())
+        self.b.ingest(self.gh.items[0])
+        self.s.take_report()
+        self.clock[0] += 61
+        self.b.cycle()
+        self.assertEqual(self.s.reports()[0]["state"], "dead_letter")
+        self.assertEqual(len(self.gh.items), 1)

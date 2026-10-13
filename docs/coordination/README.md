@@ -52,7 +52,7 @@ Calyx's later adapter obtains an agent-only key, reads its assignments, signs cl
 ## Recovery and decisions
 
 - Default heartbeat lease: 60 seconds. Send every 20–30 seconds while work is genuinely active. Hard attempt deadline: 900 seconds. Split longer work into bounded tasks; do not fabricate heartbeats.
-- Timeouts retry with 10/20/40 second exponential delays, capped at 300 seconds. Three claims maximum; then task dead_letter. Report retries separately have three delivery attempts and expiring report leases.
+- Timeouts retry with 10/20/40 second exponential delays, capped at 300 seconds. Three claims maximum; then task dead_letter. Report retries separately have three delivery attempts and expiring report leases. Final uncertain deliveries get marker reconciliation without an extra POST; absence or failed reconciliation records dead_letter.
 - Outbox detects an uncertain previous POST by exact body plus stable marker from verified reporter identity. Exactly-once GitHub POST is not promised; event deduplication protects consumers.
 - Invalid/unauthorized comments are recorded as rejected in acs_inbox; they never silently become executable on a later poll. To correct a refused message, send a new comment/event ID.
 - Gate actions: merge, deploy, production_db, paid_ai, infrastructure, scientific_publish. Owner approve/reject events bind exact task digest; approval expires in at most 24 hours. Approved gates remain unclaimable because this version has no privileged executor. Activate privileged work only through separately approved systems.

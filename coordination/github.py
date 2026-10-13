@@ -172,6 +172,8 @@ class Bridge:
                     and c.get("body") == report["body"]
                     for c in self.github.comments()
                 )
+                if not present and report["reconcile_only"]:
+                    raise ValueError("FINAL_DELIVERY_UNCONFIRMED")
                 if not present:
                     self.github.post(report["body"])
                 self.store.settle_report(report["id"], report["token"], True)

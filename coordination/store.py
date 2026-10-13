@@ -371,7 +371,7 @@ class Store:
                         (principal.name, now),
                     )
             if kind != "heartbeat":
-                self._report(conn, row, event["event_id"])
+                self._report(conn, row, "event:" + event["event_id"])
             result = canonical(row)
             self.sql(
                 conn,
@@ -442,25 +442,20 @@ class Store:
             raw = self.sql(
                 conn,
                 """SELECT * FROM acs_outbox WHERE
-                (state='pending' AND available_at<=?) OR (state='sending' AND lease_until<=?)
+                (state IN ('pending','uncertain') AND available_at<=?) OR (state IN ('sending','reconciling') AND lease_until<=?)
                 ORDER BY available_at,id LIMIT 1""",
                 (now, now),
             ).fetchone()
             if not raw:
                 return None
             row = dict(raw)
-            if row["attempts"] >= self.max_attempts:
-                self.sql(
-                    conn,
-                    "UPDATE acs_outbox SET state='dead_letter',reason='report_retry_exhausted' WHERE id=?",
-                    (row["id"],),
-                )
-                return None
+            reconcile_only = row["attempts"] >= self.max_attempts
             row.update(
                 token=secrets.token_hex(32),
                 lease_until=now + self.lease_seconds,
-                attempts=row["attempts"] + 1,
-                state="sending",
+                attempts=row["attempts"] + (0 if reconcile_only else 1),
+                state="reconciling" if reconcile_only else "sending",
+                reconcile_only=reconcile_only,
             )
             self.sql(
                 conn,
@@ -483,7 +478,7 @@ class Store:
             ).fetchone()
             if (
                 not row
-                or row["state"] != "sending"
+                or row["state"] not in {"sending", "reconciling"}
                 or row["lease_until"] <= now
                 or not secrets.compare_digest(row["token"] or "", token)
             ):
@@ -492,7 +487,13 @@ class Store:
                 "sent"
                 if success
                 else (
-                    "dead_letter" if row["attempts"] >= self.max_attempts else "pending"
+                    "dead_letter"
+                    if row["state"] == "reconciling"
+                    else (
+                        "uncertain"
+                        if row["attempts"] >= self.max_attempts
+                        else "pending"
+                    )
                 )
             )
             self.sql(

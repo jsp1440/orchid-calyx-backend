@@ -203,3 +203,19 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(self.s.health()["claude"]["status"], "healthy")
         self.clock[0] += 60
         self.assertEqual(self.s.health()["claude"]["status"], "stale")
+
+    def test_user_event_cannot_suppress_generated_timeout_report(self):
+        e = {
+            "version": 1,
+            "event_id": "timeout:t1:1",
+            "kind": "assign",
+            "task_id": "t1",
+            "agent": "claude",
+            "action": "engineering",
+            "objective": "https://github.com/jsp1440/orchid-calyx-backend/issues/1823",
+        }
+        self.s.apply(e, self.owner)
+        self.claim()
+        self.clock[0] += 61
+        self.s.tick()
+        self.assertTrue(any('"state":"retry"' in r["body"] for r in self.s.reports()))
