@@ -1,0 +1,361 @@
+{
+ "fixture_id": "ggr-synthetic-exemplaria-v1",
+ "synthetic": true,
+ "not_scientific_evidence": true,
+ "notice": "All taxa, organisms, places and documents are fictional. This fixture tests reasoning-contract behaviour (resolution, provenance, conflict retention, abstention, locality withholding). It contains no botanical facts and must never be cited as evidence.",
+ "registry": {
+  "release": {
+   "snapshot_id": "fixture-release",
+   "version_label": "synthetic fixture release"
+  },
+  "load_rows": [
+   {
+    "name": "Exemplaria aurea Fict.",
+    "taxon_code": "S"
+   },
+   {
+    "name": "Exemplaria rubra Fict.",
+    "taxon_code": "S"
+   },
+   {
+    "name": "Exemplaria nivea Fict.",
+    "taxon_code": "S"
+   },
+   {
+    "name": "Exemplaria obscura Fict.",
+    "taxon_code": "S"
+   }
+  ],
+  "synonym_rows": [
+   {
+    "input_match_name": "Fictorchis aurea",
+    "accepted_match_name": "Exemplaria aurea",
+    "relationship": "synonym"
+   }
+  ]
+ },
+ "graph": {
+  "nodes": [
+   {
+    "id": 1,
+    "type": "taxon",
+    "key": "taxon:1",
+    "label": "Exemplaria aurea"
+   },
+   {
+    "id": 2,
+    "type": "taxon",
+    "key": "taxon:2",
+    "label": "Exemplaria rubra"
+   },
+   {
+    "id": 3,
+    "type": "taxon",
+    "key": "taxon:3",
+    "label": "Exemplaria nivea"
+   },
+   {
+    "id": 10,
+    "type": "synonym",
+    "key": "synonym:fictorchis-aurea",
+    "label": "Fictorchis aurea"
+   },
+   {
+    "id": 11,
+    "type": "pollinator",
+    "key": "pollinator:fictibombus-alpha",
+    "label": "Fictibombus alpha"
+   },
+   {
+    "id": 12,
+    "type": "pollinator",
+    "key": "pollinator:fictiapis-beta",
+    "label": "Fictiapis beta"
+   },
+   {
+    "id": 13,
+    "type": "trait",
+    "key": "trait:labellum-yellow",
+    "label": "labellum yellow"
+   },
+   {
+    "id": 14,
+    "type": "trait",
+    "key": "trait:spur-length",
+    "label": "spur length 12 mm"
+   },
+   {
+    "id": 15,
+    "type": "country",
+    "key": "country:exempla",
+    "label": "Republic of Exempla"
+   },
+   {
+    "id": 16,
+    "type": "occurrence",
+    "key": "occurrence:fx-1",
+    "label": "occurrence fx-1",
+    "payload": {
+     "sensitive_locality": true,
+     "latitude": -1.0,
+     "longitude": -78.0,
+     "locality": "withheld test locality"
+    }
+   },
+   {
+    "id": 17,
+    "type": "fungus",
+    "key": "fungus:fictifungus-gamma",
+    "label": "Fictifungus gamma"
+   },
+   {
+    "id": 18,
+    "type": "publication",
+    "key": "publication:exemplaria-monograph",
+    "label": "Synthetic Exemplaria monograph"
+   },
+   {
+    "id": 19,
+    "type": "fungus",
+    "key": "fungus:fictifungus-delta",
+    "label": "Fictifungus delta"
+   },
+   {
+    "id": 20,
+    "type": "trait",
+    "key": "trait:labellum-red",
+    "label": "labellum red"
+   }
+  ],
+  "edges": [
+   {
+    "id": 101,
+    "type": "has_synonym",
+    "from": 1,
+    "to": 10,
+    "payload": {
+     "assertion_id": "a-syn-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-tax-1"
+    }
+   },
+   {
+    "id": 102,
+    "type": "associated_with_pollinator",
+    "from": 1,
+    "to": 11,
+    "payload": {
+     "assertion_id": "a-pol-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-pol-1",
+     "conflicting_assertion_ids": [
+      "a-pol-2"
+     ],
+     "qualifier": "field observation, site A"
+    }
+   },
+   {
+    "id": 103,
+    "type": "associated_with_pollinator",
+    "from": 1,
+    "to": 12,
+    "payload": {
+     "assertion_id": "a-pol-2",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-pol-2",
+     "conflicting_assertion_ids": [
+      "a-pol-1"
+     ],
+     "qualifier": "exclusive pollinator claim"
+    }
+   },
+   {
+    "id": 104,
+    "type": "has_trait",
+    "from": 1,
+    "to": 13,
+    "payload": {
+     "assertion_id": "a-tr-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-desc-1"
+    }
+   },
+   {
+    "id": 105,
+    "type": "has_trait",
+    "from": 1,
+    "to": 14,
+    "payload": {
+     "assertion_id": "a-tr-2",
+     "review_state": "PENDING",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-desc-1"
+    }
+   },
+   {
+    "id": 106,
+    "type": "occurs_in",
+    "from": 1,
+    "to": 15,
+    "payload": {
+     "assertion_id": "a-geo-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-geo-1"
+    }
+   },
+   {
+    "id": 107,
+    "type": "occurs_at",
+    "from": 1,
+    "to": 16,
+    "payload": {
+     "assertion_id": "a-geo-2",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-geo-1",
+     "sensitive_locality": true,
+     "latitude": -1.0,
+     "longitude": -78.0
+    }
+   },
+   {
+    "id": 108,
+    "type": "associated_with_mycorrhiza",
+    "from": 1,
+    "to": 17,
+    "payload": {
+     "assertion_id": "a-myc-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED"
+    }
+   },
+   {
+    "id": 109,
+    "type": "documented_by",
+    "from": 1,
+    "to": 18,
+    "payload": {
+     "assertion_id": "a-lit-1",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-desc-1"
+    }
+   },
+   {
+    "id": 201,
+    "type": "associated_with_mycorrhiza",
+    "from": 2,
+    "to": 19,
+    "payload": {
+     "assertion_id": "a-myc-2",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-myc-2"
+    }
+   },
+   {
+    "id": 202,
+    "type": "has_trait",
+    "from": 2,
+    "to": 20,
+    "payload": {
+     "assertion_id": "a-tr-3",
+     "review_state": "APPROVED",
+     "verification_state": "VERIFIED",
+     "source_document_id": "doc-desc-2"
+    }
+   },
+   {
+    "id": 203,
+    "type": "associated_with_pollinator",
+    "from": 2,
+    "to": 11,
+    "payload": {
+     "assertion_id": "a-pol-3",
+     "review_state": "APPROVED",
+     "verification_state": "UNVERIFIED",
+     "source_document_id": "doc-pol-3"
+    }
+   }
+  ]
+ },
+ "documents": [
+  {
+   "id": "doc-tax-1",
+   "title": "Synthetic nomenclature note",
+   "text": "Fictorchis aurea is treated as a synonym of Exemplaria aurea.",
+   "locator": {
+    "page": 1
+   }
+  },
+  {
+   "id": "doc-pol-1",
+   "title": "Synthetic pollination study A",
+   "text": "Exemplaria aurea flowers were visited and pollinated by Fictibombus alpha at site A.",
+   "locator": {
+    "page": 3
+   }
+  },
+  {
+   "id": "doc-pol-2",
+   "title": "Synthetic pollination study B",
+   "text": "Exemplaria aurea is pollinated exclusively by Fictiapis beta.",
+   "locator": {
+    "page": 7
+   }
+  },
+  {
+   "id": "doc-desc-1",
+   "title": "Synthetic Exemplaria monograph",
+   "text": "Exemplaria aurea has a yellow labellum and a spur about 12 mm long.",
+   "locator": {
+    "page": 12
+   }
+  },
+  {
+   "id": "doc-desc-2",
+   "title": "Synthetic field notes, rubra",
+   "text": "Exemplaria rubra has a red labellum.",
+   "locator": null
+  },
+  {
+   "id": "doc-geo-1",
+   "title": "Synthetic distribution checklist",
+   "text": "Exemplaria aurea occurs in the Republic of Exempla.",
+   "locator": {
+    "page": 2
+   }
+  },
+  {
+   "id": "doc-myc-2",
+   "title": "Synthetic mycorrhiza survey",
+   "text": "Exemplaria rubra roots were colonised by Fictifungus delta.",
+   "locator": {
+    "page": 5
+   }
+  },
+  {
+   "id": "doc-pol-3",
+   "title": "Synthetic unverified pollinator report",
+   "text": "Exemplaria rubra visited by Fictibombus alpha (unverified report).",
+   "locator": {
+    "page": 1
+   }
+  },
+  {
+   "id": "doc-distractor-1",
+   "title": "Synthetic cultivation blog",
+   "text": "Which pollinators visit orchids in cultivation? Fictiapis beta pollinates Exemplaria nivea and Exemplaria obscura in greenhouses.",
+   "locator": null,
+   "metadata": {
+    "ai_generated": "YES",
+    "peer_reviewed": "NO"
+   }
+  }
+ ]
+}

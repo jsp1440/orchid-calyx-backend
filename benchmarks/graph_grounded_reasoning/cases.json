@@ -1,0 +1,159 @@
+{
+ "benchmark_id": "ggr-contract-benchmark-v1",
+ "fixture_id": "ggr-synthetic-exemplaria-v1",
+ "label_source": "FIXTURE_CONSTRUCTION",
+ "expert_reviewed": false,
+ "notice": "Expected states and documents are derived from how the synthetic fixture was constructed. They measure contract behaviour, not botanical accuracy. No expert-reviewed orchid answers were available; none were fabricated.",
+ "cases": [
+  {
+   "case_id": "tax-accepted",
+   "category": "taxonomy_synonymy",
+   "question": "What are the synonyms of Exemplaria aurea?",
+   "facet": "TAXONOMY",
+   "expected_state": "CANDIDATE",
+   "expected_documents": [
+    "doc-tax-1"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "tax-synonym-query",
+   "category": "taxonomy_synonymy",
+   "question": "Which pollinators are recorded for Fictorchis aurea?",
+   "facet": "POLLINATION",
+   "expected_state": "CONFLICT_REVIEW_REQUIRED",
+   "expected_documents": [
+    "doc-pol-1",
+    "doc-pol-2"
+   ],
+   "expected_conflict_documents": [
+    "doc-pol-1",
+    "doc-pol-2"
+   ]
+  },
+  {
+   "case_id": "morph-mixed-review",
+   "category": "morphological_identification",
+   "question": "What floral traits distinguish Exemplaria aurea?",
+   "facet": "MORPHOLOGY",
+   "expected_state": "REVIEW_REQUIRED",
+   "expected_documents": [
+    "doc-desc-1"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "morph-unanchored",
+   "category": "morphological_identification",
+   "question": "What is the labellum colour of Exemplaria rubra?",
+   "facet": "MORPHOLOGY",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "desc-aurea",
+   "category": "species_description",
+   "question": "Describe Exemplaria aurea.",
+   "facet": "DESCRIPTION",
+   "expected_state": "REVIEW_REQUIRED",
+   "expected_documents": [
+    "doc-desc-1"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "pol-conflict",
+   "category": "conflicting_literature",
+   "question": "Which pollinators visit Exemplaria aurea?",
+   "facet": "POLLINATION",
+   "expected_state": "CONFLICT_REVIEW_REQUIRED",
+   "expected_documents": [
+    "doc-pol-1",
+    "doc-pol-2"
+   ],
+   "expected_conflict_documents": [
+    "doc-pol-1",
+    "doc-pol-2"
+   ]
+  },
+  {
+   "case_id": "pol-unverified",
+   "category": "pollination_biology",
+   "question": "Which pollinators visit Exemplaria rubra?",
+   "facet": "POLLINATION",
+   "expected_state": "REVIEW_REQUIRED",
+   "expected_documents": [
+    "doc-pol-3"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "pol-no-evidence",
+   "category": "pollination_biology",
+   "question": "Which pollinators visit Exemplaria nivea?",
+   "facet": "POLLINATION",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "myc-supported",
+   "category": "mycorrhizal_associations",
+   "question": "Which mycorrhizal fungi associate with Exemplaria rubra?",
+   "facet": "MYCORRHIZA",
+   "expected_state": "CANDIDATE",
+   "expected_documents": [
+    "doc-myc-2"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "myc-undeclared-source",
+   "category": "mycorrhizal_associations",
+   "question": "Which mycorrhizal fungi associate with Exemplaria aurea?",
+   "facet": "MYCORRHIZA",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "geo-withheld",
+   "category": "geographic_distribution",
+   "question": "Where does Exemplaria aurea occur?",
+   "facet": "DISTRIBUTION",
+   "expected_state": "CANDIDATE",
+   "expected_documents": [
+    "doc-geo-1"
+   ],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "geo-node-missing",
+   "category": "geographic_distribution",
+   "question": "Where does Exemplaria obscura occur?",
+   "facet": "DISTRIBUTION",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "unc-unresolved",
+   "category": "uncertain_incomplete",
+   "question": "Which pollinators visit Imaginaria fabulosa?",
+   "facet": "POLLINATION",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  },
+  {
+   "case_id": "unc-ambiguous",
+   "category": "uncertain_incomplete",
+   "question": "Do Exemplaria aurea and Exemplaria rubra share pollinators?",
+   "facet": "POLLINATION",
+   "expected_state": "INSUFFICIENT_EVIDENCE",
+   "expected_documents": [],
+   "expected_conflict_documents": []
+  }
+ ]
+}

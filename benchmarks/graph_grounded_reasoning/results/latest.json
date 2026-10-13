@@ -1,0 +1,495 @@
+{
+  "benchmark_id": "ggr-contract-benchmark-v1",
+  "cases_sha256": "07c82441a7556946742cf79ca7e5c3eec19ffcde6513224224b94284dcd02876",
+  "environment": {
+    "python": "3.13.16"
+  },
+  "expert_reviewed": false,
+  "fixture_id": "ggr-synthetic-exemplaria-v1",
+  "fixture_sha256": "3ed61f3b66d41da0aa8d9a9986f56cb434dc614d0823dabf203d4c0127d54a1f",
+  "generated_at": "2026-10-13T03:58:06.265199+00:00",
+  "interpretation": "Synthetic contract benchmark. Differences show which safeguards each path enforces on identical inputs; they are not estimates of botanical accuracy on real orchid literature.",
+  "label_source": "FIXTURE_CONSTRUCTION",
+  "systems": {
+    "literature-only-hybrid-retrieval-085b": {
+      "cases": [
+        {
+          "answer_abstain_correct": true,
+          "case_id": "tax-accepted",
+          "category": "taxonomy_synonymy",
+          "citation_precision": 0.3333,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 0.462,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": [
+            "doc-myc-2",
+            "doc-pol-3"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "tax-synonym-query",
+          "category": "taxonomy_synonymy",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": false,
+          "expected_state": "CONFLICT_REVIEW_REQUIRED",
+          "latency_ms": 0.295,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-distractor-1",
+            "doc-tax-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "morph-mixed-review",
+          "category": "morphological_identification",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 0.239,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-myc-2",
+            "doc-pol-3",
+            "doc-tax-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "morph-unanchored",
+          "category": "morphological_identification",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.286,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-2",
+            "doc-distractor-1",
+            "doc-pol-2"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "desc-aurea",
+          "category": "species_description",
+          "citation_precision": 0.3333,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 0.297,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-distractor-1",
+            "doc-geo-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "pol-conflict",
+          "category": "conflicting_literature",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": false,
+          "expected_state": "CONFLICT_REVIEW_REQUIRED",
+          "latency_ms": 0.24,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-geo-1",
+            "doc-myc-2"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "pol-unverified",
+          "category": "pollination_biology",
+          "citation_precision": 0.3333,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 0.385,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-myc-2",
+            "doc-tax-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "pol-no-evidence",
+          "category": "pollination_biology",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.291,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-distractor-1",
+            "doc-pol-2"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "myc-supported",
+          "category": "mycorrhizal_associations",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 0.251,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-pol-1",
+            "doc-pol-2"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "myc-undeclared-source",
+          "category": "mycorrhizal_associations",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.281,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-distractor-1",
+            "doc-geo-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "geo-withheld",
+          "category": "geographic_distribution",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 0.255,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-pol-1",
+            "doc-pol-2"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "geo-node-missing",
+          "category": "geographic_distribution",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.293,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-pol-3",
+            "doc-tax-1"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "unc-unresolved",
+          "category": "uncertain_incomplete",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.305,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-distractor-1",
+            "doc-pol-1",
+            "doc-pol-3"
+          ]
+        },
+        {
+          "answer_abstain_correct": false,
+          "case_id": "unc-ambiguous",
+          "category": "uncertain_incomplete",
+          "citation_precision": 0.0,
+          "citation_recall": 0.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.245,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": false,
+          "unsupported_citations": [
+            "doc-desc-1",
+            "doc-desc-2",
+            "doc-pol-1"
+          ]
+        }
+      ],
+      "summary": {
+        "abstention_precision": null,
+        "abstention_recall": 0.0,
+        "answer_abstain_accuracy": 0.5714,
+        "cases": 14,
+        "conflict_retention_rate": 0.0,
+        "mean_citation_precision": 0.0714,
+        "mean_citation_recall": 0.2143,
+        "median_latency_ms": 0.288,
+        "provider_calls": 0,
+        "provider_cost_usd": 0.0,
+        "state_accuracy": 0.2143,
+        "unsupported_citation_count": 38
+      }
+    },
+    "oc-graph-grounded-reasoning-v1": {
+      "cases": [
+        {
+          "answer_abstain_correct": true,
+          "case_id": "tax-accepted",
+          "category": "taxonomy_synonymy",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 0.949,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "tax-synonym-query",
+          "category": "taxonomy_synonymy",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": true,
+          "expected_state": "CONFLICT_REVIEW_REQUIRED",
+          "latency_ms": 0.806,
+          "provider_calls": 0,
+          "state": "CONFLICT_REVIEW_REQUIRED",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "morph-mixed-review",
+          "category": "morphological_identification",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 1.178,
+          "provider_calls": 0,
+          "state": "REVIEW_REQUIRED",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "morph-unanchored",
+          "category": "morphological_identification",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.437,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "desc-aurea",
+          "category": "species_description",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 0.739,
+          "provider_calls": 0,
+          "state": "REVIEW_REQUIRED",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "pol-conflict",
+          "category": "conflicting_literature",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": true,
+          "expected_state": "CONFLICT_REVIEW_REQUIRED",
+          "latency_ms": 0.73,
+          "provider_calls": 0,
+          "state": "CONFLICT_REVIEW_REQUIRED",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "pol-unverified",
+          "category": "pollination_biology",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "REVIEW_REQUIRED",
+          "latency_ms": 0.372,
+          "provider_calls": 0,
+          "state": "REVIEW_REQUIRED",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "pol-no-evidence",
+          "category": "pollination_biology",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.075,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "myc-supported",
+          "category": "mycorrhizal_associations",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 0.404,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "myc-undeclared-source",
+          "category": "mycorrhizal_associations",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.663,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "geo-withheld",
+          "category": "geographic_distribution",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "CANDIDATE",
+          "latency_ms": 1.277,
+          "provider_calls": 0,
+          "state": "CANDIDATE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "geo-node-missing",
+          "category": "geographic_distribution",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.08,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "unc-unresolved",
+          "category": "uncertain_incomplete",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.062,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        },
+        {
+          "answer_abstain_correct": true,
+          "case_id": "unc-ambiguous",
+          "category": "uncertain_incomplete",
+          "citation_precision": 1.0,
+          "citation_recall": 1.0,
+          "conflict_retained": null,
+          "expected_state": "INSUFFICIENT_EVIDENCE",
+          "latency_ms": 0.06,
+          "provider_calls": 0,
+          "state": "INSUFFICIENT_EVIDENCE",
+          "state_correct": true,
+          "unsupported_citations": []
+        }
+      ],
+      "summary": {
+        "abstention_precision": 1.0,
+        "abstention_recall": 1.0,
+        "answer_abstain_accuracy": 1.0,
+        "cases": 14,
+        "conflict_retention_rate": 1.0,
+        "mean_citation_precision": 1.0,
+        "mean_citation_recall": 1.0,
+        "median_latency_ms": 0.55,
+        "provider_calls": 0,
+        "provider_cost_usd": 0.0,
+        "state_accuracy": 1.0,
+        "unsupported_citation_count": 0
+      }
+    }
+  }
+}
