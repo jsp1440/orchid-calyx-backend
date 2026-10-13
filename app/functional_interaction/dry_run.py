@@ -180,27 +180,39 @@ def _receipt(
         evidence_states=tuple(sorted(set(result.evidence_states)))
         if result and not failure
         else (),
-        notes=dict(result.notes) if result else {},
+        notes=dict(result.notes) if result and not failure else {},
     )
 
 
-def _output_evidence_states(value: Any) -> set[str]:
-    """Every value of an ``evidence_state``/``evidence_states`` field in ``value``."""
+def _human_only_states(value: Any) -> set[str]:
+    """Every human-only evidence state named anywhere in ``value``.
 
+    Any string equal to a human-only state (case-insensitive) counts, under
+    any key or none: the scan does not depend on a field being spelled
+    ``evidence_state``. Containers are visited once, so a self-referencing
+    structure terminates.
+    """
+
+    wanted = {state.casefold(): state for state in HUMAN_ONLY_EVIDENCE_STATES}
     found: set[str] = set()
+    seen: set[int] = set()
     stack = [value]
     while stack:
         item = stack.pop()
-        if isinstance(item, Mapping):
-            for key, child in item.items():
-                if key == "evidence_state" and isinstance(child, str):
-                    found.add(child)
-                elif key == "evidence_states" and isinstance(child, list | tuple):
-                    found.update(state for state in child if isinstance(state, str))
-                else:
-                    stack.append(child)
-        elif isinstance(item, list | tuple):
-            stack.extend(item)
+        if isinstance(item, str):
+            state = wanted.get(item.strip().casefold())
+            if state is not None:
+                found.add(state)
+            continue
+        if isinstance(item, Mapping | list | tuple | set | frozenset):
+            if id(item) in seen:
+                continue
+            seen.add(id(item))
+            if isinstance(item, Mapping):
+                stack.extend(item.keys())
+                stack.extend(item.values())
+            else:
+                stack.extend(item)
     return found
 
 
@@ -208,7 +220,7 @@ def _violation(descriptor: CapabilityDescriptor, result: Any) -> str | None:
     if not isinstance(result, HandlerResult):
         return f"HANDLER_CONTRACT_RESULT_TYPE:{type(result).__name__}"
     human_only = sorted(
-        _output_evidence_states(result.output) & HUMAN_ONLY_EVIDENCE_STATES
+        _human_only_states(result.output) | _human_only_states(result.notes)
     )
     if human_only:
         return f"HUMAN_ONLY_EVIDENCE_STATE_IN_OUTPUT:{','.join(human_only)}"

@@ -27,7 +27,14 @@ from typing import Literal
 MULTI_VALUED_PREDICATES = frozenset({"ecological_relationship", "has_trait"})
 
 #: Length units normalized to millimetres for comparison.
-LENGTH_TO_MM = {"mm": 1.0, "cm": 10.0, "m": 1000.0, "um": 0.001, "µm": 0.001}
+LENGTH_TO_MM = {
+    "mm": 1.0,
+    "cm": 10.0,
+    "m": 1000.0,
+    "um": 0.001,
+    "\u00b5m": 0.001,  # MICRO SIGN
+    "\u03bcm": 0.001,  # GREEK SMALL LETTER MU (what casefold() yields for µ)
+}
 
 AGREEMENT = "AGREEMENT"
 CONTRADICTION = "CONTRADICTION"
@@ -61,7 +68,8 @@ def value_key(
 
 def display(key: ValueKey) -> str:
     if key[0] == "measure":
-        return f"{key[1]:g} {key[2]}".strip()
+        # Full precision: distinct measurements never share a display string.
+        return f"{key[1]:.15g} {key[2]}".strip()
     return key[1]
 
 
