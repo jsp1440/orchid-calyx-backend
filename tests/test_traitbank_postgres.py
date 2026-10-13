@@ -59,7 +59,13 @@ pytestmark = pytest.mark.skipif(_REASON is not None, reason=_REASON or "")
 
 @pytest.fixture()
 def repo() -> TraitBankRepository:
-    migration = (ROOT / "migrations" / "20261011_oc_traitbank_v1.sql").read_text()
+    migration = "\n".join(
+        (ROOT / "migrations" / name).read_text()
+        for name in (
+            "20261011_oc_traitbank_v1.sql",
+            "20261013_oc_traitbank_v2_supersession.sql",
+        )
+    )
     with psycopg.connect(DSN, autocommit=True) as conn:
         conn.execute("DROP SCHEMA IF EXISTS oc_traitbank CASCADE")
         conn.execute(migration)

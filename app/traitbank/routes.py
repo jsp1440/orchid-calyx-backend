@@ -128,3 +128,22 @@ def matrix(
     return get_service().matrix(
         [_taxon_id(t) for t in taxon_id], _trait_id(trait_id) if trait_id else None
     )
+
+
+@router.get("/taxa/{taxon_id}/evidence")
+def evidence(taxon_id: str, trait_id: str | None = Query(default=None, max_length=100)):
+    return get_service().evidence(
+        _taxon_id(taxon_id), _trait_id(trait_id) if trait_id else None
+    )
+
+
+@router.get("/pairwise")
+def pairwise(
+    subject_taxon_id: str = Query(min_length=1, max_length=19),
+    object_taxon_id: str = Query(min_length=1, max_length=19),
+):
+    if subject_taxon_id == object_taxon_id:
+        raise HTTPException(status_code=422, detail="Compare two different taxa")
+    return get_service().pairwise(
+        _taxon_id(subject_taxon_id), _taxon_id(object_taxon_id)
+    )
