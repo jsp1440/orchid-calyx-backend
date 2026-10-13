@@ -22,6 +22,7 @@ READ_ONLY_JOB_TYPES = {
     "deployment_readiness",
     "website_design_audit",
     "education_readiness",
+    "application_certification",
     "build_specification",
 }
 
@@ -46,6 +47,7 @@ OVERNIGHT_PROFILE = (
     (70, "deployment_readiness", "Audit release readiness", "Inspect migrations, configuration, tests, worker readiness, and release blockers."),
     (80, "website_design_audit", "Audit website design intelligence", "Audit the Orchid Continuum website for accessibility, UX, navigation, information architecture, and scientific visualization improvements."),
     (90, "education_readiness", "Audit University and educational design", "Audit educational-design knowledge, curriculum readiness, lessons, assessments, student progress, and virtual-laboratory gaps."),
+    (15, "application_certification", "Certify external Orchid Continuum applications", "Run evidence-backed application certification for registered external clients; start with Edith Bramble and preserve runtime gates as UNVERIFIED until live evidence exists."),
 )
 
 
