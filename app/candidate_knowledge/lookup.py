@@ -23,6 +23,7 @@ def serving_repository() -> Any:
     """
     from . import routes
 
+    routes._resolve()
     repository = routes.REPOSITORY
     if repository is None or routes.SERVICE is None:
         raise CandidateStoreUnavailable(
