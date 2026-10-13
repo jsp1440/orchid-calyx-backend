@@ -206,3 +206,47 @@ def test_bridge_rejects_packet_not_ready_for_review():
     bad = dict(_PHALAENOPSIS_PACKET, verification_state="evidence_incomplete")
     with pytest.raises(ValueError, match="PACKET_NOT_READY_FOR_REVIEW"):
         verification_packet_to_handoff_request(bad, domain="cultivation", **_DB_IDS)
+
+
+# ── Confidence is reported, never invented ───────────────────────────────────
+
+
+def _with_confidence(value, *, present=True):
+    import copy
+
+    packet = copy.deepcopy(_PHALAENOPSIS_PACKET)
+    candidate = packet["reasoning"]["candidate_knowledge"]
+    if present:
+        candidate["confidence"] = value
+    else:
+        candidate.pop("confidence", None)
+    return packet
+
+
+@pytest.mark.parametrize("present,value", [(False, None), (True, None)])
+def test_missing_confidence_is_refused_not_coerced_to_zero(present, value):
+    # Regression: ``float(candidate.get("confidence") or 0.0)`` turned an
+    # unreported confidence into a reported 0.0, which downstream reads as
+    # "the source is certain this is wrong" rather than "not reported".
+    packet = _with_confidence(value, present=present)
+    with pytest.raises(ValueError, match="^CONFIDENCE_REQUIRED$"):
+        verification_packet_to_handoff_request(packet, domain="cultivation", **_DB_IDS)
+
+
+@pytest.mark.parametrize(
+    "value", [True, False, "high", "", float("nan"), float("inf"), -0.01, 1.01]
+)
+def test_invalid_confidence_is_refused_with_a_stable_code(value):
+    packet = _with_confidence(value)
+    with pytest.raises(ValueError, match="^CONFIDENCE_INVALID$"):
+        verification_packet_to_handoff_request(packet, domain="cultivation", **_DB_IDS)
+
+
+@pytest.mark.parametrize(
+    "value,expected", [(0.0, 0.0), (0, 0.0), (1, 1.0), ("0.5", 0.5)]
+)
+def test_reported_confidence_is_preserved_including_zero(value, expected):
+    req = verification_packet_to_handoff_request(
+        _with_confidence(value), domain="cultivation", **_DB_IDS
+    )
+    assert req.confidence == expected

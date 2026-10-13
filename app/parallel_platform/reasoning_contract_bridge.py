@@ -15,6 +15,7 @@ All governance flags from the verification packet are preserved in the
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from .brain_candidate_handoff import BrainCandidateHandoffRequest, BrainEvidenceAnchor
@@ -31,6 +32,28 @@ DomainLiteral = Literal[
     "molecular",
     "cultivation",
 ]
+
+
+def _reported_confidence(value: Any) -> float:
+    """The candidate's confidence exactly as reported, or a refusal.
+
+    A missing confidence is not a confidence of zero: ``0.0`` would tell the
+    candidate pipeline the source was sure the claim is wrong. The handoff
+    request requires a number, so an unreported value is refused rather than
+    invented, and the caller decides whether to obtain one or withhold the
+    candidate.
+    """
+    if value is None:
+        raise ValueError("CONFIDENCE_REQUIRED")
+    if isinstance(value, bool):
+        raise ValueError("CONFIDENCE_INVALID")  # noqa: TRY004 - callers map ValueError to a 422
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        raise ValueError("CONFIDENCE_INVALID") from None
+    if not math.isfinite(number) or not 0.0 <= number <= 1.0:
+        raise ValueError("CONFIDENCE_INVALID")
+    return number
 
 
 def verification_packet_to_handoff_request(
@@ -70,7 +93,10 @@ def verification_packet_to_handoff_request(
     ------
     ValueError
         If the packet version is unsupported, governance flags are violated,
-        or required candidate fields are missing or empty.
+        or required candidate fields are missing or empty. A missing
+        confidence raises ``CONFIDENCE_REQUIRED`` and a non-numeric, boolean,
+        non-finite or out-of-range one raises ``CONFIDENCE_INVALID``; neither
+        is replaced with a default.
     """
     if verification_packet.get("contract_version") != "oc-verification-handoff-v1":
         raise ValueError("UNSUPPORTED_VERIFICATION_PACKET")
@@ -102,7 +128,7 @@ def verification_packet_to_handoff_request(
     if not object_id:
         raise ValueError("OBJECT_ID_REQUIRED")
 
-    confidence = float(candidate.get("confidence") or 0.0)
+    confidence = _reported_confidence(candidate.get("confidence"))
 
     resolved = list(verification_packet.get("resolved_evidence") or [])
     if not resolved:
