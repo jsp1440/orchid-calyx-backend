@@ -485,14 +485,20 @@ def from_paper_knowledge(
                     )
                 )
                 continue
-            scope_ids = [
-                t
-                for t in (
-                    resolve_taxon(n)
-                    for n in (trait_entity.attributes.get("taxon_scope") or [])
+            scope_names = list(trait_entity.attributes.get("taxon_scope") or [])
+            scope_ids = [resolve_taxon(n) for n in scope_names]
+            if any(t is None for t in scope_ids):
+                # Dropping an unresolved name would broaden the claim (an empty
+                # scope reads as "every taxon"); keep the raw claim instead.
+                unmapped.append(
+                    _unmapped(
+                        source_id,
+                        claim.claim_id,
+                        "taxon_scope_not_resolved",
+                        claim.model_dump(mode="json"),
+                    )
                 )
-                if t
-            ]
+                continue
             relations.append(
                 {
                     "relation_id": f"tb:rel:{paper.paper_id}:{claim.claim_id}",
@@ -583,7 +589,17 @@ def from_traitbank_harvester(
     for rec in records:
         raw = rec.get("raw") or {}
         record_id = str(raw.get("eol_pk") or raw.get("record_id") or "").strip()
-        source_id = f"eol-traitbank:resource:{str(raw.get('resource_id') or '').strip() or 'unknown'}"
+        resource_id = str(raw.get("resource_id") or "").strip()
+        if not resource_id:
+            # Without the contributing resource there is no attributable
+            # source; one is never manufactured.
+            unmapped.append(
+                _unmapped(
+                    "eol-traitbank", record_id or "(none)", "resource_id_missing", raw
+                )
+            )
+            continue
+        source_id = f"eol-traitbank:resource:{resource_id}"
         if not record_id:
             unmapped.append(
                 _unmapped(source_id, "(none)", "original_record_id_missing", raw)
@@ -622,6 +638,15 @@ def from_traitbank_harvester(
             continue
         statistic = reported_statistic or "single"
         sample_size = _number(raw.get("sample_size"))
+        if sample_size is not None and (
+            sample_size < 0 or not float(sample_size).is_integer()
+        ):
+            # A fractional or negative count is malformed provenance; it is
+            # returned unmapped rather than truncated into a different number.
+            unmapped.append(
+                _unmapped(source_id, record_id, "sample_size_not_a_count", raw)
+            )
+            continue
         if value_raw in (None, ""):
             value: dict[str, Any] = {
                 "kind": "missing",

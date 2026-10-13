@@ -2,7 +2,11 @@
 
 GET only. There is no write route: ingestion is the controlled CLI path
 (``python -m app.traitbank.cli``). The router uses the same default-deny
-dependency as ``/api/research/traits``; each route opts into member reads.
+dependency as ``/api/research/traits``. No route opts into member reads:
+responses carry source excerpts, citations and relation statements that can
+name a protected locality in prose, which the ingestion regex guards cannot
+detect. Member access needs a fail-closed member projection first (as in
+``app/research_traits/routes.py``); until then these routes are owner-only.
 """
 
 from __future__ import annotations
@@ -12,7 +16,7 @@ from functools import lru_cache
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.member_auth import member_readable, owner_or_member_read
+from app.member_auth import owner_or_member_read
 
 from .models import CANONICAL_TAXON_ID_RE, TRAIT_ID_RE
 from .service import TraitBankService
@@ -55,13 +59,11 @@ def _safe_id(value: str, name: str) -> str:
 
 
 @router.get("/taxa/{taxon_id}")
-@member_readable
 def taxon_traits(taxon_id: str):
     return get_service().taxon(_taxon_id(taxon_id))
 
 
 @router.get("/species")
-@member_readable
 def species_traits(name: str = Query(min_length=3, max_length=161)):
     name = name.strip()
     if not SPECIES_RE.fullmatch(name):
@@ -70,7 +72,6 @@ def species_traits(name: str = Query(min_length=3, max_length=161)):
 
 
 @router.get("/genera/{genus}")
-@member_readable
 def genus_traits(genus: str):
     if not GENUS_RE.fullmatch(genus):
         raise HTTPException(status_code=422, detail="Invalid genus")
@@ -78,7 +79,6 @@ def genus_traits(genus: str):
 
 
 @router.get("/characters/{trait_id}")
-@member_readable
 def character(trait_id: str, taxon_id: str | None = Query(default=None, max_length=19)):
     return get_service().character(
         _trait_id(trait_id), _taxon_id(taxon_id) if taxon_id else None
@@ -86,19 +86,16 @@ def character(trait_id: str, taxon_id: str | None = Query(default=None, max_leng
 
 
 @router.get("/assertions/{assertion_id:path}")
-@member_readable
 def assertion(assertion_id: str):
     return get_service().assertion(_safe_id(assertion_id, "assertion_id"))
 
 
 @router.get("/sources/{source_id:path}")
-@member_readable
 def source(source_id: str):
     return get_service().source(_safe_id(source_id, "source_id"))
 
 
 @router.get("/habitats")
-@member_readable
 def habitat(term: str = Query(min_length=2, max_length=120)):
     if not HABITAT_RE.fullmatch(term.strip()):
         raise HTTPException(status_code=422, detail="Invalid habitat term")
@@ -106,7 +103,6 @@ def habitat(term: str = Query(min_length=2, max_length=120)):
 
 
 @router.get("/conflicts")
-@member_readable
 def conflicts(
     taxon_id: str | None = Query(default=None, max_length=19),
     trait_id: str | None = Query(default=None, max_length=100),
@@ -120,13 +116,11 @@ def conflicts(
 
 
 @router.get("/taxa/{taxon_id}/calyx/{trait_id}")
-@member_readable
 def calyx(taxon_id: str, trait_id: str):
     return get_service().calyx(_taxon_id(taxon_id), _trait_id(trait_id))
 
 
 @router.get("/matrix")
-@member_readable
 def matrix(
     taxon_id: list[str] = Query(min_length=1, max_length=50),  # noqa: B008 - FastAPI query declaration
     trait_id: str | None = Query(default=None, max_length=100),
@@ -137,7 +131,6 @@ def matrix(
 
 
 @router.get("/taxa/{taxon_id}/evidence")
-@member_readable
 def evidence(taxon_id: str, trait_id: str | None = Query(default=None, max_length=100)):
     return get_service().evidence(
         _taxon_id(taxon_id), _trait_id(trait_id) if trait_id else None
@@ -145,7 +138,6 @@ def evidence(taxon_id: str, trait_id: str | None = Query(default=None, max_lengt
 
 
 @router.get("/pairwise")
-@member_readable
 def pairwise(
     subject_taxon_id: str = Query(min_length=1, max_length=19),
     object_taxon_id: str = Query(min_length=1, max_length=19),

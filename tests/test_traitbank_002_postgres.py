@@ -398,6 +398,12 @@ def test_pairwise_morphology_compares_species_on_taxon_level_evidence(repo):
     assert any("not used to compare species" in lim for lim in dim["limitations"])
 
 
+def test_pairwise_with_an_unknown_taxon_is_unknown_not_unavailable(repo):
+    out = TraitBankService(repo).pairwise(ANGRAECUM, "990000099")
+    assert out["state"] == "UNKNOWN" and out["unknown_taxon_ids"] == ["990000099"]
+    assert "dimension" not in out
+
+
 # -- literature-extraction handoff --------------------------------------------------------------
 
 

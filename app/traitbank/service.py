@@ -17,7 +17,12 @@ from runtime.matrix_relationship import RelationshipAssertion, build_relationshi
 from . import interop, projection
 from .contract import CONTRACT_VERSION
 from .models import AssertionIn, TraitDefinitionIn
-from .repository import TraitBankRepository, row_to_assertion, row_to_relation
+from .repository import (
+    ResultTooLarge,
+    TraitBankRepository,
+    row_to_assertion,
+    row_to_relation,
+)
 
 
 def _public_assertion(
@@ -67,6 +72,13 @@ class TraitBankService:
     def _guard(self, fn: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         try:
             return fn()
+        except ResultTooLarge as too_large:
+            # Fail closed rather than present a truncated result as complete.
+            return {
+                "contract_version": CONTRACT_VERSION,
+                "state": "RESULT_TOO_LARGE",
+                "row_cap": too_large.args[0],
+            }
         except (psycopg.Error, RuntimeError):
             return {"contract_version": CONTRACT_VERSION, "state": "UNAVAILABLE"}
 
@@ -166,11 +178,14 @@ class TraitBankService:
     def character(self, trait_id: str, taxon_id: str | None = None) -> dict[str, Any]:
         def run() -> dict[str, Any]:
             definition = self.repository.definitions([trait_id]).get(trait_id)
-            if definition is None:
+            if definition is None or (
+                taxon_id is not None and self._taxon(taxon_id) is None
+            ):
                 return {
                     "contract_version": CONTRACT_VERSION,
                     "state": "UNKNOWN",
                     "trait_id": trait_id,
+                    "taxon_id": taxon_id,
                 }
             rows = self.repository.assertions(
                 trait_id=trait_id, taxon_ids=[taxon_id] if taxon_id else None
@@ -328,6 +343,21 @@ class TraitBankService:
         self, taxon_ids: list[str], trait_id: str | None = None
     ) -> dict[str, Any]:
         def run() -> dict[str, Any]:
+            labels = {
+                t: c.name for t, c in self.repository.canonical_taxa(taxon_ids).items()
+            }
+            unknown = [t for t in taxon_ids if t not in labels]
+            if unknown or (
+                trait_id is not None
+                and trait_id not in self.repository.definitions([trait_id])
+            ):
+                # An identity failure, not an evidence gap: never ABSENT.
+                return {
+                    "contract_version": CONTRACT_VERSION,
+                    "state": "UNKNOWN",
+                    "unknown_taxon_ids": unknown,
+                    "trait_id": trait_id,
+                }
             rows = self.repository.assertions(
                 taxon_ids=taxon_ids, trait_id=trait_id, current_only=True
             )
@@ -335,9 +365,6 @@ class TraitBankService:
             definitions = self.repository.definitions(
                 sorted({a.trait_id for a in assertions})
             )
-            labels = {
-                t: c.name for t, c in self.repository.canonical_taxa(taxon_ids).items()
-            }
             items = projection.matrix_assertions(definitions, assertions, labels)
             governed = [
                 RelationshipAssertion(
@@ -440,6 +467,15 @@ class TraitBankService:
         def run() -> dict[str, Any]:
             from .matrix_adapter import TraitBankMorphologyAdapter, describe
 
+            ids = [subject_taxon_id, object_taxon_id]
+            known = self.repository.canonical_taxa(ids)
+            unknown = [t for t in ids if t not in known]
+            if unknown:
+                return {
+                    "contract_version": CONTRACT_VERSION,
+                    "state": "UNKNOWN",
+                    "unknown_taxon_ids": unknown,
+                }
             evidence = TraitBankMorphologyAdapter(self.repository).compare(
                 subject_taxon_id, object_taxon_id
             )

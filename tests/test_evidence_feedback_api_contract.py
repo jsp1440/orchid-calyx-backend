@@ -49,18 +49,6 @@ OWNER_REVIEW_ROUTES = {
 MEMBER_READABLE_ROUTES = {
     ("GET", "/api/research/traits"),
     # TRAITBANK-001: read-only TraitBank evidence (docs/TRAITBANK-001.md).
-    ("GET", "/api/traitbank/taxa/{taxon_id}"),
-    ("GET", "/api/traitbank/species"),
-    ("GET", "/api/traitbank/genera/{genus}"),
-    ("GET", "/api/traitbank/characters/{trait_id}"),
-    ("GET", "/api/traitbank/assertions/{assertion_id:path}"),
-    ("GET", "/api/traitbank/sources/{source_id:path}"),
-    ("GET", "/api/traitbank/habitats"),
-    ("GET", "/api/traitbank/conflicts"),
-    ("GET", "/api/traitbank/taxa/{taxon_id}/calyx/{trait_id}"),
-    ("GET", "/api/traitbank/matrix"),
-    ("GET", "/api/traitbank/taxa/{taxon_id}/evidence"),
-    ("GET", "/api/traitbank/pairwise"),
     ("GET", "/api/literature-extraction/papers"),
     ("GET", "/api/evidence-aggregation/health"),
     ("GET", "/api/evidence-aggregation/registry"),

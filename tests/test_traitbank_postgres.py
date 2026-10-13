@@ -482,3 +482,83 @@ def test_routes_reject_fixture_ids_and_have_no_write_methods(client):
     )
     for route in routes.router.routes:
         assert route.methods == {"GET"}, route.path
+
+
+# -- review hardening (PR #1811) ----------------------------------------------------------
+
+
+def test_relation_provenance_round_trips_exactly(repo):
+    provenance = {
+        "source_id": "herbarium:K",
+        "source_kind": "herbarium",
+        "original_record_id": "K-REL-1",
+        "citation": "Royal Botanic Gardens, Kew herbarium sheet K-REL-1.",
+        "license": "CC BY 4.0",
+        "evidence_type": "direct_measurement",
+        "contributor": "Kew Herbarium",
+        "source_url": "https://data.kew.org/sheet/K-REL-1",
+        "retrieved_at": "2026-10-13",
+        "extraction_method": "manual",
+        "review_status": "accepted",
+    }
+    batch = TraitBankBatch.model_validate(
+        {
+            "contract_version": "oc-traitbank-v1",
+            "batch_key": "curated:ci-relation-provenance-0001",
+            "producer": "curated",
+            "environment_relations": [
+                {
+                    "relation_id": "tb:rel:ci:kew-1",
+                    "trait_id": "oc:trait:spur_length",
+                    "environment_variable": "elevation",
+                    "claim_kind": "observed_correlation",
+                    "statement": "Longer spurs at higher elevation in this sheet set.",
+                    "taxon_scope": [ANGRAECUM],
+                    "provenance": provenance,
+                }
+            ],
+        }
+    )
+    repo.ingest(batch, ingested_by="ci")
+    (relation,) = TraitBankService(repo).character("oc:trait:spur_length")[
+        "environment_relations"
+    ]
+    # Nothing is inferred from evidence_type: a herbarium relation stays one.
+    stored = {k: v for k, v in relation["provenance"].items() if v is not None}
+    assert stored == {**provenance}
+
+
+def test_unknown_taxon_is_unknown_not_absent(repo):
+    service = TraitBankService(repo)
+    assert service.character("oc:trait:spur_length", "990000099")["state"] == "UNKNOWN"
+    assert service.character("oc:trait:spur_length", PHALAENOPSIS)["state"] == "ABSENT"
+    matrix = service.matrix([ANGRAECUM, "990000099"])
+    assert matrix["state"] == "UNKNOWN"
+    assert matrix["unknown_taxon_ids"] == ["990000099"]
+    assert service.matrix([PHALAENOPSIS])["state"] == "ABSENT"
+
+
+def test_reads_beyond_the_row_cap_fail_closed(repo, monkeypatch):
+    from app.traitbank import repository as repository_module
+
+    repo.ingest(
+        _curated(
+            "curated:ci-cap-0001",
+            _spur_presence("tb:cur:cap-a", "present", "doi:10.1000/ci-cap-a", "C-1"),
+            _spur_presence("tb:cur:cap-b", "absent", "doi:10.1000/ci-cap-b", "C-2"),
+        ),
+        ingested_by="ci",
+    )
+    service = TraitBankService(repo)
+    monkeypatch.setattr(repository_module, "MAX_READ_ROWS", 1)
+    # Two contradicting rows, cap of one: a truncated read would hide the
+    # conflict and report one side as the whole evidence.
+    conflicts = service.conflicts(trait_id="oc:trait:spur_presence")
+    assert conflicts == {
+        "contract_version": "oc-traitbank-v1",
+        "state": "RESULT_TOO_LARGE",
+        "row_cap": 1,
+    }
+    assert service.taxon(STANHOPEA)["state"] == "RESULT_TOO_LARGE"
+    monkeypatch.setattr(repository_module, "MAX_READ_ROWS", 2)
+    assert len(service.conflicts(trait_id="oc:trait:spur_presence")["conflicts"]) == 1

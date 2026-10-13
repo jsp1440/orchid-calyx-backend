@@ -56,6 +56,21 @@ class TraitBankRefused(ValueError):
         super().__init__("; ".join(f"{v['code']}@{v['where']}" for v in violations))
 
 
+class ResultTooLarge(RuntimeError):
+    """A read matched more rows than the cap.
+
+    Summaries, conflicts, Calyx envelopes and matrices are computed over the
+    whole result, so a silently truncated read would present partial evidence
+    as complete (and could drop one side of a conflict). Callers fail closed.
+    """
+
+
+def _within_cap(rows: list[dict[str, Any]], cap: int) -> list[dict[str, Any]]:
+    if len(rows) > cap:
+        raise ResultTooLarge(cap)
+    return rows
+
+
 def _sha256(payload: Any) -> str:
     return hashlib.sha256(
         json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()
@@ -210,18 +225,7 @@ def row_to_relation(row: dict[str, Any]) -> EnvironmentRelationIn:
             "hypothesis_scope": row["hypothesis_scope"],
             "test_design": row["test_design"],
             "test_outcome": row["test_outcome"],
-            "provenance": {
-                "source_id": row["source_id"],
-                "source_kind": "publication"
-                if row["evidence_type"] == "literature_reported"
-                else "dataset",
-                "original_record_id": row["original_record_id"],
-                "citation": row["citation"],
-                "license": row["license"],
-                "evidence_type": row["evidence_type"],
-                "locator": row["locator"],
-                "original_text": row["original_text"],
-            },
+            "provenance": row["provenance"],
         }
     )
 
@@ -234,13 +238,15 @@ class TraitBankRepository:
         connection_factory: Callable[..., Any] | None = None,
         taxa: CanonicalTaxa | None = None,
     ) -> None:
-        self.database_url = database_url or os.getenv("DATABASE_URL")
+        # The dedicated variable only: a generic DATABASE_URL may name an
+        # unrelated (production) database, matching the CLI's rule.
+        self.database_url = database_url or os.getenv("TRAITBANK_DATABASE_URL")
         self.connection_factory = connection_factory or psycopg.connect
         self.taxa = taxa or PostgresCanonicalTaxa()
 
     def _connect(self):
         if not self.database_url:
-            raise RuntimeError("DATABASE_URL is required for TraitBank")
+            raise RuntimeError("TRAITBANK_DATABASE_URL is required for TraitBank")
         return self.connection_factory(self.database_url, row_factory=dict_row)
 
     # ------------------------------------------------------------ definitions
@@ -569,8 +575,8 @@ class TraitBankRepository:
                     "INSERT INTO oc_traitbank.environment_relations (relation_id, batch_pk, trait_id, "
                     "environment_variable, claim_kind, statement, taxon_scope, direction, effect_size, sample_size, "
                     "hypothesis_scope, test_design, test_outcome, source_id, original_record_id, citation, license, "
-                    "evidence_type, locator, original_text, record_sha256) "
-                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                    "evidence_type, locator, original_text, provenance, record_sha256) "
+                    "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                     (
                         r.relation_id,
                         batch_pk,
@@ -592,6 +598,7 @@ class TraitBankRepository:
                         p.evidence_type,
                         p.locator,
                         p.original_text,
+                        Jsonb(p.model_dump(mode="json")),
                         digest,
                     ),
                 )
@@ -656,25 +663,32 @@ class TraitBankRepository:
             )
             params.extend([habitat, habitat])
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        params.append(min(max(limit, 1), MAX_READ_ROWS))
-        return self._read(
-            f"SELECT a.*, b.batch_key, b.producer, "
-            f"s.superseding_assertion_id AS superseded_by, s.kind AS supersession_kind, "
-            f"s.reason AS supersession_reason, s.review_reference AS supersession_review_reference, "
-            f"s.decided_by AS supersession_decided_by, s.created_at AS superseded_at, "
-            f"c.source_record_kind, c.kg_object_key, c.source_document_id "
-            f"FROM oc_traitbank.assertions a "
-            f"JOIN oc_traitbank.ingestion_batches b USING (batch_pk) "
-            f"LEFT JOIN oc_traitbank.assertion_supersessions s ON s.superseded_assertion_id = a.assertion_id "
-            f"LEFT JOIN oc_traitbank.evidence_crosswalk c ON c.assertion_id = a.assertion_id {where} "
-            f"ORDER BY a.taxon_id, a.trait_id, a.assertion_id LIMIT %s",
-            tuple(params),
+        cap = min(max(limit, 1), MAX_READ_ROWS)
+        params.append(cap + 1)
+        return _within_cap(
+            self._read(
+                f"SELECT a.*, b.batch_key, b.producer, "
+                f"s.superseding_assertion_id AS superseded_by, s.kind AS supersession_kind, "
+                f"s.reason AS supersession_reason, s.review_reference AS supersession_review_reference, "
+                f"s.decided_by AS supersession_decided_by, s.created_at AS superseded_at, "
+                f"c.source_record_kind, c.kg_object_key, c.source_document_id "
+                f"FROM oc_traitbank.assertions a "
+                f"JOIN oc_traitbank.ingestion_batches b USING (batch_pk) "
+                f"LEFT JOIN oc_traitbank.assertion_supersessions s ON s.superseded_assertion_id = a.assertion_id "
+                f"LEFT JOIN oc_traitbank.evidence_crosswalk c ON c.assertion_id = a.assertion_id {where} "
+                f"ORDER BY a.taxon_id, a.trait_id, a.assertion_id LIMIT %s",
+                tuple(params),
+            ),
+            cap,
         )
 
     def relations(self, trait_id: str) -> list[dict[str, Any]]:
-        return self._read(
-            "SELECT * FROM oc_traitbank.environment_relations WHERE trait_id = %s ORDER BY relation_id LIMIT %s",
-            (trait_id, MAX_READ_ROWS),
+        return _within_cap(
+            self._read(
+                "SELECT * FROM oc_traitbank.environment_relations WHERE trait_id = %s ORDER BY relation_id LIMIT %s",
+                (trait_id, MAX_READ_ROWS + 1),
+            ),
+            MAX_READ_ROWS,
         )
 
     def canonical_taxa(self, taxon_ids: list[str]) -> dict[str, Any]:
@@ -846,11 +860,14 @@ class TraitBankRepository:
 
     def supersession_history(self, assertion_id: str) -> list[dict[str, Any]]:
         """The full linear chain this assertion belongs to, oldest first."""
-        rows = self._read(
-            "SELECT superseded_assertion_id, superseding_assertion_id, kind, reason, "
-            "review_reference, decided_by, created_at FROM oc_traitbank.assertion_supersessions "
-            "LIMIT %s",
-            (MAX_READ_ROWS,),
+        rows = _within_cap(
+            self._read(
+                "SELECT superseded_assertion_id, superseding_assertion_id, kind, reason, "
+                "review_reference, decided_by, created_at FROM oc_traitbank.assertion_supersessions "
+                "LIMIT %s",
+                (MAX_READ_ROWS + 1,),
+            ),
+            MAX_READ_ROWS,
         )
         forward = {r["superseded_assertion_id"]: r for r in rows}
         backward = {
