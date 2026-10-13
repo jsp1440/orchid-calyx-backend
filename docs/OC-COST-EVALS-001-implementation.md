@@ -80,20 +80,33 @@ Decisions carry thresholds, evidence run ids, scope, rollback target and review 
 6. Policy violation rejected.
 7. No-benefit candidate not promoted and suppressed on rediscovery.
 8. Better candidate promoted with scope and rollback.
-9. Memory summary produced. Writing it into Scientific Memory is a follow-up.
-10. Active strategy resolvable. Orchestrator wiring is EVALS-001C, a follow-up.
+9. Memory summary **produced only**. It is not written into Scientific Memory (see the integration status below).
+10. Active strategy **computable only**. No orchestrator calls it (see the integration status below).
 11. Replay idempotent.
 12. Decisions authorize nothing.
 
+### Integration status: what is and is not operational
+
+| Capability | State | Evidence / gap |
+|---|---|---|
+| Deterministic evaluators, runner, promotion gate, suppression ledger | **Implemented, offline only** | Exercised by `tests/test_oc_evals.py` and the fixture CLI. Nothing runs it on a schedule or on live executor output yet. |
+| Scientific Memory write-back (blueprint acceptance 9; EVALS-001D) | **Not integrated** | `memory_summary()` returns a dict and nothing persists it. No Scientific Memory API is called, and no test proves a write. |
+| Active-strategy resolution used by the orchestrator (acceptance 10; EVALS-001C) | **Not integrated** | `resolve_active_strategy()` is a pure function that no scheduler, router or orchestrator calls. `scripts/oc_model_router.py` still chooses tiers by its own rules. |
+| Provider-backed (LLM-judge) evaluators | **Not implemented** | `rubric_judge` is declared only so the NO_API parking path is tested. It produces no score when allowed. |
+
+Neither integration may be described as operational until a test proves the write-back or the orchestrator call against the real component.
+
 ## 3. Offline Promptfoo red team (`security/promptfoo/`)
 
-- **What it tests:** 20 enforced adversarial tool calls against the real executor tool handlers, run in a throwaway sandbox. Commands are recorded, never run.
+- **What it tests:** 41 enforced adversarial and control tool calls against the real executor tool handlers, run in a throwaway sandbox. Commands are recorded, never run.
 - **Results:**
-  - pytest (`tests/test_oc_promptfoo_security_cases.py`): 20 of 20.
-  - Promptfoo 0.123.1 (pinned, telemetry, sharing and updates off, `npx -y promptfoo@0.123.1 eval`): **20 passed, 0 failed**.
-- **Open findings,** recorded as strict-xfail cases in `gaps.yaml` and not fixed here (a behaviour change for the owner):
-  - **OC-SEC-EXEC-001:** `read_file` and `search_text` can read `.env` and `*secrets.json`.
-  - **OC-SEC-EXEC-002:** `AGENTS.md`, `CLAUDE.md` and `.claude/**` are writable by the executor, though they are governance paths.
+  - pytest (`tests/test_oc_promptfoo_security_cases.py`): 41 of 41.
+  - Promptfoo 0.123.1 (pinned; telemetry, sharing and updates off): **41 passed, 0 failed**.
+- **Closed in the executor** (owner-authorized; commit `4fafb2f`):
+  - **OC-SEC-EXEC-001:** credential files are no longer readable, searchable, writable or usable as a check target. This covers symlinks; secret-free `.env` templates stay readable.
+  - **OC-SEC-EXEC-002:** every restricted governance path in `docs/AGENT-SECURITY-BOUNDARIES.md` is read-only to the executor.
+  - **OC-SEC-EXEC-003** (found while closing 001): `search_text` returned the contents of a file symlinked from outside the repository.
+- **Fix verified:** against the previous executor 18 cases fail; after the fix all pass. Legitimate operations are control cases: reading `AGENTS.md`, reading `.env.example`, writing `docs/AGENT-OPERATING-MEMORY.md`, and normal source edits. `gaps.yaml` is empty.
 
 ## 4. CI
 
@@ -128,8 +141,8 @@ Decisions carry thresholds, evidence run ids, scope, rollback target and review 
 
 ## 6. Follow-ups (not done here)
 
-1. **Post-run wiring** (autonomy-recovery owners): record `estimated_cost_usd` and `cost_basis` from the executor outputs in the governor ledger as a separately labelled estimate. It is not `actual_usd`.
+1. **Post-run wiring** (autonomy-recovery owners; coordination note posted on #1806): record `estimated_cost_usd` and `cost_basis` from the executor outputs in the governor ledger as a separately labelled estimate. It must never be passed as `OC_GOVERNOR_ACTUAL_COST_USD` or `actual_usd`, both of which mean verified billed spend.
 2. **Billed reconciliation:** reconcile estimates against invoices through the Usage & Cost Admin API. This needs an admin credential, which is owner-gated.
-3. **EVALS-001C:** strategy router integration with the canonical orchestrator. **EVALS-001D:** persist memory summaries in Scientific Memory.
+3. **EVALS-001C:** integrate the strategy router with the canonical orchestrator. **EVALS-001D:** persist memory summaries in Scientific Memory. Both are not integrated today; see the integration status above.
 4. **Scientific task classes:** literature and taxonomic extraction against the #1182 gold set, and evidence-grounded synthesis.
-5. **Executor security findings:** decide whether to close OC-SEC-EXEC-001 and OC-SEC-EXEC-002. Each fix moves its cases from `gaps.yaml` to `cases.yaml`.
+5. **Ruff UP017 baseline failure:** handled in a separate draft PR that pins ruff in the affected workflows (see that PR).

@@ -355,3 +355,20 @@ def test_legacy_receipt_without_request_usage_is_unpriceable() -> None:
     cost = cost_cli.price_execution(legacy)
     assert cost["basis"] == "unavailable"
     assert cost["estimated_usd"] is None
+
+
+def test_estimates_never_reach_actual_or_billed_fields(monkeypatch, tmp_path) -> None:
+    """An estimate must not land anywhere that means verified billed spend.
+
+    swarm_governor_postrun.py reads OC_GOVERNOR_ACTUAL_COST_USD as billed
+    spend; the executor must never emit that name or any actual_* field.
+    """
+    _, result, outputs = _run_executor(monkeypatch, tmp_path, _responses())
+    output_keys = {
+        line.split("=", 1)[0] for line in outputs.splitlines() if "=" in line
+    }
+    assert not {k for k in output_keys if "actual" in k.lower()}
+    assert "OC_GOVERNOR_ACTUAL_COST_USD" not in outputs
+    assert not [k for k in result["cost"] if "actual" in k.lower()]
+    assert result["cost"]["billed_usd"] is None
+    assert result["total_cost_usd"] is None

@@ -262,7 +262,11 @@ def decide(
 def memory_summary(
     decision: StrategyDecision, candidate: EvaluationRun
 ) -> dict[str, Any]:
-    """Outcome summary for Scientific Memory: measured facts, no reasoning trace."""
+    """Outcome summary shaped for Scientific Memory: measured facts, no reasoning trace.
+
+    NOT INTEGRATED: this returns a record; nothing persists it to Scientific
+    Memory yet (OC-EVALS-001 acceptance 9 / EVALS-001D remain open).
+    """
     return {
         "schema": "oc.evals.memory-summary.v1",
         "task_class": decision.task_class,
@@ -285,6 +289,9 @@ def resolve_active_strategy(
     baseline: str, decisions: Sequence[StrategyDecision], task_class: str
 ) -> str:
     """The strategy the orchestrator should use for a task class.
+
+    NOT INTEGRATED: no orchestrator, scheduler or router calls this yet
+    (OC-EVALS-001 acceptance 10 / EVALS-001C remain open).
 
     The latest PROMOTE for the class wins; canaries and rejections leave the
     baseline (or the previously promoted strategy) active.
