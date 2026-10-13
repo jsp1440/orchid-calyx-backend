@@ -153,6 +153,7 @@ def run_forever(
         sleeper = stop.wait if stop is not None else time.sleep
 
     sequence = 0
+    idle_streak = 0
     while stop is None or not stop.is_set():
         sequence += 1
         try:
@@ -168,10 +169,24 @@ def run_forever(
                 "error": {"exception_type": type(exc).__name__},
                 "classification": classify_cycle(None, None, reason="cycle_failed"),
             }
+        # Only healthy "nothing to do" cycles back off. Defects, capacity and
+        # dependency waits keep the normal cadence so repairs are noticed.
+        classification = result.get("classification") or {}
+        if (
+            classification.get("category") == "no_eligible_work"
+            and classification.get("healthy") is True
+            and classification.get("productive") is not True
+        ):
+            idle_streak += 1
+        else:
+            idle_streak = 0
+        next_sleep = active_policy.next_sleep_seconds(idle_streak)
         result["scheduler"] = {
             "sequence": sequence,
             "worker_id": active_policy.worker_id,
             "poll_seconds": active_policy.poll_seconds,
+            "idle_streak": idle_streak,
+            "next_sleep_seconds": next_sleep,
         }
         if recorder is not None:
             try:
@@ -186,7 +201,7 @@ def run_forever(
             on_cycle(result)
         if stop is not None and stop.is_set():
             break
-        sleeper(active_policy.poll_seconds)
+        sleeper(next_sleep)
 
 
 def database_recorder(owner: str) -> Recorder:

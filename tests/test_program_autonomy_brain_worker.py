@@ -116,3 +116,80 @@ def test_disabled_policy_never_builds_a_worker(tmp_path):
                 "OC_BRAIN_PULSE_BACKOFF_BASE_SECONDS": "0",
             }
         )
+
+
+@pytest.mark.skipif(
+    not BRAIN or not (Path(BRAIN) / "calyx_brain" / "work_sources.py").is_file(),
+    reason="OC_BRAIN_REPO_PATH must name a Brain checkout with work_sources.py",
+)
+def test_sources_worker_refreshes_its_workspace_and_discovers_new_commits(tmp_path):
+    """Wiring: the replenish step refreshes the clone, then discovers from it."""
+
+    def git(repo, *args):
+        subprocess.run(["git", "-C", str(repo), *args], check=True, capture_output=True)
+
+    origin = tmp_path / "origin"
+    (origin / "data" / "traitbank").mkdir(parents=True)
+    git(origin, "init", "-q", "-b", "source")
+    (origin / "data" / "traitbank" / "a.json").write_text('{"batch_key": "a"}')
+    git(origin, "add", "-A")
+    git(
+        origin,
+        "-c",
+        "user.email=t@e.invalid",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-qm",
+        "a",
+    )
+    workspace = tmp_path / "workspace"
+    subprocess.run(
+        [
+            "git",
+            "clone",
+            "-q",
+            "--depth",
+            "1",
+            "--branch",
+            "source",
+            f"file://{origin}",
+            str(workspace),
+        ],
+        check=True,
+    )
+    worker = build_worker(
+        {
+            "OC_BRAIN_CHECKOUT": BRAIN,
+            "OC_BRAIN_WORK_SOURCES": "traitbank_intake",
+            "OC_BRAIN_PULSE_LEDGER": str(tmp_path / "ledger.json"),
+            # Nothing listens here: submissions fail and back off, which is
+            # fine; this test is about discovery, not delivery.
+            "CALYX_BACKEND_BASE_URL": "http://127.0.0.1:9",
+            "CALYX_API_KEY": "fixture",
+            "CALYX_PROGRAM_AUTONOMY_ENABLED": "true",
+            "CALYX_PROGRAM_AUTONOMY_OWNER": "backend_api_key",
+            "CALYX_PROGRAM_AUTONOMY_WORKSPACE": str(workspace),
+            "GITHUB_REPOSITORY": "jsp1440/orchid-calyx-backend",
+            "OC_BRAIN_WORKSPACE_REFRESH_SECONDS": "60",
+            "OC_BRAIN_WORKSPACE_REFRESH_REF": "source",
+        }
+    )
+    first = worker.replenish()
+    assert first["workspace_refresh"]["status"] == "current"
+    assert first["sources"][0]["discovered"] == 1
+
+    (origin / "data" / "traitbank" / "b.json").write_text('{"batch_key": "b"}')
+    git(origin, "add", "-A")
+    git(
+        origin,
+        "-c",
+        "user.email=t@e.invalid",
+        "-c",
+        "user.name=t",
+        "commit",
+        "-qm",
+        "b",
+    )
+    # Within the interval the clone is not touched.
+    assert worker.replenish()["workspace_refresh"] == {"status": "not_due"}

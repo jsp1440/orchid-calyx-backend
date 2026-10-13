@@ -33,6 +33,11 @@ Configuration (all required unless marked optional):
   ``OC_BRAIN_PULSE_MAX_IN_FLIGHT_PER_SOURCE``.
 * ``OC_BRAIN_WORK_BRANCH`` (optional): branch named in source-built packets;
   defaults to the workspace checkout's branch.
+* ``OC_BRAIN_WORKSPACE_REFRESH_SECONDS`` / ``OC_BRAIN_WORKSPACE_REFRESH_REF``
+  (optional, sources mode only, 60-86400 s): periodically refresh the
+  workspace clone from ``origin/<ref>``, only while nothing is in flight, so
+  newly committed work can be discovered
+  (``app.calyx_orchestrator.workspace_refresh``).
 
 Missing configuration exits 0 after printing one ``configuration_unavailable``
 record. It never starts a partially configured loop.
@@ -104,6 +109,18 @@ def configuration_problems(env: Mapping[str, str]) -> list[str]:
         raw = str(env.get(key, "")).strip()
         if raw and (not raw.isdigit() or not 1 <= int(raw) <= 100_000):
             problems.append(f"{key}_OUT_OF_RANGE")
+    if str(env.get("OC_BRAIN_WORKSPACE_REFRESH_SECONDS", "")).strip() not in {"", "0"}:
+        from app.calyx_orchestrator.workspace_refresh import refresher_from_env
+
+        if not sources:
+            problems.append("OC_BRAIN_WORKSPACE_REFRESH_REQUIRES_WORK_SOURCES")
+        try:
+            refresher_from_env(
+                env,
+                workspace=str(env.get("CALYX_PROGRAM_AUTONOMY_WORKSPACE", "")).strip(),
+            )
+        except ValueError as exc:
+            problems.append(str(exc))
     return problems
 
 
@@ -188,9 +205,17 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
             or (_workspace_branch(workspace) if workspace else None),
         )
 
+        from app.calyx_orchestrator.workspace_refresh import refresher_from_env
+
+        refresher = refresher_from_env(env, workspace=workspace)
+
         def replenish() -> dict[str, Any]:
+            refreshed = refresher.refresh(ledger.load()) if refresher else None
             items, reports = discover_all(sources, ledger_state=ledger.load())
-            return run_pulse(items, source_reports=reports, **common)
+            record = run_pulse(items, source_reports=reports, **common)
+            if refreshed is not None:
+                record["workspace_refresh"] = refreshed
+            return record
 
     else:
         manifest = load_manifest(Path(env["OC_BRAIN_WORK_MANIFEST"]))
