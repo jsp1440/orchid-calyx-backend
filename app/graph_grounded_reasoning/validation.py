@@ -8,28 +8,18 @@ packet cannot support, speaks about a different taxon, or leaks locality.
 
 from __future__ import annotations
 
-from typing import Any
+from app.calyx_flywheel.locality import (
+    SensitiveLocalityError,
+    assert_no_sensitive_locality,
+)
 
 from .contracts import (
-    FORBIDDEN_RESULT_KEYS,
     AnchorState,
     Composition,
     EvidencePacket,
     ResolutionState,
     ResultState,
 )
-
-
-def _keys(value: Any) -> set[str]:
-    found: set[str] = set()
-    if isinstance(value, dict):
-        for key, inner in value.items():
-            found.add(str(key))
-            found |= _keys(inner)
-    elif isinstance(value, (list, tuple)):
-        for inner in value:
-            found |= _keys(inner)
-    return found
 
 
 def validate(packet: EvidencePacket, composition: Composition) -> tuple[str, ...]:
@@ -58,6 +48,14 @@ def validate(packet: EvidencePacket, composition: Composition) -> tuple[str, ...
     }
     if not required <= set(composition.conflicts):
         violations.append("DECLARED_CONFLICT_DROPPED")
+    if not set(composition.conflicts) <= set(packet.conflicts):
+        violations.append("UNDECLARED_CONFLICT_ASSERTED")
+    cited = {ref for claim in composition.claims for ref in claim.refs}
+    for pair in sorted(required):
+        for ref in pair:
+            item = packet.item(ref)
+            if item is not None and item.anchor_state == AnchorState.ANCHORED and ref not in cited:
+                violations.append(f"CONFLICT_ENDPOINT_NOT_CITED:{ref}")
     if required and composition.state != ResultState.CONFLICT_REVIEW_REQUIRED:
         violations.append("CONFLICT_NOT_SURFACED_IN_STATE")
 
@@ -66,13 +64,22 @@ def validate(packet: EvidencePacket, composition: Composition) -> tuple[str, ...
     )
     if not supportable and composition.state != ResultState.INSUFFICIENT_EVIDENCE:
         violations.append("ANSWERED_WITHOUT_ANCHORED_EVIDENCE")
+    if composition.state == ResultState.CANDIDATE and any(
+        packet.item(r).anchor_state != AnchorState.ANCHORED
+        or packet.item(r).review_state != "APPROVED"
+        or packet.item(r).verification_state != "VERIFIED"
+        for r in facet_refs
+    ):
+        violations.append("CANDIDATE_WITH_UNREVIEWED_OR_UNANCHORED_EVIDENCE")
     if composition.state == ResultState.INSUFFICIENT_EVIDENCE and composition.claims:
         violations.append("ABSTENTION_WITH_CLAIMS")
     if composition.state == ResultState.VALIDATION_FAILED:
         violations.append("COMPOSER_CANNOT_SELF_ASSIGN_VALIDATION_FAILED")
 
-    leaked = _keys([c.to_dict() for c in composition.claims]) & FORBIDDEN_RESULT_KEYS
-    leaked |= _keys(packet.to_dict()) & FORBIDDEN_RESULT_KEYS
-    if leaked:
-        violations.append("FORBIDDEN_LOCALITY_KEYS:" + ",".join(sorted(leaked)))
+    try:
+        assert_no_sensitive_locality(
+            {"claims": [c.to_dict() for c in composition.claims], "packet": packet.to_dict()}
+        )
+    except SensitiveLocalityError as exc:
+        violations.append(f"FORBIDDEN_LOCALITY_KEYS:{exc}")
     return tuple(violations)
