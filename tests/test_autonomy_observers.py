@@ -168,3 +168,44 @@ def test_proposals_summary_tolerates_a_database_without_ledgers():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     with Session(engine) as db:
         assert proposals_summary(db) is None
+
+
+@pytest.mark.parametrize(
+    ("env", "state", "gate"),
+    [
+        ({}, "provider_blocked", "no-api-mode"),
+        ({"NO_API_MODE": "true"}, "provider_blocked", "no-api-mode"),
+        (
+            {"NO_API_MODE": "false", "OC_GOVERNOR_EMERGENCY_KILL_SWITCH": "on"},
+            "provider_blocked",
+            "governor-kill-switch",
+        ),
+        ({"NO_API_MODE": "false"}, "provider_blocked", "no-authorised-coding-executor"),
+        (
+            {"NO_API_MODE": "false", "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true"},
+            "provider_blocked",
+            "provider-not-allowlisted",
+        ),
+        (
+            {
+                "NO_API_MODE": "false",
+                "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+                "OC_GOVERNOR_PROVIDER": "anthropic",
+                "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+            },
+            "queued",
+            None,
+        ),
+    ],
+)
+def test_coding_lane_status_mirrors_the_completion_lane_guards(env, state, gate):
+    from app.calyx_orchestrator.autonomy_observers import coding_lane_status
+
+    lanes = coding_lane_status(env)
+    assert set(lanes) == {"engineering_development", "system_repair"}
+    assert lanes["engineering_development"] == {
+        "lane": "orchid-completion-lane",
+        "state": state,
+        "gate": gate,
+        "source": "worker_environment",
+    }

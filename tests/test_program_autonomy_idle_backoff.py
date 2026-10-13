@@ -225,6 +225,11 @@ def test_receipt_without_a_replenisher_says_so():
     [
         ("AWAITING_APPROVAL:3", "awaiting_approval"),
         ("APPROVED_WORK_HAS_NO_EXECUTOR:1", "approved_work_has_no_executor"),
+        (
+            "APPROVED_WORK_LANE_GATED:1:no-api-mode",
+            "approved_work_lane_gated",
+        ),
+        ("APPROVED_WORK_AWAITING_HANDOFF:2", "approved_work_awaiting_handoff"),
         ("RECONCILED_UNDELIVERED:2", "recent_work_undelivered"),
         ("ORIGINS_SUPPRESSED:repository_changes", "origins_suppressed"),
         ("LOOP_NO_GAPS_DETECTED", "no_gaps_detected"),

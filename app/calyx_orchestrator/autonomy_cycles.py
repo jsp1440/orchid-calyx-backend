@@ -171,6 +171,8 @@ WORK_SUPPLY_STATES = {
 WORK_SUPPLY_PREFIXES = {
     "AWAITING_APPROVAL": "awaiting_approval",
     "APPROVED_WORK_HAS_NO_EXECUTOR": "approved_work_has_no_executor",
+    "APPROVED_WORK_LANE_GATED": "approved_work_lane_gated",
+    "APPROVED_WORK_AWAITING_HANDOFF": "approved_work_awaiting_handoff",
     "RECONCILED_UNDELIVERED": "recent_work_undelivered",
     "ORIGINS_SUPPRESSED": "origins_suppressed",
 }

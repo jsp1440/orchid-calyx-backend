@@ -175,3 +175,49 @@ def proposals_summary(db: Session, *, limit: int = 20) -> dict[str, Any] | None:
             "(schema oc-autonomy-approvals.v1)."
         ),
     }
+
+
+#: Work classes whose approved work is executed by Calyx's governed coding
+#: route (``app.autonomy.coding_executor`` -> ``orchid-completion-lane``).
+CODING_LANE = "orchid-completion-lane"
+CODING_LANE_CLASSES = ("engineering_development", "system_repair")
+
+
+def coding_lane_status(env: Mapping[str, str]) -> dict[str, dict[str, Any]]:
+    """The coding lane's gate as this worker's own configuration states it.
+
+    Mirrors the completion lane's own guards (``scripts/oc_no_api_guard.py``,
+    ``scripts/swarm_governor_precheck.py``): an unset or true ``NO_API_MODE``,
+    an engaged kill switch, or paid execution not explicitly enabled all block
+    the paid coding executor. It reports configuration; it never dispatches,
+    calls a provider or spends anything. The repository variables that gate
+    the lane in GitHub Actions remain authoritative for the lane itself.
+    """
+    truthy = {"1", "true", "yes", "on"}
+    no_api = str(env.get("NO_API_MODE", "")).strip().lower()
+    if no_api == "" or no_api in truthy:
+        gate = "no-api-mode"
+    elif (
+        str(env.get("OC_GOVERNOR_EMERGENCY_KILL_SWITCH", "")).strip().lower() in truthy
+    ):
+        gate = "governor-kill-switch"
+    elif (
+        str(env.get("OC_GOVERNOR_PAID_EXECUTION_ENABLED", "")).strip().lower()
+        not in truthy
+    ):
+        gate = "no-authorised-coding-executor"
+    elif str(env.get("OC_GOVERNOR_PROVIDER", "")).strip() not in {
+        item.strip()
+        for item in str(env.get("OC_GOVERNOR_PROVIDER_ALLOWLIST", "")).split(",")
+        if item.strip()
+    }:
+        gate = "provider-not-allowlisted"
+    else:
+        gate = None
+    status = {
+        "lane": CODING_LANE,
+        "state": "provider_blocked" if gate else "queued",
+        "gate": gate,
+        "source": "worker_environment",
+    }
+    return {work_class: dict(status) for work_class in CODING_LANE_CLASSES}

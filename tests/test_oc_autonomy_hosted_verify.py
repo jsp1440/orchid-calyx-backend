@@ -260,3 +260,92 @@ def test_database_override_verifies_the_named_database(capsys, monkeypatch):
     _module().main()
     report = json.loads(capsys.readouterr().out)
     assert report["environment"]["database"] == name
+
+
+# --- Continuous-loop acceptance ------------------------------------------------
+
+
+def _loop_db(tmp_path, *, refresh=True, duplicate=False, silent=False, learned=True):
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
+    from app.calyx_orchestrator.program_models import (
+        CalyxAutonomyCycle,
+        CalyxBrainPulseLedger,
+    )
+    from app.calyx_orchestrator.schema import ensure_orchestrator_schema
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'loop.db'}")
+    db = Session(engine)
+    ensure_orchestrator_schema(db)
+    start = datetime.now(UTC) - timedelta(minutes=30)
+    plan = [
+        # (productive, summary)
+        (True, {"submitted": [{"work_id": "loop:sci:a", "outcome": "submitted"}]}),
+        (True, {"submitted": [{"work_id": "loop:maint:b", "outcome": "submitted"}]}),
+        (False, {"detail": "AWAITING_APPROVAL:1", "zero_reason": "owner_gate"}),
+        (
+            True,
+            {
+                "workspace_refresh": {"status": "updated" if refresh else "current"},
+                "submitted": [{"work_id": "loop:sci:c", "outcome": "submitted"}],
+            },
+        ),
+        (False, {"detail": None if silent else "AWAITING_APPROVAL:1"}),
+    ]
+    if duplicate:
+        plan.append(
+            (True, {"submitted": [{"work_id": "loop:sci:a", "outcome": "submitted"}]})
+        )
+    for n, (productive, summary) in enumerate(plan):
+        db.add(
+            CalyxAutonomyCycle(
+                owner=OWNER,
+                worker_id="w",
+                sequence=n + 1,
+                poll_seconds=30,
+                finished_at=start + timedelta(minutes=n),
+                productive=productive,
+                healthy=True,
+                category=None if productive else "owner_gate",
+                replenishment_json=json.dumps(summary),
+            )
+        )
+    loop = {
+        "verified": {"app/traitbank/x.py": "0" * 64} if learned else {},
+        "candidates": {"loop:sci:a": {"settled": "completed"}} if learned else {},
+        "proposals": {"f": {"state": "awaiting_approval"}},
+    }
+    db.add(
+        CalyxBrainPulseLedger(
+            ledger_key="acceptance-loop",
+            state_json=json.dumps({"schema": "x", "work": {}, "loop": loop}),
+        )
+    )
+    db.commit()
+    return db
+
+
+def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path):
+    checks = _module().verify_loop(_loop_db(tmp_path), owner=OWNER)
+    assert all(c["passed"] for c in checks.values()), checks
+    assert checks["new_input_discovered_and_executed"]["new_work_ids"] == ["loop:sci:c"]
+    assert checks["loop_learned_from_outcomes"]["proposals"] == {"awaiting_approval": 1}
+    assert checks["idle_polling_backs_off"]["applicable"] is False
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "failing"),
+    [
+        ({"refresh": False}, "new_input_discovered_and_executed"),
+        ({"duplicate": True}, "work_created_once"),
+        ({"silent": True}, "idle_cycles_name_their_cause"),
+        ({"learned": False}, "loop_learned_from_outcomes"),
+    ],
+)
+def test_loop_acceptance_fails_closed(tmp_path, kwargs, failing):
+    checks = _module().verify_loop(_loop_db(tmp_path, **kwargs), owner=OWNER)
+    assert checks[failing]["passed"] is False

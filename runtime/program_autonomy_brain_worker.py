@@ -230,6 +230,8 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
                 branch=str(env.get("OC_BRAIN_WORK_BRANCH", "")).strip()
                 or (_workspace_branch(workspace) if workspace else None),
             )
+        from app.calyx_orchestrator.autonomy_observers import coding_lane_status
+
         if calyx_health:
             from app.calyx_orchestrator.autonomy_observers import CalyxHealthObserver
             from app.database import get_session_local
@@ -245,7 +247,12 @@ def build_worker(env: Mapping[str, str]) -> BrainWorker:
             refreshed = (
                 loop_refresher.refresh(ledger.load()) if loop_refresher else None
             )
-            record = run_cycle(observers, approvals_path=approvals_path, **common)
+            record = run_cycle(
+                observers,
+                approvals_path=approvals_path,
+                external_lanes=coding_lane_status(env),
+                **common,
+            )
             if refreshed is not None:
                 record["workspace_refresh"] = refreshed
             return record

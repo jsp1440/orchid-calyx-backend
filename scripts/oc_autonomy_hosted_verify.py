@@ -46,6 +46,7 @@ import argparse
 import json
 import re
 import sys
+from collections import Counter
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
@@ -255,6 +256,127 @@ def verify(
     }
 
 
+#: Manifest-run checks that do not apply to a continuous-loop run.
+MANIFEST_ONLY_CHECKS = ("restart_observed", "replay_without_reexecution", "drained")
+
+
+def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
+    """Continuous-loop acceptance: genuinely new input, executed once, learned.
+
+    * ``new_input_discovered_and_executed``: after the first workspace refresh
+      that brought in new commits, the loop submitted work it had not
+      submitted before, and a productive cycle followed.
+    * ``work_created_once``: no work id was freshly submitted twice.
+    * ``loop_learned_from_outcomes``: the durable ledger holds a verified
+      baseline and settled candidates.
+    * ``idle_cycles_name_their_cause``: every cycle that neither submitted
+      nor executed carries an explicit reason.
+    * ``idle_polling_backs_off``: a long idle run waited longer than the base
+      poll interval (not applicable when no long idle run happened).
+    """
+    checks: dict[str, dict[str, Any]] = {}
+    cycles = db.execute(
+        text(
+            "SELECT productive, healthy, poll_seconds, replenishment_json "
+            "FROM calyx_program_autonomy_cycles WHERE owner = :owner "
+            "ORDER BY finished_at"
+        ),
+        {"owner": owner},
+    ).all()
+    summaries = [
+        json.loads(c.replenishment_json) if c.replenishment_json else {} for c in cycles
+    ]
+
+    def submitted(rows: list[dict[str, Any]]) -> list[str]:
+        return [
+            item.get("work_id")
+            for summary in rows
+            for item in summary.get("submitted") or []
+            if item.get("outcome") == "submitted"
+        ]
+
+    refreshed_at = next(
+        (
+            index
+            for index, summary in enumerate(summaries)
+            if (summary.get("workspace_refresh") or {}).get("status") == "updated"
+        ),
+        None,
+    )
+    if refreshed_at is None:
+        checks["new_input_discovered_and_executed"] = {
+            "passed": False,
+            "detail": "NO_WORKSPACE_REFRESH_BROUGHT_NEW_COMMITS",
+        }
+    else:
+        before = set(submitted(summaries[:refreshed_at]))
+        new = sorted(set(submitted(summaries[refreshed_at:])) - before)
+        productive_after = sum(1 for c in cycles[refreshed_at:] if c.productive)
+        checks["new_input_discovered_and_executed"] = {
+            "passed": bool(new) and productive_after >= 1,
+            "refresh": summaries[refreshed_at].get("workspace_refresh"),
+            "new_work_ids": new,
+            "productive_cycles_after_refresh": productive_after,
+        }
+    all_submitted = submitted(summaries)
+    duplicates = sorted({w for w in all_submitted if all_submitted.count(w) > 1})
+    checks["work_created_once"] = {
+        "passed": bool(all_submitted) and not duplicates,
+        "submitted": len(all_submitted),
+        "duplicates": duplicates,
+    }
+    loop_state: dict[str, Any] = {}
+    for (state_json,) in db.execute(
+        text("SELECT state_json FROM calyx_brain_pulse_ledgers")
+    ).all():
+        state = json.loads(state_json) if state_json else {}
+        if isinstance(state.get("loop"), dict):
+            loop_state = state["loop"]
+            break
+    settled = [
+        c for c in (loop_state.get("candidates") or {}).values() if c.get("settled")
+    ]
+    checks["loop_learned_from_outcomes"] = {
+        "passed": bool(loop_state.get("verified")) and bool(settled),
+        "verified_files": len(loop_state.get("verified") or {}),
+        "settled_candidates": len(settled),
+        "proposals": dict(
+            Counter(
+                p.get("state") for p in (loop_state.get("proposals") or {}).values()
+            )
+        ),
+    }
+    silent = [
+        index
+        for index, (cycle, summary) in enumerate(zip(cycles, summaries, strict=True))
+        if not cycle.productive
+        and not summary.get("submitted")
+        and not summary.get("detail")
+    ]
+    checks["idle_cycles_name_their_cause"] = {
+        "passed": not silent,
+        "silent_cycle_positions": silent[:20],
+    }
+    longest_idle: list[Any] = []
+    run: list[Any] = []
+    for cycle in cycles:
+        if not cycle.productive and cycle.healthy:
+            run.append(cycle)
+            if len(run) > len(longest_idle):
+                longest_idle = list(run)
+        else:
+            run = []
+    polls = [c.poll_seconds for c in longest_idle]
+    applicable = len(longest_idle) > 10
+    checks["idle_polling_backs_off"] = {
+        "passed": (not applicable) or max(polls) > min(polls),
+        "applicable": applicable,
+        "longest_idle_run": len(longest_idle),
+        "poll_seconds_range": [min(polls), max(polls)] if polls else None,
+    }
+    return checks
+
+
 def normalize_dsn(raw: str) -> str:
     """Accept the forms a connection string is usually pasted in.
 
@@ -395,6 +517,12 @@ def main() -> int:
         help="also require work resumed after a mid-run restart",
     )
     parser.add_argument(
+        "--require-loop",
+        action="store_true",
+        help="verify a continuous-loop run (new input discovered, executed once, "
+        "learned) instead of a finite manifest run",
+    )
+    parser.add_argument(
         "--export", type=Path, help="write a non-secret copy of the records here"
     )
     parser.add_argument(
@@ -453,6 +581,13 @@ def main() -> int:
                 min_consecutive=args.min_consecutive,
                 require_midrun=args.require_midrun,
             )
+            if args.require_loop:
+                for name in MANIFEST_ONLY_CHECKS:
+                    report["checks"].pop(name, None)
+                report["checks"].update(verify_loop(db, owner=args.owner))
+                report["passed"] = all(
+                    item["passed"] for item in report["checks"].values()
+                )
             report["environment"] = environment_facts(db)
             if args.export is not None:
                 args.export.write_text(

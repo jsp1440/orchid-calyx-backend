@@ -5,6 +5,8 @@ name: Render Autonomy Acceptance Verify
 # pull request is labelled, so ordinary pushes never produce a green check
 # without hosted evidence:
 #   render-acceptance-verify         -> first run's database (OC_ACCEPTANCE_VERIFY_DATABASE_URL)
+#   render-acceptance-verify-loop    -> continuous-loop database autonomy_loop,
+#                                       --require-loop (new input, executed once, learned)
 #   render-acceptance-verify-midrun  -> mid-run restart database, --require-midrun:
 #                                       OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL if set, otherwise
 #                                       the first run's read-only role on database autonomy_midrun
@@ -25,6 +27,7 @@ jobs:
   verify:
     if: >-
       github.event.label.name == 'render-acceptance-verify' ||
+      github.event.label.name == 'render-acceptance-verify-loop' ||
       github.event.label.name == 'render-acceptance-verify-midrun'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -34,6 +37,7 @@ jobs:
       FIRST_RUN_DSN: ${{ secrets.OC_ACCEPTANCE_VERIFY_DATABASE_URL }}
       MIDRUN_DSN: ${{ secrets.OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL }}
       MIDRUN: ${{ github.event.label.name == 'render-acceptance-verify-midrun' }}
+      LOOP: ${{ github.event.label.name == 'render-acceptance-verify-loop' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -68,6 +72,11 @@ jobs:
               dsn="$FIRST_RUN_DSN"
               flags+=(--database autonomy_midrun)
             fi
+          elif [ "$LOOP" = "true" ]; then
+            # Same read-only role, dedicated loop database; a short productive
+            # run is expected, so two in a row suffice here.
+            dsn="$FIRST_RUN_DSN"
+            flags+=(--require-loop --database autonomy_loop --min-consecutive 2)
           else
             dsn="$FIRST_RUN_DSN"
           fi

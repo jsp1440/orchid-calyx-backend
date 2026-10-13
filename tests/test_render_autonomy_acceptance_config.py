@@ -118,3 +118,12 @@ def test_pinned_database_name_that_matches_is_confirmed(tmp_path):
     result = _run(env, tmp_path)
     assert f'{{"acceptance_database": "{name}", "confirmed": true}}' in result.stdout
     assert "ACCEPTANCE_DATABASE_MISMATCH" not in result.stdout
+
+
+def test_unknown_work_mode_is_refused_before_anything_runs(tmp_path):
+    env = dict(COMPLETE, CALYX_ACCEPTANCE_DATABASE_CONFIRMED="non-production")
+    env["CALYX_ACCEPTANCE_WORK_MODE"] = "everything"
+    result = _run(env, tmp_path)
+    assert result.returncode == 0
+    assert "CALYX_ACCEPTANCE_WORK_MODE must be manifest or loop" in result.stdout
+    assert list(tmp_path.iterdir()) == []
