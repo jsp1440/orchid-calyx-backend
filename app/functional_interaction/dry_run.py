@@ -11,6 +11,16 @@ A step is DELIVERED only when its handler ran, established every declared
 effect, emitted only declared evidence states and events, and preserved a
 provenance chain when its descriptor says it must. After the first BLOCKED
 step every later step is BLOCKED ``UPSTREAM_BLOCKED`` and never runs.
+
+Limits stated plainly: effects, events and provenance are *reported* by the
+handler and checked against the descriptor, not independently re-derived. The
+output payload itself is inspected only for evidence-state fields, so a handler
+cannot place a human-only state (``VERIFIED``) in its artifact. The connection
+guarantee above covers the dry-run machinery; a handler that imports code
+which connects at import time is the handler's responsibility.
+
+The supplied governance decision is not trusted: the plan is re-evaluated here
+and a decision that does not reproduce blocks every step.
 """
 
 from __future__ import annotations
@@ -26,8 +36,13 @@ from app.calyx_orchestrator.executor import (
     canonical_checksum,
 )
 
-from .contracts import RECEIPT_SCHEMA, TAXON_LINK_STATUSES, CapabilityDescriptor
-from .governance import GovernanceDecision
+from .contracts import (
+    HUMAN_ONLY_EVIDENCE_STATES,
+    RECEIPT_SCHEMA,
+    TAXON_LINK_STATUSES,
+    CapabilityDescriptor,
+)
+from .governance import DRY_RUN_MODE, GovernanceDecision, evaluate_plan
 from .planner import WorkflowPlan
 
 EXECUTOR_KEY = "fil_dry_run_v1"
@@ -163,7 +178,34 @@ def _receipt(
     )
 
 
-def _violation(descriptor: CapabilityDescriptor, result: HandlerResult) -> str | None:
+def _output_evidence_states(value: Any) -> set[str]:
+    """Every value of an ``evidence_state``/``evidence_states`` field in ``value``."""
+
+    found: set[str] = set()
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, Mapping):
+            for key, child in item.items():
+                if key == "evidence_state" and isinstance(child, str):
+                    found.add(child)
+                elif key == "evidence_states" and isinstance(child, list | tuple):
+                    found.update(state for state in child if isinstance(state, str))
+                else:
+                    stack.append(child)
+        elif isinstance(item, list | tuple):
+            stack.extend(item)
+    return found
+
+
+def _violation(descriptor: CapabilityDescriptor, result: Any) -> str | None:
+    if not isinstance(result, HandlerResult):
+        return f"HANDLER_CONTRACT_RESULT_TYPE:{type(result).__name__}"
+    human_only = sorted(
+        _output_evidence_states(result.output) & HUMAN_ONLY_EVIDENCE_STATES
+    )
+    if human_only:
+        return f"HUMAN_ONLY_EVIDENCE_STATE_IN_OUTPUT:{','.join(human_only)}"
     missing = sorted(set(descriptor.effects) - set(result.established))
     if missing:
         return f"EFFECT_NOT_ESTABLISHED:{','.join(missing)}"
@@ -220,8 +262,18 @@ def execute_dry_run(
     receipts: list[FunctionalReceipt] = []
     payload = source_payload
     blocked_at: int | None = None
+    # Authority comes from re-evaluating the plan, never from the caller's object.
+    reproduced = evaluate_plan(plan, mode=DRY_RUN_MODE, no_api_mode=plan.no_api_mode)
+    # A caller may always be stricter than the reproduced verdict, never looser.
+    blocked_reason: str | None
     if not decision.dry_run_authorized:
-        blocked_reason: str | None = f"GOVERNANCE_{decision.action.value.upper()}"
+        blocked_reason = f"GOVERNANCE_{decision.action.value.upper()}"
+    elif not reproduced.dry_run_authorized:
+        blocked_reason = f"GOVERNANCE_{reproduced.action.value.upper()}"
+        decision = reproduced
+    elif decision != reproduced:
+        blocked_reason = "GOVERNANCE_DECISION_NOT_REPRODUCED"
+        decision = reproduced
     else:
         blocked_reason = None
 
@@ -252,10 +304,15 @@ def execute_dry_run(
             except Exception as exc:  # noqa: BLE001
                 failure, result = f"HANDLER_ERROR:{type(exc).__name__}:{exc}", None
             else:
-                failure = _violation(step, result)
+                try:
+                    failure = _violation(step, result)
+                except Exception as exc:  # noqa: BLE001
+                    failure = f"HANDLER_CONTRACT_VIOLATION:{type(exc).__name__}"
+        if failure is not None and not isinstance(result, HandlerResult):
+            result = None
         output = result.output if result is not None and failure is None else None
-        receipts.append(
-            _receipt(
+        try:
+            receipt = _receipt(
                 plan_id,
                 index,
                 step,
@@ -265,7 +322,19 @@ def execute_dry_run(
                 failure=failure,
                 result=result,
             )
-        )
+        # A malformed result still yields a BLOCKED receipt; nothing escapes unrecorded.
+        except Exception as exc:  # noqa: BLE001
+            failure, output = f"RESULT_NOT_RECORDABLE:{type(exc).__name__}", None
+            receipt = _receipt(
+                plan_id,
+                index,
+                step,
+                input_checksum=input_checksum,
+                output=None,
+                provenance=(),
+                failure=failure,
+            )
+        receipts.append(receipt)
         if failure is not None:
             blocked_at = index
         else:
