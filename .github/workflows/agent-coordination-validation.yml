@@ -4,6 +4,7 @@ on:
     paths:
       - 'coordination/**'
       - 'tests/coordination/**'
+      - 'deploy/coordination/**'
       - '.github/workflows/agent-coordination-validation.yml'
   workflow_dispatch:
 permissions:
@@ -39,3 +40,7 @@ jobs:
       - run: python -m ruff format --check coordination tests/coordination
       - run: python -m compileall -q coordination tests/coordination
       - run: python -B -m unittest discover -s tests/coordination -v
+      - name: Build isolated staging container
+        run: docker build -f deploy/coordination/Dockerfile -t acs-staging-test .
+      - name: Verify mounted disk and authenticated edge survive container restart
+        run: python tests/coordination/docker_smoke.py

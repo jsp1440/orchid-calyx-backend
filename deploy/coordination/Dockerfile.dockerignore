@@ -1,0 +1,9 @@
+**
+!coordination
+!coordination/**
+!deploy
+!deploy/coordination
+!deploy/coordination/Dockerfile
+!deploy/coordination/Dockerfile.dockerignore
+coordination/**/__pycache__
+coordination/**/*.pyc

@@ -7,9 +7,10 @@ import hmac
 import json
 import math
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 
 from .github import strict_json
+from .http_server import BoundedHTTPServer
 from .store import Principal, canonical
 
 
@@ -125,6 +126,6 @@ def make_server(
             self.end_headers()
             self.wfile.write(payload)
 
-    server = ThreadingHTTPServer((host, port), Handler)
+    server = BoundedHTTPServer((host, port), Handler)
     server.daemon_threads = True
     return server
