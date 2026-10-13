@@ -323,6 +323,18 @@ freeze with `ALTER DATABASE neondb CONNECTION LIMIT -1;`.
 
 ## Known limits
 
+- **The acceptance worker's work supply is finite by design.** It runs the 17 programs that
+  `scripts/oc_autonomy_acceptance_manifest.py` builds once at container start. Once they are
+  delivered, every cycle is a healthy `no_eligible_work` with reason code `IDLE_NO_CANDIDATE`, and
+  the pulse reports `WORK_MANIFEST_COMPLETED`. The first hosted run recorded 2,390 such cycles over
+  about 20 hours because it was left running.
+  - Since 2026-10-13 the scheduler backs off after 10 consecutive idle cycles: the wait doubles
+    each cycle up to 900 s (`CALYX_PROGRAM_AUTONOMY_IDLE_BACKOFF_AFTER`,
+    `CALYX_PROGRAM_AUTONOMY_IDLE_MAX_SECONDS`).
+  - Status reports `idle.work_supply = static_manifest_exhausted`, with the exact idle count and
+    the time idling began.
+  - Continuous discovery needs the P1 work sources (`OC_BRAIN_WORK_SOURCES`). To see new commits,
+    the worker also needs `OC_BRAIN_WORKSPACE_REFRESH_SECONDS` and `OC_BRAIN_WORKSPACE_REFRESH_REF`.
 - The Brain pulse ledger lives on the container's ephemeral disk. After a restart the worker
   resubmits from the top of the manifest. Calyx answers `idempotent_replay` for programs it already
   holds, so nothing re-executes. Each replay costs one idle cycle. This was rehearsed locally: 6

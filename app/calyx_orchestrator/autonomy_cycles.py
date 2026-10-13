@@ -18,7 +18,7 @@ from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .program_cycle import ZERO_EXECUTION_CATEGORIES
@@ -73,6 +73,10 @@ def _replenishment_summary(record: object) -> dict[str, Any] | None:
         "sources": record.get("sources")
         if isinstance(record.get("sources"), list)
         else None,
+        # Opt-in workspace refresh result (status, commits), when configured.
+        "workspace_refresh": record.get("workspace_refresh")
+        if isinstance(record.get("workspace_refresh"), dict)
+        else None,
     }
 
 
@@ -96,7 +100,11 @@ def record_cycle(
         owner=owner,
         worker_id=str(scheduler.get("worker_id") or "unknown"),
         sequence=int(scheduler.get("sequence") or 0),
-        poll_seconds=int(scheduler.get("poll_seconds") or 0),
+        # The wait actually scheduled before the next cycle (idle backoff
+        # included), so heartbeat staleness is judged against the real cadence.
+        poll_seconds=int(
+            scheduler.get("next_sleep_seconds") or scheduler.get("poll_seconds") or 0
+        ),
         started_at=_parse(result.get("started_at")),
         finished_at=_parse(result.get("finished_at")) or datetime.now(UTC),
         productive=classification.get("productive") is True,
@@ -123,6 +131,72 @@ def record_cycle(
     db.add(row)
     db.commit()
     return row.cycle_id
+
+
+#: Brain pulse details that mean "the work supply has nothing new", mapped to
+#: an explicit supply state. An empty queue is reported with its reason; it is
+#: never evidence that the program is finished.
+WORK_SUPPLY_STATES = {
+    "WORK_MANIFEST_COMPLETED": "static_manifest_exhausted",
+    "WORK_MANIFEST_EXHAUSTED_UNDELIVERED": "static_manifest_exhausted_undelivered",
+    "WORK_MANIFEST_EMPTY": "static_manifest_empty",
+    "WORK_SOURCES_DRAINED": "sources_drained",
+    "WORK_SOURCES_IDLE": "sources_idle",
+}
+
+
+def _consecutive_nonproductive(
+    db: Session, *, owner: str, productive: CalyxAutonomyCycle | None
+) -> int:
+    """Exact count of non-productive cycles since the last productive one."""
+    query = (
+        select(func.count())
+        .select_from(CalyxAutonomyCycle)
+        .where(
+            CalyxAutonomyCycle.owner == owner,
+            CalyxAutonomyCycle.productive.is_(False),
+        )
+    )
+    if productive is not None:
+        query = query.where(CalyxAutonomyCycle.finished_at > productive.finished_at)
+    return int(db.scalar(query) or 0)
+
+
+def _idle_view(
+    db: Session,
+    latest: CalyxAutonomyCycle,
+    owner: str,
+    productive: CalyxAutonomyCycle | None,
+) -> dict[str, Any]:
+    """Why the scheduler is not producing work, from recorded receipts only."""
+    first = select(CalyxAutonomyCycle.finished_at).where(
+        CalyxAutonomyCycle.owner == owner,
+        CalyxAutonomyCycle.productive.is_(False),
+    )
+    if productive is not None:
+        first = first.where(CalyxAutonomyCycle.finished_at > productive.finished_at)
+    since = _aware(db.scalar(first.order_by(CalyxAutonomyCycle.finished_at).limit(1)))
+    summary = json.loads(latest.replenishment_json) if latest.replenishment_json else {}
+    detail = summary.get("detail") if isinstance(summary, dict) else None
+    if not latest.replenishment_json:
+        supply = "no_replenisher"
+    elif isinstance(summary, dict) and summary.get("error"):
+        supply = "replenisher_error"
+    elif isinstance(detail, str) and detail.startswith("WORK_SOURCE_FAILED"):
+        supply = "source_failed"
+    else:
+        supply = WORK_SUPPLY_STATES.get(str(detail), "unknown")
+    return {
+        "since": since.isoformat() if since else None,
+        "category": latest.category,
+        "reason_code": latest.reason_code,
+        "upstream_zero_reason": summary.get("zero_reason")
+        if isinstance(summary, dict)
+        else None,
+        "upstream_detail": detail,
+        "work_supply": supply,
+        "next_cycle_within_seconds": latest.poll_seconds,
+    }
 
 
 def _cycle_view(row: CalyxAutonomyCycle, now: datetime) -> dict[str, Any]:
@@ -192,11 +266,7 @@ def autonomy_status(
     defect_row = next(
         (row for row in rows if not row.productive and not row.healthy), None
     )
-    consecutive = 0
-    for row in rows:
-        if row.productive:
-            break
-        consecutive += 1
+    consecutive = _consecutive_nonproductive(db, owner=owner, productive=productive_row)
     if not fresh:
         state = "stale"
     elif latest.productive:
@@ -219,6 +289,9 @@ def autonomy_status(
         else None,
         "last_defect": _cycle_view(defect_row, moment) if defect_row else None,
         "consecutive_nonproductive": consecutive,
+        "idle": None
+        if latest.productive
+        else _idle_view(db, latest, owner, productive_row),
         "recent": {
             "window": len(rows),
             "productive": sum(1 for row in rows if row.productive),

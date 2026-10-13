@@ -554,7 +554,13 @@ def test_run_forever_survives_a_failed_cycle_and_sleeps_before_the_next(monkeypa
     monkeypatch.setattr(worker_module, "run_once", fake_run_once)
     with pytest.raises(_Stop):
         worker_module.run_forever(policy, sleeper=sleeper, on_cycle=seen.append)
-    scheduler = {"worker_id": policy.worker_id, "poll_seconds": policy.poll_seconds}
+    scheduler = {
+        "worker_id": policy.worker_id,
+        "poll_seconds": policy.poll_seconds,
+        # Neither cycle is a healthy idle, so no backoff applies.
+        "idle_streak": 0,
+        "next_sleep_seconds": policy.poll_seconds,
+    }
     assert seen[0] == {
         "executed": False,
         "reason": "cycle_failed",
