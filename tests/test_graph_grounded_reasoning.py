@@ -28,6 +28,11 @@ from app.graph_grounded_reasoning.contracts import (
 )
 from app.graph_grounded_reasoning.reasoning import compose
 from app.graph_grounded_reasoning.retrieval import ReadOnlyGraphView
+from runtime.knowledge_graph.claim_provenance import (
+    ClaimProvenance,
+    SourceAnchor,
+    TaxonBinding,
+)
 from runtime.knowledge_graph.models import Edge, Node
 from runtime.knowledge_graph.repository import InMemoryGraphRepository
 
@@ -48,6 +53,22 @@ def reasoner(**kwargs):
 
 def ask(text, facet, **kwargs):
     return reasoner(**kwargs).answer(ScientificQuestion(text, facet))
+
+
+def provenance(assertion_id, document_id, *, taxon="Exemplaria aurea", node_key="taxon:1", **overrides):
+    record = ClaimProvenance(
+        source_document_id=document_id,
+        source_revision_id=overrides.pop("revision", None),
+        content_hash=overrides.pop("content_hash", None),
+        anchors=(SourceAnchor(page_start=1, page_end=1),),
+        taxon=TaxonBinding(taxon, "accepted", "fixture-release", node_key),
+        extraction_method="human_annotated",
+        review_status=overrides.pop("review_status", "accepted"),
+        assertion_id=assertion_id,
+        confidence=0.9,
+        **overrides,
+    )
+    return {"claim_provenance": record.to_payload()}
 
 
 class SpyGraph(InMemoryGraphRepository):
@@ -181,7 +202,7 @@ def test_graph_reads_are_bounded_and_truncation_is_reported():
     focal = Node(1, "taxon", "taxon:1", "Exemplaria aurea")
     nodes = [focal] + [Node(1000 + i, "trait", f"trait:{i}", f"trait {i}") for i in range(40)]
     edges = [
-        Edge(5000 + i, "has_trait", 1, 1000 + i, payload={"source_document_id": f"doc-x-{i}"})
+        Edge(5000 + i, "has_trait", 1, 1000 + i, payload=provenance(f"a-{i}", f"doc-x-{i}"))
         for i in range(40)
     ]
     calls = []

@@ -29,18 +29,11 @@ MAX_GRAPH_RECORDS = 25
 MAX_EVIDENCE_RECORDS = 10
 MAX_QUESTION_LENGTH = 500
 
-#: Payload keys copied from a graph edge into the packet.  Everything else is
-#: dropped, so coordinates, locality strings and private fields never travel.
-PAYLOAD_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "assertion_id",
-        "conflicting_assertion_ids",
-        "source_document_id",
-        "review_state",
-        "verification_state",
-        "qualifier",
-    }
-)
+#: The only graph-edge payload key the pilot reads as evidence: the
+#: claim-level provenance contract (``runtime.knowledge_graph.claim_provenance``).
+#: Everything else on an edge is ignored, so coordinates, locality strings and
+#: private fields never travel into a packet.
+PAYLOAD_ALLOWLIST: frozenset[str] = frozenset({"claim_provenance"})
 
 #: Locality boundary: results are checked with the repository-wide
 #: ``app.calyx_flywheel.locality.assert_no_sensitive_locality`` (case-insensitive,
@@ -80,6 +73,9 @@ class AnchorState(StrEnum):
     ANCHORED = "ANCHORED"
     ANCHOR_UNAVAILABLE = "ANCHOR_UNAVAILABLE"
     SOURCE_UNDECLARED = "SOURCE_UNDECLARED"
+    PROVENANCE_INVALID = "PROVENANCE_INVALID"
+    SOURCE_REVISION_MISMATCH = "SOURCE_REVISION_MISMATCH"
+    TAXON_BINDING_MISMATCH = "TAXON_BINDING_MISMATCH"
 
 
 class ResultState(StrEnum):
@@ -150,6 +146,12 @@ class EvidenceItem:
     qualifier: str | None
     anchor_state: AnchorState
     citation: dict[str, Any] | None = None
+    extraction_method: str | None = None
+    confidence: float | None = None
+    uncertainty: tuple[str, ...] = ()
+    declared_anchors: tuple[dict[str, Any], ...] = ()
+    taxon_binding: dict[str, Any] | None = None
+    provenance_violations: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -172,6 +174,13 @@ class EvidenceItem:
             "qualifier": self.qualifier,
             "anchor_state": self.anchor_state.value,
             "citation": self.citation,
+            "extraction_method": self.extraction_method,
+            "confidence": self.confidence,
+            "confidence_is_probability": False,
+            "uncertainty": list(self.uncertainty),
+            "declared_anchors": [dict(a) for a in self.declared_anchors],
+            "taxon_binding": self.taxon_binding,
+            "provenance_violations": list(self.provenance_violations),
         }
 
 
