@@ -47,6 +47,7 @@ from runtime.knowledge_graph.canonical_taxonomy import (
     canonical_name_of,
 )
 
+from . import value_semantics
 from .compatibility import check_edge
 from .contracts import (
     AutonomyClass,
@@ -527,18 +528,20 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
         entries = []
         states: set[str] = set()
         for sequence, (key, members) in enumerate(sorted(groups.items())):
-            values = sorted(
-                {
-                    str(
-                        m["object_value"]
-                        if m["object_value"] is not None
-                        else m["numeric_value"]
-                    )
-                    for m in members
-                }
-            )
+            # Compare normalized values (case, separators, length units) so only
+            # mutually exclusive categorical claims become conflicts.
+            keys = [
+                value_semantics.value_key(
+                    object_value=m["object_value"],
+                    numeric_value=m["numeric_value"],
+                    unit=m["unit"],
+                )
+                for m in members
+            ]
+            values = sorted({value_semantics.display(k) for k in keys})
+            comparison = value_semantics.classify(key[1], keys)
             documents = sorted({m["source_document_id"] for m in members})
-            contradictory = len(values) > 1
+            contradictory = comparison == value_semantics.CONTRADICTION
             states.add("CONTRADICTORY" if contradictory else "PROVISIONAL")
             first = min(members, key=lambda m: m["candidate_id"])
             entry = LedgerEntry(
@@ -552,6 +555,8 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
                 text=(
                     f"{key[0]} {key[1]}: sources disagree ({', '.join(values)})"
                     if contradictory
+                    else f"{key[0]} {key[1]}: {', '.join(values)} ({comparison.lower()})"
+                    if len(values) > 1
                     else f"{key[0]} {key[1]}: {values[0]} (single machine-extracted source)"
                 ),
                 author=EXECUTOR_KEY,
@@ -592,6 +597,7 @@ def build_handlers(fixture: Mapping[str, Any]) -> dict[str, Handler]:
                     "subject": key[0],
                     "predicate": key[1],
                     "values": values,
+                    "value_comparison": comparison,
                     "source_document_ids": documents,
                     "confidence": entry.uncertainty.confidence
                     if entry.uncertainty

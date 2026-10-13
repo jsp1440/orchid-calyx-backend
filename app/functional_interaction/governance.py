@@ -3,22 +3,31 @@
 FIL-001 can authorize exactly one thing: a deterministic dry run of a plan in
 which every step is safe-autonomous, provider-free, implemented, and free of
 prohibited permissions. Everything else fails closed to the existing boundary
-it touches -- provider work parks (NO-API), approval-class work goes to the
-owner, prohibited work is refused. Production execution is never available
-here; that decision belongs to the factory policy and the owner.
+it touches -- approval-class work goes to the owner, prohibited work is
+refused, and a provider-bearing step parks under NO-API. (Planner output never
+reaches that park: compatibility already rejects provider consumers with
+``PROVIDER_PARKED_NO_API``, so such a goal is refused as ``NO_COMPATIBLE_PLAN``.)
+Production execution is never available here; that decision belongs to the
+factory policy and the owner.
+
+The verdict does not trust the plan object: edge compatibility is recomputed
+from ``plan.steps`` and ``plan.source``, so a hand-built plan with a missing or
+false edge list is refused rather than admitted.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from itertools import pairwise
 from typing import Any
 
 from app.calyx_orchestrator.executor import PROHIBITED_CAPABILITIES
 from app.provider_reservoir.capabilities import classify_capabilities
 
+from .compatibility import check_edge
 from .contracts import DRY_RUN_EXECUTABLE_STATUSES, AutonomyClass
-from .planner import WorkflowPlan
+from .planner import WorkflowPlan, source_edge
 
 DRY_RUN_MODE = "dry_run"
 
@@ -77,6 +86,36 @@ class GovernanceDecision:
         }
 
 
+def _recomputed_edge_findings(plan: WorkflowPlan) -> list[str]:
+    """Re-derive every edge from the steps; never trust ``plan.edges``."""
+
+    if not plan.steps:
+        return []
+    reasons: list[str] = []
+    first = plan.steps[0]
+    entry = source_edge(plan.source, first, no_api_mode=plan.no_api_mode)
+    if not entry.compatible:
+        reasons.append(f"RECOMPUTED_SOURCE_EDGE_INCOMPATIBLE:{first.capability_id}")
+    if len(plan.edges) != len(plan.steps) - 1:
+        reasons.append(
+            f"PLAN_EDGES_INCONSISTENT:{len(plan.edges)}!={len(plan.steps) - 1}"
+        )
+    conditions = tuple(sorted(set(plan.source.conditions)))
+    for upstream, downstream in pairwise(plan.steps):
+        edge = check_edge(
+            upstream,
+            upstream.outputs[0].name,
+            downstream,
+            downstream.inputs[0].name,
+            upstream_conditions=conditions,
+            no_api_mode=plan.no_api_mode,
+        )
+        if not edge.compatible:
+            reasons.append(f"RECOMPUTED_EDGE_INCOMPATIBLE:{edge.edge_id}")
+        conditions = edge.carried_conditions
+    return reasons
+
+
 def evaluate_plan(
     plan: WorkflowPlan, *, mode: str = DRY_RUN_MODE, no_api_mode: bool = True
 ) -> GovernanceDecision:
@@ -95,6 +134,9 @@ def evaluate_plan(
             findings.append(
                 (GovernanceAction.REFUSE, f"EDGE_INCOMPATIBLE:{edge.edge_id}")
             )
+    findings.extend(
+        (GovernanceAction.REFUSE, reason) for reason in _recomputed_edge_findings(plan)
+    )
 
     _, provider = classify_capabilities(
         [step.registry_capability for step in plan.steps]

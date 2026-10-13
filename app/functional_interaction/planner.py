@@ -127,7 +127,7 @@ class WorkflowPlan:
         }
 
 
-def _source_edge(
+def source_edge(
     source: SourceArtifact, consumer: CapabilityDescriptor, *, no_api_mode: bool
 ) -> SourceEdge:
     port = consumer.inputs[0].name
@@ -174,15 +174,20 @@ def plan_workflow(
     ] = deque()
 
     for consumer in registry.descriptors():
-        entry = _source_edge(source, consumer, no_api_mode=no_api_mode)
+        entry = source_edge(source, consumer, no_api_mode=no_api_mode)
         if not entry.compatible:
             rejected[entry.to_dict()["edge_id"]] = entry.blocking_reasons
             continue
         queue.append(((consumer,), entry, (), initial))
 
+    # Breadth-first and shortest-first. Each (capability, upstream conditions)
+    # state is expanded once: a later path reaching the same state is no shorter
+    # and has the same successors, so re-expanding it only multiplies work.
+    expanded: set[tuple[str, tuple[str, ...]]] = set()
     while queue:
         path, entry, edges, before_last = queue.popleft()
         last = path[-1]
+        state = (last.capability_id, before_last)
         if is_subtype(last.outputs[0].semantic_type, goal_type):
             return WorkflowPlan(
                 source,
@@ -193,8 +198,9 @@ def plan_workflow(
                 edges,
                 _rejections(rejected),
             )
-        if len(path) >= max_depth:
+        if len(path) >= max_depth or state in expanded:
             continue
+        expanded.add(state)
         used = {step.capability_id for step in path}
         for consumer in registry.descriptors():
             if consumer.capability_id in used:
