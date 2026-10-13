@@ -118,7 +118,7 @@ Each gap was observed in code on `main`.
 - removing the unknown-ref validator check;
 - removing unresolved-taxon abstention.
 
-Runs used `python -B -p no:cacheprovider` with `__pycache__` purged between runs.
+Runs used `python -B -m pytest -q -p no:cacheprovider tests/test_graph_grounded_reasoning.py` with `__pycache__` purged between runs.
 
 ## 6. Benchmark
 

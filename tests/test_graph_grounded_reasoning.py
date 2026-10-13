@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from app.calyx_flywheel.locality import assert_no_sensitive_locality
 from app.graph_grounded_reasoning import (
     Facet,
     GraphGroundedReasoner,
@@ -20,7 +21,6 @@ from app.graph_grounded_reasoning.benchmark import (
 )
 from app.graph_grounded_reasoning.contracts import (
     CONTRACT_VERSION,
-    FORBIDDEN_RESULT_KEYS,
     MAX_EVIDENCE_RECORDS,
     MAX_GRAPH_RECORDS,
     Claim,
@@ -48,14 +48,6 @@ def reasoner(**kwargs):
 
 def ask(text, facet, **kwargs):
     return reasoner(**kwargs).answer(ScientificQuestion(text, facet))
-
-
-def _keys(value):
-    if isinstance(value, dict):
-        return set(value) | set().union(*(_keys(v) for v in value.values()))
-    if isinstance(value, list):
-        return set().union(set(), *(_keys(v) for v in value))
-    return set()
 
 
 class SpyGraph(InMemoryGraphRepository):
@@ -180,7 +172,7 @@ def test_sensitive_locality_is_withheld_and_no_coordinate_key_escapes():
     assert result["state"] == ResultState.CANDIDATE
     assert result["evidence_packet"]["withheld_count"] == 1
     assert "SENSITIVE_RECORDS_WITHHELD" in result["gaps"]
-    assert not _keys(result) & FORBIDDEN_RESULT_KEYS
+    assert_no_sensitive_locality(result)
     assert "withheld test locality" not in json.dumps(result)
 
 
@@ -310,8 +302,10 @@ def test_benchmark_is_reproducible_labelled_and_compares_identical_cases():
     assert first["expert_reviewed"] is False
     assert first["fixture_sha256"] == second["fixture_sha256"]
     assert set(first["systems"]) == {BASELINE_ID, CONTRACT_VERSION}
+    def strip(rows):
+        return [{k: v for k, v in r.items() if k != "latency_ms"} for r in rows]
+
     for name in first["systems"]:
-        strip = lambda rows: [{k: v for k, v in r.items() if k != "latency_ms"} for r in rows]
         assert strip(first["systems"][name]["cases"]) == strip(second["systems"][name]["cases"])
         assert first["systems"][name]["summary"]["provider_calls"] == 0
     case_ids = [[r["case_id"] for r in s["cases"]] for s in first["systems"].values()]
@@ -331,3 +325,97 @@ def test_benchmark_is_reproducible_labelled_and_compares_identical_cases():
     assert grounded["unsupported_citation_count"] == 0
     assert grounded["conflict_retention_rate"] == 1.0
     assert grounded["abstention_recall"] == 1.0
+
+
+# --- review findings (#1819): each guard below is exercised directly ---------
+
+
+def test_question_words_are_not_taxon_mentions_and_unknown_mentions_abstain():
+    from app.graph_grounded_reasoning.resolution import mentioned_names
+
+    assert mentioned_names("Which pollinators visit Exemplaria aurea?") == ("Exemplaria aurea",)
+    result = ask("Do Exemplaria aurea and Imaginaria fabulosa share pollinators?", Facet.POLLINATION)
+    assert result["resolution"]["state"] == "AMBIGUOUS"
+    assert result["state"] == ResultState.INSUFFICIENT_EVIDENCE and result["claims"] == []
+
+
+def test_anchor_requires_a_non_empty_locator_and_a_content_hash():
+    registry, graph, engine = environment()
+
+    def no_hash(query):
+        result = engine.search(query)
+        for row in result["results"]:
+            row["source_content_hash"] = None
+        return result
+
+    def short_hash(query):
+        result = engine.search(query)
+        for row in result["results"]:
+            row["source_content_hash"] = "abc123"
+        return result
+
+    def empty_locator(query):
+        result = engine.search(query)
+        for row in result["results"]:
+            row["citation"]["locator"] = {}
+        return result
+
+    for search in (no_hash, short_hash, empty_locator):
+        result = GraphGroundedReasoner(registry, graph, node_key(registry), search=search).answer(
+            ScientificQuestion("Which mycorrhizal fungi associate with Exemplaria rubra?", Facet.MYCORRHIZA)
+        )
+        assert result["state"] == ResultState.INSUFFICIENT_EVIDENCE
+        assert {i["anchor_state"] for i in result["evidence_packet"]["items"]} == {"ANCHOR_UNAVAILABLE"}
+
+
+def test_unrelated_edges_cannot_crowd_facet_evidence_out_of_the_bound():
+    registry, graph, engine = environment()
+    nodes = graph.all_nodes() + [Node(7000 + i, "image", f"image:{i}", f"image {i}") for i in range(30)]
+    # Thirty low-id media edges ahead of the real pollination edges.
+    edges = [Edge(i + 1, "has_image", 1, 7000 + i) for i in range(30)] + graph.all_edges()
+    result = GraphGroundedReasoner(
+        registry, InMemoryGraphRepository(nodes, edges), node_key(registry), search=engine.search
+    ).answer(ScientificQuestion("Which pollinators visit Exemplaria aurea?", Facet.POLLINATION))
+    assert result["state"] == ResultState.CONFLICT_REVIEW_REQUIRED
+    assert result["evidence_packet"]["truncated"] is False
+
+
+def _drops_one_conflict_claim(packet):
+    honest = compose(packet)
+    return replace(honest, claims=honest.claims[:1])
+
+
+def _invents_conflict(packet):
+    honest = compose(packet)
+    return replace(honest, conflicts=honest.conflicts + (("kg_edge:1", "kg_edge:2"),))
+
+
+def _promotes_unreviewed(packet):
+    return replace(compose(packet), state=ResultState.CANDIDATE)
+
+
+def _leaks_locality(packet):
+    honest = compose(packet)
+    claim = honest.claims[0]
+    leaky = Claim(claim.statement, claim.subject_canonical_id, claim.refs)
+    object.__setattr__(leaky, "to_dict", lambda: {**claim.to_dict(), "verbatimLocality": "x"})
+    return replace(honest, claims=(leaky,))
+
+
+@pytest.mark.parametrize(
+    "composer,text,facet,violation",
+    [
+        (_drops_one_conflict_claim, "Which pollinators visit Exemplaria aurea?", Facet.POLLINATION,
+         "CONFLICT_ENDPOINT_NOT_CITED:kg_edge:103"),
+        (_invents_conflict, "Which pollinators visit Exemplaria aurea?", Facet.POLLINATION,
+         "UNDECLARED_CONFLICT_ASSERTED"),
+        (_promotes_unreviewed, "What floral traits distinguish Exemplaria aurea?", Facet.MORPHOLOGY,
+         "CANDIDATE_WITH_UNREVIEWED_OR_UNANCHORED_EVIDENCE"),
+        (_leaks_locality, "Which mycorrhizal fungi associate with Exemplaria rubra?", Facet.MYCORRHIZA,
+         "FORBIDDEN_LOCALITY_KEYS:SENSITIVE_LOCALITY_FORBIDDEN: claims[0].verbatimLocality"),
+    ],
+)
+def test_validator_closes_the_review_findings(composer, text, facet, violation):
+    result = ask(text, facet, composer=composer)
+    assert result["state"] == ResultState.VALIDATION_FAILED
+    assert violation in result["validation"]["violations"]

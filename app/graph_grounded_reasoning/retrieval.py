@@ -9,10 +9,11 @@ from app.evidence_retrieval.models import RetrievalQuery
 from runtime.knowledge_graph.canonical_taxonomy import canonical_name_of
 from runtime.knowledge_graph.causal_vocabulary import causal_relation_semantics
 from runtime.knowledge_graph.models import Edge, Node
-from runtime.knowledge_graph.vocabulary import domain_for_edge_type
+from runtime.knowledge_graph.vocabulary import EDGE_TYPE_DOMAIN, domain_for_edge_type
 
 from .contracts import (
     CONTRACT_VERSION,
+    FACET_DOMAINS,
     MAX_EVIDENCE_RECORDS,
     MAX_GRAPH_RECORDS,
     PAYLOAD_ALLOWLIST,
@@ -99,10 +100,14 @@ def _anchor(search: SearchFn | None, document_id: str | None, accepted_name: str
         if citation.get("document_id") != document_id:
             continue
         locator = citation.get("locator")
+        content_hash = row.get("source_content_hash")
         if (
             citation.get("revision_id") is not None
             and citation.get("source_anchor_ids")
             and isinstance(locator, dict)
+            and locator
+            and isinstance(content_hash, str)
+            and len(content_hash) == 64
         ):
             return AnchorState.ANCHORED, {
                 "document_id": document_id,
@@ -141,7 +146,16 @@ def assemble_packet(
     if canonical_name_of(focal.display_label) != resolution.accepted_name:
         return _empty(question, resolution, key, ["FOCAL_NODE_IDENTITY_MISMATCH"])
 
-    edges = view.get_outgoing_edges([focal.kg_node_id], limit=MAX_GRAPH_RECORDS + 1)
+    # Filter to the facet's edge types before the bound, so unrelated
+    # lower-id edges cannot crowd relevant evidence out of the read.
+    facet_edge_types = sorted(
+        edge_type
+        for edge_type, domain in EDGE_TYPE_DOMAIN.items()
+        if domain in FACET_DOMAINS[question.facet]
+    )
+    edges = view.get_outgoing_edges(
+        [focal.kg_node_id], edge_types=facet_edge_types, limit=MAX_GRAPH_RECORDS + 1
+    )
     truncated = len(edges) > MAX_GRAPH_RECORDS
     edges = edges[:MAX_GRAPH_RECORDS]
     targets = {n.kg_node_id: n for n in view.get_nodes({e.to_node_id for e in edges})}
