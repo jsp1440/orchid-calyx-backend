@@ -1,0 +1,110 @@
+name: Autonomy proposal handoff
+
+# The human gate between the autonomy worker's proposals and real work
+# (scripts/oc_autonomy_proposals.py, deploy/render/PRODUCTION-AUTONOMY-PLAN.md).
+#   workflow_dispatch, mode=review           -> list proposals in the job summary
+#   workflow_dispatch, mode=handoff-dry-run  -> also show the issues it would open
+#   push to main changing deploy/autonomy/approvals.json -> open one issue per
+#     newly approved engineering/repair proposal (label autonomy-handoff)
+# Reads autonomy_prod with the SELECT-only verifier secret; its only write is
+# opening issues. No pull_request trigger: approving is merging to main.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: review lists proposals; handoff-dry-run also plans issues
+        type: choice
+        options: [review, handoff-dry-run]
+        default: review
+  push:
+    branches: [main]
+    paths: ["deploy/autonomy/approvals.json"]
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: autonomy-proposal-handoff
+  cancel-in-progress: false
+
+jobs:
+  proposals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PRODUCTION_DSN: ${{ secrets.OC_AUTONOMY_PROD_VERIFY_DATABASE_URL }}
+      MODE: ${{ github.event_name == 'push' && 'handoff' || inputs.mode }}
+      GH_TOKEN: ${{ github.token }}
+      NO_API_MODE: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Require the read-only autonomy database credential
+        run: |
+          if [ -z "$PRODUCTION_DSN" ]; then
+            echo "::error::OC_AUTONOMY_PROD_VERIFY_DATABASE_URL is not set; nothing was read."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Review proposals (read-only)
+        run: |
+          python -B scripts/oc_autonomy_proposals.py review \
+            --dsn "$PRODUCTION_DSN" --database autonomy_prod \
+            --json proposals.json --markdown proposals.md
+          cat proposals.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Plan the handoff
+        if: env.MODE != 'review'
+        shell: bash
+        run: |
+          gh api --paginate \
+            "repos/$GITHUB_REPOSITORY/issues?labels=autonomy-handoff&state=all&per_page=100" \
+            --jq '.[] | {number, body}' | jq -s . > existing-issues.json
+          python -B scripts/oc_autonomy_proposals.py handoff \
+            --dsn "$PRODUCTION_DSN" --database autonomy_prod \
+            --approvals deploy/autonomy/approvals.json \
+            --existing-issues existing-issues.json --out handoff
+          {
+            echo "## Handoff plan ($MODE)"
+            jq -r '"- to open: \(.create | length)\n- already handed off: \(.already_handed_off | length)\n- approved but not proposed: \(.approved_but_not_proposed | join(", "))\n- not a handoff class: \(.not_a_handoff_class | join(", "))"' handoff/plan.json
+            jq -r '.create[] | "  - \(.title)"' handoff/plan.json
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Open issues for newly approved proposals
+        if: env.MODE == 'handoff'
+        shell: bash
+        run: |
+          count=$(jq '.create | length' handoff/plan.json)
+          if [ "$count" -eq 0 ]; then echo "Nothing new to hand off."; exit 0; fi
+          gh label create autonomy-handoff --repo "$GITHUB_REPOSITORY" --force \
+            --color 0E8A16 --description "Approved autonomy proposal handed off for normal reviewed work"
+          jq -c '.create[]' handoff/plan.json | while read -r item; do
+            title=$(jq -r '.title' <<<"$item")
+            body_file="handoff/$(jq -r '.body_file' <<<"$item")"
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
+              --body-file "$body_file" --label autonomy-handoff
+          done
+
+      - name: Upload proposals and plan
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: autonomy-proposals
+          path: |
+            proposals.json
+            proposals.md
+            handoff/
+          if-no-files-found: warn
+          retention-days: 30

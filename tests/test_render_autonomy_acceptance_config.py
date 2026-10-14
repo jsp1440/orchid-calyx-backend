@@ -302,4 +302,4 @@ def test_production_verification_uses_only_its_own_read_only_secret():
     branch = branch.split("elif", 1)[0]
     assert 'dsn="$PRODUCTION_DSN"' in branch
     assert "FIRST_RUN_DSN" not in branch  # never the acceptance credential
-    assert "--require-loop --database autonomy_prod" in branch
+    assert "--require-loop --database autonomy_prod --production" in branch

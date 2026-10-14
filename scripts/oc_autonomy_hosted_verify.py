@@ -37,6 +37,12 @@ Checks (all must hold for ``"passed": true``):
 receipt identity) and program records. ``--database NAME`` verifies another
 database on the same server with the same read-only role.
 
+``--production`` judges a long-running worker on live ``main`` rather than an
+acceptance run fed with inputs: ``ten_consecutive_productive`` is still
+reported but marked ``"advisory": true`` and left out of ``"passed"``, because
+real work arrives in bursts and a healthy worker is idle between them. Every
+other check stays a hard gate.
+
 Prints one JSON report; exit 0 only if every check passed.
 """
 
@@ -47,6 +53,7 @@ import json
 import re
 import sys
 from collections import Counter
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, unquote
@@ -258,6 +265,21 @@ def verify(
 
 #: Manifest-run checks that do not apply to a continuous-loop run.
 MANIFEST_ONLY_CHECKS = ("restart_observed", "replay_without_reexecution", "drained")
+# Throughput, not safety: on live main a healthy worker idles between merges.
+ADVISORY_IN_PRODUCTION = ("ten_consecutive_productive",)
+
+
+def apply_production_profile(checks: dict[str, dict[str, Any]]) -> None:
+    """Mark throughput checks advisory; nothing else changes."""
+    for name in ADVISORY_IN_PRODUCTION:
+        if name in checks:
+            checks[name]["advisory"] = True
+
+
+def overall_passed(checks: Mapping[str, Mapping[str, Any]]) -> bool:
+    """Every non-advisory check must pass; an empty report never passes."""
+    gating = [item for item in checks.values() if not item.get("advisory")]
+    return bool(gating) and all(item["passed"] for item in gating)
 
 
 def verify_loop(db: Session, *, owner: str) -> dict[str, dict[str, Any]]:
@@ -588,6 +610,11 @@ def main() -> int:
         help="verify this database on the same server with the same read-only "
         "role (e.g. autonomy_midrun beside the preserved neondb)",
     )
+    parser.add_argument(
+        "--production",
+        action="store_true",
+        help="long-running worker on live main: throughput checks are advisory",
+    )
     args = parser.parse_args()
     if args.database is not None and not DATABASE_NAME.fullmatch(args.database):
         print(json.dumps({"passed": False, "error": "VERIFY_DATABASE_NAME_INVALID"}))
@@ -684,7 +711,10 @@ def main() -> int:
         "passed": not report["environment"]["non_calyx_tables"],
         **report["environment"],
     }
-    report["passed"] = all(item["passed"] for item in report["checks"].values())
+    if args.production:
+        apply_production_profile(report["checks"])
+        report["profile"] = "production"
+    report["passed"] = overall_passed(report["checks"])
     print(json.dumps(report, indent=1, sort_keys=True, default=str))
     return 0 if report["passed"] else 1
 
