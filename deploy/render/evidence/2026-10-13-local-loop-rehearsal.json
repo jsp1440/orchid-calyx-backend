@@ -1,0 +1,1444 @@
+{
+ "date": "2026-10-13",
+ "differences_from_hosted": [
+  "verifier connected as a local superuser, so verifier_role_read_only fails here by design; the hosted run uses the read-only oc_verify role",
+  "Render, Neon and the Brain token fetch are not exercised; Brain came from a local checkout at the same commit",
+  "idle backoff was shortened (after 4 cycles, max 60 s) to fit the rehearsal"
+ ],
+ "kind": "LOCAL_REHEARSAL_NOT_HOSTED",
+ "new_input": "Commit 69a1d3b on the input branch (harmless comment in app/traitbank/__init__.py), pushed while the worker was idle at the approval gate. No manual triggering.",
+ "records": {
+  "cycles": [
+   {
+    "category": null,
+    "cycle_id": "1bb80565-a6dc-4f34-ad55-e3fb3754b4e0",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:13:14.659302+00:00",
+    "healthy": true,
+    "job_keys": [
+     "build:traitbank-validation:97dd61b99434645479f338397edfb23f25017a9a90110472d4f576d6b1fdfb5f:0",
+     "build:traitbank-validation:97dd61b99434645479f338397edfb23f25017a9a90110472d4f576d6b1fdfb5f:1"
+    ],
+    "productive": true,
+    "productive_jobs": 2,
+    "reason_code": null,
+    "replenishment": {
+     "detail": null,
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "maintenance": 1,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 1,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "submitted_candidates": [
+       "loop:scientific_data_acquisition:dc82c2aef04caf748b8c9b17",
+       "loop:maintenance:46b9b0b8586566b16c051024"
+      ]
+     },
+     "manifest": {
+      "items": 2,
+      "states": {
+       "in_flight": 1,
+       "pending": 1
+      },
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [
+      {
+       "outcome": "submitted",
+       "work_id": "loop:scientific_data_acquisition:dc82c2aef04caf748b8c9b17"
+      }
+     ],
+     "workspace_refresh": {
+      "commit": "ca57f03eea87eeb6850140cdb53af7534641ef27",
+      "status": "current"
+     },
+     "zero_reason": null
+    },
+    "sequence": 1,
+    "started_at": "2026-10-13 04:13:12.749061+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": null,
+    "cycle_id": "eea4a625-9eb8-412e-bcc4-ba8cf4e8376f",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:13:29.880042+00:00",
+    "healthy": true,
+    "job_keys": [
+     "build:reasoning-verification:2d52379ea12e218f3c5946af03908be75be25591494d37ad31a6eeee92f79ae0:0",
+     "build:reasoning-verification:2d52379ea12e218f3c5946af03908be75be25591494d37ad31a6eeee92f79ae0:1"
+    ],
+    "productive": true,
+    "productive_jobs": 2,
+    "reason_code": null,
+    "replenishment": {
+     "detail": null,
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "maintenance": 1,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 1,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      },
+      "submitted_candidates": [
+       "loop:maintenance:46b9b0b8586566b16c051024"
+      ]
+     },
+     "manifest": {
+      "items": 1,
+      "states": {
+       "in_flight": 1
+      },
+      "undelivered": []
+     },
+     "reconciled": [
+      {
+       "state": "completed",
+       "work_id": "loop:scientific_data_acquisition:dc82c2aef04caf748b8c9b17"
+      }
+     ],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [
+      {
+       "outcome": "submitted",
+       "work_id": "loop:maintenance:46b9b0b8586566b16c051024"
+      }
+     ],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": null
+    },
+    "sequence": 2,
+    "started_at": "2026-10-13 04:13:29.670204+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "bad8e9aa-88d7-4fe8-8309-e6a4378036c9",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:13:44.947007+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "maintenance": 1,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 1,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 2
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [
+      {
+       "state": "completed",
+       "work_id": "loop:maintenance:46b9b0b8586566b16c051024"
+      }
+     ],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 3,
+    "started_at": "2026-10-13 04:13:44.887593+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "13a0b869-585a-4e03-970a-b9e4549d8205",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:13:59.997450+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 4,
+    "started_at": "2026-10-13 04:13:59.952909+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "643320dc-095c-4c12-aa8f-4a32fce97aeb",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:14:15.833578+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "commit": "ca57f03eea87eeb6850140cdb53af7534641ef27",
+      "status": "current"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 5,
+    "started_at": "2026-10-13 04:14:15.004532+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "e5f83523-3672-422f-989b-657b0dc972d6",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:14:30.877463+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 6,
+    "started_at": "2026-10-13 04:14:30.840102+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "4c329ab8-7fc8-4d24-aaca-3a6eeaa216f4",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:15:00.919341+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 7,
+    "started_at": "2026-10-13 04:15:00.882063+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": null,
+    "cycle_id": "86daa778-f69f-463d-b115-ad0f7be01b72",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:16:01.848086+00:00",
+    "healthy": true,
+    "job_keys": [
+     "build:reasoning-verification:e22167b6b69a0512cad9b93a473f1ed56305a8ecc94a97fdfd145a3e210465f7:0",
+     "build:reasoning-verification:e22167b6b69a0512cad9b93a473f1ed56305a8ecc94a97fdfd145a3e210465f7:1"
+    ],
+    "productive": true,
+    "productive_jobs": 2,
+    "reason_code": null,
+    "replenishment": {
+     "detail": null,
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "maintenance": 1,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 1,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      },
+      "submitted_candidates": [
+       "loop:maintenance:bf143065c219f05e55b2be34"
+      ]
+     },
+     "manifest": {
+      "items": 1,
+      "states": {
+       "in_flight": 1
+      },
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [
+      {
+       "outcome": "submitted",
+       "work_id": "loop:maintenance:bf143065c219f05e55b2be34"
+      }
+     ],
+     "workspace_refresh": {
+      "from": "ca57f03eea87eeb6850140cdb53af7534641ef27",
+      "status": "updated",
+      "to": "69a1d3b1c6a84d0f8384efb3296eec6a5209ce4c"
+     },
+     "zero_reason": null
+    },
+    "sequence": 8,
+    "started_at": "2026-10-13 04:16:00.924990+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "e6eee998-66d9-4d82-bff5-a29d1c2d18d2",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:16:16.916466+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "maintenance": 1,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 1,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 2
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [
+      {
+       "state": "completed",
+       "work_id": "loop:maintenance:bf143065c219f05e55b2be34"
+      }
+     ],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 9,
+    "started_at": "2026-10-13 04:16:16.852811+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "522db604-0142-41ca-9610-e04ab31da50d",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:16:31.955877+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 10,
+    "started_at": "2026-10-13 04:16:31.922730+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   },
+   {
+    "category": "owner_gate",
+    "cycle_id": "b1028aa1-625f-430c-a48a-6e2a27b5e8a5",
+    "deployment_commit": null,
+    "failed_jobs": 0,
+    "finished_at": "2026-10-13 04:16:47.001478+00:00",
+    "healthy": true,
+    "job_keys": [],
+    "productive": false,
+    "productive_jobs": 0,
+    "reason_code": "IDLE_NO_CANDIDATE",
+    "replenishment": {
+     "detail": "AWAITING_APPROVAL:9",
+     "loop": {
+      "generated": {
+       "engineering_development": 9,
+       "scientific_data_acquisition": 1
+      },
+      "observers": [
+       {
+        "gaps": 1,
+        "name": "scientific_batches",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "repository_changes",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "completion_feedback",
+        "status": "ok"
+       },
+       {
+        "gaps": 9,
+        "name": "engineering_objectives",
+        "status": "ok"
+       },
+       {
+        "gaps": 0,
+        "name": "calyx_health",
+        "status": "ok"
+       }
+      ],
+      "proposals": {
+       "awaiting_approval": 9
+      },
+      "rejected": {
+       "ALREADY_SUBMITTED": 1
+      }
+     },
+     "manifest": {
+      "items": 0,
+      "states": {},
+      "undelivered": []
+     },
+     "reconciled": [],
+     "sources": [
+      {
+       "detail": null,
+       "discovered": 1,
+       "name": "scientific_batches",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "repository_changes",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "completion_feedback",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 9,
+       "name": "engineering_objectives",
+       "status": "ok"
+      },
+      {
+       "detail": null,
+       "discovered": 0,
+       "name": "calyx_health",
+       "status": "ok"
+      }
+     ],
+     "submitted": [],
+     "workspace_refresh": {
+      "status": "not_due"
+     },
+     "zero_reason": "owner_gate"
+    },
+    "sequence": 11,
+    "started_at": "2026-10-13 04:16:46.959917+00:00",
+    "worker_id": "render-autonomy-acceptance"
+   }
+  ],
+  "jobs": [
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:13:14.593827+00:00",
+    "created_at": "2026-10-13 04:13:14.484628+00:00",
+    "executed_in_cycle_id": "1bb80565-a6dc-4f34-ad55-e3fb3754b4e0",
+    "job_key": "build:traitbank-validation:97dd61b99434645479f338397edfb23f25017a9a90110472d4f576d6b1fdfb5f:0",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "937ff441-65ca-49cc-95b3-c546754572ea",
+    "program_job_id": "f15bc458-9b0d-4a96-b1db-55ca5434bfff",
+    "receipt": {
+     "executor_key": "repository_evidence_reader_v1",
+     "input_checksum": "ff705144c1b73df734cc281c6ee9bddbc62aac5cdd6ba666f12dbc6d2e906dd9",
+     "output_checksum": "2b5edac7b2a5e72baaf118bd624db84e61d73d3766e8dbd2777dd696c7939fde",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "repository_evidence_reader",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:13:14.606144+00:00"
+   },
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:13:14.644896+00:00",
+    "created_at": "2026-10-13 04:13:14.487328+00:00",
+    "executed_in_cycle_id": "1bb80565-a6dc-4f34-ad55-e3fb3754b4e0",
+    "job_key": "build:traitbank-validation:97dd61b99434645479f338397edfb23f25017a9a90110472d4f576d6b1fdfb5f:1",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "937ff441-65ca-49cc-95b3-c546754572ea",
+    "program_job_id": "b63c6b87-7691-44de-ac63-d839036b497c",
+    "receipt": {
+     "executor_key": "traitbank_batch_validator_v1",
+     "input_checksum": "081948c1f567d0a9b32f55e2fe9f0d519e47447692e7d86fcd3e15e0de4850cb",
+     "output_checksum": "354646f30911802915e5ce5d56a2283a6ff21c2853a3af07a88385a56820fe34",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "traitbank_batch_validator",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:13:14.655096+00:00"
+   },
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:13:29.784581+00:00",
+    "created_at": "2026-10-13 04:13:29.716164+00:00",
+    "executed_in_cycle_id": "eea4a625-9eb8-412e-bcc4-ba8cf4e8376f",
+    "job_key": "build:reasoning-verification:2d52379ea12e218f3c5946af03908be75be25591494d37ad31a6eeee92f79ae0:0",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "81b2aa2e-05c2-4e3a-a289-fe44bad3b269",
+    "program_job_id": "f587d26d-e983-4543-9238-36b1c0ceabc9",
+    "receipt": {
+     "executor_key": "repository_evidence_reader_v1",
+     "input_checksum": "f19164a02fee92d60b263780aa0716d2ad7668721ff6a1e84e5cfc0cc8143972",
+     "output_checksum": "2b5edac7b2a5e72baaf118bd624db84e61d73d3766e8dbd2777dd696c7939fde",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "repository_evidence_reader",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:13:29.792565+00:00"
+   },
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:13:29.867996+00:00",
+    "created_at": "2026-10-13 04:13:29.717988+00:00",
+    "executed_in_cycle_id": "eea4a625-9eb8-412e-bcc4-ba8cf4e8376f",
+    "job_key": "build:reasoning-verification:2d52379ea12e218f3c5946af03908be75be25591494d37ad31a6eeee92f79ae0:1",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "81b2aa2e-05c2-4e3a-a289-fe44bad3b269",
+    "program_job_id": "43999015-76b8-4fa9-aaa0-6e902556bda6",
+    "receipt": {
+     "executor_key": "isolated_workspace_static_validator_v1",
+     "input_checksum": "f5316592041616003d061bba5110a052d1cd1f5d86139e6e2bedff882e585494",
+     "output_checksum": "4e2cebe90b76e736fd735a399a0cd8fef0d829b3a3b666684ae782db4e840829",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "isolated_workspace_static_validator",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:13:29.875852+00:00"
+   },
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:16:01.804508+00:00",
+    "created_at": "2026-10-13 04:16:01.753108+00:00",
+    "executed_in_cycle_id": "86daa778-f69f-463d-b115-ad0f7be01b72",
+    "job_key": "build:reasoning-verification:e22167b6b69a0512cad9b93a473f1ed56305a8ecc94a97fdfd145a3e210465f7:0",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "cb99016b-4e90-4bd4-8a87-7d03d008ee32",
+    "program_job_id": "aaf7a7ab-6ab7-43e9-a39a-c60e8c878220",
+    "receipt": {
+     "executor_key": "repository_evidence_reader_v1",
+     "input_checksum": "1dbaf27e37aa570e8cb85d1b4ad8abbc23a3513864097f5752edf258c0835767",
+     "output_checksum": "230dd3ae114d36205ca5515644fc7e71231e3ba43227d1c40cea1744adbcbcbb",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "repository_evidence_reader",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:16:01.812609+00:00"
+   },
+   {
+    "attempt_count": 1,
+    "completed_at": "2026-10-13 04:16:01.838088+00:00",
+    "created_at": "2026-10-13 04:16:01.754279+00:00",
+    "executed_in_cycle_id": "86daa778-f69f-463d-b115-ad0f7be01b72",
+    "job_key": "build:reasoning-verification:e22167b6b69a0512cad9b93a473f1ed56305a8ecc94a97fdfd145a3e210465f7:1",
+    "lease_expires_at": null,
+    "lease_owner": null,
+    "max_attempts": 3,
+    "outcome": "DELIVERED",
+    "program_id": "cb99016b-4e90-4bd4-8a87-7d03d008ee32",
+    "program_job_id": "0b844e05-965c-44ef-b55e-c28789dd7be0",
+    "receipt": {
+     "executor_key": "isolated_workspace_static_validator_v1",
+     "input_checksum": "9861ded418f92e31d08d5e6f279833dca1e93496b421af05fda4aff5c3112028",
+     "output_checksum": "68b020171c1154bc8b6361ba90069684af9deb6609ef9a52845840d764dbe29d",
+     "receipt_type": "execution",
+     "state": "delivered"
+    },
+    "role_key": "isolated_workspace_static_validator",
+    "status": "completed",
+    "updated_at": "2026-10-13 04:16:01.844968+00:00"
+   }
+  ],
+  "programs": [
+   {
+    "completed_at": "2026-10-13 04:13:14.648363+00:00",
+    "created_at": "2026-10-13 04:13:14.480997+00:00",
+    "program_id": "937ff441-65ca-49cc-95b3-c546754572ea",
+    "status": "completed"
+   },
+   {
+    "completed_at": "2026-10-13 04:13:29.870328+00:00",
+    "created_at": "2026-10-13 04:13:29.714857+00:00",
+    "program_id": "81b2aa2e-05c2-4e3a-a289-fe44bad3b269",
+    "status": "completed"
+   },
+   {
+    "completed_at": "2026-10-13 04:16:01.840907+00:00",
+    "created_at": "2026-10-13 04:16:01.752078+00:00",
+    "program_id": "cb99016b-4e90-4bd4-8a87-7d03d008ee32",
+    "status": "completed"
+   }
+  ],
+  "schema": "oc-autonomy-hosted-records.v2"
+ },
+ "schema": "oc-autonomy-loop-rehearsal-evidence.v1",
+ "verify_report": {
+  "checks": {
+   "dedicated_acceptance_database": {
+    "calyx_tables": 12,
+    "database": "autonomy_loop",
+    "non_calyx_tables": [],
+    "passed": true
+   },
+   "idle_cycles_name_their_cause": {
+    "passed": true,
+    "silent_cycle_positions": []
+   },
+   "idle_polling_backs_off": {
+    "applicable": false,
+    "longest_idle_run": 5,
+    "passed": true,
+    "poll_seconds_range": [
+     15,
+     60
+    ]
+   },
+   "loop_learned_from_outcomes": {
+    "passed": true,
+    "proposals": {
+     "awaiting_approval": 9
+    },
+    "settled_candidates": 3,
+    "verified_files": 11
+   },
+   "new_input_discovered_and_executed": {
+    "new_work_ids": [
+     "loop:maintenance:bf143065c219f05e55b2be34"
+    ],
+    "passed": true,
+    "productive_cycles_after_refresh": 1,
+    "refresh": {
+     "from": "ca57f03eea87eeb6850140cdb53af7534641ef27",
+     "status": "updated",
+     "to": "69a1d3b1c6a84d0f8384efb3296eec6a5209ce4c"
+    }
+   },
+   "no_defect_cycles": {
+    "passed": true,
+    "unhealthy_categories": []
+   },
+   "no_duplicate_execution": {
+    "distinct_job_keys": 6,
+    "jobs": 6,
+    "max_attempt_count": 1,
+    "passed": true,
+    "receipts_not_delivered": [],
+    "undelivered": []
+   },
+   "no_outstanding_leases": {
+    "held_or_running": [],
+    "passed": true
+   },
+   "status_consistent": {
+    "passed": true,
+    "recent": {
+     "categories": {
+      "owner_gate": 8
+     },
+     "productive": 3,
+     "window": 11
+    },
+    "state": "healthy_waiting"
+   },
+   "ten_consecutive_productive": {
+    "cycles": 11,
+    "longest_run": 2,
+    "passed": true,
+    "productive_cycles": 3,
+    "required": 2
+   },
+   "traitbank_verdict": {
+    "passed": true,
+    "verdicts": [
+     {
+      "assertions": 1,
+      "environment_relations": 1,
+      "path": "data/traitbank/darwin_1862_batch.json",
+      "side_effects_off": true,
+      "valid": true,
+      "violations": []
+     }
+    ]
+   },
+   "verifier_role_read_only": {
+    "passed": false
+   },
+   "work_created_once": {
+    "duplicates": [],
+    "passed": true,
+    "submitted": 3
+   }
+  },
+  "environment": {
+   "calyx_tables": 12,
+   "database": "autonomy_loop",
+   "non_calyx_tables": []
+  },
+  "passed": false,
+  "schema": "oc-autonomy-hosted-verify.v1"
+ },
+ "what_ran": "scripts/oc_render_autonomy_acceptance_start.sh in CALYX_ACCEPTANCE_WORK_MODE=loop: real Calyx API on loopback, real runtime.program_autonomy_brain_worker, real read-only executors, local PostgreSQL 16 database autonomy_loop, workspace cloned from GitHub branch claude/sharp-pasteur-e6c4r1-loop-inputs and refreshed every 60 s, Brain e15d696."
+}

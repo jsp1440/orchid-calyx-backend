@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.member_auth import owner_or_member_read
 from app.security import verify_owner_or_api_key
 
 from .epistemic_memory import project_epistemic_corpus, project_epistemic_memory
@@ -29,7 +30,14 @@ from .serialization import ledger_to_dict
 from .service import LedgerNotFoundError
 
 router = APIRouter(prefix="/api/reasoning-ledgers", tags=["reasoning-ledgers"])
-project_router = APIRouter(prefix="/api/research/projects", tags=["reasoning-ledgers"])
+# Shares the owner-only /api/research/projects prefix: a verified member gets 403
+# OWNER_ACCESS_REQUIRED from the default-deny ``owner_or_member_read`` (no route is
+# member-readable), exactly as on app.research_workspace.routes.
+project_router = APIRouter(
+    prefix="/api/research/projects",
+    tags=["reasoning-ledgers"],
+    dependencies=[Depends(owner_or_member_read)],
+)
 Auth = Annotated[dict, Depends(verify_owner_or_api_key)]
 Db = Annotated[Session, Depends(get_db)]
 

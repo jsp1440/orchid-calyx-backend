@@ -39,8 +39,8 @@ def test_teaching_synthesis_is_claim_first_provenance_preserving_and_fail_closed
                                 "type": "paper",
                                 "review_state": "reviewed",
                                 "doi": "10.0000/example",
-                                "latitude": "1.234",
-                                "longitude": "5.678",
+                                "latitude": "4.912",
+                                "longitude": "4.123",
                             }
                         ],
                     }

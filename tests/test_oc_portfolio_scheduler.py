@@ -305,6 +305,21 @@ def test_oc_blocked_and_owner_gate_do_not_consume_an_execution_slot():
     assert reasons[1003] == "oc-owner-gate"
 
 
+def test_scientific_gate_holds_work_outside_the_portfolio():
+    """Human scientific review holds are never candidates and never take a slot."""
+    assert "oc-scientific-gate" in sched.NON_EXECUTABLE_LABELS
+    result = plan(
+        [
+            issue(1010, labels=("oc-queued", "oc-scientific-gate"), title="P0 taxonomy activation"),
+            issue(1011, title="P3 open work"),
+        ]
+    )
+    assert result["selected_numbers"] == [1011]
+    assert [row["number"] for row in result["ranking"]] == [1011]
+    reasons = {row["number"]: row["reason"] for row in result["suppressed"]}
+    assert reasons[1010] == "oc-scientific-gate"
+
+
 # --- durable PR lineage / repair ---------------------------------------------
 
 DURABLE_PR = {"number": 77, "body": "slice\n\nOC-AUTO-ISSUE: #1100\nOC-AUTO-REQUEUE: false\n"}

@@ -115,17 +115,27 @@ def chat_status() -> dict[str, Any]:
     }
 
 
-@router.get("/transcript")
+# The in-memory operator transcript is owner-only: it holds whatever the operator
+# typed to Calyx. Reading it and appending to it (operator messages or Calyx replies)
+# require the owner session or the API key via ``verify_owner_or_api_key``, exactly
+# like the other chat routes (``/ask``, ``/conversations``). There is no member
+# contract for chat, so a member bearer is rejected with 401 like any non-owner
+# credential, before any body validation. ``/status`` stays public: it reports only a
+# message count and flags.
+OwnerOnly = [Depends(verify_owner_or_api_key)]
+
+
+@router.get("/transcript", dependencies=OwnerOnly)
 def chat_transcript() -> dict[str, Any]:
     return {"messages": [message.as_dict() for message in _chat.transcript()]}
 
 
-@router.post("/messages")
+@router.post("/messages", dependencies=OwnerOnly)
 def post_operator_message(request: OperatorMessageRequest) -> dict[str, Any]:
     return _chat.receive(request.content).as_dict()
 
 
-@router.post("/replies")
+@router.post("/replies", dependencies=OwnerOnly)
 def post_calyx_reply(request: CalyxReplyRequest) -> dict[str, Any]:
     return _chat.reply(
         request.content, proposed_action=request.proposed_action

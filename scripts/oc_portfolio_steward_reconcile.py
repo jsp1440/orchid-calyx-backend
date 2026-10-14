@@ -118,6 +118,16 @@ def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     query does not fetch; representing such issues without that metadata creates
     false global-health failures. Validation remains governed by its own exact-
     head supervisor rather than this refill planner.
+
+    Leases are likewise not observed here: they live in the frontend's own ledger,
+    so every ``oc-running`` issue used to read as "running with 0 leases" and fail
+    the whole scan (Brain #206, run 37131188915 / frontend #797 while run
+    37130872606 was executing it). The snapshot says so explicitly with
+    ``lease_evidence_observed: false``; the health contract then reports those
+    issues as unobserved instead of asserting a cardinality it cannot know. Exact
+    run-to-lease correlation stays with the frontend's own lease reconcile. Every
+    other invariant, including a running issue that also carries a backoff label,
+    is still enforced.
     """
     snapshot_issues: list[dict[str, Any]] = []
     for issue in all_issues:
@@ -138,6 +148,7 @@ def build_frontend_snapshot(all_issues: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "issues": snapshot_issues,
         "leases": [],
+        "lease_evidence_observed": False,
         "dispatch_fingerprints": [],
     }
 
@@ -153,10 +164,19 @@ def _conflict_follow_ups(
     follow_ups: list[dict[str, Any]] = []
     for item in bridge_result.get("conflict_follow_ups") or []:
         entry = dict(item)
-        command = list(item.get("relabel_command") or [])
+        original_command = list(item.get("relabel_command") or [])
+        command = list(original_command)
         if frontend_repo and command:
             command += ["--repo", frontend_repo]
         entry["relabel_command"] = command
+        body = str(item.get("body") or "")
+        if command != original_command:
+            original_fix = f"`{' '.join(original_command)}`"
+            qualified_fix = f"`{' '.join(command)}`"
+            if original_fix not in body:
+                raise ValueError("CONFLICT_FOLLOW_UP_FIX_COMMAND_MISSING")
+            body = body.replace(original_fix, qualified_fix)
+        entry["body"] = body
         entry["repo"] = frontend_repo or None
         follow_ups.append(entry)
     return follow_ups
@@ -191,6 +211,13 @@ def run_reconciliation(
                     "error": receipt.error,
                 })
 
+    conflict_follow_ups = _conflict_follow_ups(
+        report.bridge_result, frontend_repo
+    )
+    report_dict = report.as_dict()
+    report_dict["bridge_result"] = dict(report.bridge_result)
+    report_dict["bridge_result"]["conflict_follow_ups"] = conflict_follow_ups
+
     return {
         "schema": _SCHEMA,
         "admitted_count": report.admitted_count,
@@ -207,14 +234,12 @@ def run_reconciliation(
         "dispatch_receipts": dispatch_receipts,
         "bridge_status": report.bridge_result.get("status"),
         "conflict_count": len(report.bridge_result.get("conflicts") or []),
-        "conflict_follow_ups": _conflict_follow_ups(
-            report.bridge_result, frontend_repo
-        ),
+        "conflict_follow_ups": conflict_follow_ups,
         "evidence_count": len(report.evidence),
         "executed_count": report.executed_count,
         "canonical_context_schema": report.canonical_context_schema,
         "canonical_context_version": report.canonical_context_version,
-        "report": report.as_dict(),
+        "report": report_dict,
     }
 
 

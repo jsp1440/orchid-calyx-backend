@@ -18,8 +18,25 @@ def database_url() -> str:
 
 
 class PostgresSourceRegistryRepository:
+    def __init__(self, connect=None):
+        self._connect = connect or (lambda: psycopg.connect(database_url(), row_factory=dict_row))
+
+    def register_web_source(self, domain: str, actor: str) -> dict[str, Any]:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("""INSERT INTO oc_sources.sources(source_name,source_type,authentication_method,status,configuration)
+                VALUES (%s,'WEB','ENVIRONMENT','ACTIVE',%s)
+                ON CONFLICT(source_name,source_type) DO NOTHING""",
+                (domain, Jsonb({"approved_importers": [actor]})))
+            cur.execute("SELECT * FROM oc_sources.sources WHERE source_name=%s AND source_type='WEB'", (domain,))
+            return cur.fetchone()
+
+    def inventory_id(self, source_id: str, external_id: str) -> int:
+        with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT inventory_id FROM oc_sources.document_inventory WHERE source_id=%s AND external_file_id=%s", (source_id, external_id))
+            return cur.fetchone()["inventory_id"]
+
     def register_google_drive(self, name: str, authentication_method: str, folder_ids: list[str]) -> dict[str, Any]:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("""INSERT INTO oc_sources.sources(source_name,source_type,authentication_method,status,configuration)
                 VALUES (%s,'GOOGLE_DRIVE',%s,'ACTIVE',%s)
                 ON CONFLICT (source_name,source_type) DO UPDATE SET authentication_method=EXCLUDED.authentication_method,
@@ -28,22 +45,22 @@ class PostgresSourceRegistryRepository:
             return cur.fetchone()
 
     def list_sources(self) -> list[dict[str, Any]]:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM oc_sources.sources ORDER BY source_name")
             return list(cur.fetchall())
 
     def get_source(self, source_id: str) -> dict[str, Any] | None:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM oc_sources.sources WHERE source_id=%s", (source_id,))
             return cur.fetchone()
 
     def start_scan(self, source_id: str) -> int:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("INSERT INTO oc_sources.scan_logs(source_id,status,started_at) VALUES (%s,'RUNNING',NOW()) RETURNING scan_id", (source_id,))
             return cur.fetchone()["scan_id"]
 
     def inventory_file(self, source_id: str, scan_id: int, file: DriveFile) -> str:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM oc_sources.document_inventory WHERE source_id=%s AND external_file_id=%s FOR UPDATE", (source_id, file.file_id))
             existing = cur.fetchone()
             unchanged = existing and existing["modified_at"] == file.modified_at and existing["checksum"] == file.checksum and existing["filename"] == file.filename and existing["folder_path"] == file.folder_path
@@ -69,7 +86,7 @@ class PostgresSourceRegistryRepository:
             return status
 
     def finish_scan(self, scan_id: int, source_id: str, status: str, processed: int, unchanged: int, duplicates: int, failed: int, error: str | None = None) -> None:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("""UPDATE oc_sources.scan_logs SET status=%s,finished_at=NOW(),duration_ms=(EXTRACT(EPOCH FROM (NOW()-started_at))*1000)::BIGINT,
                 documents_processed=%s,documents_unchanged=%s,duplicates_found=%s,documents_failed=%s,error_message=%s WHERE scan_id=%s""", (status,processed,unchanged,duplicates,failed,error,scan_id))
             cur.execute("""UPDATE oc_sources.sources s SET last_scan=NOW(), status=%s,
@@ -79,7 +96,7 @@ class PostgresSourceRegistryRepository:
                 WHERE source_id=%s""", ("ACTIVE" if status == "COMPLETED" else "ERROR", source_id))
 
     def dashboard(self) -> dict[str, Any]:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("""SELECT count(*) total_sources,coalesce(sum(total_documents),0) total_documents,
                 coalesce(sum(total_processed),0) documents_processed,max(last_scan) last_scan_time FROM oc_sources.sources""")
             summary = cur.fetchone()
@@ -88,7 +105,7 @@ class PostgresSourceRegistryRepository:
             return {**summary, **cur.fetchone()}
 
     def scan_logs(self, source_id: str, limit: int) -> list[dict[str, Any]]:
-        with psycopg.connect(database_url(), row_factory=dict_row) as conn, conn.cursor() as cur:
+        with self._connect() as conn, conn.cursor() as cur:
             cur.execute("SELECT * FROM oc_sources.scan_logs WHERE source_id=%s ORDER BY scan_id DESC LIMIT %s", (source_id, limit))
             return list(cur.fetchall())
 

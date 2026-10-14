@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -49,7 +49,7 @@ def test_alias_and_supersession_validation():
         "tags": [],
         "source_uri": "test://object",
         "content_checksum": "a" * 64,
-        "created_at": datetime.now(timezone.utc),
+        "created_at": datetime.now(UTC),
     }
     with pytest.raises(ValidationError):
         BrainObject(

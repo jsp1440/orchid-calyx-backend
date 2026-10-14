@@ -164,11 +164,19 @@ def test_receipt_from_unauthenticated_user_is_ignored():
     assert run(t)["kept"][0]["reason"] == "manual_lease_age_unknown"
 
 
-def test_receipt_for_other_issue_or_repository_is_ignored():
+def test_claim_for_other_issue_fails_closed_without_releasing_lease():
     foreign = claim_comment(number=2)
-    foreign["body"] = foreign["body"].replace('"issue_number":2', '"issue_number":1')
     t = Transport([issue()], comments={1: [foreign]}, runs={555: "completed"})
-    assert run(t)["kept"][0]["reason"] == "manual_lease_age_unknown"
+    report = run(t)
+    assert report["recovered_count"] == 0 and report["running_after"] == 1
+    assert report["errors"] == [
+        {
+            "issue": 1,
+            "reason": "lease_reconcile_unconfirmed",
+            "error_type": "ValueError",
+        }
+    ]
+    assert not t.edits and not t.posted
 
 
 def test_automatic_recoveries_are_bounded_then_block():
@@ -187,6 +195,13 @@ def test_running_beside_parked_state_removes_only_the_stale_label():
     assert decision["reason"] == "running_label_beside_parked_state" and decision["target"] is None
     assert t.edits == [(1, ("oc-running",), ())]
     assert t.issues[1]["labels"] == ["oc-validating"]
+
+
+def test_running_beside_scientific_gate_is_parked_not_requeued():
+    t = Transport([issue(labels=("oc-running", "oc-scientific-gate"))])
+    decision = run(t)["recovered"][0]
+    assert decision["reason"] == "running_label_beside_parked_state" and decision["target"] is None
+    assert t.issues[1]["labels"] == ["oc-scientific-gate"]
 
 
 def test_write_failure_is_recorded_without_receipt_or_retry():

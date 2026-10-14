@@ -1,0 +1,19 @@
+# Pin the two ruff defaults that changed in ruff 0.17.0, so the version the
+# repository pins (requirements-dev.txt: ruff==0.16.8) and the newer release
+# that unpinned workflow installs receive report exactly the same findings.
+#
+# ruff 0.17.0 (a) raised the default target-version from py310 to py311, which
+# activates the version-gated rules UP017 and FURB162 (477 + 19 new findings on
+# main), and (b) dropped the DTZ timezone-safety rules from the default set.
+# Without this file, unpinned workflows went red on code they did not change
+# (UP017 in runtime/swarm/governor.py, scripts/swarm_governor_postrun.py and
+# app/calyx_engineering/service.py) and would silently stop enforcing DTZ.
+#
+# Verified on main: with this file, ruff 0.16.8 output is byte-identical to
+# its output without it (1269 findings), and ruff 0.17.0 output is identical to
+# that (same 1269 findings); `ruff format --check` agrees across both.
+# Remove or revise deliberately when requirements-dev.txt bumps ruff.
+target-version = "py310"
+
+[lint]
+extend-select = ["DTZ001", "DTZ005", "DTZ006", "DTZ007", "DTZ011", "DTZ012", "DTZ901"]

@@ -6,7 +6,7 @@ import base64
 import copy
 import json
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -26,7 +26,7 @@ HEAD = "a" * 40
 TRUSTED = "b" * 40
 BASE = "c" * 40
 MERGE = "d" * 40
-NOW = datetime(2026, 9, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 12, tzinfo=UTC)
 PATHS = ["scripts/oc_control_plane_health.py", "tests/test_oc_control_plane_health.py"]
 
 

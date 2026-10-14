@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .models import BrainObject, BrainRelationship
 from .registry import CanonicalBrainRegistry
@@ -22,7 +22,7 @@ def _object(object_id: str, object_type: str, title: str, summary: str, aliases:
         lifecycle="approved",
         source_uri=f"brain://fixtures/{object_id}",
         content_checksum=_checksum(f"{object_id}:{title}:{summary}"),
-        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 6, tzinfo=UTC),
     )
 
 

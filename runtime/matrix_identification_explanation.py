@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Callable
 from typing import Any, Literal
 
 from app.calyx_conversation.provider import (
@@ -133,9 +134,18 @@ def explain_session(
     access_actor: str | None = None,
     root=None,
     registry_root=None,
+    evaluation_view: Callable[[dict[str, Any]], dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Explain a session's Matrix evidence.
+
+    ``evaluation_view`` (optional) reshapes the evaluation BEFORE the evidence packet
+    and its digest are built, so an audience-specific view (the member view) is what
+    the narrative, digest and returned evidence all describe.
+    """
     get_session(session_id, root=root, access_actor=access_actor)
     evaluation = evaluate_session(session_id, root=root, registry_root=registry_root, access_actor=access_actor)
+    if evaluation_view is not None:
+        evaluation = evaluation_view(evaluation)
     evidence = build_explanation_evidence(evaluation, audience=audience, focus=focus)
     deterministic_text = _deterministic_narrative(evidence)
     resolved_provider = provider or configured_reply_provider()

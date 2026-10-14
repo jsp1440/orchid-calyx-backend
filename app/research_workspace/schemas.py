@@ -2,6 +2,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.validation_errors import require_strict_json
+
 
 class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
@@ -36,7 +38,7 @@ class SavedSearchCreate(StrictModel):
 
         if len(json.dumps(value, separators=(",", ":"))) > 20_000:
             raise ValueError("query is too large")
-        return value
+        return require_strict_json(value)
 
 
 class NoteCreate(StrictModel):

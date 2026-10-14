@@ -185,10 +185,26 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
 
     lease_issue_counts = Counter(l.get("issue") for l in leases if l.get("active", True))
     running_ids = {i for i in buckets["running"] if i is not None}
-    for issue_id in running_ids:
-        count = lease_issue_counts.get(issue_id, 0)
-        if count != 1:
-            violations.append({"type": "running_lease_cardinality", "issue": issue_id, "active_leases": count})
+    # A caller that observes issues but cannot observe their leases (the portfolio
+    # steward reads only the frontend issue list; leases live in the frontend's own
+    # ledger) may say so explicitly with `lease_evidence_observed: false`. Absence
+    # of lease evidence is then reported as UNOBSERVED rather than as a false
+    # "running with 0 leases" violation. Only an explicit `false` has this effect:
+    # the default stays strict, and no other invariant is relaxed.
+    lease_evidence_observed = snapshot.get("lease_evidence_observed", True) is not False
+    unobserved: list[dict[str, Any]] = []
+    if lease_evidence_observed:
+        for issue_id in running_ids:
+            count = lease_issue_counts.get(issue_id, 0)
+            if count != 1:
+                violations.append({"type": "running_lease_cardinality", "issue": issue_id, "active_leases": count})
+    elif running_ids:
+        unobserved.append(
+            {
+                "type": "running_lease_evidence_not_observed",
+                "issues": sorted(running_ids, key=str),
+            }
+        )
 
     for lease in leases:
         if not lease.get("active", True):
@@ -255,6 +271,9 @@ def evaluate(snapshot: dict[str, Any]) -> dict[str, Any]:
         "exceptions": snapshot.get("exceptions") or [],
         "exception_decision": exception_decision,
         "violations": violations,
+        # Present only when something was deliberately left unverified, so a
+        # fully observed snapshot keeps the exact wire shape consumers pin.
+        **({"unobserved": unobserved} if unobserved else {}),
     }
 
 

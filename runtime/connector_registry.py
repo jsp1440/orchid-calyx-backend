@@ -19,7 +19,7 @@ import inspect
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from importlib.metadata import entry_points
 from pathlib import Path
 from typing import Any
@@ -43,7 +43,7 @@ class ConnectorRegistry:
         self.connectors_dir = connectors_dir
         self.connectors: dict[str, ConnectorInterface] = {}
         self.discovery_errors: list[dict[str, Any]] = []
-        self.startup_time = datetime.now(timezone.utc).isoformat()
+        self.startup_time = datetime.now(UTC).isoformat()
 
     def discover(self) -> None:
         """Auto-discover connectors from the connectors directory.
@@ -114,7 +114,7 @@ class ConnectorRegistry:
                                 "file": str(py_file),
                                 "class": name,
                                 "error": str(exc),
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
+                                "timestamp": datetime.now(UTC).isoformat(),
                             }
                         )
         except Exception as exc:  # noqa: BLE001 - plugin import boundary
@@ -124,7 +124,7 @@ class ConnectorRegistry:
                 {
                     "file": str(py_file),
                     "error": str(exc),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             )
 
@@ -146,7 +146,7 @@ class ConnectorRegistry:
                     {
                         "entry_point": entry_point.name,
                         "error": str(exc),
-                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                        "timestamp": datetime.now(UTC).isoformat(),
                     }
                 )
 
@@ -235,7 +235,7 @@ class ConnectorRegistry:
                 "status": "success",
                 "result": result,
                 "execution_time_ms": execution_time_ms,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
         except Exception as exc:
             execution_time_ms = (time.time() - start_time) * 1000
@@ -250,7 +250,7 @@ class ConnectorRegistry:
                 "status": "failure",
                 "error": str(exc),
                 "execution_time_ms": execution_time_ms,
-                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "timestamp": datetime.now(UTC).isoformat(),
             }
 
     def health(self) -> dict[str, Any]:
@@ -284,7 +284,7 @@ class ConnectorRegistry:
                 connector_health[name] = {
                     "status": "unhealthy",
                     "error": str(exc),
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
                 unhealthy_count += 1
 
@@ -295,7 +295,7 @@ class ConnectorRegistry:
         return {
             "status": overall_status,
             "startup_time": self.startup_time,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),
             "summary": {
                 "total": len(self.connectors),
                 "healthy": healthy_count,

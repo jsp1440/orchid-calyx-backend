@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.reasoning_ledger import gate as ledger_gate
@@ -189,7 +189,7 @@ class ReasoningLedgerPublicationService:
             ),
             policy_id=str(attrs.get("publication_policy_id", "")),
             policy_version=int(attrs.get("publication_policy_version", 0)),
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         if (
             min(

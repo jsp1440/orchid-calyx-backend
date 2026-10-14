@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 from app.calyx_orchestrator.executor import canonical_checksum
@@ -117,7 +117,7 @@ def _record(
         decision=decision,
         rationale="Reviewed exact proposal evidence.",
         evidence_uris=(f"review:{review_class}-ticket",),
-        decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=timezone.utc),
+        decided_at=datetime(2026, 8, 8, 22, 0, tzinfo=UTC),
     )
 
 

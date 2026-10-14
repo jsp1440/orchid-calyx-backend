@@ -199,6 +199,19 @@ def test_manage_token_from_subscription_unlocks_own_preferences_only(public, mon
     assert patched.json()["state"] == PreferenceState.SUBSCRIBED
 
 
+def test_manage_token_with_surrounding_whitespace_still_unlocks_own_preferences(public, monkeypatch):
+    """A token pasted with padding (as from an email client) is trimmed, not rejected."""
+    monkeypatch.setenv("CONSTITUENT_MANAGE_SECRET", "test-secret")
+    token = public.post("/api/constituent/subscribe", json={"email": "user@example.com"}).json()["manage_token"]
+    assert token
+    for padded in (f" {token}", f"{token} ", f"  {token}\t"):
+        read = public.get("/api/constituent/preferences", params={"email": "user@example.com", "token": padded})
+        assert read.status_code == 200, read.text
+    assert public.get(
+        "/api/constituent/preferences", params={"email": "user@example.com", "token": f" {token[:-1]} "}
+    ).status_code == 401
+
+
 def test_owner_can_read_and_update_preferences_and_gets_404_for_unknown(owner, public):
     public.post("/api/constituent/subscribe", json={"email": "user@example.com"})
     resp = owner.get("/api/constituent/preferences", params={"email": "user@example.com"})

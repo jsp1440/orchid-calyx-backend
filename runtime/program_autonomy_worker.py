@@ -1,27 +1,120 @@
 from __future__ import annotations
 
 import json
+import logging
+import signal
+import threading
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 from app.calyx_orchestrator.autonomy_policy import ProgramAutonomyPolicy
-from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
+from app.calyx_orchestrator.executor_registry import AuthoritativeExecutorRegistry
+from app.calyx_orchestrator.program_cycle import (
+    ZERO_EXECUTION_CATEGORIES,
+    run_deterministic_program_cycle,
+)
+from app.calyx_orchestrator.schema import ensure_orchestrator_schema
 from app.database import get_session_local
 
+logger = logging.getLogger(__name__)
 
-def run_once(policy: ProgramAutonomyPolicy | None = None) -> dict[str, Any]:
+#: Optional upstream step run at the start of every scheduled cycle, before the
+#: worker claims. It is the Brain work-selection/replenishment pulse: it selects
+#: eligible work and submits it through the canonical authenticated handoff
+#: (``POST /brain/canonical/builds/submit``). It returns a JSON-safe record; a
+#: zero-submission pulse names its reason as ``zero_reason`` using
+#: ``ZERO_EXECUTION_CATEGORIES``. It never claims, executes or settles jobs.
+Replenisher = Callable[[], dict[str, Any]]
+
+#: Optional durable recorder for each finished cycle (see
+#: ``app.calyx_orchestrator.autonomy_cycles``). A recorder failure is reported
+#: in the cycle result and never stops the loop.
+Recorder = Callable[[dict[str, Any]], str]
+
+#: Healthy zero-execution categories that back off when they persist: nothing
+#: changes until something external does (new work, a human approval, or a
+#: provider authorization for an approved, lane-gated item).
+_BACKOFF_CATEGORIES = frozenset({"no_eligible_work", "owner_gate", "provider_budget"})
+
+# Upstream reasons that explain an idle cycle better than "no eligible work".
+_UPSTREAM_REASONS = frozenset(ZERO_EXECUTION_CATEGORIES) - {"no_eligible_work"}
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+def _replenish(replenish: Replenisher | None) -> dict[str, Any] | None:
+    if replenish is None:
+        return None
+    try:
+        record = replenish()
+    except Exception as exc:  # replenishment must not stop the claim/execute step
+        logger.exception("program autonomy replenishment failed")
+        return {"error": {"exception_type": type(exc).__name__}}
+    if not isinstance(record, dict):
+        return {"error": {"exception_type": "ReplenishmentRecordInvalid"}}
+    return record
+
+
+def classify_cycle(
+    cycle: dict[str, Any] | None,
+    replenishment: dict[str, Any] | None,
+    *,
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """Truthful per-cycle accounting: productive, healthy waiting or defect."""
+    if cycle is not None and int(cycle.get("productive_jobs") or 0) > 0:
+        return {"productive": True, "category": None, "healthy": True}
+    if reason == "disabled_or_owner_not_configured":
+        category = "owner_gate"
+    elif reason == "cycle_failed" or cycle is None:
+        category = "scheduler_defect"
+    else:
+        zero = cycle.get("zero_execution") or {}
+        category = zero.get("category") or "scheduler_defect"
+        upstream = (replenishment or {}).get("zero_reason")
+        if (replenishment or {}).get("error") and category == "no_eligible_work":
+            category = "scheduler_defect"
+        elif category == "no_eligible_work" and upstream in _UPSTREAM_REASONS:
+            category = upstream
+    if category not in ZERO_EXECUTION_CATEGORIES:
+        category = "scheduler_defect"
+    return {
+        "productive": False,
+        "category": category,
+        "healthy": ZERO_EXECUTION_CATEGORIES[category],
+    }
+
+
+def run_once(
+    policy: ProgramAutonomyPolicy | None = None,
+    *,
+    replenish: Replenisher | None = None,
+    registry: AuthoritativeExecutorRegistry | None = None,
+) -> dict[str, Any]:
     active_policy = (policy or ProgramAutonomyPolicy.from_environ()).validated()
     state = active_policy.status()
+    started_at = _now()
     if not state["authorized"]:
         return {
             "executed": False,
             "reason": "disabled_or_owner_not_configured",
             "policy": state,
+            "started_at": started_at,
+            "classification": classify_cycle(
+                None, None, reason="disabled_or_owner_not_configured"
+            ),
         }
 
+    replenishment = _replenish(replenish)
     SessionLocal = get_session_local()
     with SessionLocal() as db:
+        # Idempotent and cached per engine; a fresh database must not turn the
+        # first scheduled cycle into a scheduler defect.
+        ensure_orchestrator_schema(db)
         result = run_deterministic_program_cycle(
             db,
             owner=active_policy.owner,
@@ -29,37 +122,156 @@ def run_once(policy: ProgramAutonomyPolicy | None = None) -> dict[str, Any]:
             max_jobs=active_policy.max_jobs_per_cycle,
             lease_seconds=active_policy.lease_seconds,
             timeout_seconds=active_policy.timeout_seconds,
+            registry=registry,
         )
-    return {"executed": True, "policy": state, "cycle": result.as_dict()}
+    cycle = result.as_dict()
+    return {
+        "executed": True,
+        "policy": state,
+        "started_at": started_at,
+        "finished_at": _now(),
+        "replenishment": replenishment,
+        "cycle": cycle,
+        "classification": classify_cycle(cycle, replenishment),
+    }
 
 
 def run_forever(
     policy: ProgramAutonomyPolicy | None = None,
     *,
-    sleeper: Callable[[float], None] = time.sleep,
+    sleeper: Callable[[float], None] | None = None,
     on_cycle: Callable[[dict[str, Any]], None] | None = None,
+    replenish: Replenisher | None = None,
+    registry: AuthoritativeExecutorRegistry | None = None,
+    recorder: Recorder | None = None,
+    stop: threading.Event | None = None,
 ) -> None:
+    """Run scheduled cycles until ``stop`` is set (or forever without one).
+
+    A stop request never interrupts a cycle: the running cycle finishes and
+    settles its leases, then the loop exits instead of sleeping.
+    """
     active_policy = (policy or ProgramAutonomyPolicy.from_environ()).validated()
     if not active_policy.status()["authorized"]:
         raise PermissionError("PROGRAM_AUTONOMY_NOT_AUTHORIZED")
+    if sleeper is None:
+        sleeper = stop.wait if stop is not None else time.sleep
 
-    while True:
-        result = run_once(active_policy)
+    sequence = 0
+    idle_streak = 0
+    while stop is None or not stop.is_set():
+        sequence += 1
+        try:
+            result = run_once(active_policy, replenish=replenish, registry=registry)
+        except Exception as exc:  # one bad cycle must not end the loop
+            # Logged with its traceback, reported to on_cycle, then the loop
+            # sleeps and continues. BaseException (KeyboardInterrupt,
+            # SystemExit) still stops the worker.
+            logger.exception("program autonomy cycle failed")
+            result = {
+                "executed": False,
+                "reason": "cycle_failed",
+                "error": {"exception_type": type(exc).__name__},
+                "classification": classify_cycle(None, None, reason="cycle_failed"),
+            }
+        # Only healthy "nothing to do until something external changes"
+        # cycles back off: no eligible work, or work awaiting human approval.
+        # Defects, capacity and dependency waits keep the normal cadence so
+        # repairs are noticed.
+        classification = result.get("classification") or {}
+        if (
+            classification.get("category") in _BACKOFF_CATEGORIES
+            and classification.get("healthy") is True
+            and classification.get("productive") is not True
+        ):
+            idle_streak += 1
+        else:
+            idle_streak = 0
+        next_sleep = active_policy.next_sleep_seconds(idle_streak)
+        result["scheduler"] = {
+            "sequence": sequence,
+            "worker_id": active_policy.worker_id,
+            "poll_seconds": active_policy.poll_seconds,
+            "idle_streak": idle_streak,
+            "next_sleep_seconds": next_sleep,
+        }
+        if recorder is not None:
+            try:
+                result["receipt"] = {"persisted": True, "cycle_id": recorder(result)}
+            except Exception as exc:  # telemetry must not stop execution
+                logger.exception("program autonomy cycle receipt not persisted")
+                result["receipt"] = {
+                    "persisted": False,
+                    "error": {"exception_type": type(exc).__name__},
+                }
         if on_cycle is not None:
             on_cycle(result)
-        sleeper(active_policy.poll_seconds)
+        if stop is not None and stop.is_set():
+            break
+        sleeper(next_sleep)
+
+
+def database_recorder(owner: str) -> Recorder:
+    """Persist cycle receipts with the application database session."""
+    from app.calyx_orchestrator.autonomy_cycles import record_cycle
+    from app.calyx_orchestrator.schema import ensure_orchestrator_schema
+    from app.routers.release_identity import release_identity
+
+    commit = release_identity()["commit_sha"]
+    session_factory = get_session_local()
+
+    def record(result: dict[str, Any]) -> str:
+        with session_factory() as db:
+            ensure_orchestrator_schema(db)
+            return record_cycle(db, result, owner=owner, deployment_commit=commit)
+
+    return record
+
+
+def install_stop_handlers(stop: threading.Event) -> None:
+    """SIGTERM/SIGINT request a graceful stop after the current cycle."""
+
+    def finish_stop(signum: int) -> None:
+        logger.info("program autonomy stop requested by signal %s", signum)
+        stop.set()
+
+    def request_stop(signum: int, _frame: object) -> None:
+        # A handler runs on the main thread between bytecodes, possibly while
+        # that thread holds the Event's (non-reentrant) lock inside
+        # ``stop.wait()``; logging takes locks too. Calling either here can
+        # deadlock the worker so it ignores SIGTERM until SIGKILL. Hand both
+        # to a short-lived thread, which proceeds once the main thread
+        # releases the lock.
+        threading.Thread(
+            target=finish_stop, args=(signum,), name="autonomy-stop", daemon=True
+        ).start()
+
+    signal.signal(signal.SIGTERM, request_stop)
+    signal.signal(signal.SIGINT, request_stop)
 
 
 def main() -> int:
     policy = ProgramAutonomyPolicy.from_environ()
     if not policy.status()["authorized"]:
-        print(json.dumps({"worker": "calyx-program-autonomy", "policy": policy.status()}, sort_keys=True))
+        print(
+            json.dumps(
+                {"worker": "calyx-program-autonomy", "policy": policy.status()},
+                sort_keys=True,
+            )
+        )
         return 0
 
     def emit(result: dict[str, Any]) -> None:
         print(json.dumps(result, sort_keys=True, default=str), flush=True)
 
-    run_forever(policy, on_cycle=emit)
+    stop = threading.Event()
+    install_stop_handlers(stop)
+    run_forever(
+        policy,
+        on_cycle=emit,
+        recorder=database_recorder(policy.owner),
+        stop=stop,
+    )
     return 0
 
 
