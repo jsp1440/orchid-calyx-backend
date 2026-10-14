@@ -1,0 +1,28 @@
+{
+  "fixture_id": "fil-001b-literature-to-calyx",
+  "fixture_notice": "Synthetic FIL-001B offline fixture. Every taxon, paper, DOI, author and value is invented for contract testing. It is not scientific evidence and must never be ingested, cited, promoted or published.",
+  "as_of": "2026-10-11T00:00:00+00:00",
+  "license_note": "Invented text written for this fixture; no third-party content.",
+  "papers": [
+    {"file": "paper_a.txt", "source_object_id": 9101, "revision_id": 1, "extraction_run_id": 1},
+    {"file": "paper_b.txt", "source_object_id": 9102, "revision_id": 1, "extraction_run_id": 1},
+    {"file": "paper_c.txt", "source_object_id": 9103, "revision_id": 1, "extraction_run_id": 1}
+  ],
+  "taxonomy": {
+    "authority": "fil_fixture_backbone",
+    "authority_note": "Invented backbone built with the World Plants spine builder; not a World Plants release.",
+    "release_label": "fil-001b-fixture-backbone",
+    "load_rows": [
+      {"name": "Fixtureia alpha Fixt.", "taxon_code": "S"},
+      {"name": "Fixtureia delta Fixt.", "taxon_code": "S"}
+    ],
+    "synonym_rows": [
+      {
+        "input_match_name": "Fixtureia beta",
+        "accepted_match_name": "Fixtureia alpha",
+        "input_name": "Fixtureia beta Demo",
+        "relationship": "synonym"
+      }
+    ]
+  }
+}

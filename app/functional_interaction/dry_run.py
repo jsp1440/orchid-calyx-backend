@@ -37,7 +37,12 @@ from app.calyx_orchestrator.executor import (
     canonical_checksum,
 )
 
-from .contracts import HUMAN_ONLY_EVIDENCE_STATES, RECEIPT_SCHEMA, CapabilityDescriptor
+from .contracts import (
+    HUMAN_ONLY_EVIDENCE_STATES,
+    RECEIPT_SCHEMA,
+    TAXON_LINK_STATUSES,
+    CapabilityDescriptor,
+)
 from .governance import DRY_RUN_MODE, GovernanceDecision, evaluate_plan
 from .planner import WorkflowPlan
 
@@ -54,6 +59,8 @@ class HandlerResult:
     events: tuple[str, ...] = ()
     provenance: tuple[str, ...] = ()
     notes: Mapping[str, Any] = field(default_factory=dict)
+    #: Every taxon link on the output, for functions with a taxon policy.
+    taxon_links: tuple[Mapping[str, Any], ...] = ()
 
 
 Handler = Callable[[Any], HandlerResult]
@@ -241,6 +248,38 @@ def _violation(descriptor: CapabilityDescriptor, result: Any) -> str | None:
         return f"UNDECLARED_EVENT:{','.join(undeclared_events)}"
     if descriptor.provenance.preserves_chain and not result.provenance:
         return "PROVENANCE_CHAIN_DROPPED"
+    return _taxon_violation(descriptor, result)
+
+
+def _taxon_violation(
+    descriptor: CapabilityDescriptor, result: HandlerResult
+) -> str | None:
+    """Check emitted taxon links against the descriptor's taxon policy.
+
+    A provider must name its authority and an allowed status on every link and
+    must never have matched fuzzily; a requirer must emit only links whose
+    status it admits. Links are checked, never trusted.
+    """
+    policy = descriptor.taxon_resolution
+    if policy is None:
+        # Only a declared provider may emit taxon links.
+        return (
+            "TAXON_RESOLUTION_VIOLATION:links_without_policy"
+            if result.taxon_links
+            else None
+        )
+    for link in result.taxon_links:
+        status = link.get("status")
+        if policy.role == "provides" and status not in TAXON_LINK_STATUSES:
+            return f"TAXON_RESOLUTION_VIOLATION:unknown_status:{status}"
+        if policy.role == "requires" and status not in policy.admitted_statuses:
+            return f"TAXON_RESOLUTION_VIOLATION:inadmissible_status:{status}"
+        # Authority and no-fuzzy guarantees are re-checked at every policy
+        # holder, so a link corrupted between provider and requirer is refused.
+        if link.get("authority") != policy.authority:
+            return f"TAXON_RESOLUTION_VIOLATION:authority:{link.get('authority')}"
+        if link.get("automatic_fuzzy_matching") is not False:
+            return "TAXON_RESOLUTION_VIOLATION:fuzzy_matching_not_excluded"
     return None
 
 
