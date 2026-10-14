@@ -34,7 +34,7 @@ import json
 import os
 import re
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -769,87 +769,100 @@ def build_handlers(
         packets: list[dict[str, Any]] = []
         states: set[str] = set()
         variation: list[dict[str, Any]] = []
+        planned: list[dict[str, Any]] = []
         for (taxon_id, predicate), members in sorted(groups.items()):
-            # Values are compared after normalization (case, separators, length
-            # units); only mutually exclusive categorical values contradict.
-            by_value: dict[str, list[dict[str, Any]]] = {}
-            keys: dict[str, value_semantics.ValueKey] = {}
+            # Records are grouped by their comparison key (case, separators and
+            # length units normalized; numbers at full precision), never by a
+            # display string, so distinct values are never merged into one
+            # falsely corroborated candidate. Only mutually exclusive
+            # categorical values contradict.
+            by_key: dict[value_semantics.ValueKey, list[dict[str, Any]]] = {}
             for record in members:
-                key = _value_key(record)
-                keys[value_semantics.display(key)] = key
-                by_value.setdefault(value_semantics.display(key), []).append(record)
-            comparison = value_semantics.classify(predicate, keys.values())
+                by_key.setdefault(_value_key(record), []).append(record)
+            comparison = value_semantics.classify(predicate, by_key)
             contradictory = comparison == value_semantics.CONTRADICTION
-            differs = comparison not in {
+            if comparison not in {
                 value_semantics.AGREEMENT,
                 value_semantics.CONTRADICTION,
-            }
-            if differs:
+            }:
                 variation.append(
                     {
                         "taxon_id": taxon_id,
                         "predicate": predicate,
-                        "values": sorted(by_value),
+                        "values": sorted(value_semantics.display(k) for k in by_key),
                         "assessment": comparison,
                         "sources": sorted({r["reference_raw"] for r in members}),
                     }
                 )
-            ids = _candidate_ids(taxon_id, predicate, keys)
-            for value, records in sorted(by_value.items()):
+            ids = _candidate_ids(taxon_id, predicate, by_key)
+            for key, records in sorted(by_key.items(), key=lambda item: ids[item[0]]):
+                value = value_semantics.display(key)
                 state = "CONTRADICTORY" if contradictory else "PROVISIONAL"
-                states.add(state)
                 packet = _packet(
-                    candidate_id=ids[value],
+                    candidate_id=ids[key],
                     records=records,
                     value=value,
-                    contradictions=sorted(
-                        other for v, other in ids.items() if v != value
-                    )
+                    contradictions=sorted(other for k, other in ids.items() if k != key)
                     if contradictory
                     else [],
                     variation=comparison == value_semantics.VARIATION_AT_UNSTATED_LEVEL,
                     gaps=gap_lines,
                 )
-                first = records[0]["raw"]
-                request = to_request(
-                    packet,
-                    domain=kind_domain[first["kind"]],
-                    source_object_type=SOURCE_OBJECT_TYPE,
-                    source_object_id=first["source_object_id"],
-                    revision_id=first["revision_id"],
-                    extraction_run_id=first["extraction_run_id"],
-                )
-
-                def admit(request=request) -> dict[str, Any]:
-                    return admit_candidate(request, (repository, service))
-
-                result = atomic(admit) if atomic is not None else admit()
-                packets.append(packet)
-                handoffs.append(
+                planned.append(
                     {
-                        "candidate_id": ids[value],
-                        "evidence_state": state,
-                        "subject": records[0]["scientific_name"],
+                        "candidate_id": ids[key],
+                        "state": state,
                         "taxon_id": taxon_id,
                         "predicate": predicate,
                         "value": value,
-                        "sources": sorted({r["reference_raw"] for r in records}),
-                        "contradicts": packet["contradictions"],
-                        "uncertainty": sorted(
-                            {u for r in records for u in r["raw"]["uncertainty"]}
-                        ),
-                        "packet_digest": canonical_checksum(packet),
-                        "calyx_candidate_ids": result["candidate_ids"],
-                        "calyx_state": result["state"],
-                        "review_required": result["review_required"],
-                        "published": result["published"],
-                        "graph_mutation": result["graph_mutation"],
-                        "taxon_link": records[0]["taxon_link"],
+                        "records": records,
+                        "packet": packet,
                     }
                 )
-        candidate_ids = [h["candidate_id"] for h in handoffs]
+        # Identity is checked before anything is admitted to the repository.
+        candidate_ids = [item["candidate_id"] for item in planned]
         if len(candidate_ids) != len(set(candidate_ids)):
             raise ValueError("CANDIDATE_ID_COLLISION")
+        for item in planned:
+            records, packet = item["records"], item["packet"]
+            states.add(item["state"])
+            first = records[0]["raw"]
+            request = to_request(
+                packet,
+                domain=kind_domain[first["kind"]],
+                source_object_type=SOURCE_OBJECT_TYPE,
+                source_object_id=first["source_object_id"],
+                revision_id=first["revision_id"],
+                extraction_run_id=first["extraction_run_id"],
+            )
+
+            def admit(request=request) -> dict[str, Any]:
+                return admit_candidate(request, (repository, service))
+
+            result = atomic(admit) if atomic is not None else admit()
+            packets.append(packet)
+            handoffs.append(
+                {
+                    "candidate_id": item["candidate_id"],
+                    "evidence_state": item["state"],
+                    "subject": records[0]["scientific_name"],
+                    "taxon_id": item["taxon_id"],
+                    "predicate": item["predicate"],
+                    "value": item["value"],
+                    "sources": sorted({r["reference_raw"] for r in records}),
+                    "contradicts": packet["contradictions"],
+                    "uncertainty": sorted(
+                        {u for r in records for u in r["raw"]["uncertainty"]}
+                    ),
+                    "packet_digest": canonical_checksum(packet),
+                    "calyx_candidate_ids": result["candidate_ids"],
+                    "calyx_state": result["state"],
+                    "review_required": result["review_required"],
+                    "published": result["published"],
+                    "graph_mutation": result["graph_mutation"],
+                    "taxon_link": records[0]["taxon_link"],
+                }
+            )
         return HandlerResult(
             output={
                 "fixture_id": payload["fixture_id"],
@@ -920,25 +933,22 @@ def _slug(value: str) -> str:
 
 
 def _candidate_ids(
-    taxon_id: int, predicate: str, keys: Mapping[str, value_semantics.ValueKey]
-) -> dict[str, str]:
+    taxon_id: int, predicate: str, keys: Iterable[value_semantics.ValueKey]
+) -> dict[value_semantics.ValueKey, str]:
     """Readable, collision-free candidate ids for one (taxon, predicate) group.
 
-    Distinct normalized values whose slugs coincide get a deterministic suffix
-    derived from the comparison key, so no two candidates share an id.
+    Distinct comparison keys whose slugs coincide (including a text value and
+    a measurement that display alike) get a deterministic suffix derived from
+    the key, so no two candidates share an id.
     """
-    slugs: dict[str, list[str]] = {}
-    for display in keys:
-        slugs.setdefault(_slug(display), []).append(display)
-    ids: dict[str, str] = {}
-    for slug, displays in slugs.items():
-        for display in displays:
-            suffix = (
-                f"-{canonical_checksum(list(keys[display]))[:8]}"
-                if len(displays) > 1
-                else ""
-            )
-            ids[display] = f"fil001b:{taxon_id}:{predicate}:{slug}{suffix}"
+    slugs: dict[str, list[value_semantics.ValueKey]] = {}
+    for key in keys:
+        slugs.setdefault(_slug(value_semantics.display(key)), []).append(key)
+    ids: dict[value_semantics.ValueKey, str] = {}
+    for slug, members in slugs.items():
+        for key in members:
+            suffix = f"-{canonical_checksum(list(key))[:8]}" if len(members) > 1 else ""
+            ids[key] = f"fil001b:{taxon_id}:{predicate}:{slug}{suffix}"
     return ids
 
 

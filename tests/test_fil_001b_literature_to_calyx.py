@@ -462,10 +462,25 @@ def test_offline_chain_opens_no_database_connection_by_default():
     assert probe == {"connects": 0, "succeeded": True, "reasons": [None] * 5}
 
 
+def _dependencies_module_is_lazy() -> bool:
+    """True once #1827's first-use repository resolution is in the tree."""
+    from app.functional_interaction import literature_to_calyx as module
+
+    source = (ROOT / "app" / "candidate_knowledge" / "dependencies.py").read_text()
+    return module._LAZY_DEPENDENCIES_MARKER in source
+
+
 @pytest.mark.parametrize("variable", ["DATABASE_URL", "TEST_DATABASE_URL"])
-def test_offline_chain_refuses_to_trigger_import_time_database_contact(variable):
+def test_offline_chain_never_triggers_import_time_database_contact(variable):
     probe = _probe({variable: "postgresql://prod-like.invalid:5432/orchid"})
+    # The invariant in every tree: the offline chain opens no connection.
     assert probe["connects"] == 0
+    if _dependencies_module_is_lazy():
+        # With the lazy module (#1827) importing the bridge is safe, so the
+        # chain runs offline end to end.
+        assert probe == {"connects": 0, "succeeded": True, "reasons": [None] * 5}
+        return
+    # With the eager module, FIL refuses rather than trigger the connection.
     assert probe["succeeded"] is False
     calyx = probe["reasons"][-1]
     assert calyx.startswith(

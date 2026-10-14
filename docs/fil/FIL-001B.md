@@ -89,7 +89,7 @@ The 6 FIL records were fed to jsp1440/Orchid-Continuum-Brain#246's `ingest_trait
 
 ## Validation (local)
 
-- `pytest tests/test_fil_001*.py`: **128 passed** with `CI=true` and the Postgres test included (80 FIL-001A + 48 FIL-001B), after the checker-finding fixes. The earlier figure was 88 at `c9235e3`. This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
+- `pytest tests/test_fil_001*.py`: **144 passed** with `CI=true` and the Postgres test included (91 FIL-001A + 53 FIL-001B), after the checker-finding fixes. The earlier figure was 88 at `c9235e3`. This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
 - **Regression suites for reused code: 179 passed** (the selection now includes the candidate-knowledge suites). Earlier: 153 passed. These were critical-suite coverage, source compiles, the reasoning bridge, candidate handoff, the literature pipeline, the provider reservoir, the Brain capability registry and canonical taxonomy.
 - **Mutation sweep: 13 of 13 FIL-001B guard mutants killed.** The sweep ran with bytecode caching off, an unmutated control was green before and after, and the sources were restored byte for byte. The guards covered:
   - crosswalk unmapped, stale and disagreeing entries;
@@ -117,6 +117,10 @@ Regression tests are in `tests/test_fil_001b_review_hardening.py` and `tests/tes
 | (Copilot) Fixture links claimed `world_plants` authority for invented taxa | Fixture authority `fil_fixture_backbone` everywhere, a manifest check, and a test that no fixture output contains `world_plants` |
 | (Copilot) A requirer checked only the status | Authority and no-fuzzy guarantees are re-checked at every policy holder |
 | (Copilot) Bare Brain PR references resolved to unrelated backend PRs | Fully qualified as `jsp1440/Orchid-Continuum-Brain#N` |
+| (Second independent check of `49bbc808`) Records were grouped by display string, so 123.4567 vs 123.4568 mm, or the text "12 mm" vs the number 12 mm, merged into one falsely corroborated candidate. | Records are grouped by the comparison key at full precision, with key-based collision-free ids. Candidate ids are checked before anything is admitted. |
+| (Second check) The DB-contact tests asserted a refusal even when #1827's lazy module is present. | The tests assert 0 connections in every tree: a refusal with the eager module, an offline success with the lazy one. Verified on a trial merge with #1827 (159 passed). |
+| (Second check) A source could assert the reserved taxon-authority condition. | Governance refuses with `SOURCE_CLAIMS_RESERVED_TAXON_CONDITION`. |
+| (Second check) `ambiguous` was defined as "more than one taxon matched". | The definition is now "the subject cannot be attributed to exactly one taxon", with precise reason codes. Requirer links remain handler-reported; that is a stated limit. |
 | Crosswalk broke when merged with #1813 (`traitbank_batch_validator`) | Fixed in `5f1f2a5f` with `PENDING_MEMBERS` |
 
 ## Remaining blockers

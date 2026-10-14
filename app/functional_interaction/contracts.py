@@ -92,8 +92,11 @@ FORBIDDEN_EFFECTS = frozenset(
 )
 
 #: Statuses a taxon link may carry. ``synonym`` means the submitted name is a
-#: synonym and the link points at the accepted taxon; ``ambiguous`` means more
-#: than one taxon matched and nothing was chosen.
+#: synonym and the link points at the accepted taxon; ``ambiguous`` means the
+#: claim's subject cannot be attributed to exactly one taxon, so nothing was
+#: chosen. The reason code says why: several exact taxa in one claim
+#: (``MULTIPLE_SUBJECT_TAXA``), or one taxon beside a name outside the backbone
+#: (``SUBJECT_TAXON_UNDETERMINED``).
 TAXON_LINK_STATUSES = ("accepted", "ambiguous", "synonym", "unresolved")
 
 #: The canonical backbone (``runtime.knowledge_graph.canonical_taxonomy``).

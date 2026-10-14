@@ -129,6 +129,18 @@ def evaluate_plan(
         findings.append(
             (GovernanceAction.OWNER_GATE, f"FIL_001_HAS_NO_AUTHORITY_FOR_MODE:{mode}")
         )
+    # A source may not assert the reserved taxon-authority condition: only a
+    # declared taxon provider inside the plan can establish it.
+    reserved = sorted(
+        c for c in plan.source.conditions if c.startswith("taxon_authority_")
+    )
+    if reserved:
+        findings.append(
+            (
+                GovernanceAction.REFUSE,
+                f"SOURCE_CLAIMS_RESERVED_TAXON_CONDITION:{','.join(reserved)}",
+            )
+        )
     if not plan.found:
         findings.append((GovernanceAction.REFUSE, "NO_COMPATIBLE_PLAN"))
     if plan.source_edge is not None and not plan.source_edge.compatible:

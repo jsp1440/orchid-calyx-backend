@@ -172,17 +172,15 @@ def test_mixed_measurement_and_category_is_incommensurable_not_contradictory():
 
 
 def test_candidate_ids_never_collide_when_slugs_coincide():
-    keys = {
-        "pale/yellow": value_key(
-            object_value="pale/yellow", numeric_value=None, unit=None
-        ),
-        "pale yellow": value_key(
-            object_value="pale yellow", numeric_value=None, unit=None
-        ),
-    }
+    keys = [
+        value_key(object_value="pale/yellow", numeric_value=None, unit=None),
+        value_key(object_value="pale yellow", numeric_value=None, unit=None),
+        value_key(object_value="12 mm", numeric_value=None, unit=None),
+        value_key(object_value=None, numeric_value=12, unit="mm"),
+    ]
     ids = _candidate_ids(1, "color", keys)
-    assert len(set(ids.values())) == 2
-    assert all(i.startswith("fil001b:1:color:pale-yellow-") for i in ids.values())
+    assert len(set(ids.values())) == 4
+    assert ids[keys[0]].startswith("fil001b:1:color:pale-yellow-")
 
 
 def test_value_key_normalizes_case_separators_and_length_units():
@@ -240,3 +238,79 @@ def test_manifest_must_declare_the_fixture_authority():
     manifest["taxonomy"] = {**manifest["taxonomy"], "authority": "world_plants"}
     with pytest.raises(ValueError, match="TAXONOMY_AUTHORITY_MISMATCH:world_plants"):
         build_handlers(manifest)
+
+
+# --- second independent check (exact head 49bbc808) -------------------------
+
+
+@pytest.mark.parametrize(
+    ("first", "second", "assessment"),
+    [
+        ((123.4567, "mm"), (123.4568, "mm"), "VARIATION_AT_UNSTATED_LEVEL"),
+        ((1234567.0, "mm"), (1234568.0, "mm"), "VARIATION_AT_UNSTATED_LEVEL"),
+        (("12 mm", ""), (12.0, "mm"), "INCOMMENSURABLE_VALUES"),
+    ],
+)
+def test_distinct_values_are_never_merged_into_false_corroboration(
+    first, second, assessment
+):
+    payload = _traitbank_payload()
+    records = [
+        r for r in payload["traitbank_records"] if r["trait_raw"] == "measurement"
+    ]
+    for record, (value, units) in zip(records, (first, second), strict=True):
+        record["value_raw"], record["units_raw"] = value, units
+    output = _handoff(payload)
+    measured = [h for h in output["handoffs"] if h["predicate"] == "measurement"]
+    assert len(measured) == 2
+    assert len({h["candidate_id"] for h in measured}) == 2
+    assert all(len(h["sources"]) == 1 for h in measured)
+    assert assessment in {v["assessment"] for v in output["variation"]}
+
+
+def test_collision_is_refused_before_anything_is_admitted(monkeypatch):
+    from app.candidate_knowledge.repository import MemoryCandidateRepository
+    from app.candidate_knowledge.service import CandidateExtractionService
+    from app.functional_interaction import literature_to_calyx as module
+
+    payload = _traitbank_payload()
+    repository = MemoryCandidateRepository()
+    monkeypatch.setattr(
+        module,
+        "_candidate_ids",
+        lambda taxon_id, predicate, keys: dict.fromkeys(keys, "fil001b:dup"),
+    )
+    handlers = build_handlers(
+        load_manifest(),
+        allow_import_time_database_contact=True,
+        candidate_components=lambda: (
+            repository,
+            CandidateExtractionService(repository),
+        ),
+    )
+    with pytest.raises(ValueError, match="CANDIDATE_ID_COLLISION"):
+        handlers[HANDOFF](payload)
+    assert list(repository.candidates) == []
+
+
+def test_source_may_not_claim_the_reserved_taxon_condition():
+    from app.functional_interaction.governance import GovernanceAction, evaluate_plan
+    from app.functional_interaction.planner import SourceArtifact, plan_workflow
+
+    buffer = _descriptor(BUFFER)
+    port = buffer.inputs[0]
+    source = SourceArtifact(
+        port.semantic_type,
+        port.evidence_states,
+        tuple(sorted({*buffer.preconditions})),
+    )
+    plan = plan_workflow(
+        chain_registry(), source=source, goal_type="oc:CalyxCandidateHandoffBatch"
+    )
+    assert plan.found  # the planner alone would accept the claim ...
+    decision = evaluate_plan(plan)  # ... governance refuses it
+    assert decision.action is GovernanceAction.REFUSE
+    assert any(
+        r.startswith("SOURCE_CLAIMS_RESERVED_TAXON_CONDITION:")
+        for r in decision.reasons
+    )
