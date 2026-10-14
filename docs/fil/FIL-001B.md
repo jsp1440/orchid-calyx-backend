@@ -89,7 +89,7 @@ The 6 FIL records were fed to jsp1440/Orchid-Continuum-Brain#246's `ingest_trait
 
 ## Validation (local)
 
-- `pytest tests/test_fil_001*.py`: **144 passed** with `CI=true` and the Postgres test included (91 FIL-001A + 53 FIL-001B), after the checker-finding fixes. The earlier figure was 88 at `c9235e3`. This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
+- `pytest tests/test_fil_001*.py`: **156 passed** with `CI=true` and the Postgres test included (103 FIL-001A + 53 FIL-001B), after the checker-finding fixes. The earlier figure was 88 at `c9235e3`. This includes the Postgres durability test against a disposable local PostgreSQL 16, and was re-run in a clean venv built from `requirements-scientific.txt` and `requirements-dev.txt` with `CI=true`.
 - **Regression suites for reused code: 179 passed** (the selection now includes the candidate-knowledge suites). Earlier: 153 passed. These were critical-suite coverage, source compiles, the reasoning bridge, candidate handoff, the literature pipeline, the provider reservoir, the Brain capability registry and canonical taxonomy.
 - **Mutation sweep: 13 of 13 FIL-001B guard mutants killed.** The sweep ran with bytecode caching off, an unmutated control was green before and after, and the sources were restored byte for byte. The guards covered:
   - crosswalk unmapped, stale and disagreeing entries;
