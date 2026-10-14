@@ -23,6 +23,7 @@ Commands::
 
 from __future__ import annotations
 
+import http.client
 import json
 import re
 import secrets
@@ -379,9 +380,10 @@ def _http(opener, req):
     except urllib.error.HTTPError as exc:
         try:
             return exc.code, exc.read(65536)
-        except OSError:
+        except (OSError, http.client.HTTPException):
             return exc.code, b""
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
+        # Outage, refused connection, truncated or malformed response.
         return None, b""
 
 
@@ -393,13 +395,18 @@ def _probe_health(opener, host: str) -> dict:
         data = strict_json(body) if body else {}
     except ValueError:
         data = {}
+    if not isinstance(data, dict):
+        data = {}
     ok = status == 200 and data.get("status") == "alive" and data.get("stage") == STAGE
+    # Booleans only: response values are never echoed into the report.
     return {
         "status": "verified" if ok else "failed",
         "http_status": status,
-        "observed": {k: data.get(k) for k in ("status", "stage", "ready")}
-        if data
-        else None,
+        "observed": {
+            "status_alive": data.get("status") == "alive",
+            "stage_staging": data.get("stage") == STAGE,
+            "ready": data.get("ready") if isinstance(data.get("ready"), bool) else None,
+        },
     }
 
 
@@ -470,6 +477,17 @@ def _live_result(body: str) -> bool:
     )
 
 
+def _pinned_comment_url(comment: dict) -> str | None:
+    """Echo a comment URL only when it is a short link into the pinned PR."""
+    url = comment.get("html_url")
+    prefix = (
+        f"https://github.com/{PINNED_REPOSITORY}/pull/{PINNED_RESULT_PR}#issuecomment-"
+    )
+    if isinstance(url, str) and url.startswith(prefix) and url[len(prefix) :].isdigit():
+        return url
+    return None
+
+
 def readiness_report(
     env, *, probe: bool = False, opener=None, hub_client=None, pr_client=None
 ) -> dict:
@@ -532,7 +550,13 @@ def readiness_report(
                 hub_client or HubReader(config.hub_token, config.hub_reporter_ids)
             ).comments()
             sections["reporter_authentication"]["hub_read"] = base("read_verified")
-        except (OSError, ValueError, TypeError, PermissionError):
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            PermissionError,
+            http.client.HTTPException,
+        ):
             sections["reporter_authentication"]["hub_read"] = base("failed")
         try:
             prc = pr_client or PullRequestComments(config.pr_token)
@@ -540,13 +564,16 @@ def readiness_report(
             ours = [
                 c
                 for c in comments
-                if c.get("user", {}).get("id") == config.pr_reporter_id
-                and (c.get("body") or "").startswith(f"<!-- {ADAPTER_MARKER}:")
+                if isinstance(c, dict)
+                and isinstance(c.get("user"), dict)
+                and c["user"].get("id") == config.pr_reporter_id
+                and isinstance(c.get("body"), str)
+                and c["body"].startswith(f"<!-- {ADAPTER_MARKER}:")
             ]
             sections["reporter_authentication"]["pr_write"] = (
                 base(
                     "verified_by_observed_comment",
-                    comment_url=ours[-1].get("html_url"),
+                    comment_url=_pinned_comment_url(ours[-1]),
                     note="an adapter comment from the PR reporter id exists; the token-to-id "
                     "binding is enforced at publish time (unreconciled posts dead-letter)",
                 )
@@ -556,9 +583,15 @@ def readiness_report(
             live = [c for c in ours if _live_result(c.get("body") or "")]
             if live:
                 sections["receipt_result_evidence"] = base(
-                    "verified", comment_url=live[-1].get("html_url")
+                    "verified", comment_url=_pinned_comment_url(live[-1])
                 )
-        except (OSError, ValueError, TypeError, PermissionError):
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            PermissionError,
+            http.client.HTTPException,
+        ):
             sections["reporter_authentication"]["pr_write"] = base("failed")
     statuses = [
         sections["deployment_endpoint"]["status"] == "verified",

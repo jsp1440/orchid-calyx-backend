@@ -53,6 +53,13 @@ Each item is reported separately:
 
 `ready` is true only if every section is verified and `live_readiness` passes. With this code it is always `false`. That is the intended answer: there is no live runner, no restart proof and no distinct identity. A configured URL, a set variable, a skipped test or a fake-GitHub result never makes an item verified.
 
+Probe failures are bounded and fail closed:
+- A coordinator outage, refused connection, truncated body (`IncompleteRead`), non-JSON or non-object JSON, non-UTF-8 body or 5xx response marks that item `failed`. It never raises and never sets it verified.
+- `/healthz` values are reported as booleans only (`status_alive`, `stage_staging`, `ready`). Raw response text is never echoed.
+- Comment URLs appear only if they are links into PR #1836.
+- Malformed PR comment items are ignored.
+- `accept --mode staging` stops with `BLOCKED` before any adapter cycle when the endpoint or agent key is not verified.
+
 ## 3. Acceptance command
 
 ```

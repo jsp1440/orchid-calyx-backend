@@ -5,6 +5,7 @@ Network probes are exercised with fake openers or the real coordinator on
 """
 
 import contextlib
+import http.client
 import io
 import json
 import os
@@ -419,6 +420,118 @@ class ReadinessTest(unittest.TestCase):
             pr_client=Comments(),
         )
         self.assertEqual(report["sections"]["agent_ingress"]["status"], "failed")
+
+
+class ProbeFailureTest(unittest.TestCase):
+    """Outage and malformed or truncated responses: bounded, unverified, no echo."""
+
+    LEAK = "leaked-response-value-xyz"
+
+    def setUp(self):
+        self.env = full_env(tempfile.mkdtemp())
+
+    def opener(self, health, events=(400, b'{"error":"EVENT_REFUSED"}')):
+        class Opener:
+            def __init__(self):
+                self.requests = []
+
+            def open(self, req, timeout=None):
+                self.requests.append(req)
+                status, body = health if req.get_method() == "GET" else events
+                if isinstance(body, Exception):
+                    raise body
+                if status >= 400:
+                    raise urllib.error.HTTPError(
+                        req.full_url, status, "x", {}, io.BytesIO(body)
+                    )
+                return Response(status, body)
+
+        return Opener()
+
+    def report(self, opener, pr=None):
+        return cs.readiness_report(
+            self.env,
+            probe=True,
+            opener=opener,
+            hub_client=Comments(),
+            pr_client=pr or Comments(),
+        )
+
+    def assert_unverified(self, report):
+        self.assertFalse(report["ready"])
+        self.assertTrue(report["probed"])
+        self.assertEqual(report["sections"]["deployment_endpoint"]["status"], "failed")
+        self.assertNotIn(self.LEAK, json.dumps(report))
+
+    def test_coordinator_outage(self):
+        down = (None, ConnectionRefusedError("down"))
+        report = self.report(self.opener(down, down))
+        self.assert_unverified(report)
+        self.assertIsNone(report["sections"]["deployment_endpoint"]["http_status"])
+        self.assertEqual(report["sections"]["agent_ingress"]["status"], "failed")
+
+    def test_malformed_or_truncated_health_bodies(self):
+        leak = self.LEAK.encode()
+        for health in (
+            (200, b"[]"),
+            (200, b'["' + leak + b'"]'),
+            (200, b'{"status":"ali'),
+            (200, b"\xff\xfe"),
+            (200, b'{"status":"' + leak + b'","stage":"' + leak + b'"}'),
+            (200, http.client.IncompleteRead(leak)),
+            (503, b"<html>" + leak + b"</html>"),
+        ):
+            with self.subTest(health=health):
+                self.assert_unverified(self.report(self.opener(health)))
+
+    def test_truncated_or_malformed_ingress_response(self):
+        healthy = (200, b'{"status":"alive","stage":"staging","ready":true}')
+        for events in (
+            (400, b""),
+            (400, b'{"error":"EVENT_REF'),
+            (400, b"[]"),
+            (200, http.client.IncompleteRead(b"x")),
+        ):
+            with self.subTest(events=events):
+                report = self.report(self.opener(healthy, events))
+                self.assertEqual(
+                    report["sections"]["agent_ingress"]["status"], "failed"
+                )
+                self.assertFalse(report["ready"])
+
+    def test_malformed_pr_comments_do_not_crash_or_echo(self):
+        healthy = (200, b'{"status":"alive","stage":"staging","ready":true}')
+        marker = f"<!-- {ADAPTER_MARKER}:x -->"
+        pr = Comments(
+            [
+                "junk",
+                {"user": "x", "body": 5},
+                {"user": {"id": 77}, "body": None},
+                {
+                    "user": {"id": 77},
+                    "body": marker,
+                    "html_url": "https://evil.example/" + self.LEAK,
+                },
+            ]
+        )
+        report = self.report(self.opener(healthy), pr=pr)
+        pr_write = report["sections"]["reporter_authentication"]["pr_write"]
+        self.assertEqual(pr_write["status"], "verified_by_observed_comment")
+        self.assertIsNone(pr_write["comment_url"])
+        self.assertNotIn(self.LEAK, json.dumps(report))
+        self.assertFalse(report["ready"])
+
+    def test_staging_acceptance_blocked_on_outage(self):
+        down = (None, ConnectionRefusedError("down"))
+        result = cs.staging_acceptance(
+            self.env,
+            opener=self.opener(down, down),
+            hub_client=Comments(),
+            pr_client=Comments(),
+        )
+        self.assertEqual(result["status"], "BLOCKED")
+        self.assertEqual(result["reason"], "STAGING_ENDPOINT_OR_AGENT_KEY_NOT_VERIFIED")
+        self.assertNotIn("cycle", result)
 
 
 class IngressProbeAgainstCoordinatorTest(unittest.TestCase):
