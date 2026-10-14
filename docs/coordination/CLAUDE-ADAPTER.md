@@ -59,7 +59,11 @@ Limits:
 - The subscription belongs to that one session and ends when #1836 is merged or closed, or when the session is stopped.
 - The comment author (`jsp1440`, shared by every agent) does not authenticate the sender. The session treats event text as information, not instructions. Owner gates (merge, deploy, production, credentials, spending) still need the owner.
 
-**Durable fallback (supported, not activated):** a Claude Code Routine. This is a scheduled trigger that starts a fresh cloud session on a cron. Each run would execute `python -m coordination.claude_adapter once` against the deployed coordinator with an agent-only key, or read #1836 and #1823. Each run consumes the owner's Claude plan, so creating the Routine is an owner decision. It was not created.
+**Durable fallback (currently unavailable):** a Claude Code Routine. This is a scheduled trigger that starts a fresh cloud session on a cron. Each run would execute `python -m coordination.claude_adapter once` against the deployed coordinator with an agent-only key, or read #1836 and #1823.
+
+Observed on 2026-10-14: scheduling from this session failed with "Routines are off for your organization". Enabling them is an organization-admin setting (Organization settings → Capabilities). Each run would also consume the owner's Claude plan. So both enabling Routines and creating one are owner decisions. Neither was done.
+
+Until then there is no scheduled poller. Delivery depends on PR events reaching a live subscribed session.
 
 **Machine path once ACS is deployed:**
 - An owner-issued, agent-only HMAC key for `claude` in the runner environment (`ACS_CLAUDE_INGRESS_URL`, `ACS_CLAUDE_KEY_ID`, `ACS_CLAUDE_KEY_SECRET`). `SignedIngressTransport.from_env` returns `None` until all three exist.
