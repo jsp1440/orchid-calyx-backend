@@ -85,7 +85,7 @@ _COORDINATE = re.compile(
     # Degrees and minutes, symbol or word, straight or typographic apostrophe.
     rf"|\d{{1,3}}\s*{_DEGREE_WORD}\s*\d{{1,2}}\s*{_MINUTE_WORD}"
     # Degrees with a hemisphere, symbol or spelled out. This is the arm that
-    # catches "51.7520 degrees north", which carried ~10 m of precision past
+    # catches "50.1234 degrees north", which carried ~10 m of precision past
     # both the redactor and the fail-closed check.
     rf"|\d{{1,3}}(?:\.\d+)?\s*{_DEGREE_WORD}\s*{_HEMISPHERE}"
     # European comma decimals, as a pair. Three digits after the comma is a
@@ -127,7 +127,7 @@ def _fold_digits(text: str) -> str:
     r"""Fold every Unicode decimal digit to ASCII before matching.
 
     Full-width, Arabic-Indic and Devanagari digits are digits to a reader and
-    invisible to ``\d``. ``51.7520`` written in any of them is the same
+    invisible to ``\d``. ``50.1234`` written in any of them is the same
     position.
     """
     # NFKC first, which folds full-width digits *and* the full-width period and
@@ -530,7 +530,7 @@ def _redact(value: Any, outcome: RedactionOutcome | None = None) -> Any:
 
     The earlier version returned every non-string unexamined, so a position
     carried as JSON numbers went straight to the client: two edges with
-    ``identifier`` set to ``51.7520`` and ``-1.2577`` were served intact under
+    ``identifier`` set to ``50.1234`` and ``-9.2345`` were served intact under
     ``redaction_applied: True``. That is the shape a real occurrence record is
     most likely to arrive in, and checking only strings is a bug class rather
     than a missing pattern.

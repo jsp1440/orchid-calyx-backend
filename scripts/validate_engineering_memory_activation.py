@@ -82,13 +82,13 @@ def run_validation(database_url: str) -> dict:
                     "data_classification": "internal_engineering",
                     "sanitized_summary": (
                         f"synthetic token {fake_secret}; synthetic locality "
-                        "-0.1807, -78.4678"
+                        "-4.1234, -25.2345"
                     ),
                     "tokens_input": 0,
                 },
             )
             checks["secret_redaction"] = fake_secret not in run.sanitized_summary
-            checks["locality_redaction"] = "-0.1807" not in run.sanitized_summary
+            checks["locality_redaction"] = "-4.1234" not in run.sanitized_summary
             lesson = service.create_lesson(
                 session,
                 {
