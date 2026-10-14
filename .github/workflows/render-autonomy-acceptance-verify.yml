@@ -10,6 +10,9 @@ name: Render Autonomy Acceptance Verify
 #   render-acceptance-verify-midrun  -> mid-run restart database, --require-midrun:
 #                                       OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL if set, otherwise
 #                                       the first run's read-only role on database autonomy_midrun
+#   render-autonomy-verify-production -> long-running worker's database autonomy_prod,
+#                                       --require-loop, with its own SELECT-only secret
+#                                       OC_AUTONOMY_PROD_VERIFY_DATABASE_URL (no fallback)
 # It connects with a temporary SELECT-only role and never contacts Render.
 
 on:
@@ -28,7 +31,8 @@ jobs:
     if: >-
       github.event.label.name == 'render-acceptance-verify' ||
       github.event.label.name == 'render-acceptance-verify-loop' ||
-      github.event.label.name == 'render-acceptance-verify-midrun'
+      github.event.label.name == 'render-acceptance-verify-midrun' ||
+      github.event.label.name == 'render-autonomy-verify-production'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
@@ -38,6 +42,9 @@ jobs:
       MIDRUN_DSN: ${{ secrets.OC_ACCEPTANCE_VERIFY_MIDRUN_DATABASE_URL }}
       MIDRUN: ${{ github.event.label.name == 'render-acceptance-verify-midrun' }}
       LOOP: ${{ github.event.label.name == 'render-acceptance-verify-loop' }}
+      # The long-running worker's database has its own read-only credential.
+      PRODUCTION_DSN: ${{ secrets.OC_AUTONOMY_PROD_VERIFY_DATABASE_URL }}
+      PRODUCTION: ${{ github.event.label.name == 'render-autonomy-verify-production' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +52,7 @@ jobs:
 
       - name: Require the read-only verification credential
         run: |
-          if [ -z "$FIRST_RUN_DSN" ] && [ -z "$MIDRUN_DSN" ]; then
+          if [ -z "$FIRST_RUN_DSN" ] && [ -z "$MIDRUN_DSN" ] && [ -z "$PRODUCTION_DSN" ]; then
             echo "::error::The verification database secret for label '${{ github.event.label.name }}' is not set; no hosted evidence was checked."
             exit 1
           fi
@@ -65,7 +72,11 @@ jobs:
           NO_API_MODE: "true"
         run: |
           flags=()
-          if [ "$MIDRUN" = "true" ]; then
+          if [ "$PRODUCTION" = "true" ]; then
+            # Never falls back to the acceptance credential.
+            dsn="$PRODUCTION_DSN"
+            flags+=(--require-loop --database autonomy_prod)
+          elif [ "$MIDRUN" = "true" ]; then
             flags+=(--require-midrun)
             dsn="$MIDRUN_DSN"
             if [ -z "$dsn" ]; then
@@ -81,7 +92,7 @@ jobs:
             dsn="$FIRST_RUN_DSN"
           fi
           if [ -z "$dsn" ]; then
-            echo "::error::OC_ACCEPTANCE_VERIFY_DATABASE_URL is not set; no hosted evidence was checked."
+            echo "::error::The verification database secret for label '${{ github.event.label.name }}' is not set; no hosted evidence was checked."
             exit 1
           fi
           python -B scripts/oc_autonomy_hosted_verify.py --dsn "$dsn" "${flags[@]}" \
