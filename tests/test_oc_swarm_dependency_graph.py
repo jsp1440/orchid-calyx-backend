@@ -226,3 +226,53 @@ def test_empty_declaration_on_one_line_valid_on_next_line():
     deps_list = deps.dependencies(row)
     assert deps_list == []
     assert error == "malformed-declaration-repeated"
+
+
+def _closed(number, reason_key, reason):
+    row = issue(number, state="CLOSED")
+    row[reason_key] = reason
+    return row
+
+
+def test_not_planned_closure_keeps_dependents_blocked():
+    """Closing a dependency as NOT_PLANNED abandons it; it never unlocks work."""
+    for reason_key, reason in (
+        ("stateReason", "NOT_PLANNED"),
+        ("stateReason", "DUPLICATE"),
+        ("state_reason", "not_planned"),
+    ):
+        graph = deps.build_dependency_graph(
+            [
+                _closed(1, reason_key, reason),
+                issue(2, body="OC-SWARM-DEPENDS-ON: #1"),
+            ]
+        )
+        assert graph["status"][2]["ready"] is False, reason
+        assert graph["status"][2]["unsatisfied"] == [1]
+        ready, blocked = deps.filter_ready_candidates([{"number": 2}], graph)
+        assert ready == []
+        assert blocked[0]["reason"] == "dependency-blocked"
+
+
+def test_completed_closure_and_done_label_unlock_dependents():
+    for row in (
+        _closed(1, "stateReason", "COMPLETED"),
+        _closed(1, "state_reason", "completed"),
+        # oc-done is the durable completion record and wins over a close reason.
+        {**_closed(1, "stateReason", "NOT_PLANNED"), "labels": ["oc-done"]},
+    ):
+        graph = deps.build_dependency_graph(
+            [row, issue(2, body="OC-SWARM-DEPENDS-ON: #1")]
+        )
+        assert graph["status"][2]["ready"] is True, row
+
+
+def test_closed_without_state_reason_stays_backward_compatible():
+    """Legacy snapshots lack stateReason; they keep "closed means done"."""
+    for reason in (None, ""):
+        row = issue(1, state="CLOSED")
+        row["stateReason"] = reason
+        graph = deps.build_dependency_graph(
+            [row, issue(2, body="OC-SWARM-DEPENDS-ON: #1")]
+        )
+        assert graph["status"][2]["ready"] is True

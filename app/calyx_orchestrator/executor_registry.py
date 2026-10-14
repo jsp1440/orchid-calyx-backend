@@ -20,6 +20,10 @@ from .static_validation_executor import (
     STATIC_VALIDATION_ROLE,
     IsolatedWorkspaceStaticValidationExecutor,
 )
+from .traitbank_validation_executor import (
+    TRAITBANK_VALIDATION_ROLE,
+    TraitBankBatchValidationExecutor,
+)
 
 AUTONOMY_PROBE_ROLE = "autonomy_probe"
 
@@ -116,6 +120,20 @@ class AuthoritativeExecutorRegistry:
             STATIC_VALIDATION_ROLE: RegisteredExecutor(
                 role_key=STATIC_VALIDATION_ROLE,
                 executor=static_validator,
+                authoritative=True,
+                external_side_effects=False,
+                workspace_mutation=False,
+                repository_code_execution=False,
+            ),
+            # Allowlisted scientific job: pinned TraitBank contract verdicts on
+            # committed batch files. Fixed in-tree functions only; no database,
+            # network, ingestion or repository code execution.
+            TRAITBANK_VALIDATION_ROLE: RegisteredExecutor(
+                role_key=TRAITBANK_VALIDATION_ROLE,
+                executor=TraitBankBatchValidationExecutor(
+                    workspace_root=workspace_root,
+                    repository_name=repository_name,
+                ),
                 authoritative=True,
                 external_side_effects=False,
                 workspace_mutation=False,

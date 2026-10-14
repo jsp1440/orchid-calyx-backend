@@ -36,14 +36,23 @@ class ProgramAutonomyPolicy:
     max_jobs_per_cycle: int = 10
     lease_seconds: int = 300
     timeout_seconds: int = 300
+    #: After this many consecutive healthy no-work cycles the wait between
+    #: cycles doubles each cycle, up to ``idle_max_seconds``. Any other cycle
+    #: (productive, defect, capacity, dependency) returns to ``poll_seconds``.
+    idle_backoff_after: int = 10
+    idle_max_seconds: int = 900
 
     @classmethod
-    def from_environ(cls, environ: Mapping[str, str] | None = None) -> ProgramAutonomyPolicy:
+    def from_environ(
+        cls, environ: Mapping[str, str] | None = None
+    ) -> ProgramAutonomyPolicy:
         source = os.environ if environ is None else environ
         policy = cls(
             enabled=_enabled(source.get("CALYX_PROGRAM_AUTONOMY_ENABLED")),
             owner=str(source.get("CALYX_PROGRAM_AUTONOMY_OWNER", "")).strip(),
-            worker_id=str(source.get("CALYX_PROGRAM_AUTONOMY_WORKER_ID", "calyx-program-autonomy")).strip(),
+            worker_id=str(
+                source.get("CALYX_PROGRAM_AUTONOMY_WORKER_ID", "calyx-program-autonomy")
+            ).strip(),
             poll_seconds=_bounded_int(
                 source,
                 "CALYX_PROGRAM_AUTONOMY_POLL_SECONDS",
@@ -72,6 +81,20 @@ class ProgramAutonomyPolicy:
                 minimum=1,
                 maximum=3600,
             ),
+            idle_backoff_after=_bounded_int(
+                source,
+                "CALYX_PROGRAM_AUTONOMY_IDLE_BACKOFF_AFTER",
+                default=10,
+                minimum=1,
+                maximum=10000,
+            ),
+            idle_max_seconds=_bounded_int(
+                source,
+                "CALYX_PROGRAM_AUTONOMY_IDLE_MAX_SECONDS",
+                default=900,
+                minimum=15,
+                maximum=86400,
+            ),
         )
         return policy.validated()
 
@@ -81,6 +104,18 @@ class ProgramAutonomyPolicy:
         if not self.worker_id:
             raise ValueError("CALYX_PROGRAM_AUTONOMY_WORKER_ID_REQUIRED")
         return self
+
+    def next_sleep_seconds(self, idle_streak: int) -> int:
+        """Wait before the next cycle after ``idle_streak`` idle cycles.
+
+        Bounded: never below ``poll_seconds`` and never above the larger of
+        ``poll_seconds`` and ``idle_max_seconds``.
+        """
+        if idle_streak < self.idle_backoff_after:
+            return self.poll_seconds
+        ceiling = max(self.poll_seconds, self.idle_max_seconds)
+        steps = min(idle_streak - self.idle_backoff_after + 1, 32)
+        return min(ceiling, self.poll_seconds * 2**steps)
 
     def status(self) -> dict[str, object]:
         return {
@@ -98,9 +133,15 @@ class ProgramAutonomyPolicy:
         }
 
 
-def program_autonomy_status(environ: Mapping[str, str] | None = None) -> dict[str, object]:
+def program_autonomy_status(
+    environ: Mapping[str, str] | None = None,
+) -> dict[str, object]:
     try:
-        return {"valid": True, "error": None, **ProgramAutonomyPolicy.from_environ(environ).status()}
+        return {
+            "valid": True,
+            "error": None,
+            **ProgramAutonomyPolicy.from_environ(environ).status(),
+        }
     except ValueError as exc:
         return {
             "valid": False,

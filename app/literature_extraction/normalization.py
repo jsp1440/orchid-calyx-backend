@@ -33,6 +33,15 @@ def _stable_id(prefix: str, *parts: str) -> str:
 
 
 def _classify_domain(claim: Claim) -> str:
+    if claim.provenance.extractor == "canonical_morphology" and claim.predicate in {
+        f"{part}_{dimension}" for part in ("leaf", "flower", "petal", "sepal", "lip", "column", "staminode", "inflorescence")
+        for dimension in ("length", "width")
+    }:
+        return "trait"
+    if claim.provenance.extractor == "canonical_morphology":
+        from .extractors.morphology import CanonicalMorphologyExtractor
+        if claim.predicate in CanonicalMorphologyExtractor.labels.values():
+            return "trait"
     if claim.predicate == "cultivation_guidance":
         return "cultivation"
     text = _normalized_text(claim.statement)

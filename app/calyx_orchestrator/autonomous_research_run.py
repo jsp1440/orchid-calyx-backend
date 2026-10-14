@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from app.scientific_synthesis.blueprint import (
@@ -251,5 +251,5 @@ class AutonomousResearchRun:
             last_dispatch_run=last_run,
             tasks_executed=total_executed,
             version=RUN_VERSION,
-            generated_at_utc=datetime.now(timezone.utc).isoformat(),
+            generated_at_utc=datetime.now(UTC).isoformat(),
         )

@@ -287,11 +287,10 @@ class TestReportShape:
 class TestOwnerDecidedBindings:
     """Bindings a person accepted for files a live report left unbound.
 
-    A full-suite discovery pass on 2026-09-25 asked to bind five files. Three
-    were placeable from their subject modules and are pinned here; the other
-    two (tests/test_scientific_language_postgres_migration.py and
-    tests/test_build_067_pg_writer.py) are Postgres migration surfaces and
-    remain deliberately unbound.
+    A full-suite discovery pass asked to bind the cross-cutting composition
+    root and the University authentication surface.  Those paths now have
+    explicit owners; unrelated Postgres migration surfaces remain deliberately
+    unbound because this table does not guess their product ownership.
     """
 
     @pytest.mark.parametrize(
@@ -304,15 +303,22 @@ class TestOwnerDecidedBindings:
             ("runtime/scientific_runtime_readiness.py", "research-station"),
             ("tests/test_run_live_dispatch_canary.py", "improvement-discovery"),
             ("scripts/run_live_dispatch_canary.py", "improvement-discovery"),
+            ("app/main.py", "platform"),
+            ("app/university/learner_auth.py", "university-education"),
+            ("tests/test_university_learner_auth.py", "university-education"),
         ],
     )
     def test_the_accepted_bindings_hold(self, path: str, lane: str) -> None:
         found = lane_for_path(path)
         assert found is not None and found.key == lane
 
-    def test_the_undecided_files_stay_unbound(self) -> None:
+    def test_unrelated_undecided_files_stay_unbound(self) -> None:
         assert lane_for_path("tests/test_scientific_language_postgres_migration.py") is None
         assert lane_for_path("tests/test_build_067_pg_writer.py") is None
+
+    def test_cross_cutting_bindings_do_not_escalate_priority(self) -> None:
+        assert lane_for_path("app/main.py").priority_label == "oc-p5"
+        assert lane_for_path("app/university/learner_auth.py").priority_label == "oc-p5"
 
     def test_a_node_id_in_a_bound_file_is_bound_through_the_file(self) -> None:
         report = (

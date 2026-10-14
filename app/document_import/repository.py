@@ -18,20 +18,20 @@ def database_url() -> str:
 
 
 class PostgresDocumentImportRepository:
-    def _connect(self):
-        return psycopg.connect(database_url(), row_factory=dict_row)
+    def __init__(self, connect=None):
+        self._connect = connect or (lambda: psycopg.connect(database_url(), row_factory=dict_row))
 
     def get_registry_document(self, registry_id: int) -> RegistryDocument | None:
         with self._connect() as conn, conn.cursor() as cur:
             cur.execute("""SELECT d.inventory_id,d.source_id,d.external_file_id,d.filename,d.folder_path,d.mime_type,
-                d.created_at,d.modified_at,d.provenance,s.configuration FROM oc_sources.document_inventory d
+                d.created_at,d.modified_at,d.provenance,s.configuration,s.source_type FROM oc_sources.document_inventory d
                 JOIN oc_sources.sources s ON s.source_id=d.source_id WHERE d.inventory_id=%s""", (registry_id,))
             row = cur.fetchone()
             if not row: return None
             provenance, configuration = row["provenance"] or {}, row["configuration"] or {}
             return RegistryDocument(row["inventory_id"], str(row["source_id"]), row["external_file_id"],
-                f"https://drive.google.com/open?id={row['external_file_id']}", row["filename"], row["mime_type"],
-                row["folder_path"], provenance.get("owner") or configuration.get("owner"), row["created_at"], row["modified_at"])
+                (row["external_file_id"] if row["source_type"] == "WEB" else f"https://drive.google.com/open?id={row['external_file_id']}"), row["filename"], row["mime_type"],
+                row["folder_path"], provenance.get("owner") or configuration.get("owner"), row["created_at"], row["modified_at"], row["source_type"])
 
     def actor_owns_source(self, actor: str, source_id: str) -> bool:
         with self._connect() as conn, conn.cursor() as cur:
@@ -63,6 +63,8 @@ class PostgresDocumentImportRepository:
 
     def persist_import(self, *, session_id: int, document: RegistryDocument, retrieved: Any, sha256: str, actor: str, mission_id: int | None, importer_version: str) -> ImportResult:
         with self._connect() as conn, conn.cursor() as cur:
+            cur.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", ("document-import:" + sha256,))
+            cur.execute("SELECT inventory_id FROM oc_sources.document_inventory WHERE inventory_id=%s FOR UPDATE", (document.registry_id,))
             cur.execute("SELECT * FROM oc_import.document_revisions WHERE registry_id=%s ORDER BY revision_number DESC LIMIT 1 FOR UPDATE", (document.registry_id,))
             latest = cur.fetchone()
             if latest and latest["sha256"] == sha256:
@@ -72,8 +74,8 @@ class PostgresDocumentImportRepository:
             revision_number = (latest["revision_number"] + 1) if latest else 1
             state = ImportState.DUPLICATE if duplicate else ImportState.IMPORTED
             cur.execute("""INSERT INTO oc_intake.ingestion_batches(display_name,uploader,source_label,status,file_count,accepted_count,duplicate_count,completed_at)
-                VALUES (%s,%s,'GOOGLE_DRIVE','COMPLETED',1,%s,%s,NOW()) RETURNING id""",
-                (f"Drive import session {session_id}", actor, 0 if duplicate else 1, 1 if duplicate else 0))
+                VALUES (%s,%s,%s,'COMPLETED',1,%s,%s,NOW()) RETURNING id""",
+                (f"Document import session {session_id}", actor, document.source_type, 0 if duplicate else 1, 1 if duplicate else 0))
             batch_id = cur.fetchone()["id"]
             provenance = {"brain_source_registry_id":document.registry_id,"google_drive_file_id":document.drive_file_id,
                 "drive_url":document.drive_url,"file_name":document.filename,"mime_type":document.mime_type,
@@ -82,11 +84,15 @@ class PostgresDocumentImportRepository:
                 "modified_timestamp":document.modified_at.isoformat() if document.modified_at else None,
                 "sha256":sha256,"byte_count":len(retrieved.content),"importer_version":importer_version,
                 "mission_id":mission_id,"authenticated_user":actor,"import_session":session_id}
+            if document.source_type == "WEB":
+                provenance.pop("google_drive_file_id", None)
+                provenance.pop("drive_url", None)
+                provenance.update(source_type="WEB", source_url=document.drive_url, external_id=document.drive_file_id)
             cur.execute("""INSERT INTO oc_intake.documents(batch_id,original_filename,display_title,media_type,extension,byte_size,sha256,storage_key,uploader,
                 processing_status,text_extraction_status,preliminary_document_type,relevance,review_status,duplicate_of_id,canonical_promotion_prohibited,provenance)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,'PROCESSED','NOT_REQUESTED','unknown','UNKNOWN',%s,%s,TRUE,%s) RETURNING id""",
                 (batch_id,document.filename,document.filename,retrieved.output_mime_type,retrieved.extension,len(retrieved.content),sha256,
-                 f"drive-import://session/{session_id}/registry/{document.registry_id}/revision/{revision_number}",actor,state.value,
+                 f"{'web' if document.source_type == 'WEB' else 'drive'}-import://session/{session_id}/registry/{document.registry_id}/revision/{revision_number}",actor,state.value,
                  duplicate["intake_document_id"] if duplicate else None,Jsonb(provenance)))
             intake_id = cur.fetchone()["id"]
             cur.execute("""INSERT INTO oc_import.document_revisions(session_id,registry_id,intake_document_id,revision_number,sha256,byte_count,content_bytes,provenance,state,duplicate_of_revision_id)

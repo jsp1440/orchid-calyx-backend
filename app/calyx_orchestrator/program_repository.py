@@ -232,6 +232,29 @@ class PersistentProgramRepository:
         program = self.db.get(CalyxProgram, program_id)
         if program is None or program.status != "running" or program.paused:
             return []
+        jobs, upstreams = self._program_graph(program_id)
+        self._block_failed_descendants(jobs, upstreams)
+        released: list[CalyxProgramJob] = []
+        for job in jobs:
+            if job.status != "waiting":
+                continue
+            parents = upstreams[job.program_job_id]
+            if all(parent.outcome in SUCCESSFUL_OUTCOMES for parent in parents):
+                job.status = "queued"
+                released.append(job)
+        return released
+
+    def settle_failed_dependants(self, *, program_id: str) -> list[CalyxProgramJob]:
+        """Block every waiting job downstream of a failed job, whatever the
+        program's status. Used when a job fails outside ``record_outcome``
+        (a dead letter), where the program may already be leaving ``running``.
+        """
+        jobs, upstreams = self._program_graph(program_id)
+        return self._block_failed_descendants(jobs, upstreams)
+
+    def _program_graph(
+        self, program_id: str
+    ) -> tuple[list[CalyxProgramJob], dict[str, list[CalyxProgramJob]]]:
         jobs = self.db.scalars(
             select(CalyxProgramJob).where(CalyxProgramJob.program_id == program_id)
         ).all()
@@ -242,22 +265,38 @@ class PersistentProgramRepository:
         upstreams: dict[str, list[CalyxProgramJob]] = {job.program_job_id: [] for job in jobs}
         for dep in deps:
             upstreams[dep.downstream_program_job_id].append(by_id[dep.upstream_program_job_id])
-        released: list[CalyxProgramJob] = []
-        for job in jobs:
-            if job.status != "waiting":
-                continue
-            parents = upstreams[job.program_job_id]
-            if any(parent.outcome in (TERMINAL_OUTCOMES - SUCCESSFUL_OUTCOMES) for parent in parents):
-                job.status = "blocked"
-                job.outcome = "BLOCKED"
-                job.blocker = "UPSTREAM_JOB_FAILED"
-                job.human_action = "Resolve or replace the failed prerequisite, then create a new governed program revision."
-                job.completed_at = utcnow()
-                continue
-            if all(parent.outcome in SUCCESSFUL_OUTCOMES for parent in parents):
-                job.status = "queued"
-                released.append(job)
-        return released
+        return list(jobs), upstreams
+
+    @staticmethod
+    def _block_failed_descendants(
+        jobs: list[CalyxProgramJob],
+        upstreams: dict[str, list[CalyxProgramJob]],
+    ) -> list[CalyxProgramJob]:
+        """Block waiting jobs with a failed parent, repeated to a fixed point.
+
+        A single pass depends on row order: a grandchild listed before its
+        child is visited while the child is still waiting, and would stay
+        waiting forever once the child is blocked. Each round can only move
+        jobs from waiting to blocked, so this terminates in at most
+        ``len(jobs)`` rounds.
+        """
+        failed = TERMINAL_OUTCOMES - SUCCESSFUL_OUTCOMES
+        blocked: list[CalyxProgramJob] = []
+        changed = True
+        while changed:
+            changed = False
+            for job in jobs:
+                if job.status != "waiting":
+                    continue
+                if any(parent.outcome in failed for parent in upstreams[job.program_job_id]):
+                    job.status = "blocked"
+                    job.outcome = "BLOCKED"
+                    job.blocker = "UPSTREAM_JOB_FAILED"
+                    job.human_action = "Resolve or replace the failed prerequisite, then create a new governed program revision."
+                    job.completed_at = utcnow()
+                    blocked.append(job)
+                    changed = True
+        return blocked
 
     def snapshot(self, *, owner: str, program_id: str) -> dict:
         program = self._owned(owner, program_id)

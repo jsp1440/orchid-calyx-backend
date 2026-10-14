@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-from app.security import get_owner_session_secret
+from app.security import credentials_match, get_owner_session_secret
 from runtime.research_station_store import (
     MemoryProjectRecordStore,
     ProjectRecordStore,
@@ -83,7 +83,7 @@ def verify_manage_token(normalized_email: str, token: str | None) -> bool:
     expected = issue_manage_token(normalized_email)
     if not expected or not token:
         return False
-    return hmac.compare_digest(expected, token.strip())
+    return credentials_match(token.strip(), expected)
 
 
 _store: ProjectRecordStore | None = None

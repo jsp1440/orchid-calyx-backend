@@ -201,8 +201,8 @@ def _provenance(
     }
     if config.emit_protected_locality:
         # A deliberately unsafe strategy: the output screen must catch this.
-        record["exact_latitude"] = "-22.9068"
-        record["exact_longitude"] = "-43.1729"
+        record["exact_latitude"] = "-40.2345"
+        record["exact_longitude"] = "-25.3456"
     return record
 
 

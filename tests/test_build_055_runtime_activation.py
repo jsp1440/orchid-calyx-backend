@@ -1,8 +1,7 @@
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-import app.main as main
-import app.security as security
+from app import main, security
 from app.main import app
 
 
@@ -18,9 +17,10 @@ def test_api_key_missing_with_header_reports_configuration_blocker(monkeypatch):
 
 
 def test_api_key_valid_uses_constant_time_comparison(monkeypatch):
-    calls: list[tuple[str, str]] = []
+    # credentials_match compares UTF-8 bytes so a non-ASCII key cannot raise.
+    calls: list[tuple[bytes, bytes]] = []
 
-    def compare_digest(left: str, right: str) -> bool:
+    def compare_digest(left: bytes, right: bytes) -> bool:
         calls.append((left, right))
         return left == right
 
@@ -36,7 +36,7 @@ def test_api_key_valid_uses_constant_time_comparison(monkeypatch):
     response = TestClient(protected).post("/protected", headers={"X-API-Key": "test-secret"})
 
     assert response.status_code == 200
-    assert calls == [("test-secret", "test-secret")]
+    assert calls == [(b"test-secret", b"test-secret")]
 
 
 def test_owner_session_authorizes_runtime_control_without_api_key(monkeypatch):

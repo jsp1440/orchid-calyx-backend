@@ -6,6 +6,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends
 
+from app.matrix_member_access import owner_or_matrix_member
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification_registry import registry_persistence_status
 from runtime.matrix_identification_registry_preflight import (
@@ -15,6 +16,8 @@ from runtime.matrix_identification_registry_preflight import (
 router = APIRouter(
     prefix="/api/matrix-identification/registry",
     tags=["matrix-identification-registry-persistence"],
+    # Default deny: owner/API key only; a verified member gets 403 OWNER_ACCESS_REQUIRED.
+    dependencies=[Depends(owner_or_matrix_member)],
 )
 
 

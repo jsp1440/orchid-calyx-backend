@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, select
@@ -48,7 +48,7 @@ PATCH_CONTENT = "print('bounded review change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_BEFORE = "b" * 64
 PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
-NOW = datetime(2026, 8, 8, 23, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 8, 23, 0, tzinfo=UTC)
 
 
 def _session() -> Session:

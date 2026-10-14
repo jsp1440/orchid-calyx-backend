@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -62,7 +62,7 @@ class InferenceLedgerBridge:
 
         subject = self._require_unambiguous_node(subject_node_id)
         candidate = self._require_unambiguous_node(candidate_node_id)
-        created_at = datetime.now(timezone.utc)
+        created_at = datetime.now(UTC)
         entry = LedgerEntry(
             entry_id=deterministic_inference_entry_id(
                 UUID(ledger_id), inference_content_hash

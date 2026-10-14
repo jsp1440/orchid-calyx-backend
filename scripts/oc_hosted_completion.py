@@ -15,7 +15,7 @@ import re
 import subprocess
 import time
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from urllib import request
 
@@ -171,8 +171,9 @@ def authorization(issue, comments, repository, now=None):
         and grant.get("risk") in {"low", "moderate"},
         "authorization_binding_invalid",
     )
-    expiry = datetime.fromisoformat(grant["expires_at"].replace("Z", "+00:00"))
-    require(expiry > (now or datetime.now(timezone.utc)), "authorization_expired")
+    expires_at = grant["expires_at"].replace("Z", "+00:00")
+    expiry = datetime.fromisoformat(expires_at)
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
     allowed = grant.get("allowed_paths")
     require(
         isinstance(allowed, list)

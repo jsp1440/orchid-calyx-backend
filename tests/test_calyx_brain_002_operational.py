@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.database import Base, get_db
+from app.member_auth import owner_or_member_read
 from app.reasoning_ledger.models import (
     ConflictDisposition,
     ConflictDispositionType,
@@ -260,7 +261,7 @@ def test_conflict_disposition_persistence_history_gate_and_approval_invalidation
 
 
 def test_conflict_disposition_hash_distinguishes_resolved_from_superseded():
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     project_id = str(uuid4())
     conflict = _entry("owner-a", project_id, LedgerEntryKind.CONFLICT)
     base = {
@@ -339,7 +340,7 @@ def test_literature_reference_validation_preserves_roles(tmp_path: Path):
         "analysis_manifest": {
             "analysis_id": "analysis-1",
             "analysis_version": 1,
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "pipeline_version": "test",
             "status": "completed",
         },
@@ -472,6 +473,10 @@ def api_client():
             yield db
 
     app.dependency_overrides[get_db] = db_override
+    # The project router's member gate (owner_or_member_read) is covered by
+    # tests/test_research_projects_member_access.py; here each endpoint's own
+    # verify_owner_or_api_key, overridden per test, still decides the owner.
+    app.dependency_overrides[owner_or_member_read] = lambda: None
     with TestClient(app) as client:
         yield app, client, project_id
 

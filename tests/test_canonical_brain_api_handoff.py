@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -33,7 +33,7 @@ def _build_record() -> BrainObject:
         lifecycle="implemented",
         source_uri="docs/architecture/BUILD-BRAIN-101.md",
         content_checksum=_checksum("build:brain-api-handoff"),
-        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 6, tzinfo=UTC),
     )
 
 
@@ -81,7 +81,7 @@ def test_capture_bundle_is_atomic_and_repeatable_for_operational_metadata() -> N
         build_id=record.object_id,
         objects=[record],
         relationships=[relation],
-        submitted_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        submitted_at=datetime(2026, 8, 6, tzinfo=UTC),
         source_uri=record.source_uri,
     )
 
@@ -101,12 +101,12 @@ def test_direct_capture_rejects_reviewed_or_scientific_authority() -> None:
         lifecycle="approved",
         source_uri="candidate://decision/unreviewed-scientific-claim",
         content_checksum=_checksum("decision:unreviewed-scientific-claim"),
-        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 6, tzinfo=UTC),
     )
     bundle = BrainCaptureBundle(
         build_id="BUILD-BRAIN-REVIEW-GATE",
         objects=[record],
-        submitted_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        submitted_at=datetime(2026, 8, 6, tzinfo=UTC),
         source_uri=record.source_uri,
     )
 
@@ -131,7 +131,7 @@ def test_capture_bundle_rolls_back_on_broken_relationship() -> None:
         build_id=record.object_id,
         objects=[record],
         relationships=[broken],
-        submitted_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        submitted_at=datetime(2026, 8, 6, tzinfo=UTC),
         source_uri=record.source_uri,
     )
 

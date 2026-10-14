@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -56,7 +56,7 @@ def approved_ledger(attributes=None, *, confidence=0.9, conflict_state=None, tag
             source_kind="knowledge_graph_inference",
             source_id="b" * 64,
             content_hash="b" * 64,
-            retrieved_at=datetime.now(timezone.utc),
+            retrieved_at=datetime.now(UTC),
         ),
         uncertainty=UncertaintyMarker(confidence=confidence, rationale="reviewable"),
         attributes=ATTRIBUTES if attributes is None else attributes,

@@ -87,6 +87,8 @@ _DETERMINISTIC = (
 #: part of the preserved intent record, so a denied request can be re-examined
 #: rather than merely repeated.
 _PROVIDER = (
+    _provider_cap("firecrawl-acquisition", "Acquire bounded source material for Matrix evidence.",
+                  "Stored literature is reused first; missing external sources require separately authorized acquisition."),
     _provider_cap(
         "natural-language-explanation",
         "Render an assembled reasoning map into prose a non-specialist can follow.",

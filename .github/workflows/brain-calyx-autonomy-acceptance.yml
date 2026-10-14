@@ -1,0 +1,194 @@
+name: Brain-Calyx Autonomy Acceptance
+
+# Hosted run of the ten-cycle Brain -> Calyx autonomy acceptance on a
+# disposable PostgreSQL service container. It provisions nothing outside the
+# runner: no Render service, no production database, no provider, no worker
+# activation. It is pull-request scoped and path filtered. There is no
+# schedule; workflow_dispatch exists only for an owner-initiated rerun. The job
+# is bounded by timeout-minutes.
+
+on:
+  pull_request:
+    paths:
+      - "app/calyx_orchestrator/program_cycle.py"
+      - "app/calyx_orchestrator/program_worker.py"
+      - "app/calyx_orchestrator/execution_bridge.py"
+      - "app/calyx_orchestrator/executor_registry.py"
+      - "app/calyx_orchestrator/repository_evidence_executor.py"
+      - "app/calyx_orchestrator/static_validation_executor.py"
+      - "app/calyx_orchestrator/program_routes.py"
+      - "app/canonical_brain/**"
+      - "runtime/program_autonomy_worker.py"
+      - "runtime/program_autonomy_brain_worker.py"
+      - "app/calyx_orchestrator/autonomy_cycles.py"
+      - "app/calyx_orchestrator/routes.py"
+      - "app/calyx_orchestrator/operations.py"
+      - "scripts/oc_brain_calyx_autonomy_acceptance.py"
+      - "tests/test_brain_calyx_autonomy_acceptance.py"
+      - "app/calyx_orchestrator/traitbank_validation_executor.py"
+      - "app/traitbank/**"
+      - "tests/test_traitbank_autonomy_cycle.py"
+      - "tests/test_traitbank_validation_executor.py"
+      - "tests/test_oc_autonomy_acceptance_manifest.py"
+      - "tests/test_render_autonomy_acceptance_config.py"
+      - "tests/test_oc_autonomy_hosted_verify.py"
+      - "tests/test_pulse_ledger_store.py"
+      - "tests/test_p1_work_source_autonomy_cycle.py"
+      - "tests/test_autonomy_loop_cycle.py"
+      - "tests/test_program_autonomy_brain_worker.py"
+      - "tests/test_program_autonomy_idle_backoff.py"
+      - "tests/test_workspace_refresh.py"
+      - "tests/test_autonomy_observers.py"
+      - "app/calyx_orchestrator/autonomy_observers.py"
+      - "app/calyx_orchestrator/pulse_ledger_store.py"
+      - "app/calyx_orchestrator/workspace_refresh.py"
+      - "app/calyx_orchestrator/autonomy_policy.py"
+      - "app/calyx_orchestrator/schema.py"
+      - "scripts/oc_autonomy_hosted_verify.py"
+      - "deploy/render/**"
+      - "scripts/oc_autonomy_acceptance_manifest.py"
+      - "scripts/oc_render_autonomy_acceptance_start.sh"
+      - "data/traitbank/**"
+      - ".github/workflows/brain-calyx-autonomy-acceptance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: brain-calyx-autonomy-acceptance-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Brain main after #244, #253 and #255 (pulse, work sources, autonomy loop).
+  # Keep equal to OC_BRAIN_REF in deploy/render/autonomy-acceptance.blueprint.yaml.
+  OC_BRAIN_REF: 78858693e108389d3de2e5595bead426342645a4
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ocvalidate
+          POSTGRES_PASSWORD: ocvalidate_test_only
+          POSTGRES_DB: oc_validate
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U ocvalidate -d oc_validate"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      OC_BRAIN_READ_TOKEN: ${{ secrets.OC_BRAIN_READ_TOKEN }}
+      TEST_DATABASE_URL: postgresql://ocvalidate:ocvalidate_test_only@localhost:5432/oc_validate
+      OC_BRAIN_REPO_PATH: ${{ github.workspace }}/cross-repo/brain
+      NO_API_MODE: "true"
+      OC_GOVERNOR_PAID_EXECUTION_ENABLED: "false"
+      PROVIDER_LAUNCH_AUTHORIZED: "false"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Require a Brain read token that can read the Brain repository
+        # Fail rather than skip: a hosted acceptance that silently did not run
+        # must never look like a pass. Diagnoses the credential through the
+        # GitHub API and prints only status codes, the token kind and the
+        # authenticated login; never the value (GitHub also masks it).
+        run: |
+          if [ -z "$OC_BRAIN_READ_TOKEN" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN is not available; the hosted acceptance did not run."
+            exit 1
+          fi
+          case "$OC_BRAIN_READ_TOKEN" in
+            github_pat_*) kind="fine-grained personal access token" ;;
+            ghp_*) kind="classic personal access token" ;;
+            ghs_*) kind="GitHub App installation or Actions token" ;;
+            gho_*|ghu_*) kind="OAuth or GitHub App user token" ;;
+            *) kind="unrecognised format" ;;
+          esac
+          if [ "$OC_BRAIN_READ_TOKEN" != "$(printf '%s' "$OC_BRAIN_READ_TOKEN" | tr -d '[:space:]')" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN contains whitespace or a newline; re-save the secret value without it."
+            exit 1
+          fi
+          api() {
+            curl -sS -o /dev/null -D "$RUNNER_TEMP/h" -w '%{http_code}' \
+              -H "Authorization: Bearer $OC_BRAIN_READ_TOKEN" \
+              -H "Accept: application/vnd.github+json" "https://api.github.com$1"
+          }
+          user_status=$(api /user)
+          login=$(curl -sS -H "Authorization: Bearer $OC_BRAIN_READ_TOKEN" https://api.github.com/user | python3 -c 'import json,sys; print(json.load(sys.stdin).get("login") or "-")' 2>/dev/null || echo "-")
+          scopes=$(grep -i '^x-oauth-scopes:' "$RUNNER_TEMP/h" | cut -d' ' -f2- | tr -d '\r')
+          expiry=$(grep -i '^github-authentication-token-expiration:' "$RUNNER_TEMP/h" | cut -d' ' -f2- | tr -d '\r')
+          repo_status=$(api /repos/jsp1440/Orchid-Continuum-Brain)
+          contents_status=$(api "/repos/jsp1440/Orchid-Continuum-Brain/commits/$OC_BRAIN_REF")
+          rm -f "$RUNNER_TEMP/h"
+          echo "token kind: $kind"
+          echo "GET /user: $user_status (login: $login)"
+          echo "classic scopes: ${scopes:-n/a}; expires: ${expiry:-not reported}"
+          echo "GET /repos/jsp1440/Orchid-Continuum-Brain: $repo_status"
+          echo "GET .../commits/$OC_BRAIN_REF: $contents_status"
+          if [ "$user_status" = "401" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN is rejected by GitHub (401): expired, revoked or mistyped."
+            exit 1
+          fi
+          if [ "$repo_status" != "200" ] || [ "$contents_status" != "200" ]; then
+            echo "::error::OC_BRAIN_READ_TOKEN authenticates but cannot read jsp1440/Orchid-Continuum-Brain. Grant that repository Contents: Read-only (fine-grained token), or the repo scope (classic)."
+            exit 1
+          fi
+
+      - name: Check out Orchid-Continuum-Brain (private, pinned)
+        uses: actions/checkout@v4
+        with:
+          repository: jsp1440/Orchid-Continuum-Brain
+          ref: ${{ env.OC_BRAIN_REF }}
+          path: cross-repo/brain
+          token: ${{ env.OC_BRAIN_READ_TOKEN }}
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Ten-cycle acceptance with recovery
+        run: >-
+          python -B scripts/oc_brain_calyx_autonomy_acceptance.py
+          --dsn "$TEST_DATABASE_URL"
+          --brain-repo "$OC_BRAIN_REPO_PATH"
+          --output acceptance-report.json
+
+      - name: Cross-repository recovery scenarios
+        run: >-
+          python -m pytest -q -rs tests/test_brain_calyx_autonomy_acceptance.py
+          -k "not ten_consecutive"
+
+      - name: Scientific autonomy cycle (TraitBank validation)
+        run: >-
+          python -m pytest -q -rs tests/test_traitbank_autonomy_cycle.py
+          tests/test_traitbank_validation_executor.py
+          tests/test_oc_autonomy_acceptance_manifest.py
+          tests/test_render_autonomy_acceptance_config.py
+          tests/test_oc_autonomy_hosted_verify.py
+          tests/test_pulse_ledger_store.py
+          tests/test_p1_work_source_autonomy_cycle.py
+          tests/test_autonomy_loop_cycle.py
+          tests/test_program_autonomy_brain_worker.py
+          tests/test_program_autonomy_idle_backoff.py
+          tests/test_workspace_refresh.py
+          tests/test_autonomy_observers.py
+
+      - name: Upload acceptance report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brain-calyx-autonomy-acceptance
+          path: acceptance-report.json
+          if-no-files-found: warn
+          retention-days: 14

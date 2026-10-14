@@ -62,11 +62,26 @@ The profile is reconnaissance evidence. It must be reviewed before it is promote
 
 ## Pilot command
 
-Once `FIRECRAWL_API_KEY` is present in the runtime environment, run:
+The pilot runs only through the acquisition ledger
+(`app/federation/federation_pilot.py`, `SharedFirecrawlFederationService`).
+It needs the application database (`PGHOST` or `DATABASE_URL`) with
+`migrations/20260930_acquisition_ledger.sql` applied, and a live call also needs
+`NO_API_MODE=false`, `FIRECRAWL_KILL_SWITCH` unset or `false`, and
+`FIRECRAWL_API_KEY`:
 
 ```bash
 python scripts/oc_firecrawl_federation_pilot.py --source all --limit 50 --output /tmp/oc-federation-phragmipedium.json
 ```
+
+Per source, before any paid call: a completed ledger record for the same
+request is reused; the provider gate is checked; the existing corpus and source
+registry inventory (`audit_existing_corpus`, matched with `held_source_match` on
+DOI/URL/content hash/bibliography) are searched, and an unverifiable audit
+blocks the source. The mapper runs only on an acquired ledger lease, so repeat
+and concurrent runs pay once per resource. A missing or incompatible ledger
+schema aborts with zero provider calls; there is no direct-call fallback or
+bypass flag. Exit status: 0 all sources answered, 2 aborted, 3 blocked/in
+flight/failed.
 
 The pilot intentionally requests at most 50 URLs per source by default and uses
 `Phragmipedium` as the discovery search term. Review the resulting JSON before

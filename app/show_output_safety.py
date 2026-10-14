@@ -1,0 +1,968 @@
+"""Output-safety helpers for the show-management routes in ``app.routers.calyx_core``.
+
+* ``redact_config_json`` -- integration ``config_json`` is stored as the owner sent it
+  (so providers keep working) but every response masks secrets as ``"***"``. It
+  prefers over-redaction: the owner list view never needs the secret itself.
+
+  - Keys: a key is secret when its normalized form (NFKC, Cyrillic/Greek look-alikes
+    and digit look-alikes mapped to Latin, casefolded, split into words) contains a
+    secret word (``password``, ``passphrase``, ``secret``, ``token``, ``api_key``,
+    ``private_key``, ``credential``, ``signature``, ``cookie``, ``bearer``,
+    ``webhook``, ``jwt``, ``session``, ...), is a short secret word (``pass``,
+    ``pwd``, ``auth``, ``key``, ``keys``, ``sid``, ``sig``, ``pin``, ``otp``, ...) or
+    ends in ``key``/``keys``/``pass``/``pwd``. Header pair lists
+    (``[["Authorization", "Bearer x"]]``) and name/value objects
+    (``{"name": "Authorization", "value": "..."}``) are masked the same way.
+  - Values, in any string under any key: JSON documents embedded as strings (and a
+    double-encoded top-level string) are parsed and redacted recursively; URL
+    passwords (including raw ``@``/``/`` inside the password), token usernames of
+    http(s)/ws(s) URLs, secret query and fragment parameters, SAS ``sig=``, Slack,
+    Discord, Telegram, Teams and Zapier webhook path secrets, ``Bearer``/``Basic``
+    style authorization values, ``name=value``/``name: value`` pairs such as
+    connection strings (``User ID=u;Password=p;``) and any run of 20 or more
+    base64/hex characters that looks random.
+  - Also masked: the whole credential after an auth scheme (``Authorization: token
+    x``), space-separated secrets (netrc ``password x``, ``--password x``), a token
+    username in any URL scheme, and short header tuples such as
+    ``["Authorization", "Bearer", "x"]``.
+  - Header lists of any length: the whole value of a secret-named ``Name: value``
+    header line (in a string or as a list element) and of a quoted ``curl -H``
+    argument, and the element after every secret-looking name in a flat list
+    (``["Accept", "a", "X-Api-Key", "k", ...]``, any length or shape; a nested value
+    is masked whole; the pairing is never inferred). A list element that is a whole
+    header line is never kept verbatim as a header-tuple name.
+  - Command-line credentials: the password of ``curl -u``/``--user``/``--user=``/
+    ``--proxy-user``/``-U`` and HTTPie ``-a``/``-aUSER:PW``/``-va``/``--auth``/
+    ``--auth=`` ``user:password`` (quoted or not, backslash escapes included; the
+    username stays), or the username when the password is empty (``-u sk_key:``); an
+    HTTPie ``-a`` token with no ``:`` once ``-A``/``--auth-type`` appears. ``-a`` on
+    other tools (``rsync -a host:path``) is masked the same way (fail safe). A value that
+    crosses a line break, reaches an unterminated quote or contains another
+    credential flag is masked to the end of the text. HTTP Digest ``response`` and
+    ``cnonce`` values, whatever their length, once a ``Digest <param>=`` credential
+    appears in the text, and ``response``/``cnonce`` dict keys anywhere in a config
+    that mentions Digest in any key or string (``HTTPDigestAuth``, ``["Digest"]``,
+    ``{"digest": true}``).
+  - ``secret = value`` with any whitespace gaps and repeated separators
+    (``password ==``, ``password = = = = = x``); past 64 separator words the rest of
+    the text is masked.
+  - Bounds: nesting deeper than ``MAX_REDACT_DEPTH`` (containers plus embedded JSON
+    layers) is masked as a whole, so a deeply nested stored value can never raise
+    ``RecursionError``. A stored value that is not valid JSON, is larger than
+    ``MAX_CONFIG_JSON_CHARS`` or cannot be redacted is masked entirely (fail closed).
+  - Time: linear in the input. A key longer than ``MAX_KEY_CHARS`` is treated as
+    secret-shaped without being normalized, a free-text string longer than
+    ``MAX_SCAN_CHARS`` is masked whole instead of scanned, and every pattern has
+    bounded repetition. A worst-case 64 KiB config redacts in under 0.1 s on the
+    reference sandbox; ``tests/test_show_output_safety_timing.py`` asserts a 1 s
+    bound and near-linear scaling for each rule's adversarial input.
+  - ``validate_config_json`` refuses (422) an oversized or too deeply nested value on
+    create, before anything is committed.
+* ``ics_text_line`` -- builds one iCalendar content line with RFC 5545 TEXT escaping
+  (backslash, ``;``, ``,``, every line-break form as ``\\n``) and 75-octet line
+  folding, so a title, location or note can never start a new calendar line
+  (``BEGIN:VEVENT`` injection), even for parsers that split on U+2028/U+2029/NEL.
+* ``render_template_text`` -- replaces ``{name}`` placeholders from a flat context.
+  It never calls ``str.format``: no format specs (``{x:>50000000}``), no attribute or
+  index access (``{x.__class__}``, ``{x[0]}``). ``{{`` / ``}}`` are literal braces as
+  before; any other brace text is left as written. Output size is bounded while it is
+  built.
+"""
+
+from __future__ import annotations
+
+import functools
+import json
+import math
+import re
+import unicodedata
+from collections import Counter
+from datetime import datetime, timezone
+from typing import Any
+
+from fastapi import HTTPException
+
+REDACTED = "***"
+
+# --- integration config redaction -------------------------------------------------------
+
+MAX_CONFIG_JSON_CHARS = 64 * 1024
+MAX_CONFIG_DEPTH = 32
+MAX_REDACT_DEPTH = 32
+
+# Substrings of the compact normalized key (letters and digits only).
+_SECRET_KEY_PARTS = (
+    "password",
+    "passwd",
+    "passphrase",
+    "secret",
+    "token",
+    "apikey",
+    "authorization",
+    "credential",
+    "privatekey",
+    "signature",
+    "cookie",
+    "bearer",
+    "webhook",
+    "jwt",
+    "session",
+    "otpseed",
+)
+# Whole words of the key (``smtp_pass``, ``db_pwd``, ``basic_auth``, ``otp_seed``).
+_SECRET_KEY_WORDS = {
+    "key",
+    "keys",
+    "pass",
+    "pwd",
+    "pw",
+    "auth",
+    "sid",
+    "sig",
+    "pin",
+    "otp",
+    "jwt",
+    "session",
+    "bearer",
+    "cookie",
+    "secret",
+    "token",
+    "credential",
+    "credentials",
+}
+_SECRET_KEY_SUFFIXES = ("key", "keys", "pass", "pwd", "passwd")
+
+# Latin look-alikes that NFKC does not fold (Cyrillic and Greek), plus digit
+# substitutions, so ``раssword`` (Cyrillic ``р``/``а``) or ``passw0rd`` still match.
+_CONFUSABLES = str.maketrans(
+    {
+        "а": "a", "в": "b", "е": "e", "ё": "e", "к": "k", "м": "m", "н": "h",
+        "о": "o", "р": "p", "с": "c", "т": "t", "у": "y", "х": "x", "ѕ": "s",
+        "і": "i", "ї": "i", "ј": "j", "ԁ": "d", "ԛ": "q", "ԝ": "w", "һ": "h",
+        "ӏ": "l", "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H",
+        "О": "O", "Р": "P", "С": "C", "Т": "T", "Х": "X", "Ѕ": "S", "І": "I",
+        "Ј": "J", "α": "a", "β": "b", "ε": "e", "ι": "i", "κ": "k", "ν": "v",
+        "ο": "o", "ρ": "p", "τ": "t", "υ": "u", "χ": "x", "Α": "A", "Β": "B",
+        "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I", "Κ": "K", "Μ": "M", "Ν": "N",
+        "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+    }
+)  # fmt: skip
+_DIGIT_LOOKALIKES = str.maketrans(
+    {"0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t"}
+)
+
+# Linear-time bounds. A key longer than MAX_KEY_CHARS is never normalized: it is
+# treated as secret-shaped and its value is masked. A string longer than
+# MAX_SCAN_CHARS that is not an embedded JSON document is masked whole instead of
+# being scanned. Every pattern below has bounded repetition around its anchors, starts
+# only at a word/scheme boundary, and cannot fail after an unbounded scan, so the
+# work per string is linear in its length (tests/test_show_output_safety_redaction.py
+# asserts the bound and the scaling).
+MAX_KEY_CHARS = 256
+MAX_SCAN_CHARS = 4096
+
+_AUTH_SCHEMES = (
+    r"bearer|basic|digest|token|bot|ssws|sso-key|api-?key|negotiate|ntlm|hoba"
+    r"|mutual|vapid|aws4-hmac-sha256|scram-sha-(?:1|256)"
+)
+_URL_SCHEME = r"(?<![A-Za-z0-9+.-])[A-Za-z][A-Za-z0-9+.-]{0,31}://"
+_URL_USERINFO_PASSWORD = re.compile(
+    # Greedy password: it runs to the LAST ``@`` (within 256 characters) that is
+    # followed by a host character, so a raw ``@`` or ``/`` inside the password is
+    # still masked (over-redaction is preferred).
+    rf"(?P<prefix>{_URL_SCHEME}[^\s/?#@:]{{0,256}}:)\S{{0,256}}@(?=[A-Za-z0-9.\-\[\]])"
+)
+# A username alone (``https://ghp_x@host``, ``ftp://token@host``) in any scheme.
+_URL_USERINFO_USERNAME = re.compile(rf"(?P<prefix>{_URL_SCHEME})[^\s/?#@:]{{1,256}}@")
+_URL_QUERY_PARAM = re.compile(
+    r"(?P<prefix>[?&;#](?P<name>[^=&;#?\s]{1,128})=)"
+    r"(?P<value>\{[^}]{0,256}\}?|[^&;#\s]*)"
+)
+_WEBHOOK_PATHS = re.compile(
+    r"(?P<prefix>(?:hooks\.slack\.com/(?:services|workflows|triggers)/"
+    r"|discord(?:app)?\.com/api/webhooks/"
+    r"|\.webhook\.office\.com/webhookb2/"
+    r"|hooks\.zapier\.com/hooks/catch/))"
+    r"[^\s?#\"'<>]+",
+    re.IGNORECASE,
+)
+_TELEGRAM_BOT_TOKEN = re.compile(
+    r"(?P<prefix>api\.telegram\.org/(?:file/)?bot)[^/\s?#\"'<>]+", re.IGNORECASE
+)
+_AUTH_SCHEME_VALUE = re.compile(
+    rf"(?P<prefix>\b(?P<scheme>{_AUTH_SCHEMES})\s{{1,8}})(?P<cred>[^\s\"'<>,;]+)",
+    re.IGNORECASE,
+)
+# A quoted value never has to find its closing quote (it is optional), so a match
+# attempt cannot fail after a long scan.
+_QUOTED_VALUE = r"\"(?:[^\"\\]|\\.){0,256}\"?|'[^']{0,256}'?|\{[^}]{0,256}\}?"
+_NAME_VALUE_PAIR = re.compile(
+    r"(?P<prefix>(?P<q>[\"']?)(?<![A-Za-z0-9_.\-])"
+    r"(?P<name>[A-Za-z_][A-Za-z0-9_.\- ]{0,40}?)(?P=q)\s{0,8}[:=](?:\s{0,8}[:=]){0,16}"
+    r"\s{0,8})"
+    rf"(?P<value>(?i:(?:{_AUTH_SCHEMES})\s{{1,8}}[^\s;&,\"'#]+)|{_QUOTED_VALUE}"
+    r"|[^;&,\s\"'#:=][^;&,\s\"'#]*)"
+)
+# ``password hunter2`` (netrc), ``--password hunter2`` / ``-token x`` (command lines).
+# Only the name and its whitespace are consumed per match, so every word is a
+# candidate name; the value is matched separately (see ``_mask_spaced_values``).
+_SPACED_NAME = re.compile(
+    r"(?<![A-Za-z0-9_\-])-{0,2}(?P<name>[A-Za-z][A-Za-z0-9_\-]{0,40})\s+(?=\S)"
+)
+_SPACED_VALUE = re.compile(rf"{_QUOTED_VALUE}|[^\s\"']+")
+# ``password=``, ``"password":``, ``password =`` -- a name right before a separator,
+# whatever follows (long gaps, many separators). The name has no spaces, so only the
+# word right before the separator can start a match; the separators, gaps and value
+# are then walked once in Python (``_mask_after_separators``).
+_NAME_BEFORE_SEPARATOR = re.compile(
+    r"(?<![A-Za-z0-9_.\-])(?P<name>[A-Za-z_][A-Za-z0-9_.\-]{0,40})[\"']?"
+    r"[ \t]{0,8}(?=[:=])"
+)
+_PAIR_VALUE = re.compile(rf"{_QUOTED_VALUE}|[^;&,\s\"'#:=][^;&,\s\"'#]*")
+_SPACED_SEPARATOR_GAP = re.compile(r"\s*")
+# ``password = x``, ``password == x``, ``password = = x``: separator words (``=``,
+# ``:``, ``==``, ``:=``, any length) between a secret name and its value. Past
+# ``_MAX_SPACED_SEPARATORS`` of them the rest of the text is masked (fail closed).
+_SPACED_SEPARATOR = re.compile(r"[:=]+")
+_MAX_SPACED_SEPARATORS = 64
+# A value that runs to its closing quote, or (unquoted) to the next separator. Each
+# branch always matches (the closing quote is optional), so a match attempt cannot fail
+# after a long scan, and a match consumes what it scanned.
+_QUOTED_TO_CLOSE = r"\"(?:[^\"\\\r\n]|\\.)*\"?|'[^'\r\n]*'?"
+# One ``Name: value`` header line. A secret-named header masks the whole rest of the
+# line, so a multi-word value (``X-Api-Key: two words``, ``Authorization: Digest
+# ...``) never leaks its tail. Tried only at line starts, with a bounded name part.
+_HEADER_LINE = re.compile(
+    r"^(?P<prefix>[ \t]{0,8}(?P<name>[A-Za-z][A-Za-z0-9_.\-]{0,63})[ \t]{0,8}:)"
+    r"(?P<value>[^\r\n]*)",
+    re.MULTILINE,
+)
+# ``curl -H 'X-Api-Key: two words'``: a quoted header argument, to its closing quote.
+_CLI_HEADER_PREFIX = (
+    r"(?<![A-Za-z0-9_\-])(?P<prefix>(?:-H|--header)(?:\s{1,8}|=){quote}[ \t]{0,8}"
+    r"(?P<name>[A-Za-z][A-Za-z0-9_.\-]{0,63})[ \t]{0,8}:)"
+)
+_CLI_HEADERS = (
+    re.compile(
+        _CLI_HEADER_PREFIX.replace("{quote}", '"') + r"(?P<value>(?:[^\"\\\r\n]|\\.)*)"
+    ),
+    re.compile(_CLI_HEADER_PREFIX.replace("{quote}", "'") + r"(?P<value>[^'\r\n]*)"),
+)
+# ``curl -u user:password``, ``--user user:pw``, ``--user=user:pw``, ``-ualice:pw``,
+# ``-su user:pw``, ``--proxy-user`` / ``-U`` and quoted forms, including a value only
+# partly quoted (``admin:"hunter2!"``, ``admin:hun"ter2"``). The value is one shell
+# word: up to ``_MAX_CLI_WORD_SEGMENTS`` unquoted runs and quoted segments. Each
+# segment kind starts on its own character (unquoted, ``"`` or ``'``) and every
+# segment always matches, so the word is split exactly one way and never backtracks.
+# As in a shell, a quoted segment runs to its closing quote across line breaks; an
+# unterminated one runs to the end of the text (the string is at most MAX_SCAN_CHARS).
+_MAX_CLI_WORD_SEGMENTS = 64
+_CLI_QUOTED_SEGMENT = r"\"(?:[^\"\\]|\\[\s\S])*\"?|'[^']*'?"
+# An unquoted run; as in a shell, a backslash escapes the next character, including a
+# space or a line break (``pa\<newline>ss`` is one word, ``pass``).
+_CLI_UNQUOTED_SEGMENT = r"(?:[^\s\"'\\]|\\[\s\S])+"
+_CLI_USER = re.compile(
+    r"(?<![A-Za-z0-9_\-])(?P<flag>--(?:proxy-)?user(?:\s{1,8}|=)"
+    # HTTPie: ``-a user:pw``, ``-aadmin:pw``, ``-va admin:pw``, ``--auth user:pw``,
+    # ``--auth=user:pw``. ``-a`` also means other things to other tools (``rsync -a
+    # host:path``); a ``user:pw``-shaped value after it is masked anyway (fail safe).
+    r"|--auth(?:\s{1,8}|=)|-[A-Za-z]{0,6}a\s{1,8}|-a=?"
+    r"|-[A-Za-z]{0,6}[uU]\s{1,8}|-[uU]=?)"
+    rf"(?P<value>(?:{_CLI_UNQUOTED_SEGMENT}|{_CLI_QUOTED_SEGMENT})"
+    rf"{{1,{_MAX_CLI_WORD_SEGMENTS}}})"
+)
+_CLI_SEGMENT = re.compile(rf"{_CLI_UNQUOTED_SEGMENT}|{_CLI_QUOTED_SEGMENT}")
+# HTTPie ``-A bearer`` / ``--auth-type=bearer``: then an ``-a`` value is a token with
+# no ``:``, and it is masked whole. ``-A`` is also curl's user agent (fail safe).
+_HTTPIE_AUTH_TYPE = re.compile(r"(?<![A-Za-z0-9_\-])(?:--auth-type|-[A-Za-z]{0,6}A)")
+# HTTP Digest (RFC 7616): ``response`` and ``cnonce`` are masked whatever their length
+# once a ``Digest <param>=`` credential appears; only the text from there on is scanned.
+_DIGEST_SCHEME = re.compile(
+    r"\bdigest\s{1,8}[A-Za-z_][A-Za-z0-9_\-]{0,40}\s{0,8}=", re.IGNORECASE
+)
+_DIGEST_SECRET_PARAM = re.compile(
+    r"(?<![A-Za-z0-9_\-])(?P<prefix>(?:response|cnonce)\s{0,8}=\s{0,8})"
+    rf"(?P<value>{_QUOTED_TO_CLOSE}|[^\s,;\"']+)",
+    re.IGNORECASE,
+)
+_TOKEN_RUN = re.compile(r"[A-Za-z0-9_\-+=~]{20,}")
+_CAMEL_LOWER_UPPER = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_CAMEL_UPPER_WORD = re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])")
+_PAIR_NAME_FIELDS = {"name", "key", "header", "field", "param", "parameter"}
+_PAIR_VALUE_FIELDS = {"value", "val", "content", "data"}
+# HTTP Digest parameters stored as separate dict keys: ``response`` and ``cnonce``
+# are masked anywhere in a config that mentions Digest at all -- in any key or string,
+# at any depth, as a substring (``HTTPDigestAuth``, ``digestauth``, ``["Digest"]``,
+# ``{"digest": true}``). Over-redaction is preferred.
+_DIGEST_FIELDS = {"response", "cnonce"}
+_HEADER_NAME = re.compile(r"[A-Za-z][A-Za-z_.\- ]{0,63}")
+# A bare header/field name as a list element: no ``:``/``=``, so a whole header line
+# such as ``"Authorization: Bearer x"`` is never mistaken for a name and kept verbatim.
+_LIST_HEADER_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_.\- ]{0,63}")
+_MAX_HEADER_TUPLE = 4
+_MAX_HEADER_NAME_CHARS = 64
+
+
+def _key_words(key: str) -> list[str]:
+    text = unicodedata.normalize("NFKC", key)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Cf")
+    text = text.translate(_CONFUSABLES)
+    text = _CAMEL_LOWER_UPPER.sub(" ", text)
+    text = _CAMEL_UPPER_WORD.sub(" ", text)
+    return [word for word in re.split(r"[^a-z0-9]+", text.casefold()) if word]
+
+
+def _is_secret_key(key: object) -> bool:
+    key = str(key)
+    if len(key) > MAX_KEY_CHARS:
+        return True  # secret-shaped; never normalized (bounded work per key)
+    return _is_secret_key_name(key)
+
+
+@functools.lru_cache(maxsize=4096)
+def _is_secret_key_name(key: str) -> bool:
+    words = _key_words(key)
+    compact = "".join(words)
+    if not compact:
+        return False
+    for variant_words, variant in (
+        (words, compact),
+        (
+            [word.translate(_DIGIT_LOOKALIKES) for word in words],
+            compact.translate(_DIGIT_LOOKALIKES),
+        ),
+    ):
+        if any(word in _SECRET_KEY_WORDS for word in variant_words):
+            return True
+        if variant.endswith(_SECRET_KEY_SUFFIXES):
+            return True
+        if any(part in variant for part in _SECRET_KEY_PARTS):
+            return True
+    return False
+
+
+def _looks_random(run: str) -> bool:
+    counts = Counter(run)
+    entropy = -sum(n / len(run) * math.log2(n / len(run)) for n in counts.values())
+    has_digit = any(ch.isdigit() for ch in run)
+    has_letter = any(ch.isalpha() for ch in run)
+    if has_digit and has_letter:
+        return entropy >= 3.0
+    upper = sum(ch.isupper() for ch in run[1:])
+    lower = sum(ch.islower() for ch in run)
+    return upper >= 3 and lower >= 3 and entropy >= 4.0
+
+
+def _looks_like_credential(scheme: str, cred: str) -> bool:
+    if scheme.lower() == "bearer":
+        return True
+    if len(cred) < 8:
+        return False
+    return any(ch.isdigit() or ch in "=+/" for ch in cred) or any(
+        ch.isupper() for ch in cred[1:]
+    )
+
+
+def _mask_if_secret_name(match: re.Match) -> str:
+    if _is_secret_key(match.group("name")):
+        return f"{match.group('prefix')}{REDACTED}"
+    return match.group(0)
+
+
+def _mask_spaced_values(text: str) -> str:
+    """Mask the word after a secret-named word: ``password x``, ``--token x``."""
+    parts: list[str] = []
+    position = 0
+    for match in _SPACED_NAME.finditer(text):
+        if match.start() < position or not _is_secret_key(match.group("name")):
+            continue
+        value = _SPACED_VALUE.match(text, match.end())
+        if value is None:
+            continue
+        if _is_secret_key(value.group(0).strip("\"'").lstrip("-")):
+            # A second secret label can itself be the apparent value (for example,
+            # ``password         auth value``). Advancing past it would suppress
+            # reprocessing and expose its following credential. The remaining extent
+            # is ambiguous, so fail closed from the second label onward.
+            parts.append(text[position : match.end()])
+            parts.append(REDACTED)
+            return "".join(parts)
+        if _SPACED_SEPARATOR.fullmatch(value.group(0)):
+            # ``X-Auth-Token : a`` / ``password = a`` / ``password = = a``: mask the
+            # word after the separators, keeping the separators themselves.
+            following = _skip_separators(text, value.start())
+            if following is None:
+                continue
+            if following is _TOO_MANY_SEPARATORS:
+                parts.append(text[position : value.start()])
+                parts.append(REDACTED)  # fail closed: mask the rest of the text
+                return "".join(parts)
+            parts.append(text[position : following.start()])
+            parts.append(REDACTED)
+            position = following.end()
+            continue
+        parts.append(text[position : match.end()])
+        parts.append(REDACTED)
+        position = value.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+_TOO_MANY_SEPARATORS = object()
+
+
+def _skip_separators(
+    text: str, start: int, value_pattern: re.Pattern = _SPACED_VALUE
+) -> Any:
+    """The first value word after the separator words that begin at ``start``.
+
+    Returns the value match, ``None`` when no value follows, or
+    ``_TOO_MANY_SEPARATORS`` past ``_MAX_SPACED_SEPARATORS`` separator words. Each
+    step consumes what it scanned, so the walk is linear in the text it passes.
+    """
+    position = start
+    for _ in range(_MAX_SPACED_SEPARATORS):
+        separator = _SPACED_SEPARATOR.match(text, position)
+        if separator is None:
+            break
+        position = _SPACED_SEPARATOR_GAP.match(text, separator.end()).end()
+    else:
+        if _SPACED_SEPARATOR.match(text, position):
+            return _TOO_MANY_SEPARATORS
+    return value_pattern.match(text, position)
+
+
+def _mask_after_separators(text: str) -> str:
+    """Mask the value after ``secret_name`` and its separators, whatever the gaps.
+
+    ``password=<12 spaces>x``, ``"password":<12 spaces>"x"``, ``password =<10 spaces>=
+    x``, ``password = = = = = x``: the separators and gaps are kept, the value is
+    masked. Past ``_MAX_SPACED_SEPARATORS`` separator words the rest is masked.
+    """
+    parts: list[str] = []
+    position = 0
+    for match in _NAME_BEFORE_SEPARATOR.finditer(text):
+        if match.start() < position or not _is_secret_key(match.group("name")):
+            continue
+        value = _skip_separators(text, match.end(), _PAIR_VALUE)
+        if value is None:
+            continue
+        if value is _TOO_MANY_SEPARATORS:
+            parts.append(text[position : match.end()])
+            parts.append(REDACTED)
+            return "".join(parts)
+        parts.append(text[position : value.start()])
+        parts.append(REDACTED)
+        position = value.end()
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _mask_keeping_quotes(value: str) -> str:
+    """``"x"`` -> ``"***"``, ``'x`` -> ``'***``, ``x`` -> ``***``."""
+    quote = value[:1] if value[:1] in {'"', "'"} else ""
+    closing = quote if quote and len(value) > 1 and value.endswith(quote) else ""
+    return f"{quote}{REDACTED}{closing}"
+
+
+def _mask_header_value(match: re.Match) -> str:
+    if _is_secret_key(match.group("name")) and match.group("value").strip():
+        return f"{match.group('prefix')} {REDACTED}"
+    return match.group(0)
+
+
+def _mask_cli_user(match: re.Match) -> str:
+    """Mask everything after the first ``:`` of a ``-u`` value, quoted parts included.
+
+    ``-u user:pw`` -> ``-u user:***``; ``-u admin:"pw"`` -> ``-u admin:***``;
+    ``-u "user:pw"`` -> ``-u "user:***"``; ``-u sk_key:`` (a key as the username,
+    empty password) -> ``-u ***:``.
+    """
+    value = match.group("value")
+    colon = value.find(":")
+    if colon < 0:
+        return match.group(0)  # no password on the command line
+    user, password = value[:colon], value[colon + 1 :]
+    # The colon sits inside a quoted segment when the user part opens a quote it does
+    # not close (``"user:pw"``); that segment's closing quote is kept for balance.
+    opening = user[:1] if user[:1] in {'"', "'"} and user.count(user[0]) % 2 else ""
+    closing = opening if opening and password.endswith(opening) else ""
+    secret = password[: len(password) - len(closing)]
+    if secret.strip("\"'"):
+        return f"{match.group('flag')}{user}:{REDACTED}{closing}"
+    return f"{match.group('flag')}{opening}{REDACTED}:{password}"
+
+
+def _ends_unterminated(value: str) -> bool:
+    """True when the last segment of a ``-u`` word opens a quote it never closes."""
+    last = None
+    for last in _CLI_SEGMENT.finditer(value):
+        pass
+    if last is None:
+        return False
+    segment = last.group(0)
+    if segment[0] == "'":
+        return len(segment) == 1 or not segment.endswith("'")
+    if segment[0] == '"':
+        # Closed when it ends in a ``"`` preceded by an even run of backslashes.
+        body = segment[1:]
+        if not body.endswith('"'):
+            return True
+        backslashes = len(body[:-1]) - len(body[:-1].rstrip("\\"))
+        return backslashes % 2 == 1
+    return False
+
+
+def _cli_user_unsure(value: str) -> bool:
+    """A ``-u`` word whose extent cannot be trusted.
+
+    It crosses a line break, runs into an unterminated quote, or contains another
+    credential flag: then a quote in it may belong to a later command (``-u a:"x`` on
+    one line, ``-u b:"pw two"`` on the next), and the word boundary the pattern found
+    may sit inside a later password.
+    """
+    return (
+        "\n" in value
+        or "\r" in value
+        or _ends_unterminated(value)
+        or _CLI_USER.search(value) is not None
+    )
+
+
+def _mask_cli_user_to_end(match: re.Match) -> str:
+    """``flag user:***`` with nothing after it; the user is kept only when it is a
+    plain word, so masking an already masked text gives the same text."""
+    value = match.group("value")
+    colon = value.find(":")
+    user = value[:colon] if colon >= 0 else ""
+    password = value[colon + 1 :] if colon >= 0 else ""
+    if colon >= 0 and not password.strip("\"'"):
+        # Empty-password credentials use the username as the secret (API-token
+        # convention). Apply that rule before the unsure-value fallback can preserve
+        # a username that begins with another credential flag.
+        return _mask_cli_user(match)
+    if user and not any(ch.isspace() for ch in user) and "\\" not in user:
+        return f"{match.group('flag')}{user}:{REDACTED}"
+    return f"{match.group('flag')}{REDACTED}"
+
+
+def _is_httpie_auth_flag(flag: str) -> bool:
+    """``-a``, ``-va``, ``--auth`` (HTTPie), as opposed to ``-u``/``--user``."""
+    name = flag.rstrip().rstrip("=")
+    return name == "--auth" or (not name.startswith("--") and name.endswith("a"))
+
+
+def _mask_cli_users(text: str) -> str:
+    """Apply ``_mask_cli_user`` to every ``-u`` value; fail closed when unsure.
+
+    A shell word longer than ``_MAX_CLI_WORD_SEGMENTS`` segments cannot be split
+    reliably (a quote past the bound may hide spaces or line breaks), so everything
+    from its flag to the end of the text is masked: no tail can leak. The same holds
+    for a word that crosses a line break, reaches an unterminated quote or contains
+    another credential flag (``_cli_user_unsure``).
+    """
+    parts: list[str] = []
+    position = 0
+    auth_type = None  # whether an HTTPie ``-A``/``--auth-type`` appears; lazy
+    for match in _CLI_USER.finditer(text):
+        if match.start() < position:
+            continue
+        parts.append(text[position : match.start()])
+        end = match.end()
+        flag, value = match.group("flag"), match.group("value")
+        if end < len(text) and not text[end].isspace():
+            parts.append(f"{flag}{REDACTED}")  # past the bound
+            return "".join(parts)
+        if ":" not in value and _is_httpie_auth_flag(flag):
+            # ``-A bearer -a TOKEN``: with an auth type the value is a token.
+            if auth_type is None:
+                auth_type = _HTTPIE_AUTH_TYPE.search(text) is not None
+            if auth_type:
+                if _cli_user_unsure(value):
+                    parts.append(f"{flag}{REDACTED}")
+                    return "".join(parts)
+                parts.append(f"{flag}{REDACTED}")
+                position = end
+                continue
+        if ":" in value and _cli_user_unsure(value):
+            parts.append(_mask_cli_user_to_end(match))
+            return "".join(parts)
+        parts.append(_mask_cli_user(match))
+        position = end
+    parts.append(text[position:])
+    return "".join(parts)
+
+
+def _mask_digest_params(text: str) -> str:
+    scheme = _DIGEST_SCHEME.search(text)
+    if scheme is None:
+        return text
+    start = scheme.start()
+    return text[:start] + _DIGEST_SECRET_PARAM.sub(
+        lambda m: f"{m.group('prefix')}{_mask_keeping_quotes(m.group('value'))}",
+        text[start:],
+    )
+
+
+def _redact_string(value: str, depth: int, digest: bool = False) -> Any:
+    stripped = value.strip()
+    if stripped[:1] in {"{", "[", '"'}:
+        try:
+            embedded = json.loads(stripped)
+        except RecursionError:
+            return REDACTED
+        except ValueError:
+            embedded = None
+        else:
+            if isinstance(embedded, (dict, list, str)):
+                # Keep the encoding: the result is again a JSON document in a string.
+                return json.dumps(
+                    _redact_value(embedded, depth + 1, digest), ensure_ascii=False
+                )
+    if len(value) > MAX_SCAN_CHARS:
+        return REDACTED  # long free text is masked whole rather than scanned
+    text = _HEADER_LINE.sub(_mask_header_value, value)
+    for pattern in _CLI_HEADERS:
+        text = pattern.sub(_mask_header_value, text)
+    text = _mask_cli_users(text)
+    text = _mask_digest_params(text)
+    text = _URL_USERINFO_PASSWORD.sub(lambda m: f"{m.group('prefix')}{REDACTED}@", text)
+    text = _URL_USERINFO_USERNAME.sub(lambda m: f"{m.group('prefix')}{REDACTED}@", text)
+    text = _WEBHOOK_PATHS.sub(lambda m: f"{m.group('prefix')}{REDACTED}", text)
+    text = _TELEGRAM_BOT_TOKEN.sub(lambda m: f"{m.group('prefix')}{REDACTED}", text)
+    text = _URL_QUERY_PARAM.sub(_mask_if_secret_name, text)
+    text = _AUTH_SCHEME_VALUE.sub(
+        lambda m: (
+            f"{m.group('prefix')}{REDACTED}"
+            if _looks_like_credential(m.group("scheme"), m.group("cred"))
+            else m.group(0)
+        ),
+        text,
+    )
+    text = _NAME_VALUE_PAIR.sub(_mask_if_secret_name, text)
+    text = _mask_after_separators(text)
+    text = _mask_spaced_values(text)
+    return _TOKEN_RUN.sub(
+        lambda m: REDACTED if _looks_random(m.group(0)) else m.group(0), text
+    )
+
+
+def _mentions_digest(value: Any) -> bool:
+    """True when ``Digest`` appears in any key or string of ``value``, at any depth.
+
+    One linear pass over the serialized value, NFKC-normalized and folded for
+    look-alikes, as a case-insensitive substring. Unserializable input fails closed.
+    """
+    try:
+        text = json.dumps(value, ensure_ascii=False)
+    except (TypeError, ValueError, RecursionError):
+        return True
+    text = unicodedata.normalize("NFKC", text).translate(_CONFUSABLES)
+    return "digest" in text.casefold()
+
+
+def _redact_dict(value: dict, depth: int, digest: bool | None = None) -> dict:
+    name_fields = [
+        key
+        for key, item in value.items()
+        if isinstance(key, str)
+        and key.casefold() in _PAIR_NAME_FIELDS
+        and isinstance(item, str)
+    ]
+    value_fields = {
+        key
+        for key in value
+        if isinstance(key, str) and key.casefold() in _PAIR_VALUE_FIELDS
+    }
+    pair_secret = bool(value_fields) and any(
+        _is_secret_key(value[key]) for key in name_fields
+    )
+    if digest is None:
+        digest = _mentions_digest(value)
+    out: dict = {}
+    for key, item in value.items():
+        if value_fields and key in name_fields and _HEADER_NAME.fullmatch(item):
+            out[key] = item  # a header/field name such as "Authorization"
+        elif (
+            (pair_secret and key in value_fields)
+            or (digest and isinstance(key, str) and key.casefold() in _DIGEST_FIELDS)
+            or _is_secret_key(key)
+        ):
+            out[key] = REDACTED
+        else:
+            out[key] = _redact_value(item, depth + 1, digest)
+    return out
+
+
+def _is_list_header_name(item: object) -> bool:
+    return (
+        isinstance(item, str)
+        and len(item) <= _MAX_HEADER_NAME_CHARS
+        and _LIST_HEADER_NAME.fullmatch(item) is not None
+    )
+
+
+def _is_secret_list_name(item: object) -> bool:
+    """A list element naming a secret: ``"X-Api-Key"``, also ``"X-Api-Key:"``."""
+    if not isinstance(item, str) or len(item) > _MAX_HEADER_NAME_CHARS + 8:
+        return False
+    name = item.strip().rstrip(":=").rstrip()
+    return _is_list_header_name(name) and _is_secret_key(name)
+
+
+def _redact_list(value: list, depth: int, digest: bool | None = None) -> list:
+    # ["Authorization", "Bearer x"] and ["Authorization", "Bearer", "x"]: a short
+    # header tuple whose first element names a secret keeps only that name, whatever
+    # the other elements are (a nested list or object is masked whole). A whole
+    # header line (``"Authorization: Bearer x"``) is not a name: each element of such
+    # a list is redacted on its own below, so the line's value is masked.
+    if digest is None:
+        digest = _mentions_digest(value)
+    if 2 <= len(value) <= _MAX_HEADER_TUPLE and _is_secret_list_name(value[0]):
+        return [
+            _redact_value(value[0], depth + 1, digest),
+            *([REDACTED] * (len(value) - 1)),
+        ]
+    # A flat name/value header list of any length (Node ``rawHeaders``: ["Accept",
+    # "a", "X-Api-Key", "k", ...]): the element after EVERY secret-looking name is
+    # masked, whatever it is (a nested value is masked whole) and wherever the name
+    # sits. The pairing is never inferred: an odd length, a name slot holding
+    # ``"x:y"``, null or a number, or a value that looks like a name cannot shift it
+    # into a leak (fail closed; a value that itself looks like a secret name, such
+    # as ``"synthetic-key"``, also masks the element after it).
+    masked = {i + 1 for i in range(len(value) - 1) if _is_secret_list_name(value[i])}
+    return [
+        REDACTED if i in masked else _redact_value(item, depth + 1, digest)
+        for i, item in enumerate(value)
+    ]
+
+
+def _redact_value(value: Any, depth: int = 0, digest: bool | None = None) -> Any:
+    if depth > MAX_REDACT_DEPTH:
+        return REDACTED
+    if digest is None:
+        digest = _mentions_digest(value)
+    if isinstance(value, dict):
+        return _redact_dict(value, depth, digest)
+    if isinstance(value, list):
+        return _redact_list(value, depth, digest)
+    if isinstance(value, str):
+        return _redact_string(value, depth, digest)
+    return value
+
+
+def redact_config_json(config_json: str | None) -> str | None:
+    """Return ``config_json`` with secret values masked; the stored value is untouched.
+
+    Never raises for a stored value: anything that cannot be parsed or redacted within
+    the size and depth bounds is masked entirely.
+    """
+    if config_json is None or config_json.strip() == "":
+        return config_json
+    if len(config_json) > MAX_CONFIG_JSON_CHARS:
+        return REDACTED
+    try:
+        parsed = json.loads(config_json)
+        return json.dumps(_redact_value(parsed), ensure_ascii=False)
+    except (TypeError, ValueError, RecursionError):
+        return REDACTED
+
+
+def json_nesting_depth(text: str) -> int:
+    """Deepest ``[``/``{`` nesting of ``text``, scanned iteratively (never recurses).
+
+    Brackets inside JSON strings are ignored; the text need not be valid JSON.
+    """
+    depth = deepest = 0
+    in_string = escaped = False
+    for ch in text:
+        if in_string:
+            if escaped:
+                escaped = False
+            elif ch == "\\":
+                escaped = True
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+        elif ch in "[{":
+            depth += 1
+            deepest = max(deepest, depth)
+        elif ch in "]}":
+            depth = max(depth - 1, 0)
+    return deepest
+
+
+def validate_config_json(config_json: str | None) -> None:
+    """Refuse (422) an oversized or too deeply nested ``config_json`` before commit."""
+    if config_json is None:
+        return
+    if len(config_json) > MAX_CONFIG_JSON_CHARS:
+        raise _unprocessable(
+            f"config_json exceeds {MAX_CONFIG_JSON_CHARS} characters",
+            field="config_json",
+        )
+    if json_nesting_depth(config_json) > MAX_CONFIG_DEPTH:
+        raise _unprocessable(
+            f"config_json nests deeper than {MAX_CONFIG_DEPTH} levels",
+            field="config_json",
+        )
+
+
+# --- iCalendar -------------------------------------------------------------------------
+
+ICS_LINE_OCTETS = 75
+ICS_MEDIA_TYPE = "text/calendar; charset=utf-8"
+
+# Every character ``str.splitlines`` treats as a line boundary (CR, LF, VT, FF, FS,
+# GS, RS, NEL, LINE SEPARATOR, PARAGRAPH SEPARATOR): a consumer that splits on any of
+# them must never see a new content line, so each one is escaped as ``\n``.
+_ICS_LINE_BREAKS = re.compile("\r\n|[\n\r\x0b\x0c\x1c\x1d\x1e\x85\u2028\u2029]")
+
+
+def _ics_allowed(ch: str) -> bool:
+    """Not a C0 control (except TAB), DEL or a C1 control (RFC 5545 3.1, 3.3.11)."""
+    code = ord(ch)
+    if ch == "\t":
+        return True
+    return code >= 0x20 and not 0x7F <= code <= 0x9F
+
+
+def ics_escape_text(value: object) -> str:
+    """RFC 5545 section 3.3.11 TEXT escaping; every line-break form becomes ``\\n``."""
+    text = str(value)
+    text = text.replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,")
+    text = _ICS_LINE_BREAKS.sub("\\\\n", text)
+    return "".join(ch for ch in text if _ics_allowed(ch))
+
+
+def ics_utc_timestamp(moment: datetime) -> str:
+    """RFC 5545 DATE-TIME in UTC form (``19970714T173000Z``), as DTSTAMP requires."""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    return moment.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def ics_fold(line: str) -> list[str]:
+    """Fold a content line into chunks of at most 75 octets (RFC 5545 section 3.1).
+
+    Continuation chunks start with one space, which counts toward their 75 octets.
+    A multi-octet UTF-8 character is never split.
+    """
+    chunks: list[str] = []
+    current = ""
+    current_octets = 0
+    for ch in line:
+        width = len(ch.encode("utf-8"))
+        if current_octets + width > ICS_LINE_OCTETS:
+            chunks.append(current)
+            current, current_octets = " ", 1
+        current += ch
+        current_octets += width
+    chunks.append(current)
+    return chunks
+
+
+def ics_text_line(name: str, value: object) -> list[str]:
+    return ics_fold(f"{name}:{ics_escape_text(value)}")
+
+
+def ics_strip_line_breaks(value: object) -> str:
+    """For non-TEXT values (UID): remove every line break and control character."""
+    text = _ICS_LINE_BREAKS.sub("", str(value))
+    return "".join(ch for ch in text if ch != "\t" and _ics_allowed(ch))
+
+
+# --- message templates -----------------------------------------------------------------
+
+MAX_TEMPLATE_CHARS = 20_000
+MAX_RENDERED_CHARS = 50_000
+MAX_CONTEXT_KEYS = 100
+MAX_CONTEXT_VALUE_CHARS = 5_000
+
+_PLACEHOLDER = re.compile(r"\{\{|\}\}|\{([A-Za-z_][A-Za-z0-9_]{0,63})\}")
+_SCALARS = (str, int, float, bool)
+
+
+def _unprocessable(message: str, **extra: object) -> HTTPException:
+    return HTTPException(status_code=422, detail={"message": message, **extra})
+
+
+def check_template_size(
+    subject_template: str | None, body_template: str | None
+) -> None:
+    for field, value in (
+        ("subject_template", subject_template),
+        ("body_template", body_template),
+    ):
+        if value is not None and len(value) > MAX_TEMPLATE_CHARS:
+            raise _unprocessable(
+                f"{field} exceeds {MAX_TEMPLATE_CHARS} characters", field=field
+            )
+
+
+def normalize_render_context(context: dict) -> dict[str, str]:
+    """Accept a flat mapping of placeholder names to scalar values only."""
+    if len(context) > MAX_CONTEXT_KEYS:
+        raise _unprocessable(f"context has more than {MAX_CONTEXT_KEYS} keys")
+    normalized: dict[str, str] = {}
+    for key, value in context.items():
+        if not isinstance(key, str):
+            raise _unprocessable("context keys must be strings")
+        if value is None:
+            text = ""
+        elif isinstance(value, _SCALARS):
+            text = str(value)
+        else:
+            raise _unprocessable(
+                "context values must be strings, numbers, booleans or null", key=key
+            )
+        if len(text) > MAX_CONTEXT_VALUE_CHARS:
+            raise _unprocessable(
+                f"context value exceeds {MAX_CONTEXT_VALUE_CHARS} characters", key=key
+            )
+        normalized[key] = text
+    return normalized
+
+
+def render_template_text(
+    template: str | None, context: dict[str, str], *, field: str
+) -> str:
+    """Substitute ``{name}`` placeholders; bounded, no ``str.format`` semantics."""
+    if not template:
+        return ""
+    parts: list[str] = []
+    size = 0
+    position = 0
+    missing: set[str] = set()
+    for match in _PLACEHOLDER.finditer(template):
+        token = match.group(0)
+        name = match.group(1)
+        if name is None:
+            replacement = token[0]  # "{{" -> "{", "}}" -> "}"
+        elif name in context:
+            replacement = context[name]
+        else:
+            missing.add(name)
+            replacement = ""
+        piece = template[position : match.start()] + replacement
+        size += len(piece)
+        if size > MAX_RENDERED_CHARS:
+            raise _unprocessable(
+                f"rendered {field} exceeds {MAX_RENDERED_CHARS} characters", field=field
+            )
+        parts.append(piece)
+        position = match.end()
+    tail = template[position:]
+    if size + len(tail) > MAX_RENDERED_CHARS:
+        raise _unprocessable(
+            f"rendered {field} exceeds {MAX_RENDERED_CHARS} characters", field=field
+        )
+    if missing:
+        raise _unprocessable(
+            "context is missing template variables",
+            field=field,
+            missing=sorted(missing),
+        )
+    parts.append(tail)
+    return "".join(parts)

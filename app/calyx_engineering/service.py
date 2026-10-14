@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .github import FileChange, GitHubEngineeringClient
 
@@ -112,7 +112,7 @@ class CalyxEngineeringService:
             "commits": len(commits),
             "pull_request_number": pull_request.get("number"),
             "pull_request_url": pull_request.get("html_url"),
-            "created_at": datetime.now(timezone.utc).isoformat(),
+            "created_at": datetime.now(UTC).isoformat(),
             "autonomous_merge": False,
             "deployment_activated": False,
         }

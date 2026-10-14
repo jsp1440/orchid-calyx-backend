@@ -1,0 +1,24 @@
+{
+ "schema": "oc-autonomy-hosted-evidence.v1",
+ "environment": "Render worker orchid-calyx-autonomy-acceptance (Starter, Oregon) + dedicated Neon acceptance project, database neondb",
+ "verifier": "scripts/oc_autonomy_hosted_verify.py as SELECT-only role oc_verify, READ ONLY transaction",
+ "runs": {
+  "first_verification": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38220451007",
+  "export_and_dedicated_check": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38222067445",
+  "records_artifact_id": 11734494216
+ },
+ "passed": true,
+ "checks": {
+  "dedicated_acceptance_database": {"passed": true, "database": "neondb", "calyx_tables": 10, "non_calyx_tables": []},
+  "ten_consecutive_productive": {"passed": true, "longest_run": 17, "productive_cycles": 17, "required": 10},
+  "no_duplicate_execution": {"passed": true, "jobs": 34, "distinct_job_keys": 34, "max_attempt_count": 1, "undelivered": [], "receipts_not_delivered": []},
+  "no_defect_cycles": {"passed": true, "unhealthy_categories": []},
+  "restart_observed": {"passed": true, "worker_starts": 2},
+  "replay_without_reexecution": {"passed": true, "idempotent_replays": 17},
+  "traitbank_verdict": {"passed": true, "verdicts": [{"path": "data/traitbank/darwin_1862_batch.json", "valid": true, "assertions": 1, "environment_relations": 1, "violations": [], "side_effects_off": true}]},
+  "status_consistent": {"passed": true, "state": "healthy_waiting"},
+  "drained": {"passed": true, "last_categories": ["no_eligible_work", "no_eligible_work"]},
+  "verifier_role_read_only": {"passed": true}
+ },
+ "interpretation": "The first hosted run delivered all 17 manifest items (34 jobs) in 17 consecutive productive cycles. The worker restart happened after the run drained, so it proves idempotent replay without re-execution but not resumption of in-progress work; the hosted mid-run test is planned separately on a new database so this record stays untouched."
+}

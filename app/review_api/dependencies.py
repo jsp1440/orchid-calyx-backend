@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from functools import lru_cache
-from typing import Callable
 
 import psycopg
-from fastapi import Depends, HTTPException, Request, Security
+from fastapi import HTTPException, Request, Security
 from fastapi.security import APIKeyHeader
 from psycopg.rows import dict_row
 
@@ -21,7 +21,12 @@ from app.mission_control_access.qualification_registry import (
 )
 from app.review_tasks.postgres_repository import PostgresReviewTaskRepository
 from app.review_tasks.service import GovernedReviewTaskService
-from app.security import OWNER_SESSION_COOKIE, _decode_owner_token, get_api_key
+from app.security import (
+    OWNER_SESSION_COOKIE,
+    _decode_owner_token,
+    credentials_match,
+    get_api_key,
+)
 
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
 _principal_resolver = PrincipalResolver()
@@ -98,7 +103,7 @@ async def authenticated_principal(
     identity = _identity_from_owner_session(request)
     if identity is None and api_key:
         expected = get_api_key()
-        if not expected or api_key != expected:
+        if not expected or not credentials_match(api_key, expected):
             raise HTTPException(status_code=401, detail="Invalid API key")
         # API-key identity intentionally receives no scientific qualifications.
         identity = AuthenticatedIdentity(

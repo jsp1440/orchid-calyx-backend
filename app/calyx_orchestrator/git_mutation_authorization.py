@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from .proposal_authorization import ProposalAuthorizationRecord, ProposalDecision
@@ -82,19 +82,20 @@ def _bounded_signature(value: object) -> str:
 
 def _parse_utc(value: str) -> datetime:
     try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        normalized = value.replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
     except ValueError as exc:
         raise ValueError("GIT_AUTHORIZATION_TIME_INVALID") from exc
     if parsed.tzinfo is None:
         raise ValueError("GIT_AUTHORIZATION_TIMEZONE_REQUIRED")
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def _trusted_now(clock: Callable[[], datetime]) -> datetime:
     current = clock()
     if current.tzinfo is None:
         raise ValueError("GIT_AUTHORIZATION_CLOCK_TIMEZONE_REQUIRED")
-    return current.astimezone(timezone.utc)
+    return current.astimezone(UTC)
 
 
 def _manifest_digest(snapshot: Mapping[str, Any]) -> str:
@@ -260,7 +261,7 @@ class GitMutationAuthorizationGate:
             raise ValueError("GIT_AUTHORIZATION_SIGNATURE_VERIFIER_REQUIRED")
         self._owner_principal = principal
         self._signature_verifier = signature_verifier
-        self._clock = clock or (lambda: datetime.now(timezone.utc))
+        self._clock = clock or (lambda: datetime.now(UTC))
 
     @staticmethod
     def build_request(
@@ -329,7 +330,7 @@ class GitMutationAuthorizationGate:
             if not _is_sha256(receipt):
                 raise ValueError("GIT_AUTHORIZATION_VALIDATION_RECEIPT_INVALID")
             receipts.append(receipt)
-        current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+        current = (now or datetime.now(UTC)).astimezone(UTC)
         expiry = _parse_utc(expires_at)
         ttl = (expiry - current).total_seconds()
         if ttl <= 0 or ttl > MAX_TTL_SECONDS:

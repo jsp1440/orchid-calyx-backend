@@ -1,0 +1,48 @@
+{
+  "schema": "oc-autonomy-hosted-acceptance-evidence.v1",
+  "label": "HOSTED_RENDER_NEON_ACCEPTANCE",
+  "result": "PASSED",
+  "verified_at": "2026-10-13T08:56:40Z",
+  "verifier": {
+    "workflow_run": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38372711054",
+    "artifact_id": 11799731920,
+    "artifact_sha256": "6a93000dc175229dacb9c6d52213b6821269de554425f6d3dfb23a0de1983edd",
+    "flags": "--require-loop --database autonomy_loop --min-consecutive 2",
+    "role": "oc_verify (SELECT only; verifier_role_read_only passed)"
+  },
+  "environment": {
+    "render_service": "orchid-calyx-autonomy-acceptance (srv-db67bgo473hc73ddmt90), Blueprint-managed, auto-deploy off",
+    "worker_commit": "4d5338a6ac2f7cd0659901a56b6d585124e82fc6",
+    "brain_ref": "8d9668bb29b3618ea52d1a1854a4b186b167b1d0",
+    "neon_project": "oc-autonomy-acceptance",
+    "database": "autonomy_loop",
+    "calyx_tables": 12,
+    "non_calyx_tables": [],
+    "paid_execution": "disabled (NO_API_MODE=true, OC_GOVERNOR_PAID_EXECUTION_ENABLED=false)",
+    "production_touched": false
+  },
+  "inputs": [
+    {"commit": "b634bd587502e126d27a343118b3715583588d90", "pushed_at": "2026-10-13T08:06:23Z", "file": "app/traitbank/guards.py", "work_id": "loop:maintenance:3ac259cb4f0b1ffbfbd7e45c", "refresh": "69a1d3b -> b634bd5"},
+    {"commit": "23cd52597a4fcfb0e868cea92bdfbd77bc71a688", "pushed_at": "2026-10-13T08:33:06Z", "file": "app/traitbank/taxa.py", "work_id": "loop:maintenance:c570ffd8761ea277d4883a8c", "refresh": "b634bd5 -> 23cd525", "after_restart": true}
+  ],
+  "restart": {"performed_by": "owner", "method": "Render Suspend/Resume", "approx_time": "2026-10-13T08:31Z", "worker_starts": 2, "cycles_after_last_restart": 24},
+  "checks": {
+    "new_input_discovered_and_executed": {"passed": true, "productive_cycles_after_refresh": 2},
+    "subsequent_new_input_discovered": {"passed": true, "refreshes_with_new_work": 2},
+    "restart_recovered": {"passed": true, "worker_starts": 2, "cycles_after_last_restart": 24},
+    "ten_consecutive_healthy_cycles": {"passed": true, "cycles": 49, "longest_healthy_run": 49, "productive_cycles": 4},
+    "ten_consecutive_productive": {"passed": true, "required": 2, "longest_run": 2},
+    "work_created_once": {"passed": true, "submitted": 4, "duplicates": []},
+    "no_duplicate_execution": {"passed": true, "jobs": 8, "distinct_job_keys": 8, "max_attempt_count": 1, "undelivered": [], "receipts_not_delivered": []},
+    "no_outstanding_leases": {"passed": true, "held_or_running": []},
+    "loop_learned_from_outcomes": {"passed": true, "verified_files": 11, "settled_candidates": 4, "proposals": {"awaiting_approval": 9}},
+    "idle_cycles_name_their_cause": {"passed": true, "silent_cycle_positions": []},
+    "idle_polling_backs_off": {"passed": true, "longest_idle_run": 24, "poll_seconds_range": [30, 900]},
+    "no_defect_cycles": {"passed": true, "unhealthy_categories": []},
+    "status_consistent": {"passed": true, "state": "healthy_waiting", "recent": {"window": 49, "productive": 4, "categories": {"owner_gate": 45}}},
+    "traitbank_verdict": {"passed": true, "path": "data/traitbank/darwin_1862_batch.json", "valid": true, "side_effects_off": true, "violations": []},
+    "dedicated_acceptance_database": {"passed": true, "database": "autonomy_loop"},
+    "verifier_role_read_only": {"passed": true}
+  },
+  "gated_not_executed": "9 engineering_development proposals from the Brain mission queue await owner approval; none executed"
+}

@@ -130,6 +130,8 @@ class TaskRouting:
         an issue nothing can execute is not blocked, it is unstaffed, and
         recording it as blocked removes it from the portfolio permanently.
         """
+        if "firecrawl-acquisition" in self.blocking_provider_capabilities:
+            return "Firecrawl executes in the canonical backend acquisition lane; code-authoring fallback is forbidden"
         if self.lane_executable:
             return None
         if self.provider_free_task:
