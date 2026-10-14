@@ -204,8 +204,11 @@ def plan_workflow(
             continue
         expanded.add(state)
         # Successors depend only on (last step, conditions before it), so a
-        # capability may recur when conditions require it; deduplicating that
-        # state is then exact and planning stays complete and polynomial.
+        # capability may recur when conditions require it and deduplicating
+        # that state is exact: planning is complete up to ``max_depth``. The
+        # state space is capabilities x reachable condition sets, so the worst
+        # case grows with the number of distinct effects and is bounded by
+        # ``max_depth``.
         for consumer in registry.descriptors():
             edge = check_edge(
                 last,

@@ -385,7 +385,7 @@ def test_planner_finds_a_plan_that_needs_a_capability_to_recur():
 
 def test_micro_sign_and_greek_mu_are_both_micrometres():
     one_mm = vs.value_key(object_value=None, numeric_value=1, unit="mm")
-    for unit in ("µm", "μm", "um", "µM"):
+    for unit in ("µm", "μm", "um"):
         key = vs.value_key(object_value=None, numeric_value=1000, unit=unit)
         assert vs.classify("measurement", [key, one_mm]) == vs.AGREEMENT
 
@@ -405,3 +405,93 @@ def test_governance_rechecks_class_a_permissions():
     decision = evaluate_plan(tampered)
     assert decision.action is GovernanceAction.REFUSE
     assert any(r.startswith("CLASS_A_PERMISSION_NOT_SAFE:") for r in decision.reasons)
+
+
+# --- third (delta) independent check (exact head 662f4481) ------------------
+
+
+def test_units_are_case_sensitive_so_millimolar_is_not_millimetres():
+    mm = vs.value_key(object_value=None, numeric_value=5, unit="mm")
+    for unit in ("mM", "M", "\u00b5M"):
+        other = vs.value_key(object_value=None, numeric_value=5, unit=unit)
+        assert vs.classify("measurement", [mm, other]) == vs.INCOMMENSURABLE_UNITS
+
+
+@pytest.mark.parametrize(
+    ("first", "second"),
+    [
+        ((1.0000001, "mm"), (1.0000002, "mm")),
+        ((0.0004, "\u00b5m"), (0.0001, "\u00b5m")),
+    ],
+)
+def test_measurements_are_exact_decimals_never_rounded_together(first, second):
+    a = vs.value_key(object_value=None, numeric_value=first[0], unit=first[1])
+    b = vs.value_key(object_value=None, numeric_value=second[0], unit=second[1])
+    assert a != b
+    assert vs.display(a) != vs.display(b)
+    assert "0 mm" not in {vs.display(a), vs.display(b)}
+
+
+@pytest.mark.parametrize("value", [float("inf"), float("-inf"), float("nan")])
+def test_non_finite_measurements_are_refused(value):
+    with pytest.raises(ValueError, match="NON_FINITE_MEASUREMENT"):
+        vs.value_key(object_value=None, numeric_value=value, unit="mm")
+
+
+@pytest.mark.parametrize("notes", [{"evidence_state": b"VERIFIED"}, {"x": {1, 2}}])
+def test_unrecordable_notes_block_the_step(notes):
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), notes=notes
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    assert report.receipts[1].failure_reason.startswith("RESULT_NOT_RECORDABLE:")
+    assert not report.succeeded
+    assert report.run_digest
+
+
+@pytest.mark.parametrize(
+    "lookalike",
+    [
+        "VERIFIED\u200b",
+        "\uff36\uff25\uff32\uff29\uff26\uff29\uff25\uff24",
+        " verified\u2060",
+    ],
+)
+def test_lookalike_spellings_of_verified_are_refused(lookalike):
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), output={**honest(payload).output, "state": lookalike}
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    assert (
+        report.receipts[1].failure_reason
+        == "HUMAN_ONLY_EVIDENCE_STATE_IN_OUTPUT:VERIFIED"
+    )
+
+
+def test_a_key_named_verified_is_not_mistaken_for_a_state():
+    fixture = load_fixture()
+    plan = _plan()
+    handlers = build_handlers(fixture)
+    target = plan.steps[1]
+    honest = handlers[target.capability_id]
+    handlers[target.capability_id] = lambda payload: replace(
+        honest(payload), output={**honest(payload).output, "verified": False}
+    )
+    report = execute_dry_run(
+        plan, evaluate_plan(plan), handlers, source_payload(fixture)
+    )
+    assert report.succeeded

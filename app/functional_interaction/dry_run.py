@@ -25,6 +25,7 @@ and a decision that does not reproduce blocks every step.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -159,6 +160,9 @@ def _receipt(
         blocker_code=failure,
     )
     execution.verify()
+    notes = dict(result.notes) if result and not failure else {}
+    # Notes must be recordable too; otherwise the step is not recordable.
+    canonical_checksum({"notes": notes})
     return FunctionalReceipt(
         plan_id=plan_id,
         step_index=index,
@@ -173,27 +177,36 @@ def _receipt(
         evidence_states=tuple(sorted(set(result.evidence_states)))
         if result and not failure
         else (),
-        notes=dict(result.notes) if result and not failure else {},
+        notes=notes,
     )
+
+
+def _fold(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text)
+    visible = "".join(ch for ch in normalized if unicodedata.category(ch) != "Cf")
+    return visible.strip().casefold()
 
 
 def _human_only_states(value: Any) -> set[str]:
     """Every human-only evidence state named anywhere in ``value``.
 
-    Any string equal to a human-only state (case-insensitive) counts, under
-    any key or none: the scan does not depend on a field being spelled
-    ``evidence_state``. Containers are visited once, so a self-referencing
-    structure terminates.
+    Any string *value* equal to a human-only state counts, under any key: the
+    scan does not depend on a field being spelled ``evidence_state``. Strings
+    are compared after NFKC normalization, removal of format characters
+    (zero-width and similar) and case folding, so lookalike spellings match.
+    Keys are not scanned, so ``{"verified": false}`` is not mistaken for a
+    state. Containers are visited once, so a self-referencing structure
+    terminates. Prose that merely mentions a state is not a state.
     """
 
-    wanted = {state.casefold(): state for state in HUMAN_ONLY_EVIDENCE_STATES}
+    wanted = {_fold(state): state for state in HUMAN_ONLY_EVIDENCE_STATES}
     found: set[str] = set()
     seen: set[int] = set()
     stack = [value]
     while stack:
         item = stack.pop()
         if isinstance(item, str):
-            state = wanted.get(item.strip().casefold())
+            state = wanted.get(_fold(item))
             if state is not None:
                 found.add(state)
             continue
@@ -202,7 +215,6 @@ def _human_only_states(value: Any) -> set[str]:
                 continue
             seen.add(id(item))
             if isinstance(item, Mapping):
-                stack.extend(item.keys())
                 stack.extend(item.values())
             else:
                 stack.extend(item)
