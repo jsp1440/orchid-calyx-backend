@@ -138,3 +138,83 @@ def test_unknown_work_mode_is_refused_before_anything_runs(tmp_path):
     assert result.returncode == 0
     assert "CALYX_ACCEPTANCE_WORK_MODE must be manifest or loop" in result.stdout
     assert list(tmp_path.iterdir()) == []
+
+
+# --- G3: the long-running worker's isolated-database confirmation -----------
+
+
+@pytest.mark.parametrize(
+    "confirmation",
+    [
+        "autonomy-isolated",  # the database name is mandatory
+        "autonomy-isolated:",
+        "autonomy-isolated:neondb",  # the production application database
+        "autonomy-isolated:postgres",
+        "autonomy-isolated:autonomy",
+        "autonomy-isolated:Autonomy_prod",
+        "autonomy-isolated:autonomy-prod",
+        "autonomy-isolated:autonomy_prod;true",
+        "autonomy-isolated:autonomy_prod ",
+        "autonomy-isolated:prod_autonomy_x",
+    ],
+)
+def test_isolated_confirmation_refuses_anything_but_a_dedicated_name(
+    confirmation, tmp_path
+):
+    env = dict(COMPLETE, CALYX_ACCEPTANCE_DATABASE_CONFIRMED=confirmation)
+    result = _run(env, tmp_path)
+    assert result.returncode == 0
+    assert '"zero_reason": "configuration_unavailable"' in result.stdout
+    # Refused on the name alone: the database is never contacted.
+    assert "ACCEPTANCE_DATABASE_UNREACHABLE" not in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_isolated_confirmation_still_checks_the_real_connection(tmp_path):
+    # A well-formed name is not trusted: the live connection must be read first.
+    env = dict(
+        COMPLETE, CALYX_ACCEPTANCE_DATABASE_CONFIRMED="autonomy-isolated:autonomy_prod"
+    )
+    result = _run(env, tmp_path)
+    assert result.returncode == 1
+    assert "ACCEPTANCE_DATABASE_UNREACHABLE" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.requires_postgres("TEST_DATABASE_URL")
+def test_isolated_confirmation_refuses_a_different_database(tmp_path):
+    env = dict(COMPLETE, DATABASE_URL=os.environ["TEST_DATABASE_URL"])
+    env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"] = "autonomy-isolated:autonomy_prod"
+    result = _run(env, tmp_path)
+    assert result.returncode == 0
+    assert "ACCEPTANCE_DATABASE_MISMATCH" in result.stdout
+    assert "expected autonomy_prod" in result.stdout
+    assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.requires_postgres("TEST_DATABASE_URL")
+def test_isolated_confirmation_accepts_its_own_autonomy_database(tmp_path):
+    import uuid
+
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    name = f"autonomy_g3_{uuid.uuid4().hex[:12]}"
+    admin = create_engine(os.environ["TEST_DATABASE_URL"], isolation_level="AUTOCOMMIT")
+    with admin.connect() as connection:
+        connection.execute(text(f'CREATE DATABASE "{name}"'))
+    try:
+        dsn = make_url(os.environ["TEST_DATABASE_URL"]).set(database=name)
+        env = dict(COMPLETE, DATABASE_URL=dsn.render_as_string(hide_password=False))
+        # A branch that does not exist stops the script right after the guard.
+        env["CALYX_ACCEPTANCE_SOURCE_BRANCH"] = "no-such-branch-for-guard-test"
+        env["CALYX_ACCEPTANCE_DATABASE_CONFIRMED"] = f"autonomy-isolated:{name}"
+        result = _run(env, tmp_path)
+        assert (
+            f'{{"acceptance_database": "{name}", "confirmed": true}}' in result.stdout
+        )
+        assert "ACCEPTANCE_DATABASE_MISMATCH" not in result.stdout
+    finally:
+        with admin.connect() as connection:
+            connection.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
+        admin.dispose()

@@ -442,6 +442,8 @@ jobs:
           --ignore=tests/test_r1_brain_producer.py
           --deselect=tests/test_render_autonomy_acceptance_config.py::test_pinned_database_name_must_match_the_real_connection
           --deselect=tests/test_render_autonomy_acceptance_config.py::test_pinned_database_name_that_matches_is_confirmed
+          --deselect=tests/test_render_autonomy_acceptance_config.py::test_isolated_confirmation_refuses_a_different_database
+          --deselect=tests/test_render_autonomy_acceptance_config.py::test_isolated_confirmation_accepts_its_own_autonomy_database
           --deselect=tests/test_build_034_044_049_integration.py::test_state_changing_runtime_routes_fail_closed_without_api_key
         env:
           DATABASE_URL: postgresql://build087:build087_test_only@localhost:5432/build087_validation?sslmode=disable

@@ -17,15 +17,25 @@ fi
 : "${OC_BRAIN_REF:?pinned Brain commit required}"
 : "${CALYX_ACCEPTANCE_SOURCE_BRANCH:?branch to verify required}"
 # "non-production", or "non-production:<database>" to also pin the database
-# name. A pinned name is checked against the connection the app itself will use
-# before anything (API startup included) can write to it.
+# name. "autonomy-isolated:<database>" is the long-running worker's form: the
+# name is mandatory and must be a dedicated autonomy_* database, so it can never
+# name the production application database (neondb) or a shared default. A
+# pinned name is checked against the connection the app itself will use before
+# anything (API startup included) can write to it.
 confirmed="${CALYX_ACCEPTANCE_DATABASE_CONFIRMED:-}"
 expected_database=""
 case "$confirmed" in
   non-production) ;;
   non-production:?*) expected_database="${confirmed#non-production:}" ;;
+  autonomy-isolated:?*)
+    expected_database="${confirmed#autonomy-isolated:}"
+    if [[ ! "$expected_database" =~ ^autonomy_[a-z0-9_]+$ ]]; then
+      echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "ISOLATED_DATABASE_NAME_REFUSED: autonomy-isolated requires a dedicated autonomy_* database name; worker not started"}'
+      exit 0
+    fi
+    ;;
   *)
-    echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "CALYX_ACCEPTANCE_DATABASE_CONFIRMED must equal non-production or non-production:<database>"}'
+    echo '{"started": false, "zero_reason": "configuration_unavailable", "detail": "CALYX_ACCEPTANCE_DATABASE_CONFIRMED must equal non-production, non-production:<database> or autonomy-isolated:<database>"}'
     exit 0
     ;;
 esac

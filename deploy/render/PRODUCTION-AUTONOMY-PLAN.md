@@ -41,8 +41,8 @@ ledger, programs and jobs.
 | Gate | Requirement | Who |
 |---|---|---|
 | G0 | Brain stack on `main`: #244, #253, #255 (done, `7885869`) | done |
-| G1 | Calyx integration PR merged to `main` after owner review, with CI green | owner |
-| G2 | Calyx `main` pins Brain `main` (`OC_BRAIN_REF`) in the acceptance CI and the Blueprint | Claude, in G1's PR |
+| G1 | Calyx integration PR merged to `main` after owner review, with CI green (done, #1821) | done |
+| G2 | Calyx `main` pins Brain `main` (`OC_BRAIN_REF`) in the acceptance CI and the Blueprint (done, in #1821) | done |
 | G3 | Start-script confirmation token for a non-acceptance worker (see §6) | Claude PR, then owner merge |
 | G4 | Isolated Neon database and read-only verifier role (§4) | owner |
 | G5 | Render worker created from a reviewed production Blueprint (§3), suspended until G6 | owner |
@@ -62,7 +62,7 @@ The production web service `orchid-calyx-backend` is not touched.
 | `CALYX_ACCEPTANCE_SOURCE_BRANCH` | `main` (inputs are real merged changes) |
 | `OC_BRAIN_REF` | the Brain `main` commit pinned in CI (40-character SHA, never a branch) |
 | `DATABASE_URL` | the isolated autonomy database (`sync: false`, owner-entered) |
-| database confirmation | pinned to the isolated database name (§6) |
+| `CALYX_ACCEPTANCE_DATABASE_CONFIRMED` | `autonomy-isolated:autonomy_prod` (§6) |
 | `NO_API_MODE` | `true` |
 | `OC_GOVERNOR_PAID_EXECUTION_ENABLED` | `false` |
 | `PROVIDER_LAUNCH_AUTHORIZED` | `false` |
@@ -112,13 +112,22 @@ naturally as real merges arrive. A production verify workflow mirrors
 
 ## 6. Required small change before go-live (G3)
 
-`scripts/oc_render_autonomy_acceptance_start.sh` accepts only
-`CALYX_ACCEPTANCE_DATABASE_CONFIRMED=non-production[:<db>]`. A long-running
-worker on an isolated autonomy database needs an honest confirmation value. The
-plan is to add `autonomy-isolated:<db>`, which requires the database name. It
-would come with a test that refuses any database whose name matches the
-production application database. This is a reviewed PR before G5. It does not
-widen any executor or provider permission.
+`scripts/oc_render_autonomy_acceptance_start.sh` accepts
+`CALYX_ACCEPTANCE_DATABASE_CONFIRMED=autonomy-isolated:<db>` for the long-running
+worker, alongside the acceptance forms `non-production[:<db>]`:
+
+- the database name is mandatory (`autonomy-isolated` alone is refused);
+- it must match `autonomy_[a-z0-9_]+`, so it can never name the production
+  application database (`neondb`), `postgres`, or any shared default; anything
+  else is refused with `ISOLATED_DATABASE_NAME_REFUSED` before the database is
+  contacted;
+- a well-formed name is still checked against `current_database()` on the
+  connection the app will use, before the API starts
+  (`ACCEPTANCE_DATABASE_MISMATCH` / `ACCEPTANCE_DATABASE_UNREACHABLE`).
+
+Tests: `tests/test_render_autonomy_acceptance_config.py` (refusals, unreachable,
+mismatch against a real database, and acceptance of a throwaway `autonomy_*`
+database). It does not widen any executor or provider permission.
 
 ## 7. Rollout steps (after G1–G5)
 
