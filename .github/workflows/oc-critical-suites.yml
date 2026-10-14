@@ -62,6 +62,7 @@ env:
   # management, and governed-authorization suites.
   OC_CRITICAL_SECURITY_SUITES: >-
     tests/test_security_fail_closed.py
+    tests/test_oc_promptfoo_security_cases.py
     tests/test_non_ascii_credentials.py
     tests/test_worker_lease_token_constant_time.py
     tests/test_constant_time_remaining_secrets.py
