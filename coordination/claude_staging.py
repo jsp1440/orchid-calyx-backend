@@ -125,8 +125,12 @@ class StagingConfigError(ValueError):
 
 def check_target(url: str, *, allow_loopback: bool) -> str:
     """Return the host of an acceptable ingress URL, or raise. Refuses production targets."""
-    parts = urlsplit(url or "")
-    host = (parts.hostname or "").lower()
+    try:
+        parts = urlsplit(url or "")
+        host = (parts.hostname or "").lower()
+        port = parts.port  # raises on non-numeric or out-of-range ports
+    except ValueError:
+        raise StagingConfigError("INGRESS_URL_MALFORMED") from None
     if (
         parts.path != "/events"
         or parts.query
@@ -145,7 +149,7 @@ def check_target(url: str, *, allow_loopback: bool) -> str:
         host.endswith(s) or host == s.lstrip(".") for s in PRODUCTION_SUFFIXES
     ):
         raise StagingConfigError("PRODUCTION_TARGET_REFUSED")
-    if host not in STAGING_HOSTS or parts.port not in (None, 443):
+    if host not in STAGING_HOSTS or port not in (None, 443):
         raise StagingConfigError("TARGET_NOT_PINNED_STAGING_HOST")
     return host
 
@@ -250,7 +254,11 @@ def redacted_settings(env) -> dict:
         }:
             entry["value"] = env.get(s.name) or None
         if s.name == "ACS_CLAUDE_INGRESS_URL" and env.get(s.name):
-            entry["host"] = (urlsplit(env[s.name]).hostname or "").lower()
+            try:
+                entry["host"] = (urlsplit(env[s.name]).hostname or "").lower()
+            except ValueError:
+                entry["host"] = None
+                entry["malformed"] = True
         out[s.name] = entry
     return out
 

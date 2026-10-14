@@ -219,6 +219,38 @@ class ConfigTest(unittest.TestCase):
             self.assertIsNone(config, overrides)
             self.assertIn("CREDENTIAL_REUSED_ACROSS_ROLES", errors)
 
+    def test_malformed_ingress_urls_refused_structurally_without_traffic(self):
+        for url in (
+            "https://[invalid/events",
+            "https://orchid-agent-coordinator-staging.onrender.com:not-a-port/events",
+            "https://orchid-agent-coordinator-staging.onrender.com:70000/events",
+        ):
+            with self.assertRaisesRegex(cs.StagingConfigError, "INGRESS_URL_MALFORMED"):
+                cs.check_target(url, allow_loopback=True)
+            env = full_env(self.tmp, ACS_CLAUDE_INGRESS_URL=url)
+            config, missing, errors = cs.RemoteConfig.from_env(env)
+            self.assertIsNone(config)
+            self.assertEqual((missing, errors), ([], ["INGRESS_URL_MALFORMED"]))
+            opener = healthy_staging()
+            report = cs.readiness_report(env, probe=True, opener=opener)
+            self.assertFalse(report["probed"])
+            self.assertEqual(report["config_errors"], ["INGRESS_URL_MALFORMED"])
+            staged = cs.staging_acceptance(env, opener=opener)
+            self.assertEqual(staged["status"], "BLOCKED")
+            self.assertEqual(staged["config_errors"], ["INGRESS_URL_MALFORMED"])
+            self.assertEqual(opener.requests, [])
+            text = json.dumps(report) + json.dumps(staged)
+            for value in (
+                url,
+                "not-a-port",
+                "70000",
+                "[invalid",
+                SECRET,
+                HUB_TOKEN,
+                PR_TOKEN,
+            ):
+                self.assertNotIn(value, text)
+
     def test_attacker_staging_like_host_never_receives_traffic(self):
         opener = healthy_staging()
         env = full_env(
