@@ -65,6 +65,9 @@ PRODUCTION_HOSTS = frozenset(
     }
 )
 PRODUCTION_SUFFIXES = (".orchidcontinuum.org",)
+#: Exact staging coordinator hosts (deploy/coordination/render.yaml service name).
+#: Changing this set is a reviewed code change, never a runtime setting.
+STAGING_HOSTS = frozenset({"orchid-agent-coordinator-staging.onrender.com"})
 
 
 @dataclass(frozen=True)
@@ -142,8 +145,8 @@ def check_target(url: str, *, allow_loopback: bool) -> str:
         host.endswith(s) or host == s.lstrip(".") for s in PRODUCTION_SUFFIXES
     ):
         raise StagingConfigError("PRODUCTION_TARGET_REFUSED")
-    if "staging" not in host.split(".")[0]:
-        raise StagingConfigError("TARGET_NOT_IDENTIFIED_AS_STAGING")
+    if host not in STAGING_HOSTS or parts.port not in (None, 443):
+        raise StagingConfigError("TARGET_NOT_PINNED_STAGING_HOST")
     return host
 
 
@@ -203,10 +206,16 @@ class RemoteConfig:
                     raise ValueError
             except ValueError:
                 errors.append("PR_REPORTER_ID_INVALID")
-        if env.get("ACS_CLAUDE_KEY_SECRET") and env.get("ACS_CLAUDE_KEY_SECRET") in {
-            env.get("ACS_CLAUDE_HUB_TOKEN"),
-            env.get("ACS_CLAUDE_PR_TOKEN"),
-        }:
+        credentials = [
+            env.get(name)
+            for name in (
+                "ACS_CLAUDE_KEY_SECRET",
+                "ACS_CLAUDE_HUB_TOKEN",
+                "ACS_CLAUDE_PR_TOKEN",
+            )
+            if env.get(name)
+        ]
+        if len(set(credentials)) != len(credentials):
             errors.append("CREDENTIAL_REUSED_ACROSS_ROLES")
         if missing or errors:
             return None, missing, errors

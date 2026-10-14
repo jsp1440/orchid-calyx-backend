@@ -23,11 +23,11 @@ The adapter's existing fencing, dedup, outbox reconciliation and kill switch are
 ### Fail-closed rules
 - Any missing setting returns `BLOCKED` and lists the missing names.
 - The stage must be `staging`.
-- Ingress must be `https://<host>/events`, where the host's first label contains `staging`. It must have no query, fragment or userinfo.
+- Ingress must be exactly `https://orchid-agent-coordinator-staging.onrender.com/events` (the `render.yaml` service; `STAGING_HOSTS` in code). Any other host, including staging-looking names, a non-443 port, a query, fragment or userinfo, is refused. If Render assigns a different hostname, adding it to `STAGING_HOSTS` is a reviewed code change, never a setting.
 - Production targets are refused: `orchid-calyx-backend.onrender.com`, `orchid-continuum-frontend-vof6.onrender.com`, `orchid-continuum-public-api.onrender.com`, and `orchidcontinuum.org` with all its subdomains.
 - Loopback is accepted only by the offline acceptance.
 - The agent secret must be at least 32 characters.
-- The same value used in two credential roles is refused.
+- Any value reused across the agent secret, hub token and PR token is refused, including hub token = PR token.
 - `--live` is refused.
 
 ## 2. Readiness report

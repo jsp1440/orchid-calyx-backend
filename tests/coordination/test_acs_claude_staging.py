@@ -139,8 +139,21 @@ class TargetGuardTest(unittest.TestCase):
             "orchid-agent-coordinator-staging.onrender.com",
         )
         for url, code in (
-            ("https://example.onrender.com/events", "NOT_IDENTIFIED_AS_STAGING"),
-            ("https://a.staging.example.com/events", "NOT_IDENTIFIED_AS_STAGING"),
+            ("https://example.onrender.com/events", "NOT_PINNED_STAGING_HOST"),
+            ("https://a.staging.example.com/events", "NOT_PINNED_STAGING_HOST"),
+            ("https://staging.attacker.example/events", "NOT_PINNED_STAGING_HOST"),
+            (
+                "https://orchid-agent-coordinator-staging.onrender.com.attacker.example/events",
+                "NOT_PINNED_STAGING_HOST",
+            ),
+            (
+                "https://orchid-agent-coordinator-staging-x.onrender.com/events",
+                "NOT_PINNED_STAGING_HOST",
+            ),
+            (
+                "https://orchid-agent-coordinator-staging.onrender.com:8443/events",
+                "NOT_PINNED_STAGING_HOST",
+            ),
             ("http://x-staging.example.com/events", "HTTPS"),
             ("https://x-staging.example.com/other", "BARE_EVENTS_PATH"),
             ("https://x-staging.example.com/events?a=1", "BARE_EVENTS_PATH"),
@@ -195,10 +208,27 @@ class ConfigTest(unittest.TestCase):
         )
 
     def test_credential_reuse_across_roles_refused(self):
-        env = full_env(self.tmp, ACS_CLAUDE_PR_TOKEN=SECRET)
-        config, _, errors = cs.RemoteConfig.from_env(env)
-        self.assertIsNone(config)
-        self.assertIn("CREDENTIAL_REUSED_ACROSS_ROLES", errors)
+        for overrides in (
+            {"ACS_CLAUDE_PR_TOKEN": SECRET},
+            {"ACS_CLAUDE_HUB_TOKEN": SECRET},
+            {"ACS_CLAUDE_HUB_TOKEN": PR_TOKEN},
+        ):
+            config, _, errors = cs.RemoteConfig.from_env(
+                full_env(self.tmp, **overrides)
+            )
+            self.assertIsNone(config, overrides)
+            self.assertIn("CREDENTIAL_REUSED_ACROSS_ROLES", errors)
+
+    def test_attacker_staging_like_host_never_receives_traffic(self):
+        opener = healthy_staging()
+        env = full_env(
+            self.tmp, ACS_CLAUDE_INGRESS_URL="https://staging.attacker.example/events"
+        )
+        report = cs.readiness_report(env, probe=True, opener=opener)
+        self.assertIn("TARGET_NOT_PINNED_STAGING_HOST", report["config_errors"])
+        self.assertFalse(report["probed"])
+        self.assertEqual(cs.staging_acceptance(env, opener=opener)["status"], "BLOCKED")
+        self.assertEqual(opener.requests, [])
 
     def test_valid_config_and_remote_wiring_keeps_mock_executor(self):
         config, missing, errors = cs.RemoteConfig.from_env(full_env(self.tmp))
