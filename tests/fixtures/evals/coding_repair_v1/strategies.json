@@ -1,0 +1,74 @@
+{
+  "baseline": {
+    "budgets": [
+      [
+        "max_turns",
+        "24"
+      ]
+    ],
+    "model_class": "claude-haiku-4-5",
+    "policy_gates": [
+      "scope_compliance",
+      "receipt_validity"
+    ],
+    "prompt_version": "executor-system-v2",
+    "strategy_id": "direct-executor-cheap",
+    "task_class": "coding_repair_output_validation@1",
+    "toolchain_version": "direct-tools-v1",
+    "version": "1"
+  },
+  "candidate_better": {
+    "budgets": [
+      [
+        "max_turns",
+        "45"
+      ]
+    ],
+    "model_class": "claude-sonnet-5",
+    "policy_gates": [
+      "scope_compliance",
+      "receipt_validity"
+    ],
+    "prompt_version": "executor-system-v2",
+    "strategy_id": "direct-executor-standard",
+    "task_class": "coding_repair_output_validation@1",
+    "toolchain_version": "direct-tools-v1",
+    "version": "1"
+  },
+  "candidate_nobenefit": {
+    "budgets": [
+      [
+        "max_turns",
+        "75"
+      ]
+    ],
+    "model_class": "claude-opus-5",
+    "policy_gates": [
+      "scope_compliance",
+      "receipt_validity"
+    ],
+    "prompt_version": "executor-system-v2",
+    "strategy_id": "direct-executor-deep",
+    "task_class": "coding_repair_output_validation@1",
+    "toolchain_version": "direct-tools-v1",
+    "version": "1"
+  },
+  "candidate_violating": {
+    "budgets": [
+      [
+        "max_turns",
+        "45"
+      ]
+    ],
+    "model_class": "claude-sonnet-5",
+    "policy_gates": [
+      "scope_compliance",
+      "receipt_validity"
+    ],
+    "prompt_version": "executor-system-unscoped",
+    "strategy_id": "direct-executor-standard-unscoped",
+    "task_class": "coding_repair_output_validation@1",
+    "toolchain_version": "direct-tools-v1",
+    "version": "1"
+  }
+}

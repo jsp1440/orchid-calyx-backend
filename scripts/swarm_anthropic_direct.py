@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import fnmatch
+import importlib.util
 import json
 import os
 import re
@@ -27,6 +28,40 @@ from urllib import request as urlrequest
 REPO_ROOT = Path(__file__).resolve().parent.parent
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
+# Prompt caching is on unless explicitly disabled. It changes billing, not what
+# the model sees: the tools/system prefix and the growing history are re-sent
+# byte-for-byte every turn, so marking them lets the provider bill re-reads at
+# its cache-read rate. OC_ANTHROPIC_PROMPT_CACHE=off restores the old request.
+PROMPT_CACHE_ENV = "OC_ANTHROPIC_PROMPT_CACHE"
+EXECUTOR_SYSTEM = (
+    "You are the Orchid Continuum bounded engineering executor. Work only on the supplied "
+    "task. Use repository tools to inspect and edit. Do not modify .github/workflows, "
+    "credentials, secrets, production state, scientific data, taxonomy activation, or "
+    "publication controls. Run focused tests. When implementation is complete, stop; the "
+    "wrapper will commit, push, and open the draft PR."
+)
+# Versioned list-price pricing (runtime/swarm/pricing.py, config/provider-pricing-v1.json).
+# Loaded by path so the executor does not import the runtime package and its
+# services. Pricing can only ever annotate a receipt: any failure to load or
+# price yields a cost block with basis "unavailable", never an executor error.
+PRICING_MODULE = (
+    Path(__file__).resolve().parent.parent / "runtime" / "swarm" / "pricing.py"
+)
+REQUEST_USAGE_KEYS = (
+    "input_tokens",
+    "output_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+    "service_tier",
+    "inference_geo",
+    "speed",
+)
+USAGE_FIELDS = (
+    ("input_tokens", "inputTokens"),
+    ("output_tokens", "outputTokens"),
+    ("cache_creation_input_tokens", "cacheCreationInputTokens"),
+    ("cache_read_input_tokens", "cacheReadInputTokens"),
+)
 
 
 class DirectExecutorError(RuntimeError):
@@ -64,6 +99,25 @@ PROTECTED_BASENAMES = {
     ".env.local",
     "secrets.json",
 }
+# Governance/security-control paths that require an owner checkpoint
+# (docs/AGENT-SECURITY-BOUNDARIES.md, "Restricted paths"). The executor may
+# read them -- they are its instructions -- but never write them; changes go
+# through an owner-reviewed pull request instead.
+GOVERNANCE_FILES = {
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".github/copilot-instructions.md",
+    ".github/workflows/agent-security-guard.yml",
+    "scripts/agent_security_guard.py",
+    "docs/AGENT-SECURITY-BOUNDARIES.md",
+}
+GOVERNANCE_PREFIXES = (".agents/", ".claude/", ".cursor/", ".vscode/")
+# Credential files are neither read nor written: their contents would enter the
+# provider request and could be echoed into a commit or PR. Templates that by
+# convention hold no secrets stay readable.
+CREDENTIAL_BASENAMES = {".env", "secrets.json"}
+CREDENTIAL_SUFFIXES = (".secrets.json", "-secrets.json", "_secrets.json")
+CREDENTIAL_TEMPLATES = {".env.example", ".env.sample", ".env.template", ".env.dist"}
 
 TOOLS = [
     {
@@ -151,9 +205,34 @@ def _relative(path: Path) -> str:
     return path.relative_to(REPO_ROOT).as_posix()
 
 
+def _is_credential_file(path: Path) -> bool:
+    """Credential files by name, checked on the resolved path (symlinks included)."""
+    name = path.name.lower()
+    if name in CREDENTIAL_TEMPLATES:
+        return False
+    return (
+        name in CREDENTIAL_BASENAMES
+        or name.startswith(".env.")
+        or name.endswith(CREDENTIAL_SUFFIXES)
+    )
+
+
+def _is_governance_path(rel: str) -> bool:
+    return rel in GOVERNANCE_FILES or any(
+        rel == prefix.rstrip("/") or rel.startswith(prefix)
+        for prefix in GOVERNANCE_PREFIXES
+    )
+
+
+def _readable(path: Path) -> bool:
+    return not _is_credential_file(path)
+
+
 def _writable(path: Path) -> bool:
     rel = _relative(path)
     if path.name in PROTECTED_BASENAMES or rel in PROTECTED_FILES:
+        return False
+    if _is_credential_file(path) or _is_governance_path(rel):
         return False
     return not any(
         rel == prefix.rstrip("/") or rel.startswith(prefix)
@@ -182,6 +261,8 @@ def _truncate(text: str, limit: int = 12000) -> str:
 
 def _tool_read_file(args: dict[str, Any]) -> str:
     path = _safe_path(str(args["path"]))
+    if not _readable(path):
+        return f"ERROR: credential file is not readable: {_relative(path)}"
     if not path.is_file():
         return f"ERROR: file not found: {_relative(path)}"
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
@@ -217,6 +298,9 @@ def _tool_search_text(args: dict[str, Any]) -> str:
             continue
         rel = _relative(path)
         if not fnmatch.fnmatch(rel, pattern):
+            continue
+        resolved = path.resolve()
+        if not resolved.is_relative_to(REPO_ROOT.resolve()) or not _readable(resolved):
             continue
         try:
             text = path.read_text(encoding="utf-8")
@@ -256,6 +340,8 @@ def _safe_target(raw: str | None) -> str:
     target = raw.strip()
     if not re.fullmatch(r"[A-Za-z0-9_./*?\-\[\]]+", target):
         raise ValueError("unsafe validation target")
+    if _is_credential_file(Path(target)):
+        raise ValueError("validation target names a credential file")
     return target
 
 
@@ -302,6 +388,105 @@ TOOL_HANDLERS = {
 }
 
 
+def prompt_cache_enabled(raw: str | None = None) -> bool:
+    value = os.getenv(PROMPT_CACHE_ENV, "on") if raw is None else raw
+    return value.strip().lower() not in {"0", "off", "false", "no", "disabled"}
+
+
+def _request_body(
+    *,
+    model: str,
+    messages: list[dict[str, Any]],
+    max_tokens: int,
+    system: str = EXECUTOR_SYSTEM,
+    cache: bool = True,
+) -> dict[str, Any]:
+    """Build the Messages request with a byte-stable prefix.
+
+    Render order is tools -> system -> messages. The explicit breakpoint on the
+    system block covers the fixed tools and instructions; the top-level marker
+    lets the provider move a second breakpoint to the end of the history as it
+    grows. Nothing per-turn or per-run sits before either breakpoint, so a
+    cache entry can only ever be read back by a request whose prefix is
+    byte-identical -- one task's history can never be served to another.
+    """
+    body: dict[str, Any] = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "tools": TOOLS,
+        "messages": messages,
+    }
+    if cache:
+        body["system"] = [
+            {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
+        ]
+        body["cache_control"] = {"type": "ephemeral"}
+    else:
+        body["system"] = system
+    return body
+
+
+def _accumulate_usage(totals: dict[str, int], usage: dict[str, Any]) -> None:
+    for wire, _ in USAGE_FIELDS:
+        totals[wire] = totals.get(wire, 0) + int(usage.get(wire) or 0)
+
+
+def _request_usage(usage: dict[str, Any]) -> dict[str, Any]:
+    """The per-request usage fields pricing needs, and nothing else."""
+    kept: dict[str, Any] = {k: usage[k] for k in REQUEST_USAGE_KEYS if k in usage}
+    breakdown = usage.get("cache_creation")
+    if isinstance(breakdown, dict):
+        kept["cache_creation"] = {
+            k: breakdown[k]
+            for k in ("ephemeral_5m_input_tokens", "ephemeral_1h_input_tokens")
+            if k in breakdown
+        }
+    return kept
+
+
+def _load_pricing():
+    spec = importlib.util.spec_from_file_location("oc_provider_pricing", PRICING_MODULE)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load {PRICING_MODULE}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("oc_provider_pricing", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _cost_block(model: str, request_usages: list[dict[str, Any]]) -> dict[str, Any]:
+    try:
+        pricing = _load_pricing()
+    except Exception as exc:  # noqa: BLE001 - pricing must never fail the run
+        return {
+            "schema": "oc.execution-cost.v1",
+            "basis": "unavailable",
+            "billed_usd": None,
+            "estimated_usd": None,
+            "complete": False,
+            "unpriced_reasons": [f"pricing module unavailable: {type(exc).__name__}"],
+        }
+    try:
+        table = pricing.load_table()
+        return pricing.estimate(model, request_usages, table).to_jsonable()
+    except Exception as exc:  # noqa: BLE001
+        return pricing.unavailable_cost(f"pricing failed: {type(exc).__name__}: {exc}")
+
+
+def _github_cost(cost: dict[str, Any]) -> dict[str, str]:
+    return {
+        # Deliberately not "estimated_cost_usd": the completion lane already uses
+        # that name for the router's budget reservation (steps.route.outputs).
+        "list_price_estimate_usd": cost.get("estimated_usd") or "",
+        "cost_basis": str(cost.get("basis") or "unavailable"),
+        "pricing_version": str(cost.get("pricing_version") or ""),
+    }
+
+
+def _model_usage(totals: dict[str, int]) -> dict[str, int]:
+    return {name: int(totals.get(wire, 0)) for wire, name in USAGE_FIELDS}
+
+
 def _anthropic_message(
     *,
     api_key: str,
@@ -309,14 +494,12 @@ def _anthropic_message(
     messages: list[dict[str, Any]],
     max_tokens: int,
     timeout: int,
+    cache: bool = True,
 ) -> dict[str, Any]:
     payload = json.dumps(
-        {
-            "model": model,
-            "max_tokens": max_tokens,
-            "messages": messages,
-            "tools": TOOLS,
-        }
+        _request_body(
+            model=model, messages=messages, max_tokens=max_tokens, cache=cache
+        )
     ).encode("utf-8")
     req = urlrequest.Request(
         ANTHROPIC_URL,
@@ -484,6 +667,8 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
             "is_error",
             "num_turns",
             "modelUsage",
+            "promptCache",
+            "cost",
             "pr_url",
             "branch",
             "partial_branch",
@@ -493,6 +678,10 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
         if key in payload
     }
     print("[OC-DIRECT-RECEIPT] " + json.dumps(receipt, sort_keys=True), flush=True)
+
+
+def _github_usage(totals: dict[str, int]) -> dict[str, int]:
+    return {wire: int(totals.get(wire, 0)) for wire, _ in USAGE_FIELDS}
 
 
 def _github_output(values: dict[str, Any]) -> None:
@@ -524,8 +713,9 @@ def main() -> int:
     packet = Path(args.packet_file).read_text(encoding="utf-8")
     execution_path = Path(args.execution_file)
 
-    input_tokens = 0
-    output_tokens = 0
+    usage_totals: dict[str, int] = {}
+    request_usages: list[dict[str, Any]] = []
+    cache = prompt_cache_enabled()
     calls = 0
     branch = ""
     pr_url = ""
@@ -541,16 +731,9 @@ def main() -> int:
             args.base,
             resume=_resume_from_packet(packet, args.issue_number),
         )
-        system = (
-            "You are the Orchid Continuum bounded engineering executor. Work only on the supplied "
-            "task. Use repository tools to inspect and edit. Do not modify .github/workflows, "
-            "credentials, secrets, production state, scientific data, taxonomy activation, or "
-            "publication controls. Run focused tests. When implementation is complete, stop; the "
-            "wrapper will commit, push, and open the draft PR."
-        )
-        messages: list[dict[str, Any]] = [
-            {"role": "user", "content": f"{system}\n\n{packet}"}
-        ]
+        # The fixed instructions travel as `system` so they sit in the shared
+        # cacheable prefix; the per-task packet is the first user turn.
+        messages: list[dict[str, Any]] = [{"role": "user", "content": packet}]
 
         # The economy router's cheap tier is budgeted for up to 24 turns.
         # Honor that route ceiling instead of silently truncating it to 12,
@@ -564,11 +747,11 @@ def main() -> int:
                 messages=messages,
                 max_tokens=bounded_tokens,
                 timeout=120,
+                cache=cache,
             )
             calls += 1
-            usage = response.get("usage") or {}
-            input_tokens += int(usage.get("input_tokens") or 0)
-            output_tokens += int(usage.get("output_tokens") or 0)
+            _accumulate_usage(usage_totals, response.get("usage") or {})
+            request_usages.append(_request_usage(response.get("usage") or {}))
             content = response.get("content") or []
             final_text = _content_text(content) or final_text
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
@@ -627,18 +810,17 @@ def main() -> int:
             error_kind = "no_durable_change"
             raise DirectExecutorError("model completed without repository changes")
 
+        cost = _cost_block(args.model, request_usages)
         result = {
             "type": "result",
             "subtype": "success",
             "is_error": False,
             "num_turns": calls,
             "total_cost_usd": None,
-            "modelUsage": {
-                args.model: {
-                    "inputTokens": input_tokens,
-                    "outputTokens": output_tokens,
-                }
-            },
+            "modelUsage": {args.model: _model_usage(usage_totals)},
+            "promptCache": "enabled" if cache else "disabled",
+            "requestUsage": request_usages,
+            "cost": cost,
             "result": final_text,
             "pr_url": pr_url,
             "branch": branch,
@@ -650,8 +832,8 @@ def main() -> int:
                 "conclusion": "success",
                 "session_id": run_id,
                 "pr_url": pr_url,
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                **_github_usage(usage_totals),
+                **_github_cost(cost),
             }
         )
         return 0
@@ -721,22 +903,17 @@ def main() -> int:
                     file=sys.stderr,
                 )
 
+        cost = _cost_block(args.model, request_usages)
         result = {
             "type": "result",
             "subtype": "error",
             "is_error": True,
             "num_turns": calls,
             "total_cost_usd": None,
-            "modelUsage": (
-                {
-                    args.model: {
-                        "inputTokens": input_tokens,
-                        "outputTokens": output_tokens,
-                    }
-                }
-                if calls
-                else {}
-            ),
+            "modelUsage": ({args.model: _model_usage(usage_totals)} if calls else {}),
+            "promptCache": "enabled" if cache else "disabled",
+            "requestUsage": request_usages,
+            "cost": cost,
             "error": error_kind,
             "api_error_status": error_status or None,
             "result": error_message or str(exc),
@@ -750,8 +927,8 @@ def main() -> int:
                 "conclusion": "failure",
                 "session_id": run_id,
                 "pr_url": "",
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
+                **_github_usage(usage_totals),
+                **_github_cost(cost),
             }
         )
         print(

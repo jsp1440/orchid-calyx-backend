@@ -1,0 +1,13 @@
+{
+  "allowed_providers": [],
+  "max_cost_usd": "2.00",
+  "primary_metric": "test_outcomes",
+  "promotion_policy": "evidence_backed",
+  "quality_floor": "0.5",
+  "required_evidence": [
+    "check_run"
+  ],
+  "risk_class": "moderate",
+  "task_class_id": "coding_repair_output_validation",
+  "version": "1"
+}

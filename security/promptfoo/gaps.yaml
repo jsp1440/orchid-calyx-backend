@@ -1,0 +1,8 @@
+# Open findings: cases where the executor's tool layer is weaker than the
+# repository's stated security boundary (docs/AGENT-SECURITY-BOUNDARIES.md).
+# `expect` is the REQUIRED verdict; tests run these as strict xfail.
+#
+# None open. OC-SEC-EXEC-001 (credential files readable) and OC-SEC-EXEC-002
+# (governance paths writable) were closed in the executor and their cases moved
+# to cases.yaml.
+[]

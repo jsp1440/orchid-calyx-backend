@@ -1,0 +1,132 @@
+name: OC Cost and Evals Validation
+
+# Offline validation for execution-cost pricing (runtime/swarm/pricing.py),
+# the OC-EVALS-001 deterministic evaluation layer (runtime/evals), and the
+# executor tool-guard red-team cases (security/promptfoo).
+# No provider credentials are exposed to any job: NO_API_MODE is forced on and
+# nothing here may call a model. No paid service is used.
+
+on:
+  pull_request:
+    paths:
+      - 'config/provider-pricing-v1.json'
+      - 'runtime/swarm/pricing.py'
+      - 'runtime/swarm/telemetry.py'
+      - 'runtime/evals/**'
+      - 'scripts/swarm_anthropic_direct.py'
+      - 'scripts/oc_execution_cost.py'
+      - 'scripts/oc_evals_run.py'
+      - 'scripts/oc_model_router.py'
+      - 'scripts/oc_no_api_guard.py'
+      - 'security/promptfoo/**'
+      - 'tests/fixtures/evals/**'
+      - 'tests/test_oc_provider_pricing.py'
+      - 'tests/test_oc_evals.py'
+      - 'tests/test_oc_evals_deepeval_adapter.py'
+      - 'tests/test_oc_promptfoo_security_cases.py'
+      - 'tests/test_oc_prompt_cache.py'
+      - 'tests/test_swarm_anthropic_direct.py'
+      - '.github/workflows/oc-cost-evals-validation.yml'
+  workflow_dispatch:
+    inputs:
+      run_promptfoo:
+        description: Also run the red-team cases through Promptfoo (Node, offline provider)
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  PYTHONPATH: .
+  NO_API_MODE: 'true'
+  DEEPEVAL_TELEMETRY_OPT_OUT: 'YES'
+
+jobs:
+  cost-and-evals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install pinned validation tooling
+        run: pip install -r requirements-dev.txt pyyaml
+
+      - name: Compile
+        run: python -m compileall -q runtime/evals runtime/swarm/pricing.py scripts/oc_execution_cost.py scripts/oc_evals_run.py security/promptfoo
+
+      - name: Ruff
+        run: |
+          python -m ruff --version
+          python -m ruff check runtime/evals runtime/swarm/pricing.py scripts/oc_execution_cost.py scripts/oc_evals_run.py scripts/swarm_anthropic_direct.py security/promptfoo tests/test_oc_provider_pricing.py tests/test_oc_evals.py tests/test_oc_evals_deepeval_adapter.py tests/test_oc_promptfoo_security_cases.py
+          python -m ruff format --check runtime/evals runtime/swarm/pricing.py scripts/oc_execution_cost.py scripts/oc_evals_run.py scripts/swarm_anthropic_direct.py security/promptfoo tests/test_oc_provider_pricing.py tests/test_oc_evals.py tests/test_oc_evals_deepeval_adapter.py tests/test_oc_promptfoo_security_cases.py
+
+      - name: Promptfoo config is generated from cases
+        run: python security/promptfoo/build_config.py --check
+
+      - name: Tests
+        run: >-
+          python -m pytest -q
+          tests/test_oc_provider_pricing.py
+          tests/test_oc_evals.py
+          tests/test_oc_promptfoo_security_cases.py
+          tests/test_oc_prompt_cache.py
+          tests/test_swarm_anthropic_direct.py
+          tests/test_oc_model_router.py
+
+      - name: Evaluate the frozen fixture set (offline)
+        run: |
+          python scripts/oc_evals_run.py --fixture-dir tests/fixtures/evals/coding_repair_v1 --baseline baseline --candidate candidate_better
+          python scripts/oc_evals_run.py --fixture-dir tests/fixtures/evals/coding_repair_v1 --baseline baseline --candidate candidate_violating
+
+  deepeval-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      # deepeval is an optional harness, never a runtime dependency. Pinned;
+      # no judge model is configured and no credentials exist in this job.
+      - name: Install pinned deepeval
+        run: pip install -r requirements-dev.txt pyyaml deepeval==4.2.6
+
+      - name: OC evaluators inside deepeval
+        run: python -m pytest -q tests/test_oc_evals_deepeval_adapter.py
+
+  promptfoo-redteam:
+    if: github.event_name == 'workflow_dispatch' && inputs.run_promptfoo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install harness dependency
+        run: pip install pyyaml
+
+      - name: Promptfoo (pinned, offline provider)
+        working-directory: security/promptfoo
+        env:
+          PROMPTFOO_DISABLE_TELEMETRY: '1'
+          PROMPTFOO_DISABLE_UPDATE: '1'
+          PROMPTFOO_DISABLE_SHARING: '1'
+        run: |
+          export PROMPTFOO_PYTHON="$(which python)"
+          npx -y promptfoo@0.123.1 eval -c promptfooconfig.yaml --no-cache --no-write

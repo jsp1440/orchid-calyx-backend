@@ -1,0 +1,94 @@
+{
+  "schema": "oc.provider-pricing.v1",
+  "version": "2026-10-13.1",
+  "currency": "USD",
+  "unit": "per_million_tokens",
+  "basis": "list_price",
+  "source": {
+    "provider": "anthropic",
+    "url": "https://platform.claude.com/docs/en/about-claude/pricing",
+    "retrieved_at": "2026-10-13"
+  },
+  "notes": [
+    "List prices only. A cost computed from this table is an estimate, never a billed amount: the Messages API does not return billed cost per request, and discounts, credits, taxes and invoice adjustments are not visible here.",
+    "Every request is priced on its own. Rates that depend on prompt length (long_prompt) are resolved per request, never from run totals.",
+    "Prompt length counts all input tokens of a request, including cache reads and cache writes.",
+    "A new or changed price is a new version of this file; existing receipts keep the version they were priced with."
+  ],
+  "modifiers": {
+    "inference_geo_us_multiplier": "1.1",
+    "unpriced": [
+      "speed=fast (fast mode premium is not modelled)",
+      "service_tier other than standard (batch, priority)"
+    ]
+  },
+  "models": {
+    "claude-fable-5-1": {
+      "rates": {"input": "10", "output": "50", "cache_write_5m": "12.50", "cache_write_1h": "20", "cache_read": "0.25"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-fable-5": {
+      "rates": {"input": "10", "output": "50", "cache_write_5m": "12.50", "cache_write_1h": "20", "cache_read": "1"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-5-5": {
+      "rates": {"input": "4", "output": "20", "cache_write_5m": "5", "cache_write_1h": "8", "cache_read": "0.20"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-5": {
+      "rates": {"input": "5", "output": "25", "cache_write_5m": "6.25", "cache_write_1h": "10", "cache_read": "0.50"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-4-8": {
+      "rates": {"input": "5", "output": "25", "cache_write_5m": "6.25", "cache_write_1h": "10", "cache_read": "0.50"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-4-7": {
+      "rates": {"input": "5", "output": "25", "cache_write_5m": "6.25", "cache_write_1h": "10", "cache_read": "0.50"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-4-6": {
+      "rates": {"input": "5", "output": "25", "cache_write_5m": "6.25", "cache_write_1h": "10", "cache_read": "0.50"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-opus-4-5": {
+      "rates": {"input": "5", "output": "25", "cache_write_5m": "6.25", "cache_write_1h": "10", "cache_read": "0.50"},
+      "inference_geo_us_multiplier": false
+    },
+    "claude-sonnet-5-5": {
+      "rates": {"input": "2", "output": "10", "cache_write_5m": "2.50", "cache_write_1h": "4", "cache_read": "0.10"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-sonnet-5": {
+      "rates": {"input": "2", "output": "10", "cache_write_5m": "2.50", "cache_write_1h": "4", "cache_read": "0.20"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-sonnet-4-6": {
+      "rates": {"input": "3", "output": "15", "cache_write_5m": "3.75", "cache_write_1h": "6", "cache_read": "0.30"},
+      "inference_geo_us_multiplier": true
+    },
+    "claude-sonnet-4-5": {
+      "rates": {"input": "3", "output": "15", "cache_write_5m": "3.75", "cache_write_1h": "6", "cache_read": "0.30"},
+      "inference_geo_us_multiplier": false,
+      "standard_rate_prompt_limit": 200000
+    },
+    "claude-sonnet-4": {
+      "aliases": ["claude-sonnet-4-20250514"],
+      "rates": {"input": "3", "output": "15", "cache_write_5m": "3.75", "cache_write_1h": "6", "cache_read": "0.30"},
+      "inference_geo_us_multiplier": false,
+      "standard_rate_prompt_limit": 200000
+    },
+    "claude-haiku-5-5": {
+      "rates": {"input": "0.10", "output": "0.50", "cache_write_5m": "0.125", "cache_write_1h": "0.20", "cache_read": "0.01"},
+      "long_prompt": {
+        "over_tokens": 100000,
+        "rates": {"input": "0.50", "output": "2.50", "cache_write_5m": "0.625", "cache_write_1h": "1", "cache_read": "0.05"}
+      },
+      "inference_geo_us_multiplier": true
+    },
+    "claude-haiku-4-5": {
+      "rates": {"input": "1", "output": "5", "cache_write_5m": "1.25", "cache_write_1h": "2", "cache_read": "0.10"},
+      "inference_geo_us_multiplier": false
+    }
+  }
+}
