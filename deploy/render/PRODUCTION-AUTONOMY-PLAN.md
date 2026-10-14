@@ -45,14 +45,15 @@ ledger, programs and jobs.
 | G2 | Calyx `main` pins Brain `main` (`OC_BRAIN_REF`) in the acceptance CI and the Blueprint (done, in #1821) | done |
 | G3 | Start-script confirmation token for a non-acceptance worker (see §6) | Claude PR, then owner merge |
 | G4 | Isolated Neon database and read-only verifier role (§4) | owner |
-| G5 | Render worker created from a reviewed production Blueprint (§3), suspended until G6 | owner |
+| G5 | Render worker created from the reviewed production Blueprint `deploy/render/autonomy-production.blueprint.yaml` (§3), suspended until G6 | owner |
 | G6 | Explicit owner approval to resume and deploy | owner |
 
 ## 3. Render worker configuration
 
 Use a separate service, `orchid-calyx-autonomy` (Starter background worker,
-Oregon), created from a reviewed Blueprint file placed outside the repository
-root, the same pattern as `deploy/render/autonomy-acceptance.blueprint.yaml`.
+Oregon), created from `deploy/render/autonomy-production.blueprint.yaml` (outside the
+repository root, the same pattern as `deploy/render/autonomy-acceptance.blueprint.yaml`;
+its settings are pinned by `tests/test_render_autonomy_acceptance_config.py`).
 The production web service `orchid-calyx-backend` is not touched.
 
 | Variable | Value |
@@ -84,8 +85,9 @@ plan covers the database at this load.
   `GRANT USAGE ON SCHEMA public TO oc_verify;` (in that database). Then
   `GRANT SELECT ON ALL TABLES IN SCHEMA public TO oc_verify;` (the lesson from
   the acceptance run).
-- **Verifier secret.** Store a new Actions secret holding the `oc_verify`
-  connection string for `autonomy_prod`, separate from the acceptance secret.
+- **Verifier secret.** Store a new Actions secret, `OC_AUTONOMY_PROD_VERIFY_DATABASE_URL`,
+  holding the `oc_verify` connection string for `autonomy_prod`, separate from the
+  acceptance secret.
 
 ## 5. Health checks and monitoring
 
@@ -107,8 +109,11 @@ at these points:
 4. weekly afterwards.
 
 All 17 checks must pass. The checks that need a restart or new inputs pass
-naturally as real merges arrive. A production verify workflow mirrors
-`render-autonomy-acceptance-verify.yml`, with its own label and its own secret.
+naturally as real merges arrive. To run it, add the label
+`render-autonomy-verify-production` to any pull request:
+`render-autonomy-acceptance-verify.yml` then verifies `autonomy_prod` with
+`--require-loop`, using only `OC_AUTONOMY_PROD_VERIFY_DATABASE_URL` (it never
+falls back to the acceptance credential).
 
 ## 6. Required small change before go-live (G3)
 
