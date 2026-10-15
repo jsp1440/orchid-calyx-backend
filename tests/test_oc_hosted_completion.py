@@ -980,3 +980,52 @@ def test_hosted_workflow_isolates_candidate_data_and_spending_credentials():
     assert "vars.OC_GOVERNOR_AUTO_REFILL == 'true'" in continuation
     assert "needs.factory.result == 'success'" in continuation
     assert "needs.observation.result == 'success'" in continuation
+
+
+def _worker(**changes):
+    run = {
+        "path": ".github/workflows/orchid-swarm-controller.yml",
+        "head_branch": hosted.BRANCH,
+        "event": "workflow_dispatch",
+        "run_attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+    }
+    run.update(changes)
+    return run
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        _worker(),
+        # GitHub records scheduled runs on the default branch; the controller
+        # checks out the integration head itself (#1848 review, finding B1).
+        _worker(event="schedule", head_branch="main"),
+    ],
+)
+def test_canonical_controller_runs_are_trusted_workers(run):
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "main") is True
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        _worker(event="pull_request", head_branch="claude/some-pr-branch"),
+        _worker(event="pull_request", head_branch="main"),
+        _worker(event="issues", head_branch="main"),
+        _worker(event="workflow_dispatch", head_branch="main"),
+        _worker(event="schedule", head_branch="feature"),
+        _worker(path=".github/workflows/other.yml"),
+        _worker(run_attempt=2),
+        _worker(status="in_progress"),
+        _worker(conclusion="cancelled"),
+    ],
+)
+def test_non_canonical_or_unfinished_runs_are_never_trusted_workers(run):
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "main") is False
+
+
+def test_a_schedule_run_needs_a_known_default_branch():
+    run = _worker(event="schedule", head_branch="main")
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "") is False

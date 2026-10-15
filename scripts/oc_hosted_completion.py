@@ -114,6 +114,17 @@ def api(repository, path, payload=None, method="GET"):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def repository_default_branch(repository):
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repository}", "--jq", ".default_branch"],
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=45,
+    )
+    return result.stdout.strip()
+
+
 def pages(repository, path, field=None):
     rows = []
     for page in range(1, 6):
@@ -280,6 +291,29 @@ def validate_material(context, issue, pr, lease, files, grant, dependency_issues
     return write_set
 
 
+def worker_run_trusted(worker, context, default_branch):
+    """The worker is a completed, successful run of the canonical controller.
+
+    A dispatched wave runs on the integration ref. A scheduled run is recorded
+    on the default branch (GitHub runs schedules from it) and checks out the
+    integration head itself; its planner only takes paid work when that
+    checkout is the integration head. Any other trigger (a PR closing, an
+    issue event) runs from its own SHA and is never a trusted worker.
+    """
+    on_trusted_ref = worker.get("head_branch") == BRANCH or (
+        worker.get("event") == "schedule"
+        and bool(default_branch)
+        and worker.get("head_branch") == default_branch
+    )
+    return (
+        worker.get("path") == ".github/workflows/orchid-swarm-controller.yml"
+        and on_trusted_ref
+        and worker.get("run_attempt") == context["worker_attempt"]
+        and worker.get("status") == "completed"
+        and worker.get("conclusion") == "success"
+    )
+
+
 def inspect(context):
     repo, number = context["repository"], context["issue"]
     issue = api(repo, f"issues/{number}")
@@ -297,12 +331,9 @@ def inspect(context):
     trusted = api(repo, f"contents/{path}?ref={context['trusted_sha']}")
     require(candidate["sha"] == trusted["sha"], "validation_definition_changed")
     worker = api(repo, f"actions/runs/{context['worker_run']}")
+    default_branch = repository_default_branch(repo)
     require(
-        worker["path"] == ".github/workflows/orchid-swarm-controller.yml"
-        and worker["head_branch"] == BRANCH
-        and worker["run_attempt"] == context["worker_attempt"]
-        and worker["status"] == "completed"
-        and worker["conclusion"] == "success",
+        worker_run_trusted(worker, context, default_branch),
         "worker_completion_not_proven",
     )
     starts = [
