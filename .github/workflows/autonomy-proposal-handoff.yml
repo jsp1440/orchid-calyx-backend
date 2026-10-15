@@ -69,13 +69,15 @@ jobs:
         if: env.MODE != 'review'
         shell: bash
         run: |
-          gh api --paginate \
-            "repos/$GITHUB_REPOSITORY/issues?labels=autonomy-handoff&state=all&per_page=100" \
-            --jq '.[] | {number, body}' | jq -s . > existing-issues.json
+          # The script lists existing handoff issues itself and fails closed
+          # (no plan written) if GitHub cannot be read.
           python -B scripts/oc_autonomy_proposals.py handoff \
             --dsn "$PRODUCTION_DSN" --database autonomy_prod \
             --approvals deploy/autonomy/approvals.json \
-            --existing-issues existing-issues.json --out handoff
+            --github-repo "$GITHUB_REPOSITORY" \
+            --approval-commit "$GITHUB_SHA" \
+            --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --out handoff
           {
             echo "## Handoff plan ($MODE)"
             jq -r '"- to open: \(.create | length)\n- already handed off: \(.already_handed_off | length)\n- approved but not proposed: \(.approved_but_not_proposed | join(", "))\n- not a handoff class: \(.not_a_handoff_class | join(", "))"' handoff/plan.json
@@ -86,16 +88,10 @@ jobs:
         if: env.MODE == 'handoff'
         shell: bash
         run: |
-          count=$(jq '.create | length' handoff/plan.json)
-          if [ "$count" -eq 0 ]; then echo "Nothing new to hand off."; exit 0; fi
-          gh label create autonomy-handoff --repo "$GITHUB_REPOSITORY" --force \
-            --color 0E8A16 --description "Approved autonomy proposal handed off for normal reviewed work"
-          jq -c '.create[]' handoff/plan.json | while read -r item; do
-            title=$(jq -r '.title' <<<"$item")
-            body_file="handoff/$(jq -r '.body_file' <<<"$item")"
-            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" \
-              --body-file "$body_file" --label autonomy-handoff
-          done
+          # Re-checks existing markers, stops at the first GitHub error and
+          # records handoff/results.json; a re-run skips anything already opened.
+          python -B scripts/oc_autonomy_proposals.py create \
+            --plan-dir handoff --github-repo "$GITHUB_REPOSITORY"
 
       - name: Upload proposals and plan
         if: always()
@@ -107,4 +103,4 @@ jobs:
             proposals.md
             handoff/
           if-no-files-found: warn
-          retention-days: 30
+          retention-days: 90

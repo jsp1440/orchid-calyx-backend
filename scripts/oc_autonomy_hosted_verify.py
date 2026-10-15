@@ -518,6 +518,100 @@ def environment_facts(db: Session) -> dict[str, Any]:
     }
 
 
+def operational_snapshot(db: Session, *, owner: str) -> dict[str, Any]:
+    """Timestamped operational facts for a live worker. Never a check.
+
+    Read inside the same READ ONLY transaction as the checks: last heartbeat,
+    cycle counts by kind, worker starts, job outcomes, and proposals awaiting
+    the owner. It changes no check and no ``passed`` value.
+    """
+    cycles = (
+        db.execute(
+            text(
+                "SELECT worker_id, sequence, started_at, finished_at, productive, "
+                "healthy, category, deployment_commit "
+                "FROM calyx_program_autonomy_cycles WHERE owner = :owner "
+                "ORDER BY finished_at"
+            ),
+            {"owner": owner},
+        )
+        .mappings()
+        .all()
+    )
+    jobs = (
+        db.execute(
+            text(
+                "SELECT job_key, status, outcome, attempt_count, lease_owner, "
+                "completed_at FROM calyx_engineering_program_jobs"
+            )
+        )
+        .mappings()
+        .all()
+    )
+    loop_state: dict[str, Any] = {}
+    for (state_json,) in db.execute(
+        text("SELECT state_json FROM calyx_brain_pulse_ledgers")
+    ).all():
+        state = json.loads(state_json) if state_json else {}
+        if isinstance(state.get("loop"), dict):
+            loop_state = state["loop"]
+            break
+    proposals = [
+        {**p, "fingerprint": p.get("fingerprint") or key}
+        for key, p in (loop_state.get("proposals") or {}).items()
+    ]
+    last = cycles[-1] if cycles else None
+    completed = [j["completed_at"] for j in jobs if j["completed_at"] is not None]
+
+    def stamp(value: Any) -> str | None:
+        return value.isoformat() if hasattr(value, "isoformat") else value
+
+    return {
+        "cycles": {
+            "total": len(cycles),
+            "first_started_at": stamp(cycles[0]["started_at"]) if cycles else None,
+            "last_finished_at": stamp(last["finished_at"]) if last else None,
+            "productive": sum(1 for c in cycles if c["productive"]),
+            "waiting": sum(1 for c in cycles if c["healthy"] and not c["productive"]),
+            "unhealthy": sum(1 for c in cycles if not c["healthy"]),
+            "by_category": dict(Counter(c["category"] or "productive" for c in cycles)),
+            "worker_starts": sum(1 for c in cycles if c["sequence"] == 1),
+        },
+        "last_cycle": (
+            {
+                "worker_id": last["worker_id"],
+                "sequence": last["sequence"],
+                "category": last["category"],
+                "healthy": bool(last["healthy"]),
+                "productive": bool(last["productive"]),
+                "deployment_commit": last["deployment_commit"],
+            }
+            if last
+            else None
+        ),
+        "jobs": {
+            "total": len(jobs),
+            "distinct_keys": len({j["job_key"] for j in jobs}),
+            "by_status": dict(Counter(j["status"] for j in jobs)),
+            "by_outcome": dict(Counter(j["outcome"] for j in jobs)),
+            "max_attempt_count": max(
+                (j["attempt_count"] or 0 for j in jobs), default=0
+            ),
+            "leases_held": sum(1 for j in jobs if j["lease_owner"]),
+            "last_completed_at": stamp(max(completed)) if completed else None,
+        },
+        "proposals": {
+            "by_state": dict(Counter(p.get("state") for p in proposals)),
+            "by_class": dict(Counter(p.get("work_class") for p in proposals)),
+            "awaiting_approval": sorted(
+                str(p.get("fingerprint"))
+                for p in proposals
+                if p.get("state") == "awaiting_approval"
+            ),
+        },
+    }
+
+
 def export_records(db: Session, *, owner: str) -> dict[str, Any]:
     """Durable, non-secret copy of the judged record (no evidence payloads)."""
     cycles = db.execute(
@@ -674,6 +768,8 @@ def main() -> int:
                     item["passed"] for item in report["checks"].values()
                 )
             report["environment"] = environment_facts(db)
+            if args.production:
+                report["snapshot"] = operational_snapshot(db, owner=args.owner)
             if args.export is not None:
                 args.export.write_text(
                     json.dumps(

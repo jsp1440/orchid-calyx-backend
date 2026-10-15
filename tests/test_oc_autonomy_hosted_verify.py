@@ -444,3 +444,26 @@ def test_a_report_of_only_advisory_checks_never_passes():
     checks = _checks(ten_consecutive_productive=True)
     module.apply_production_profile(checks)
     assert module.overall_passed(checks) is False
+
+
+def test_operational_snapshot_reports_live_facts_without_judging(tmp_path):
+    module = _module()
+    db = _loop_db(tmp_path)
+    snapshot = module.operational_snapshot(db, owner=OWNER)
+    cycles = snapshot["cycles"]
+    assert cycles["total"] == 10
+    assert (
+        cycles["productive"] == 4
+        and cycles["waiting"] == 6
+        and cycles["unhealthy"] == 0
+    )
+    assert cycles["worker_starts"] == 2  # first start and the restart
+    assert cycles["by_category"] == {"productive": 4, "owner_gate": 6}
+    assert cycles["last_finished_at"] is not None
+    assert snapshot["last_cycle"]["worker_id"] == "w"
+    assert snapshot["jobs"]["total"] == 0 and snapshot["jobs"]["leases_held"] == 0
+    assert snapshot["proposals"]["by_state"] == {"awaiting_approval": 1}
+    assert snapshot["proposals"]["awaiting_approval"] == [
+        "f"
+    ]  # ledger key is the fingerprint
+    assert "passed" not in snapshot  # facts, never a verdict
