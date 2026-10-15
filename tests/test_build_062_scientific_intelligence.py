@@ -14,28 +14,24 @@ Covers:
 
 from __future__ import annotations
 
-import time
-
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routers.scientific_intelligence import router
+from runtime.scientific_intelligence.adapters import (
+    fetch_all_adapters,
+    grant_office_adapter,
+)
+from runtime.scientific_intelligence.aggregator import (
+    BUILD_ID,
+    build_daily_brief,
+    build_scientific_intelligence_payload,
+)
 from runtime.scientific_intelligence.cache import (
     cache_stats,
     get_cached,
     invalidate_all,
     set_cached,
-)
-from runtime.scientific_intelligence.normalizer import (
-    normalize,
-    normalize_atlas,
-    normalize_grant_office,
-    normalize_knowledge_graph,
-    normalize_literature,
-    normalize_mycorrhiza,
-    normalize_pollinators,
-    normalize_vision,
 )
 from runtime.scientific_intelligence.intelligence import (
     data_collection_bottlenecks,
@@ -50,16 +46,17 @@ from runtime.scientific_intelligence.intelligence import (
     research_risks,
     suggested_next_action,
 )
-from runtime.scientific_intelligence.aggregator import (
-    BUILD_ID,
-    build_daily_brief,
-    build_scientific_intelligence_payload,
+from runtime.scientific_intelligence.normalizer import (
+    normalize,
+    normalize_atlas,
+    normalize_grant_office,
+    normalize_knowledge_graph,
+    normalize_literature,
+    normalize_mycorrhiza,
+    normalize_pollinators,
+    normalize_vision,
 )
-from runtime.scientific_intelligence.adapters import (
-    fetch_all_adapters,
-    grant_office_adapter,
-)
-
+from runtime.scientific_intelligence.utils import to_int
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -891,3 +888,64 @@ def test_normalizer_handles_garbage_input():
     assert result["relationships"] == 0
     # available=True but count=0 → "empty" (not "unavailable")
     assert result["status"] == "empty"
+
+
+# ---------------------------------------------------------------------------
+# New tests for OverflowError handling in to_int (Issue #1866)
+# ---------------------------------------------------------------------------
+
+
+def test_to_int_with_positive_infinity_returns_default():
+    """to_int should catch OverflowError from float('inf') and return default."""
+    result = to_int(float("inf"))
+    assert result == 0
+
+
+def test_to_int_with_negative_infinity_returns_default():
+    """to_int should catch OverflowError from float('-inf') and return default."""
+    result = to_int(float("-inf"))
+    assert result == 0
+
+
+def test_to_int_with_positive_infinity_custom_default():
+    """to_int with custom default should return that default for float('inf')."""
+    result = to_int(float("inf"), 5)
+    assert result == 5
+
+
+def test_to_int_with_negative_infinity_custom_default():
+    """to_int with custom default should return that default for float('-inf')."""
+    result = to_int(float("-inf"), 5)
+    assert result == 5
+
+
+def test_to_int_with_valid_string():
+    """to_int should still handle valid string inputs correctly."""
+    result = to_int("7")
+    assert result == 7
+
+
+def test_to_int_with_invalid_string():
+    """to_int should return default for invalid string inputs."""
+    result = to_int("x")
+    assert result == 0
+
+
+def test_normalize_atlas_with_infinite_occurrences():
+    """normalize_atlas should handle float('inf') occurrences gracefully."""
+    raw = {"available": True, "occurrences": float("inf"), "taxa_covered": 4200}
+    result = normalize_atlas(raw)
+    # occurrences should be 0 (default), making status "empty"
+    assert result["occurrences"] == 0
+    assert result["status"] == "empty"
+    assert result["available"] is True
+
+
+def test_normalize_atlas_with_negative_infinite_occurrences():
+    """normalize_atlas should handle float('-inf') occurrences gracefully."""
+    raw = {"available": True, "occurrences": float("-inf"), "taxa_covered": 4200}
+    result = normalize_atlas(raw)
+    # occurrences should be 0 (default), making status "empty"
+    assert result["occurrences"] == 0
+    assert result["status"] == "empty"
+    assert result["available"] is True

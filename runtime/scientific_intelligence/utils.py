@@ -21,7 +21,7 @@ def to_int(value: Any, default: int = 0) -> int:
     """Coerce *value* to int; return *default* on failure."""
     try:
         return int(value)
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         return default
 
 
