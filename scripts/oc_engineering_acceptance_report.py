@@ -418,11 +418,36 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     # that lease) is not an engineering cycle at all: it is reported as zero
     # execution with the engine's reason, never as a pass and never as a break.
     # An executed attempt still running is "in_progress", not yet judged.
+    # Judge every attempt in the issue's history, not only the latest claim:
+    # an attempt executed when its worker started and no denial named its lease.
+    executed = []
+    for i, (claim_comment, _) in enumerate(claims):
+        upper = claims[i + 1][0] if i + 1 < len(claims) else None
+        segment = [
+            c
+            for c in comments
+            if _order(c) > _order(claim_comment)
+            and (upper is None or _order(c) < _order(upper))
+            and _by_bot(c)
+        ]
+        started = any(WORKER.search(c.get("body", "")) for c in segment)
+        refused = any(
+            c.get("body", "").startswith(DENIED)
+            and (_json_after(SETTLED_RESULT, c.get("body", "")) or {}).get(
+                "lease_comment_id"
+            )
+            in (None, claim_comment.get("id"))
+            for c in segment
+        )
+        executed.append(started and not refused)
+    evidence["executed_attempts"] = sum(executed)
     labels_now = {label.get("name") for label in issue.get("labels") or []}
-    if settlement is None and (worker is None or denied):
+    if settlement is None and not any(executed):
         status = "zero_execution"
     elif (
         settlement is None
+        and executed
+        and executed[-1]
         and issue.get("state") == "open"
         and labels_now & {"oc-running", "oc-validating"}
     ):
@@ -495,8 +520,13 @@ def evaluate(
     # The most recent unbroken run of passing cycles; running ones are skipped.
     streak, recovered, stop = 0, False, None
     for cycle in reversed(cycles):
-        if cycle["status"] == "in_progress":
+        # Only the newest attempts may still be running; an in-progress cycle
+        # older than a finished one is stuck and breaks the streak.
+        if cycle["status"] == "in_progress" and streak == 0 and stop is None:
             continue
+        if cycle["status"] == "in_progress":
+            stop = f"issue {cycle['issue']}: STALE_IN_PROGRESS"
+            break
         if not cycle["passed"]:
             stop = f"issue {cycle['issue']}: {', '.join(cycle['failures'])}"
             break
@@ -653,7 +683,8 @@ def window_records(
         record = fetch_record(repository, int(row["number"]), api=api)
         if any(
             _by_bot(c)
-            and _utc(str(c.get("created_at") or "")) >= since
+            and c.get("created_at")
+            and _utc(str(c["created_at"])) >= since
             and (_json_after(CLAIM, c.get("body", "")) or {}).get("schema")
             == "oc.swarm-claim.v1"
             for c in record["comments"]

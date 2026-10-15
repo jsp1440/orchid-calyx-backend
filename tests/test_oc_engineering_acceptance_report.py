@@ -867,3 +867,39 @@ def test_window_times_compare_as_instants_not_strings():
     assert module.window_records(REPO, starts[2], api=api) == []
     with pytest.raises(ValueError, match="timezone"):
         module.window_records(REPO, starts[3], api=api)
+
+
+def test_an_executed_attempt_that_failed_is_not_absorbed_by_a_later_denied_claim():
+    # Attempt 1 ran (worker started) and never settled; the re-claim was denied.
+    failed = _record(5, settle=False)
+    failed["issue"].update(state="open", labels=[{"name": "oc-queued"}])
+    failed["comments"] += [
+        _claim(30, 2005, 9105, 1, "2026-10-16T05:40:00Z"),
+        _c(
+            31,
+            "[OC-SWARM-V4] Provider admission denied; requested lease disposition: `"
+            + json.dumps(
+                {"disposition": "queued", "message": "budget", "lease_comment_id": 30}
+            )
+            + "`.",
+            "2026-10-16T05:40:10Z",
+        ),
+    ]
+    records = _ten({5: {}})
+    records[4] = failed
+    report = _evaluate(records)
+    cycle = next(c for c in report["cycles"] if c["issue"] == 2005)
+    assert cycle["status"] == "failed" and cycle["evidence"]["executed_attempts"] == 1
+    assert all(z["issue"] != 2005 for z in report["zero_execution_issues"])
+    assert report["certified"] is False and report["consecutive_completed"] == 5
+
+
+def test_an_in_progress_cycle_older_than_a_finished_one_breaks_the_streak():
+    stuck = _record(
+        5, settle=False
+    )  # open, oc-validating, claimed before 6..10 settled
+    records = _ten()
+    records[4] = stuck
+    report = _evaluate(records)
+    assert report["certified"] is False and report["consecutive_completed"] == 5
+    assert "STALE_IN_PROGRESS" in report["reason"]
