@@ -360,3 +360,36 @@ def test_workflow_observes_swarm_with_read_only_authority_and_persists_failed_re
     assert subprocess.run(["bash", "-n"], input=run, text=True, capture_output=True, check=False).returncode == 0
     artifact = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
     assert artifact["if"] == "always()"
+
+
+
+def _observe_with_repository(data, default_branch="main"):
+    def read(endpoint):
+        if endpoint == f"repos/{REPO}":
+            return {"default_branch": default_branch}
+        assert endpoint.startswith(PREFIX)
+        return copy.deepcopy(data[endpoint.removeprefix(PREFIX)])
+
+    return health.collect_github_snapshot(REPO, 42, read_json=read, now=NOW)
+
+
+def test_a_scheduled_controller_run_on_the_default_branch_is_an_integration_run():
+    """Hosted completion trusts schedule runs; the observer must agree (#1848 B2)."""
+    data = evidence()
+    data["actions/runs/42"].update(head_branch="main", event="schedule")
+    receipt = health.build_health(_observe_with_repository(data))
+    assert {
+        "source": "scheduler_run",
+        "reason": "not_an_integration_controller_run",
+    } not in receipt["observation_errors"]
+
+
+@pytest.mark.parametrize("event", ["pull_request", "issues", "workflow_dispatch"])
+def test_other_triggers_on_the_default_branch_are_still_rejected(event):
+    data = evidence()
+    data["actions/runs/42"].update(head_branch="main", event=event)
+    receipt = health.build_health(_observe_with_repository(data))
+    assert {
+        "source": "scheduler_run",
+        "reason": "not_an_integration_controller_run",
+    } in receipt["observation_errors"]

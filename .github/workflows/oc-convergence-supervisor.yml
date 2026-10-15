@@ -62,7 +62,11 @@ jobs:
       contents: read
       actions: read
       issues: write
-      pull-requests: read
+      # The checker assignment and evidence are PR comments by design (settle
+      # verifies their location), and commenting on a PR needs pull-requests:
+      # write. Only the reserve and record steps receive GH_TOKEN; the provider
+      # step gets ANTHROPIC_API_KEY alone.
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:

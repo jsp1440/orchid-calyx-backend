@@ -47,7 +47,10 @@ def test_swarm_routes_no_api_work_only_to_deterministic_worker():
     ) in text
     assert (
         'if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && '
-        '"${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then\n'
+        '"${{ steps.coding_governor.outputs.authorized }}" == "true" && '
+        '"${{ steps.controller_revision.outputs.canonical_integration }}" == "true" && '
+        '( "${{ github.event_name }}" == "schedule" || '
+        '"${{ github.ref }}" == "refs/heads/oc-autonomous-integration" ) ]]; then\n'
         "            provider_args+=(--coding-executor)\n"
         "          else\n"
         "            provider_args+=(--provider-free-only)"
