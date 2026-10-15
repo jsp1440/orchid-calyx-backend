@@ -191,3 +191,52 @@ class TestGoalPlannerService:
         result = self.planner.plan("")
         assert "Convert HealthMonitorService into a backend API endpoint" not in result
         assert "Mission Control" not in result
+
+    # Test degraded service (warning status)
+    def test_degraded_service_single_warning(self):
+        """Degraded service with single warning should return investigate goal."""
+        result = self.planner.plan("Degraded service: backend — HTTP 500")
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_multiple_warnings(self):
+        """Degraded service with multiple warnings should return investigate goal."""
+        result = self.planner.plan("Degraded service: backend — HTTP 503; frontend — HTTP 502")
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_from_bottleneck_service(self):
+        """Warning health checks through BottleneckService should map correctly."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            )
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck.startswith("Degraded service: ")
+        result = self.planner.plan(bottleneck)
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_integration_end_to_end_warning(self):
+        """End-to-end test: warning health checks through both services."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="frontend",
+                status="warning",
+                message="HTTP 503"
+            ),
+            HealthCheckResult(
+                component="cache",
+                status="healthy",
+                message="Cache is working"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck == "Degraded service: backend — HTTP 500; frontend — HTTP 503"
+        goal = self.planner.plan(bottleneck)
+        assert goal == "Investigate degraded service and rerun health checks."
