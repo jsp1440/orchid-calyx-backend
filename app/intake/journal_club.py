@@ -136,7 +136,7 @@ def _stable_hash(*parts: str) -> str:
 def _term_spans(text: str, terms: tuple[str, ...]) -> list[dict[str, object]]:
     spans: list[dict[str, object]] = []
     for term in terms:
-        pattern = re.compile(re.escape(term), re.IGNORECASE)
+        pattern = re.compile(r"(?<!\w)" + re.escape(term) + r"(?!\w)", re.IGNORECASE)
         for match in pattern.finditer(text):
             start, end = match.span()
             spans.append(

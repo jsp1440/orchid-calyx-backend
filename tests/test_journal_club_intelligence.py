@@ -151,3 +151,40 @@ def test_authenticated_route_uses_existing_source_and_intelligence_ledgers(monke
 def test_request_rejects_missing_transcript():
     with pytest.raises(ValidationError):
         JournalClubIntakeRequest(title="x", transcript="")
+
+
+def test_word_boundary_prevents_partial_matches():
+    """Verify that 'flora' does not match the term 'lora'."""
+    items = parse_journal_club_transcript(
+        title="Episode 12",
+        transcript="We surveyed the epiphytic flora of Ecuador at monthly intervals.",
+    )
+    assert items == []
+
+
+def test_lora_as_whole_word_still_matches():
+    """Verify that 'LoRA' as a whole word still matches the term 'lora'."""
+    items = parse_journal_club_transcript(
+        title="Fine-tuning example",
+        transcript="We fine-tuned with LoRA adapters.",
+    )
+    techniques = {item["technology_scout"]["technique"] for item in items}
+    assert "FINE_TUNING" in techniques
+
+    # Verify the exact text is captured
+    for item in items:
+        if item["technology_scout"]["technique"] == "FINE_TUNING":
+            exact_texts = {
+                span["exact_text"] for span in item["technology_scout"]["evidence_spans"]
+            }
+            assert "LoRA" in exact_texts
+
+
+def test_word_boundary_prevents_partial_match_evals():
+    """Verify that 'medievals' does not match the term 'evals'."""
+    items = parse_journal_club_transcript(
+        title="Medieval studies",
+        transcript="We study the medievals period with various techniques.",
+    )
+    techniques = {item["technology_scout"]["technique"] for item in items}
+    assert "EVALUATION" not in techniques
