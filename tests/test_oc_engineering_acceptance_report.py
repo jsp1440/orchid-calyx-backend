@@ -821,6 +821,22 @@ def test_controller_slots_can_be_bounded_by_a_repository_variable():
     assert "WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}" not in text
 
 
+def test_dispatch_and_call_inputs_do_not_mask_the_slot_variable():
+    """A non-empty input default always wins over vars.OC_SWARM_WORKER_SLOTS.
+
+    The first live window showed WORKER_SLOTS=8 on a dispatched controller run
+    while the variable was 1, because the dispatch input defaulted to "8".
+    """
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "orchid-swarm-controller.yml").read_text()
+    )
+    triggers = workflow.get("on", workflow.get(True))
+    for trigger in ("workflow_dispatch", "workflow_call"):
+        assert triggers[trigger]["inputs"]["worker_slots"]["default"] == ""
+
+
 def test_the_route_tier_can_be_capped_for_a_bounded_window():
     """Repair escalation must not leave the approved model during a demonstration."""
     import yaml

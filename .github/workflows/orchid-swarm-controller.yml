@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       worker_slots:
-        description: Maximum concurrent implementation workers (1-12)
+        description: Maximum concurrent implementation workers (1-12); empty uses vars.OC_SWARM_WORKER_SLOTS
         required: false
-        default: "8"
+        default: ""
         type: string
       wave:
         description: Internal bounded refill wave ordinal
@@ -22,7 +22,7 @@ on:
     inputs:
       worker_slots:
         required: false
-        default: "8"
+        default: ""
         type: string
       wave:
         required: false

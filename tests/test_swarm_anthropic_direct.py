@@ -846,3 +846,101 @@ def test_durable_execution_summary_excludes_model_text_and_retains_usage(
     receipt = json.loads(output.split("[OC-DIRECT-RECEIPT] ")[1])
     assert receipt["modelUsage"] == payload["modelUsage"]
     assert receipt["error"] == "max_turns" and receipt["num_turns"] == 2
+
+
+def test_turn_budget_notice_counts_down_and_asks_to_finish_near_the_limit() -> None:
+    early = direct._turn_budget_notice(5, 24)
+    assert "5 of 24 turns used; 19 remaining" in early
+    assert "Finish now" not in early
+    for turn in (21, 22, 23, 24):
+        notice = direct._turn_budget_notice(turn, 24)
+        assert f"{24 - turn} remaining" in notice
+        assert "Finish now" in notice
+    assert "0 remaining" in direct._turn_budget_notice(30, 24)
+
+
+def test_every_tool_result_carries_the_turn_budget_and_the_prompt_states_it(
+    tmp_path, monkeypatch
+) -> None:
+    """The model sees its ceiling and the stop condition, then finishing opens a PR.
+
+    Regression for the first live cheap-tier run: the change and tests were done
+    by turn 15, the model kept re-verifying without knowing the limit, and
+    max_turns discarded the draft PR.
+    """
+    packet = tmp_path / "packet.md"
+    packet.write_text("Small two-file change.\n")
+    execution_file = tmp_path / "execution.json"
+    seen: list[list[dict]] = []
+
+    def provider(**kwargs):
+        seen.append(kwargs["messages"])
+        last = kwargs["messages"][-1]["content"]
+        if isinstance(last, list) and "Finish now" in last[-1].get("text", ""):
+            return {
+                "content": [{"type": "text", "text": "Done; tests pass."}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": f"tool-{len(seen)}",
+                    "name": "list_files",
+                    "input": {"pattern": "*.py"},
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "1002")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "_prepare_branch", lambda *a, **k: "dryrun/1002")
+    monkeypatch.setattr(direct, "_anthropic_message", provider)
+    monkeypatch.setattr(
+        direct, "_open_draft_pr", lambda *a, **k: "https://example.invalid/pr/1"
+    )
+    monkeypatch.setattr(
+        direct.sys,
+        "argv",
+        [
+            "swarm_anthropic_direct.py",
+            "--issue-number",
+            "1843",
+            "--title",
+            "Budget-aware finish",
+            "--packet-file",
+            str(packet),
+            "--model",
+            "claude-haiku-4-5",
+            "--max-turns",
+            "24",
+            "--execution-file",
+            str(execution_file),
+        ],
+    )
+
+    assert direct.main() == 0
+    result = json.loads(execution_file.read_text())
+    assert result["pr_url"] == "https://example.invalid/pr/1"
+    # Turn 21 is the first notice with three or fewer turns left, so the model
+    # finishes on turn 22 instead of exhausting the budget.
+    assert result["num_turns"] == 22
+
+    prompt = seen[0][0]["content"]
+    assert "at most 24 model turns" in prompt
+    assert "do not re-run passing checks" in prompt
+    final_messages = seen[-1]
+    tool_turns = [
+        m["content"]
+        for m in final_messages
+        if m["role"] == "user" and isinstance(m["content"], list)
+    ]
+    assert len(tool_turns) == 21
+    for index, content in enumerate(tool_turns, start=1):
+        assert content[0]["type"] == "tool_result"
+        assert content[-1] == {
+            "type": "text",
+            "text": direct._turn_budget_notice(index, 24),
+        }

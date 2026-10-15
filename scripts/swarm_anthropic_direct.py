@@ -505,6 +505,23 @@ def _github_output(values: dict[str, Any]) -> None:
             handle.write(f"{key}={rendered}\n")
 
 
+def _turn_budget_notice(turn: int, limit: int) -> str:
+    """Tell the model how many turns remain after this tool result.
+
+    Without this the model cannot see the ceiling: a first live cheap-tier run
+    had its change written and its tests passing by turn 15, kept re-verifying,
+    and hit max_turns, so no draft PR was opened.
+    """
+    remaining = max(limit - turn, 0)
+    notice = f"[turn budget] {turn} of {limit} turns used; {remaining} remaining."
+    if remaining <= 3:
+        notice += (
+            " Finish now: if the change is written and its focused tests pass, reply "
+            "with a short summary and no tool call."
+        )
+    return notice
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--issue-number", required=True)
@@ -548,14 +565,21 @@ def main() -> int:
             "publication controls. Run focused tests. When implementation is complete, stop; the "
             "wrapper will commit, push, and open the draft PR."
         )
+        bounded_turns = min(max(args.max_turns, 1), 24)
+        system += (
+            f" You have at most {bounded_turns} model turns, and every tool call uses one. "
+            "Finishing means replying with a short summary and no tool call. Finish as soon "
+            "as the required change is written and its focused tests and lint pass; do not "
+            "re-run passing checks or re-read files you just verified. Reaching the turn limit "
+            "discards the draft PR, even if the work is complete."
+        )
         messages: list[dict[str, Any]] = [
             {"role": "user", "content": f"{system}\n\n{packet}"}
         ]
 
         # The economy router's cheap tier is budgeted for up to 24 turns.
         # Honor that route ceiling instead of silently truncating it to 12,
-        # while still keeping a hard repository-local cap.
-        bounded_turns = min(max(args.max_turns, 1), 24)
+        # while still keeping a hard repository-local cap (bounded_turns above).
         bounded_tokens = min(max(args.max_tokens, 256), 3072)
         for turn in range(1, bounded_turns + 1):
             response = _anthropic_message(
@@ -612,6 +636,9 @@ def main() -> int:
                         "content": tool_result,
                     }
                 )
+            results.append(
+                {"type": "text", "text": _turn_budget_notice(turn, bounded_turns)}
+            )
             messages.append({"role": "user", "content": results})
         else:
             error_kind = "max_turns"

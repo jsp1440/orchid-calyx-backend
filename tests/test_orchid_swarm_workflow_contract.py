@@ -7,7 +7,9 @@ WORKFLOW = ROOT / ".github" / "workflows" / "orchid-swarm-controller.yml"
 def test_swarm_workflow_uses_bounded_parallel_matrix():
     text = WORKFLOW.read_text(encoding="utf-8")
     assert "max-parallel: 12" in text
-    assert 'default: "8"' in text
+    # Eight slots remain the fallback when neither an input nor the
+    # OC_SWARM_WORKER_SLOTS variable bounds the wave.
+    assert "vars.OC_SWARM_WORKER_SLOTS || '8' }}" in text
     assert "oc_swarm_controller.py" in text
     assert "orchid-completion-lane.yml" in text
 
