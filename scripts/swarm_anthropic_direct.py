@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 from urllib import error as urlerror
@@ -446,6 +447,53 @@ TOOL_HANDLERS = {
 }
 
 
+# USD per million tokens. Only models listed here get an actual cost; any other
+# model reports none, and the governor ledger keeps its reservation instead.
+PRICE_PER_MTOK: dict[str, dict[str, Decimal]] = {
+    "claude-haiku-4-5": {
+        "input": Decimal("1.00"),
+        "output": Decimal("5.00"),
+        "cache_write": Decimal("1.25"),  # 5-minute TTL write, 1.25x input
+        "cache_read": Decimal("0.10"),
+    },
+}
+USAGE_FIELDS = {
+    "input": "input_tokens",
+    "output": "output_tokens",
+    "cache_write": "cache_creation_input_tokens",
+    "cache_read": "cache_read_input_tokens",
+}
+
+
+def _validated_usage(usage: Any) -> dict[str, int] | None:
+    if not isinstance(usage, dict):
+        return None
+    counts = {}
+    for kind, field in USAGE_FIELDS.items():
+        value = usage.get(field, 0)
+        if kind in {"input", "output"} and field not in usage:
+            return None
+        if type(value) is not int or value < 0:
+            return None
+        counts[field] = value
+    return counts
+
+
+def _actual_cost_usd(model: str, usage: dict[str, int]) -> str | None:
+    """Provider cost of this run from its token usage, or None if unpriced."""
+    prices = PRICE_PER_MTOK.get(model)
+    if prices is None:
+        return None
+    counts = _validated_usage(usage)
+    if counts is None:
+        return None
+    total = sum(
+        Decimal(counts[field]) * prices[kind] for kind, field in USAGE_FIELDS.items()
+    ) / Decimal(1_000_000)
+    # Round up: the budget may overcount by a fraction of a cent, never under.
+    return str(total.quantize(Decimal("0.0001"), rounding=ROUND_CEILING))
+
+
 def _anthropic_message(
     *,
     api_key: str,
@@ -460,6 +508,9 @@ def _anthropic_message(
             "max_tokens": max_tokens,
             "messages": messages,
             "tools": TOOLS,
+            # Automatic prompt caching: each turn resends the whole conversation,
+            # so the growing prefix is read from cache at ~0.1x input price.
+            "cache_control": {"type": "ephemeral"},
         }
     ).encode("utf-8")
     req = urlrequest.Request(
@@ -626,6 +677,7 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
             "is_error",
             "num_turns",
             "modelUsage",
+            "total_cost_usd",
             "pr_url",
             "branch",
             "partial_branch",
@@ -689,6 +741,12 @@ def main() -> int:
 
     input_tokens = 0
     output_tokens = 0
+    usage_totals = dict.fromkeys(USAGE_FIELDS.values(), 0)
+    usage_complete = True
+    # A call that dies in transport (timeout, cut-off response) may still be
+    # billed without its usage reaching us; the run then reports no actual
+    # cost so the ledger keeps the reservation.
+    call_in_flight = False
     calls = 0
     branch = ""
     pr_url = ""
@@ -728,6 +786,7 @@ def main() -> int:
         # while still keeping a hard repository-local cap (bounded_turns above).
         bounded_tokens = min(max(args.max_tokens, 256), 3072)
         for turn in range(1, bounded_turns + 1):
+            call_in_flight = True
             response = _anthropic_message(
                 api_key=api_key,
                 model=args.model,
@@ -735,10 +794,16 @@ def main() -> int:
                 max_tokens=bounded_tokens,
                 timeout=120,
             )
+            call_in_flight = False
             calls += 1
-            usage = response.get("usage") or {}
-            input_tokens += int(usage.get("input_tokens") or 0)
-            output_tokens += int(usage.get("output_tokens") or 0)
+            usage = _validated_usage(response.get("usage"))
+            if usage is None:
+                usage_complete = False
+                usage = dict.fromkeys(USAGE_FIELDS.values(), 0)
+            input_tokens += usage["input_tokens"]
+            output_tokens += usage["output_tokens"]
+            for field in usage_totals:
+                usage_totals[field] += usage[field]
             content = response.get("content") or []
             final_text = _content_text(content) or final_text
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
@@ -766,11 +831,25 @@ def main() -> int:
                 )
                 continue
 
+            # A reply cut off at max_tokens ends in a tool call whose arguments
+            # are incomplete (#1863: eight write_file calls failed with
+            # KeyError 'content' while rewriting a 676-line file). That call is
+            # not run; the model is told to make a smaller edit instead.
+            cut_off = (
+                tool_uses[-1] if response.get("stop_reason") == "max_tokens" else None
+            )
             results: list[dict[str, Any]] = []
             for block in tool_uses:
                 name = str(block.get("name", ""))
                 handler = TOOL_HANDLERS.get(name)
-                if handler is None:
+                if block is cut_off:
+                    tool_result = (
+                        f"ERROR: your reply reached the {bounded_tokens}-token output "
+                        "limit before this call's arguments were complete, so it was "
+                        "not run. Make a smaller change: write_file with a short, "
+                        "exact old_text and only its replacement, never a whole file."
+                    )
+                elif handler is None:
                     tool_result = f"ERROR: unsupported tool: {name}"
                 else:
                     try:
@@ -830,11 +909,17 @@ def main() -> int:
             "subtype": "success",
             "is_error": False,
             "num_turns": calls,
-            "total_cost_usd": None,
+            "total_cost_usd": (
+                _actual_cost_usd(args.model, usage_totals) if usage_complete else None
+            ),
             "modelUsage": {
                 args.model: {
                     "inputTokens": input_tokens,
                     "outputTokens": output_tokens,
+                    "cacheCreationInputTokens": usage_totals[
+                        "cache_creation_input_tokens"
+                    ],
+                    "cacheReadInputTokens": usage_totals["cache_read_input_tokens"],
                 }
             },
             "result": final_text,
@@ -922,12 +1007,22 @@ def main() -> int:
             "subtype": "error",
             "is_error": True,
             "num_turns": calls,
-            "total_cost_usd": None,
+            "total_cost_usd": (
+                _actual_cost_usd(args.model, usage_totals)
+                if calls
+                and usage_complete
+                and not (call_in_flight and not isinstance(exc, AnthropicHTTPError))
+                else None
+            ),
             "modelUsage": (
                 {
                     args.model: {
                         "inputTokens": input_tokens,
                         "outputTokens": output_tokens,
+                        "cacheCreationInputTokens": usage_totals[
+                            "cache_creation_input_tokens"
+                        ],
+                        "cacheReadInputTokens": usage_totals["cache_read_input_tokens"],
                     }
                 }
                 if calls

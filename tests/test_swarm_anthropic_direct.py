@@ -1066,7 +1066,10 @@ def _run_executor(tmp_path, monkeypatch, replies, check_results, max_turns="6"):
 
     def model(**kwargs):
         sent.append(copy.deepcopy(kwargs["messages"]))
-        return replies.pop(0)
+        reply = replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GITHUB_RUN_ID", "3000")
@@ -1346,3 +1349,117 @@ def test_tool_errors_are_logged_with_their_reason(tmp_path, monkeypatch, capsys)
     assert lines[0]["input_error"] is True
     assert lines[0]["error"].startswith("ERROR: ValueError: old_text was not found")
     assert "error" not in lines[1]
+
+
+def test_actual_cost_prices_every_usage_kind():
+    usage = {
+        "input_tokens": 1_000_000,
+        "output_tokens": 100_000,
+        "cache_creation_input_tokens": 200_000,
+        "cache_read_input_tokens": 2_000_000,
+    }
+    # 1.00 + 0.50 + 0.25 + 0.20
+    assert direct._actual_cost_usd("claude-haiku-4-5", usage) == "1.9500"
+    assert direct._actual_cost_usd("claude-haiku-4-5", {}) is None
+    assert direct._actual_cost_usd("some-unpriced-model", usage) is None
+
+
+def test_missing_provider_usage_does_not_report_zero_actual_cost(tmp_path, monkeypatch):
+    done_without_usage = dict(DONE)
+    del done_without_usage["usage"]
+    replies = [_write(1, "x = 1\n"), done_without_usage]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    assert result["total_cost_usd"] is None
+
+
+def test_requests_enable_automatic_prompt_caching(monkeypatch):
+    seen = {}
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"content": []}'
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        return Reply()
+
+    monkeypatch.setattr(direct.urlrequest, "urlopen", capture)
+    direct._anthropic_message(
+        api_key="k", model="claude-haiku-4-5", messages=[], max_tokens=10, timeout=5
+    )
+    assert seen["payload"]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_the_result_records_cache_usage_and_actual_cost(tmp_path, monkeypatch):
+    def with_usage(reply, **usage):
+        return {**reply, "usage": {"input_tokens": 100, "output_tokens": 10, **usage}}
+
+    replies = [
+        with_usage(_write(1, "x = 1\n"), cache_creation_input_tokens=5000),
+        with_usage(dict(DONE), cache_read_input_tokens=5000),
+    ]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    usage = result["modelUsage"]["claude-haiku-4-5"]
+    assert usage["cacheCreationInputTokens"] == 5000
+    assert usage["cacheReadInputTokens"] == 5000
+    # 200 in * 1.00 + 20 out * 5.00 + 5000 * 1.25 + 5000 * 0.10, per million
+    assert result["total_cost_usd"] == "0.0071"  # 0.00705 rounded up
+
+
+@pytest.mark.parametrize(
+    ("failure", "cost"),
+    [
+        (TimeoutError("read timed out"), None),  # may be billed: keep reservation
+        (direct.AnthropicHTTPError(529, {"error": {"type": "overloaded"}}), "0.0002"),
+    ],
+)
+def test_a_call_lost_in_transport_reports_no_actual_cost(
+    tmp_path, monkeypatch, failure, cost
+):
+    first = {
+        **_write(1, "x = 1\n"),
+        "usage": {"input_tokens": 100, "output_tokens": 10},
+    }
+    code, result, _ = _run_executor(tmp_path, monkeypatch, [first, failure], [])
+    assert code == 1
+    # 100 * $1 + 10 * $5 per million = 0.00015, rounded up
+    assert result["total_cost_usd"] == cost
+
+
+def test_a_tool_call_cut_off_at_the_output_limit_is_not_run(
+    tmp_path, monkeypatch, capsys
+):
+    """#1863: truncated write_file calls arrived without their content."""
+    truncated = {
+        "stop_reason": "max_tokens",
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "ok",
+                "name": "list_files",
+                "input": {"pattern": "*.py"},
+            },
+            {
+                "type": "tool_use",
+                "id": "cut",
+                "name": "write_file",
+                "input": {"path": "app/a.py"},
+            },
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    replies = [truncated, _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    results = {r["tool_use_id"]: r["content"] for r in sent[1][-1]["content"][:-1]}
+    assert results["cut"].startswith("ERROR: your reply reached the")
+    assert "output limit" in results["cut"]
+    assert not results["ok"].startswith("ERROR")  # complete calls still run
