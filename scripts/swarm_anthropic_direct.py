@@ -377,7 +377,11 @@ def _lint_problems() -> str:
 
 
 def _finish_problems() -> str:
-    return "\n".join(p for p in (_whitespace_problems(), _lint_problems()) if p)
+    sections = (
+        ("git diff --check", _whitespace_problems()),
+        ("ruff check", _lint_problems()),
+    )
+    return "\n".join(f"[{name}]\n{found}" for name, found in sections if found)
 
 
 def _safe_target(raw: str | None) -> str:

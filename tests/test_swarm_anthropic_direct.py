@@ -1292,3 +1292,15 @@ def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
     assert "F401" in direct._lint_problems()
     direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})
     assert direct._lint_problems() == ""
+
+
+def test_finish_problems_labels_each_report(monkeypatch):
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "a.py:1: trailing")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "a.py:1:8: F401")
+    assert direct._finish_problems() == (
+        "[git diff --check]\na.py:1: trailing\n[ruff check]\na.py:1:8: F401"
+    )
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    assert direct._finish_problems() == "[ruff check]\na.py:1:8: F401"
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "")
+    assert direct._finish_problems() == ""
