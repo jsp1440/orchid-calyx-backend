@@ -78,6 +78,61 @@ class IntakeTask(BaseModel):
     rationale: Optional[str] = None
 
 
+class HumanObservationRequest(BaseModel):
+    """Ingest a human observation of a biological relationship or event.
+    
+    Human observations provide local, direct evidence of interactions, behaviors,
+    and relationships not captured in aggregated occurrence datasets or literature.
+    This evidence class supports gap-filling in reasoning about species behaviors
+    and relationships.
+    """
+    subject: str = Field(
+        min_length=1,
+        max_length=500,
+        description="The organism or entity being observed (e.g., species name, individual, population)"
+    )
+    predicate: str = Field(
+        min_length=1,
+        max_length=200,
+        description="The relationship or event (e.g., 'pollinated_by', 'feeding_on', 'nesting_in')"
+    )
+    object: str = Field(
+        min_length=1,
+        max_length=500,
+        description="The target of the observation (e.g., pollinator species, food source)"
+    )
+    observation_date: Optional[str] = Field(
+        default=None,
+        max_length=100,
+        description="Date or date range of the observation (e.g., '2024-06-15' or 'June 2024')"
+    )
+    location: Optional[str] = Field(
+        default=None,
+        max_length=1000,
+        description="Geographic location or habitat where observation was made (no precise coordinates)"
+    )
+    observer_name: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Name of the person who made the observation"
+    )
+    observation_notes: Optional[str] = Field(
+        default=None,
+        max_length=5000,
+        description="Detailed notes about the observation, context, and any notable details"
+    )
+    confidence: Optional[str] = Field(
+        default="unspecified",
+        max_length=50,
+        description="Confidence level in the observation (e.g., 'certain', 'probable', 'possible')"
+    )
+    imported_by: Optional[str] = Field(
+        default=None,
+        max_length=200,
+        description="Source or system that imported this observation"
+    )
+
+
 class ExtractionResult(BaseModel):
     entities: list[IntakeEntity]
     relationships: list[IntakeRelationship]
