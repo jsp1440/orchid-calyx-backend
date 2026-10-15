@@ -329,23 +329,41 @@ _MEDIA = _verified(
 # adapter contract, but no current-main evidence establishes a safe publication
 # projection/taxon crosswalk. Register them explicitly, disabled, until verified.
 _GEOGRAPHY = _blocked("geography", "geography_unverified_v1", "oc_geo.taxon_places")
-# These two stay disabled, but the reason is now measured rather than assumed.
-# A read-only catalog probe against production (recorded under
-# docs/evidence/audit-measurement-002/) confirms neither relation exists. That is
-# a stronger statement than "unverified", and it points at different work: the
-# contract needs a source, not a verification pass.
-_HABITAT = _blocked(
-    "habitat",
-    "habitat_unverified_v1",
-    "oc_habitat.taxon_habitats",
-    reason=(
-        "oc_habitat.taxon_habitats does not exist in production; confirmed by "
-        "read-only catalog probe, not merely unverified. public.oc_species_habitat_claims "
-        "does exist with 695 rows whose taxonomy_id resolves entirely into "
-        "public.orchid_taxonomy, and is a candidate replacement source -- but "
-        "adopting it is a contract decision for the owner, so this domain stays "
-        "disabled fail-closed rather than being silently repointed."
+
+_HABITAT = _verified(
+    domain="habitat",
+    query_id="habitat_species_claims_v1",
+    expected_tables=("public.oc_species_habitat_claims", "oc_graph.kg_nodes"),
+    taxon_mapping="direct",
+    optional_columns=(
+        "habitat_class", "habitat_text", "elevation_m_min", "elevation_m_max",
+        "climate_zone", "substrate", "canopy_cover", "moisture_regime",
+        "observed_inferred_heuristic",
     ),
+    provenance_columns=(
+        "source_type", "source_table", "citation_url", "citation_text",
+        "created_at", "updated_at",
+    ),
+    quality_columns=("confidence", "needs_review", "claim_status"),
+    notes=(
+        "The declared source table oc_habitat.taxon_habitats does not exist in "
+        "production (confirmed by read-only catalog probe). public.oc_species_habitat_claims "
+        "is the authoritative habitat claims repository, with 695 rows whose taxonomy_id "
+        "resolves entirely into public.orchid_taxonomy.id (655 distinct taxa). "
+        "Provenance and citation metadata are carried; quality flags support curator review."
+    ),
+    sql="""
+        select h.claim_id as source_pk, h.taxonomy_id as taxon_pk,
+               h.habitat_class, h.habitat_text, h.elevation_m_min, h.elevation_m_max,
+               h.climate_zone, h.substrate, h.canopy_cover, h.moisture_regime,
+               h.observed_inferred_heuristic, h.confidence, h.needs_review,
+               h.claim_status, h.source_type, h.source_table, h.citation_url,
+               h.citation_text, h.created_at, h.updated_at
+        from public.oc_species_habitat_claims h
+        where h.taxonomy_id is not null
+          and exists (select 1 from oc_graph.kg_nodes k
+                      where k.node_type='taxon' and k.source_pk=h.taxonomy_id::text)
+    """,
 )
 _ELEVATION = _blocked(
     "elevation",
