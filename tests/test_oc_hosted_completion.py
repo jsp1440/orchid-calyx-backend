@@ -1074,3 +1074,32 @@ def test_non_text_checker_output_fails_closed_with_a_named_reason(text):
     value["content"][0]["text"] = text
     with pytest.raises(ValueError, match="^checker_output_invalid$"):
         hosted.parse_review(value)
+
+
+def test_a_fresh_owner_authorization_grants_exactly_one_new_checker_call(material):
+    """#1843: the first authorization's one checker call was spent on a parse
+    failure. A new owner record grants one new call; the old attempt stays."""
+    grant = material["grant"]
+    spent = {"body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": 6183992365})}
+    assert hosted.checker_attempt_reserved({**grant, "comment_id": 6183992365}, [spent])
+    assert not hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent]
+    )
+    again = {"body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": 7000000000})}
+    assert hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent, again]
+    )
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!-- OC-HOSTED-CHECKER-ATTEMPT-V1\nnot json\n-->",
+        hosted.tagged(hosted.ATTEMPT_TAG, {"run": 1001}),
+        hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": None}),
+    ],
+)
+def test_an_unattributable_attempt_record_counts_against_every_authorization(
+    material, body
+):
+    assert hosted.checker_attempt_reserved(material["grant"], [{"body": body}])

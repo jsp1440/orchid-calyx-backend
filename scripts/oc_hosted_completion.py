@@ -203,6 +203,28 @@ def authorization(issue, comments, repository, now=None):
     return {**grant, "comment_id": record["id"], "digest": digest(grant)}
 
 
+def checker_attempt_reserved(grant, comments):
+    """Whether this owner authorization has already spent its checker call.
+
+    ``checker_calls`` is 1 per authorization record, so each attempt record
+    names the authorization it was reserved under. A fresh owner record (a new
+    comment, after the old one is withdrawn) grants exactly one new call; the
+    old attempt stays on the issue as evidence. An attempt record that cannot
+    be attributed to a different authorization counts against this one.
+    """
+    for comment_row in comments:
+        body = comment_row.get("body") or ""
+        if ATTEMPT_TAG not in body:
+            continue
+        try:
+            bound = parse_tag(body, ATTEMPT_TAG).get("authorization")
+        except (ValueError, AttributeError):
+            return True
+        if bound is None or bound == grant["comment_id"]:
+            return True
+    return False
+
+
 def validate_material(context, issue, pr, lease, files, grant, dependency_issues):
     labels = {label["name"] for label in issue["labels"]}
     require(
@@ -496,7 +518,7 @@ def prepare(directory):
                 raise
             time.sleep(15)
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     intent = WorkIntent(
@@ -544,7 +566,7 @@ def reserve(directory):
     material = inspect(context)
     require(material["grant"] == state["grant"], "authorization_changed")
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     from decimal import Decimal
