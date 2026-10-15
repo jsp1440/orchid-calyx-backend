@@ -621,17 +621,21 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      - name: Record conservative provider cost reservation
+      - name: Record provider cost reservation and actual cost
         if: always() && steps.governor.outputs.authorized == 'true' && steps.claude.outcome != 'skipped'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The executor prices its own token usage; without it the ledger
+          # records actual_usd=unknown and the budget counts the reservation.
+          actual=$(jq -r '.total_cost_usd // empty' "$RUNNER_TEMP/claude-direct-execution.json" 2>/dev/null || true)
           python3 scripts/swarm_governor_github_ledger.py \
             --append \
             --ledger-issue 1330 \
             --issue-number "$ISSUE_NUMBER" \
             --provider anthropic \
-            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
+            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}" \
+            --actual-usd "$actual"
 
       - name: Classify result, dispatch validation, release slot
         id: settlement

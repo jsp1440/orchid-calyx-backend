@@ -12,8 +12,38 @@ from decimal import Decimal, InvalidOperation
 
 RECEIPT_RE = re.compile(
     r"\[OC-GOVERNOR-COST\].*?reserved_usd=(?P<reserved>\d+(?:\.\d+)?)"
+    r"(?: actual_usd=(?P<actual>\S+))?"
     r".*?date=(?P<date>\d{4}-\d{2}-\d{2}).*?month=(?P<month>\d{4}-\d{2})"
 )
+USD_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _usd(value: str | None) -> Decimal | None:
+    """A plain non-negative decimal amount, or None for anything else."""
+    if not value or not USD_RE.fullmatch(value):
+        return None
+    try:
+        return Decimal(value)
+    except InvalidOperation:
+        return None
+
+
+def receipt_spend(line: str) -> tuple[Decimal, str, str] | None:
+    """Spend counted for one receipt: the recorded actual cost when known.
+
+    The reservation is the pre-run estimate. When the run recorded its real
+    provider cost, that is what the budget counts; otherwise (provider failure,
+    unpriced model, older receipts) the reservation stands.
+    """
+    match = RECEIPT_RE.search(line)
+    if not match:
+        return None
+    value = _usd(match.group("actual"))
+    if value is None:
+        value = _usd(match.group("reserved"))
+    if value is None:
+        return None
+    return value, match.group("date"), match.group("month")
 
 
 def _gh(*args: str) -> str:
@@ -43,16 +73,13 @@ def snapshot(repo: str, ledger_issue: int) -> tuple[Decimal, Decimal]:
     daily = Decimal(0)
     monthly = Decimal(0)
     for line in raw.splitlines():
-        match = RECEIPT_RE.search(line)
-        if not match:
+        spend = receipt_spend(line)
+        if spend is None:
             continue
-        try:
-            value = Decimal(match.group("reserved"))
-        except InvalidOperation:
-            continue
-        if match.group("month") == month:
+        value, date, receipt_month = spend
+        if receipt_month == month:
             monthly += value
-        if match.group("date") == today:
+        if date == today:
             daily += value
     return daily, monthly
 
@@ -71,7 +98,7 @@ def append_receipt(
     body = (
         "[OC-GOVERNOR-COST] "
         f"run_id={run_id} issue={issue_number} provider={provider} "
-        f"reserved_usd={reserved_usd} actual_usd={actual_usd or 'unknown'} "
+        f"reserved_usd={reserved_usd} actual_usd={_usd(actual_usd) or 'unknown'} "
         f"date={now:%Y-%m-%d} month={now:%Y-%m}"
     )
     _gh(
