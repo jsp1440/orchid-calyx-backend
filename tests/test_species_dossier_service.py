@@ -95,3 +95,34 @@ def test_unresolved_name_does_not_guess():
     )
     assert result.status in {"invalid", "unresolved"}
     assert result.taxon_id is None
+
+
+def test_normalizes_var_uppercase():
+    assert normalize_scientific_name("Cattleya labiata VAR. alba") == "Cattleya labiata var. alba"
+
+
+def test_normalizes_var_titlecase():
+    assert normalize_scientific_name("Cattleya labiata Var. alba") == "Cattleya labiata var. alba"
+
+
+def test_normalizes_subsp_uppercase():
+    assert normalize_scientific_name("cattleya labiata SUBSP. alba") == "Cattleya labiata subsp. alba"
+
+
+def test_normalizes_subsp_titlecase():
+    assert normalize_scientific_name("cattleya labiata Subsp. alba") == "Cattleya labiata subsp. alba"
+
+
+def test_normalizes_forma_uppercase():
+    assert normalize_scientific_name("Cattleya labiata F. alba") == "Cattleya labiata f. alba"
+
+
+def test_normalizes_forma_titlecase():
+    assert normalize_scientific_name("Cattleya labiata F. alba") == "Cattleya labiata f. alba"
+
+
+def test_extracts_var_from_url_slug_with_titlecase():
+    assert (
+        extract_species_name_from_url("https://partner.example/species/Cattleya_labiata_Var._alba")
+        == "Cattleya labiata var. alba"
+    )
