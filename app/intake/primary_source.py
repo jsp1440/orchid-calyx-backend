@@ -7,12 +7,12 @@ publishes to canonical stores, and never performs external contact.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from hashlib import sha256
-from html.parser import HTMLParser
 import ipaddress
 import re
 import socket
+from dataclasses import dataclass
+from hashlib import sha256
+from html.parser import HTMLParser
 from typing import Any, Protocol
 from urllib.parse import urljoin, urlparse
 
@@ -21,7 +21,7 @@ import requests
 VERIFIER_VERSION = "calyx-primary-source-v1"
 MAX_BYTES = 2_000_000
 MAX_REDIRECTS = 5
-DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", re.I)
+DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+\b", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -128,7 +128,11 @@ def _authority_tier(host: str | None) -> str:
         return "AUTHORITATIVE"
     if lower.endswith(".edu") or lower.endswith(".ac.uk") or lower in {"doi.org", "dx.doi.org"}:
         return "PRIMARY"
-    if any(marker in lower for marker in ("springer", "wiley", "elsevier", "oup.com", "cambridge.org", "nature.com", "science.org")):
+    # Check for publisher domains by exact match or subdomain (ends with ".domain")
+    primary_domains = ("oup.com", "cambridge.org", "nature.com", "science.org")
+    if any(lower == domain or lower.endswith("." + domain) for domain in primary_domains):
+        return "PRIMARY"
+    if any(marker in lower for marker in ("springer", "wiley", "elsevier")):
         return "PRIMARY"
     return "UNKNOWN"
 
