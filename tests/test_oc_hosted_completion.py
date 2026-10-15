@@ -421,6 +421,40 @@ def test_ambiguous_checker_result_stays_closed(change):
         hosted.parse_review(value)
 
 
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda body: f"```json\n{body}\n```",
+        lambda body: f"```\n{body}\n```",
+        lambda body: f"  ```json\n{body}\n```\n",
+    ],
+)
+def test_a_single_markdown_fence_around_the_json_review_is_accepted(wrap):
+    """The first live checker answer (#1843) was valid JSON inside a fence."""
+    value = response(review())
+    value["content"][0]["text"] = wrap(value["content"][0]["text"])
+    assert hosted.parse_review(value) == review()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Here is my review: {}",
+        "```json\n{}\n```\nI am confident.",
+        "not json",
+        "[]",
+        '"pass"',
+        "```python\n{}\n```",
+        "",
+    ],
+)
+def test_prose_or_non_object_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_"):
+        hosted.parse_review(value)
+
+
 def test_existing_factory_admits_independent_exact_head_pass(material):
     state, checked, assignment, evidence = factory_state(material)
     decision = hosted.decide(state, material, checked, assignment, evidence)
@@ -1032,3 +1066,57 @@ def test_non_canonical_or_unfinished_runs_are_never_trusted_workers(run):
 def test_a_schedule_run_needs_a_known_default_branch():
     run = _worker(event="schedule", head_branch="main")
     assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "") is False
+
+
+@pytest.mark.parametrize("text", [None, 7, ["{}"], {"verdict": "pass"}])
+def test_non_text_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_invalid$"):
+        hosted.parse_review(value)
+
+
+def _attempt(authorization, **overrides):
+    row = {
+        "user": {"login": "github-actions[bot]"},
+        "created_at": "2026-10-15T08:01:33Z",
+        "updated_at": "2026-10-15T08:01:33Z",
+        "body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": authorization}),
+    }
+    row.update(overrides)
+    return row
+
+
+def test_a_fresh_owner_authorization_grants_exactly_one_new_checker_call(material):
+    """#1843: the first authorization's one checker call was spent on a parse
+    failure. A new owner record grants one new call; the old attempt stays."""
+    grant = material["grant"]
+    spent = _attempt(6183992365)
+    assert hosted.checker_attempt_reserved({**grant, "comment_id": 6183992365}, [spent])
+    assert not hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent]
+    )
+    again = _attempt(7000000000)
+    assert hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent, again]
+    )
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _attempt(None, body="<!-- OC-HOSTED-CHECKER-ATTEMPT-V1\nnot json\n-->"),
+        _attempt(None, body=hosted.tagged(hosted.ATTEMPT_TAG, {"run": 1001})),
+        _attempt(None),
+        # Not written by the workflow bot, or edited after it was written.
+        _attempt(6183992365, user={"login": "jsp1440"}),
+        _attempt(6183992365, updated_at="2026-10-15T09:00:00Z"),
+        _attempt(6183992365, created_at=None),
+    ],
+)
+def test_an_unattributable_attempt_record_counts_against_every_authorization(
+    material, row
+):
+    assert hosted.checker_attempt_reserved(
+        {**material["grant"], "comment_id": 7000000000}, [row]
+    )
