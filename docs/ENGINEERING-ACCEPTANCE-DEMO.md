@@ -1,105 +1,93 @@
-# Governed engineering demonstration: ten independently validated cycles
+# Governed engineering cycle: first verified cycle, then ten
 
-Status: **prepared, not run.** Every step that spends money, changes repository variables or authorizes work is marked **OWNER**. Claude does none of those steps.
+Status: **prepared, not run.** Every step that spends money, changes repository variables, or authorizes work is the owner's.
 
-## What counts
+## What counts as one engineering cycle
 
-A cycle counts only if all five of these are true. `scripts/oc_engineering_acceptance_report.py` checks each one against GitHub records the existing engine already writes:
+`scripts/oc_engineering_acceptance_report.py` judges each issue from the GitHub records the existing engine writes. A cycle passes only when all five criteria hold, each bound to the **same attempt**.
 
-| # | Requirement | Record checked |
+| # | Requirement | Record checked, and what binds it to the attempt |
 |---|---|---|
-| 1 | Governed task acquisition | `[OC-SWARM-V4] Dependency/resource lease claimed` (`oc.swarm-claim.v1`), posted by `github-actions[bot]` |
-| 2 | Authorized dispatch to a real executor | `[OC-AUTO] Completion worker started … model=…` after that claim, with no `Provider admission denied` after it |
-| 3 | Engineering work performed | The maker PR named by the settlement, at the settled head, with a non-empty diff |
-| 4 | Independent validation at the exact head | `orchid-autonomous-validation` succeeded at that head SHA, and an `OC-CHECKER-EVIDENCE-V1` record shows PASS for that head, with required checks passed and `checker_id` a different actor from `maker_id` (`same_actor`) |
-| 5 | Durable completion receipt | `OC-HOSTED-SETTLEMENT-V1` from the bot with a verified merge SHA, and the issue closed `completed` with label `oc-done` |
+| 1 | Governed acquisition | A bot `oc.swarm-claim.v1` lease claim. Its `lease_id` must equal `repo:worker_run:worker_attempt:issue` from the settlement, and the claim must come before the settlement. |
+| 2 | Authorized dispatch to a real model | A bot `[OC-AUTO] Completion worker started … model=…` comment after that claim, naming the settled worker run. No admission denial may name that lease. |
+| 3 | Engineering work | The bot's own draft PR: branch `claude-direct/issue-<n>-<run>`, body `OC-AUTO-ISSUE: #<n>`, the settled head, a non-empty diff. |
+| 4 | Exact-commit tests and an independent checker | **Tests:** the `orchid-autonomous-validation` run the settlement relied on is green. That is the bot `workflow_dispatch` run on the PR branch at the head, started after the worker, with the highest run id. **Checker:** a PASS `OC-CHECKER-EVIDENCE-V1` record at that head, with `maker_id = anthropic:maker:<worker_run>:<n>` and checker `anthropic:checker:<run>:<n>`. |
+| 5 | Verified merge and durable receipt | Exactly one bot `OC-HOSTED-SETTLEMENT-V1` receipt. GitHub must confirm all of the following: the PR is merged into `oc-autonomous-integration`; its `merge_commit_sha` equals the receipt's; the merge commit's two parents include the head; and `compare` shows the merge on the branch. The issue must be closed `completed` with `oc-done`. |
 
-The run is **certified** only when there are ten consecutive passing cycles, ordered by settlement time, and at least one of them recovered an expired lease (`oc.swarm-lease-recovery.v1`). Each zero-execution outcome must carry the engine's own reason.
-
-These never count as a cycle:
+These never count:
 - a heartbeat;
-- provider-free validation (for example #1782);
-- a denied admission (for example #1401, with 126 denied or backoff events, every one with a reason);
-- a record written by a person.
+- a denied admission;
+- a provider-free or acquisition-lane claim;
+- a mock;
+- a record written by a person (every agent shares the owner's identity).
 
-A record written by a person matters because every agent shares the owner's GitHub identity.
+Claims that never reached a provider are listed as zero-execution, with the engine's reason. A provider attempt that ran and never settled is a **failure**. A later re-claim cannot hide it.
 
-## Canonical path (exists on `main`; no new engine)
+- `--window-start <UTC>`: GitHub lists every issue claimed since then.
+- `--first-cycle`: exits 0 when the latest finished cycle passed. It never certifies.
+- Certification (ten consecutive cycles plus one lease recovery) requires window mode. A caller-chosen `--issues` list never certifies.
 
-The flow runs left to right. Each stage is a workflow or script that already exists on `main`:
+## Canonical path (on `main`; no new engine)
 
-1. **Lease.** `orchid-swarm-controller.yml` runs every 5 minutes, under one concurrency group, and claims a lease on an issue.
-2. **Execute.** `orchid-completion-lane.yml` runs with global paid concurrency of 1. It calls `swarm_governor_precheck.py` with `OC_GOVERNOR_PROVIDER: anthropic`, then `swarm_anthropic_direct.py`, which uses the model from `oc_model_router.py`.
-3. **Draft PR.** The maker opens a draft PR into `oc-autonomous-integration`.
-4. **Validate.** `orchid-autonomous-validation.yml` runs at that head.
-5. **Check and settle.** `oc-convergence-supervisor.yml`, through `oc_hosted_completion.py`:
-   - the checker runs on Claude Haiku as a different identity;
-   - the factory gate decides;
-   - the merge is verified;
-   - it posts `OC-HOSTED-SETTLEMENT-V1`.
-6. **Recover.** `oc_swarm_lease_reconcile.py` releases dead leases based on run evidence.
+1. The controller (`orchid-swarm-controller.yml`, every 5 minutes) runs coding admission (`swarm_governor_precheck.py`), then the planner, then the lease claim.
+2. The completion lane (`orchid-completion-lane.yml`, one global paid slot) routes the work (`oc_model_router.py`), runs the per-run governor precheck, then `swarm_anthropic_direct.py`, and opens a draft PR into `oc-autonomous-integration`.
+3. `orchid-autonomous-validation.yml` runs at the head.
+4. `oc-convergence-supervisor.yml` (`oc_hosted_completion.py`) runs:
+   - the owner's factory authorization;
+   - one checker call (claude-haiku-4-5, a separate identity);
+   - the factory gate;
+   - `PUT pulls/{pr}/merge` pinned to the head, read back;
+   - the settlement receipt and `oc-done`.
 
-The Render worker (`orchid-calyx-autonomy`) is a separate, read-only program loop. It replenishes work through proposals (#1840) and does not dispatch engineering work. The `calyx-program-autonomy.yml` cron is gated off by `CALYX_PROGRAM_AUTONOMY_ENABLED` (latest run 38662471638 skipped). So exactly one scheduler dispatches engineering work: the swarm controller.
+The Gemini and OpenAI fallbacks are disabled in the lane (`if: ${{ false }}`). The `calyx-program-autonomy.yml` cron is gated off. The Render worker is a read-only program loop. The ACS Claude adapter is not on this path.
 
-## Preconditions
+## The first task
 
-1. **OWNER: merge #1787 into `main`.** On `main`, a paid run with an empty provider skips the allowlist (`swarm_governor_precheck.py:140`).
-2. **OWNER: fast-forward `oc-autonomous-integration` to `main`.** The completion lane checks out that branch and opens PRs against it. The hosted checker requires it, and it is 88 commits behind `main` (an ancestor, so a fast-forward is enough and no force-push is needed):
-   ```
-   git fetch origin && git push origin origin/main:refs/heads/oc-autonomous-integration
-   ```
-3. **OWNER: bound the controller.** Set the variable `OC_SWARM_WORKER_SLOTS=1` (added in this PR). Scheduled waves then lease one lane instead of eight, so lanes aren't queued and then cancelled under the shared paid concurrency group.
-4. **OWNER: limit the queue to the demonstration.** Only the ten demonstration issues may carry `oc-queued`, `oc-repair` or `oc-runtime-backoff`. Today these are open:
-   - `oc-queued`: #1742;
-   - `oc-repair`: #1730, #1729, #1725, #1724, #1722, #1721, #1717 and #1396.
+**"Bottleneck report must not assert an unobserved 'next bottleneck'"**
 
-   Park them (for example with `oc-blocked`) for the window, or accept that the budget below also covers them.
-5. **OWNER: create ten small issues.** Each should be a low-risk, repository-local change with one obvious test, for example a narrow validation or a missing unit test. Each gets its own `OC-HOSTED-FACTORY-AUTHORIZATION-V1` comment, written by the owner and never edited, containing:
-   ```
-   <!-- OC-HOSTED-FACTORY-AUTHORIZATION-V1
-   {"repository":"jsp1440/orchid-calyx-backend","issue":<n>,"issue_material":"<digest of title+body>",
-    "target":"oc-autonomous-integration","checker_calls":1,"risk":"low",
-    "expires_at":"<UTC, about 48 h out>","allowed_paths":["<1-12 repo paths>"]}
-   -->
-   ```
-   `issue_material` is `oc_hosted_completion.issue_material(issue)`. Claude can compute it for each issue. Only the owner may post the record: `authorization()` refuses any author who isn't the owner, and any edited comment.
-6. **OWNER: set the spend controls.** These are repository variables:
+`runtime/bottlenecks.py` (served through `CalyxHeartbeat`) always ends with "Next bottleneck is live CDS integration." That is a claim nobody observed.
 
-   | Variable | Value for the window |
-   |---|---|
-   | `OC_GOVERNOR_PROVIDER_ALLOWLIST` | `anthropic` |
-   | `OC_GOVERNOR_PER_RUN_BUDGET_USD` | for example `2.00` |
-   | `OC_GOVERNOR_DAILY_BUDGET_USD` | for example `25.00` |
-   | `OC_GOVERNOR_MONTHLY_BUDGET_USD` | for example `40.00` |
-   | `OC_GOVERNOR_MAX_RETRIES` | `1` |
-   | `OC_GOVERNOR_EMERGENCY_KILL_SWITCH` | empty |
+- **Allowed paths:** `runtime/bottlenecks.py` and a new `tests/test_runtime_bottlenecks.py`.
+- **Labels:** `oc-queued`, `oc-model-cheap`.
+- **Capability:** `OC-SWARM-CAPABILITY: open-ended-code-authoring`.
+- **Rehearsal results (local):**
+  - The real planner (`oc_swarm_controller.py --worker-slots 1 --coding-executor`) selects it for the provider lane (`provider_launch_count: 1`).
+  - The router gives tier `cheap`, `claude-haiku-4-5`, 24 turns.
+  - The engine's `authorization()` accepts the record shape and refuses one by a bot or an edited one.
+  - A throwaway reference solution passes the specified tests, so the spec is solvable within its two files.
 
-   The secret `ANTHROPIC_API_KEY` must belong to an account that has an organisation-level spend limit.
+## Spend bound: what each limit actually controls
 
-## Activation (OWNER, explicit)
+| Limit | Where enforced | What it bounds |
+|---|---|---|
+| Model and tier | `oc-model-cheap` label, plus `OC_CLAUDE_MAXIMUM_TIER=cheap` (passed to the router by this PR) | Every attempt, **including a repair**, uses claude-haiku-4-5 ($1 input / $5 output per million tokens, 200K context). Without the cap, a repair escalates to claude-sonnet-5 (1M context). |
+| Turns and output | `swarm_anthropic_direct.py` (hard-coded) | At most 24 calls, each with `max_tokens` ≤ 3072 and a 120 s timeout. The lane job times out at 70 minutes. |
+| Attempts | `OC_GOVERNOR_MAX_RETRIES=1` | The first attempt plus one repair. **0 is not usable:** the controller's coding admission hardcodes `retry_count=1`, so 0 would refuse all coding work. |
+| Checker | `oc_hosted_completion.py` | One call (`checker_calls: 1`), a prompt of at most 48 KB, `max_tokens` 1800. |
+| Repository budgets | `OC_GOVERNOR_PER_RUN/DAILY/MONTHLY_BUDGET_USD` against the issue-#1330 ledger | **Admission only, on reservation estimates** (cheap $0.50 per maker run, checker $0.08). Controller admission reserves the highest tier estimate ($2.00), so the per-run budget must be ≥ $2.00. October already has **$10.00** reserved. These are **not** a billing cap. |
+| Hard dollar cap | Anthropic Console: the workspace spend limit for the key in `ANTHROPIC_API_KEY` | The only limit that stops provider billing. It cannot be verified from this repository. |
 
-Set `OC_GOVERNOR_PAID_EXECUTION_ENABLED=true` and `NO_API_MODE=false`. The 5-minute schedule then picks up the queue. No other trigger is needed.
+**Worst case by construction** for one cycle with these settings:
+- per maker attempt: 24 × 200K input × $1/M ≈ $4.80, plus 24 × 3,072 output × $5/M ≈ $0.37, which is about $5.17;
+- two attempts: about $10.34;
+- checker: under $0.05;
+- total ceiling: **about $10.40**.
 
-**Kill switch:** set `NO_API_MODE=true`, or set `OC_GOVERNOR_EMERGENCY_KILL_SWITCH=true`. Either one blocks the next precheck. A run already in progress finishes its current step.
+The expected cost is far lower, because a two-file change uses a small fraction of the context.
 
-**Timeout:** each lane has its own `timeout-minutes`, and a lease whose run is dead is recovered by reconciliation.
+## Window, kill switch, rollback
 
-## Controlled recovery (part of the ten)
-
-Once one demonstration lane is running, cancel that workflow run from the Actions UI. The next controller wave records `oc.swarm-lease-recovery.v1` and requeues the issue. When that issue later completes, it is the recovered cycle.
+- **Window:** opens when paid execution is enabled. Closes at the first settlement, at the first failed attempt that is not a repair, or after 3 hours, whichever comes first.
+- **Kill switch:** `NO_API_MODE=true` blocks the next precheck. A call already in flight finishes its current step (at most 120 s per call).
+- **Rollback:** restore `NO_API_MODE=true` and `OC_GOVERNOR_PAID_EXECUTION_ENABLED=false`, and put `oc-queued` back on #1742.
+- **Recovery:** the merge into `oc-autonomous-integration` is a normal merge commit. It can be reverted on that branch, and `main` is never touched.
 
 ## Evidence
 
-After the window closes:
-
 ```
 python3 scripts/oc_engineering_acceptance_report.py \
-  --repository jsp1440/orchid-calyx-backend --issues <the ten numbers> \
-  --output acceptance-report.json
+  --repository jsp1440/orchid-calyx-backend \
+  --window-start <window open, UTC> --first-cycle --output acceptance-report.json
 ```
 
-- The command exits 0 only when the run is certified.
-- Keep `acceptance-report.json` in the demonstration PR and as a workflow artifact. Each cycle links its claim, worker run, PR, validation run, checker record and settlement receipt.
-- Then return to `NO_API_MODE=true` and `OC_GOVERNOR_PAID_EXECUTION_ENABLED=false`.
-
-Until that report says `"certified": true`, unattended engineering execution is **not** demonstrated.
+The report links the claim, worker run, PR head, validation run, checker record and settlement receipt for the cycle.

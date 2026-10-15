@@ -47,6 +47,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.calyx_orchestrator.checker_dispatch import parse_evidence
 from app.calyx_orchestrator.factory_policy import CheckerVerdict
 from app.calyx_orchestrator.head_bound_integration import same_actor
+from scripts.oc_swarm_settlement import WORKER_CLAIM_MAX_AGE_SECONDS
 
 SCHEMA = "oc.engineering-acceptance-report.v1"
 TARGET = 10
@@ -436,7 +437,8 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
             and (_json_after(SETTLED_RESULT, c.get("body", "")) or {}).get(
                 "lease_comment_id"
             )
-            in (None, claim_comment.get("id"))
+            # A denial without a lease id cannot hide an executed attempt.
+            == claim_comment.get("id")
             for c in segment
         )
         executed.append(started and not refused)
@@ -476,6 +478,7 @@ def evaluate(
     target: int = TARGET,
     *,
     window_complete: bool = False,
+    now: datetime | None = None,
 ) -> dict[str, Any]:
     """Judge every cycle, then the most recent run of consecutive passes.
 
@@ -483,6 +486,7 @@ def evaluate(
     every claimed issue in a window GitHub enumerated (``--window-start``), not
     a list a caller chose, so failures cannot be left out of "consecutive".
     """
+    now = now or datetime.now(UTC)
     judged = [evaluate_cycle(r) for r in records]
     zero_issues = [c for c in judged if c["status"] == "zero_execution"]
     cycles = [c for c in judged if c["status"] != "zero_execution"]
@@ -525,7 +529,17 @@ def evaluate(
         if cycle["status"] == "in_progress" and streak == 0 and stop is None:
             continue
         if cycle["status"] == "in_progress":
-            stop = f"issue {cycle['issue']}: STALE_IN_PROGRESS"
+            # Workers run in parallel: a cycle claimed before a newer settlement
+            # may still be running. It blocks certification either way; it is
+            # "stale" only once its claim is older than a worker lease can be.
+            claimed = cycle["evidence"].get("claimed_at")
+            age = (now - _utc(claimed)).total_seconds() if claimed else None
+            label = (
+                "STALE_IN_PROGRESS"
+                if age is None or age >= WORKER_CLAIM_MAX_AGE_SECONDS
+                else "PENDING_IN_PROGRESS"
+            )
+            stop = f"issue {cycle['issue']}: {label}"
             break
         if not cycle["passed"]:
             stop = f"issue {cycle['issue']}: {', '.join(cycle['failures'])}"

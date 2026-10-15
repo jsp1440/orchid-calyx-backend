@@ -902,4 +902,32 @@ def test_an_in_progress_cycle_older_than_a_finished_one_breaks_the_streak():
     records[4] = stuck
     report = _evaluate(records)
     assert report["certified"] is False and report["consecutive_completed"] == 5
-    assert "STALE_IN_PROGRESS" in report["reason"]
+    assert "_IN_PROGRESS" in report["reason"]
+
+
+def test_a_parallel_cycle_behind_a_newer_settlement_is_pending_until_its_lease_could_expire():
+    from datetime import UTC, datetime
+
+    running = _record(5, settle=False)  # claimed 05:01, still open in oc-validating
+    records = _ten()
+    records[4] = running
+    soon = _evaluate(records, now=datetime(2026, 10, 16, 6, 0, tzinfo=UTC))
+    late = _evaluate(records, now=datetime(2026, 10, 16, 9, 0, tzinfo=UTC))
+    assert "PENDING_IN_PROGRESS" in soon["reason"] and soon["certified"] is False
+    assert "STALE_IN_PROGRESS" in late["reason"] and late["certified"] is False
+
+
+def test_a_denial_without_a_lease_id_does_not_hide_an_executed_attempt():
+    failed = _record(5, settle=False)
+    failed["issue"].update(state="open", labels=[{"name": "oc-queued"}])
+    failed["comments"].append(
+        _c(
+            40,
+            "[OC-SWARM-V4] Provider admission denied; requested lease disposition: `"
+            + json.dumps({"disposition": "queued", "message": "budget"})
+            + "`.",
+            "2026-10-16T05:01:30Z",
+        )
+    )
+    cycle = _module().evaluate_cycle(failed)
+    assert cycle["evidence"]["executed_attempts"] == 1 and cycle["status"] == "failed"
