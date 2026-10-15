@@ -151,3 +151,47 @@ def test_authenticated_route_uses_existing_source_and_intelligence_ledgers(monke
 def test_request_rejects_missing_transcript():
     with pytest.raises(ValidationError):
         JournalClubIntakeRequest(title="x", transcript="")
+
+
+def test_terms_match_whole_words_only_flora_does_not_match_lora():
+    """Verify that 'lora' term does not match within 'flora'."""
+    items = parse_journal_club_transcript(
+        title="Episode 12",
+        transcript="We surveyed the epiphytic flora of Ecuador at monthly intervals.",
+    )
+    assert items == []
+
+
+def test_terms_match_whole_words_only_lora_still_matches():
+    """Verify that 'LoRA' as a standalone word still matches FINE_TUNING."""
+    items = parse_journal_club_transcript(
+        title="Episode 13",
+        transcript="We fine-tuned with LoRA adapters.",
+    )
+    technique_keys = {item["technology_scout"]["technique"] for item in items}
+    assert "FINE_TUNING" in technique_keys
+    
+    # Verify that the exact text matched is "LoRA"
+    fine_tuning_items = [
+        item for item in items 
+        if item["technology_scout"]["technique"] == "FINE_TUNING"
+    ]
+    assert len(fine_tuning_items) > 0
+    exact_texts = {
+        span["exact_text"] 
+        for item in fine_tuning_items 
+        for span in item["technology_scout"]["evidence_spans"]
+    }
+    assert "LoRA" in exact_texts
+
+
+def test_terms_match_whole_words_only_medievals_does_not_match_evals():
+    """Verify that 'evals' term does not match within 'medievals'."""
+    items = parse_journal_club_transcript(
+        title="Episode 14",
+        transcript="We studied the medievals period in history.",
+    )
+    # Should not match EVALUATION since 'evals' is only one of its terms
+    # and 'evals' should not match within 'medievals'
+    technique_keys = {item["technology_scout"]["technique"] for item in items}
+    assert "EVALUATION" not in technique_keys
