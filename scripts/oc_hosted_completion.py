@@ -210,12 +210,21 @@ def checker_attempt_reserved(grant, comments):
     names the authorization it was reserved under. A fresh owner record (a new
     comment, after the old one is withdrawn) grants exactly one new call; the
     old attempt stays on the issue as evidence. An attempt record that cannot
-    be attributed to a different authorization counts against this one.
+    be attributed to a different authorization -- unparseable, unbound, not
+    written by the workflow bot, or edited -- counts against this one.
     """
     for comment_row in comments:
         body = comment_row.get("body") or ""
         if ATTEMPT_TAG not in body:
             continue
+        genuine = (comment_row.get("user") or {}).get(
+            "login"
+        ) == "github-actions[bot]" and (
+            comment_row.get("created_at")
+            and comment_row.get("created_at") == comment_row.get("updated_at")
+        )
+        if not genuine:
+            return True
         try:
             bound = parse_tag(body, ATTEMPT_TAG).get("authorization")
         except (ValueError, AttributeError):

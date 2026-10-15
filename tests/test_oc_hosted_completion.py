@@ -1076,30 +1076,47 @@ def test_non_text_checker_output_fails_closed_with_a_named_reason(text):
         hosted.parse_review(value)
 
 
+def _attempt(authorization, **overrides):
+    row = {
+        "user": {"login": "github-actions[bot]"},
+        "created_at": "2026-10-15T08:01:33Z",
+        "updated_at": "2026-10-15T08:01:33Z",
+        "body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": authorization}),
+    }
+    row.update(overrides)
+    return row
+
+
 def test_a_fresh_owner_authorization_grants_exactly_one_new_checker_call(material):
     """#1843: the first authorization's one checker call was spent on a parse
     failure. A new owner record grants one new call; the old attempt stays."""
     grant = material["grant"]
-    spent = {"body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": 6183992365})}
+    spent = _attempt(6183992365)
     assert hosted.checker_attempt_reserved({**grant, "comment_id": 6183992365}, [spent])
     assert not hosted.checker_attempt_reserved(
         {**grant, "comment_id": 7000000000}, [spent]
     )
-    again = {"body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": 7000000000})}
+    again = _attempt(7000000000)
     assert hosted.checker_attempt_reserved(
         {**grant, "comment_id": 7000000000}, [spent, again]
     )
 
 
 @pytest.mark.parametrize(
-    "body",
+    "row",
     [
-        "<!-- OC-HOSTED-CHECKER-ATTEMPT-V1\nnot json\n-->",
-        hosted.tagged(hosted.ATTEMPT_TAG, {"run": 1001}),
-        hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": None}),
+        _attempt(None, body="<!-- OC-HOSTED-CHECKER-ATTEMPT-V1\nnot json\n-->"),
+        _attempt(None, body=hosted.tagged(hosted.ATTEMPT_TAG, {"run": 1001})),
+        _attempt(None),
+        # Not written by the workflow bot, or edited after it was written.
+        _attempt(6183992365, user={"login": "jsp1440"}),
+        _attempt(6183992365, updated_at="2026-10-15T09:00:00Z"),
+        _attempt(6183992365, created_at=None),
     ],
 )
 def test_an_unattributable_attempt_record_counts_against_every_authorization(
-    material, body
+    material, row
 ):
-    assert hosted.checker_attempt_reserved(material["grant"], [{"body": body}])
+    assert hosted.checker_attempt_reserved(
+        {**material["grant"], "comment_id": 7000000000}, [row]
+    )
