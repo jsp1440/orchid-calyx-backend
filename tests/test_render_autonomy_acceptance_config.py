@@ -303,3 +303,33 @@ def test_production_verification_uses_only_its_own_read_only_secret():
     assert 'dsn="$PRODUCTION_DSN"' in branch
     assert "FIRST_RUN_DSN" not in branch  # never the acceptance credential
     assert "--require-loop --database autonomy_prod --production" in branch
+
+
+def test_every_brain_pin_agrees():
+    """One Brain commit everywhere: the acceptance workflow, both Blueprints, the runbooks.
+
+    A stale pin in a runbook tells the owner to "fix" a worker back onto old Brain code.
+    """
+    import re
+
+    pinned = {}
+    for path in (
+        REPO_ROOT / ".github" / "workflows" / "brain-calyx-autonomy-acceptance.yml",
+        REPO_ROOT / "deploy" / "render" / "autonomy-acceptance.blueprint.yaml",
+        REPO_ROOT / "deploy" / "render" / "autonomy-production.blueprint.yaml",
+        REPO_ROOT / "deploy" / "render" / "AUTONOMY-ACCEPTANCE.md",
+        REPO_ROOT / "deploy" / "render" / "PRODUCTION-AUTONOMY-PLAN.md",
+    ):
+        text = path.read_text(encoding="utf-8")
+        for line in text.splitlines():
+            if (
+                "OC_BRAIN_REF" in line
+                or "Blueprint's value" in line
+                or "acceptance workflow pin" in line
+            ):
+                for sha in re.findall(r"\b[0-9a-f]{40}\b", line):
+                    pinned.setdefault(sha, []).append(path.name)
+        # A pin may sit on the line after the one naming it (wrapped prose).
+        for sha in re.findall(r"`([0-9a-f]{40})`", text):
+            pinned.setdefault(sha, []).append(path.name)
+    assert len(pinned) == 1, pinned

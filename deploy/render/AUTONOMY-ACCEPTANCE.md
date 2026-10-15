@@ -129,7 +129,7 @@ No Render or Neon account API key is used, and nothing production is read or cha
 
 ### Redeploying after a code fix (same worker, same database)
 1. Render → worker → **Environment**: confirm `OC_BRAIN_REF` equals the Blueprint's value
-   (`82f3df081bf0e40476a0b35290fd8a97b70add68`). If it doesn't, edit it there.
+   (`78858693e108389d3de2e5595bead426342645a4`). If it doesn't, edit it there.
 2. Render → worker → **Manual Deploy → Deploy latest commit**. Auto-deploy stays off.
 3. The first log lines must be `{"work_items": 17, ...}` and then `{"api": "healthy", "worker": "starting"}`.
    A `CALYX_API_NOT_HEALTHY` line means the worker refused to start, which is safe; send it to Claude.
@@ -191,7 +191,7 @@ should then see (*Expect*) and how to undo it (*Undo*).
     that project → Connection details;
   - it is **not** the endpoint of any production project;
   - it ends in `/neondb`.
-- *Check:* `OC_BRAIN_REF` = `82f3df081bf0e40476a0b35290fd8a97b70add68`, and
+- *Check:* `OC_BRAIN_REF` = `78858693e108389d3de2e5595bead426342645a4`, and
   `CALYX_ACCEPTANCE_DATABASE_CONFIRMED` = `non-production`.
 - *Check:* Render → `orchid-calyx-backend` (production) → Events shows no recent deploy.
 - Verifier run 38222067445 already showed that `neondb` holds only 10 `calyx_*` tables.
