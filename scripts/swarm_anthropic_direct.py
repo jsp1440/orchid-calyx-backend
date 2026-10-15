@@ -286,6 +286,14 @@ def _parse_allowed_paths(packet: str) -> set[str] | None:
 
 
 def _tool_write_file(args: dict[str, Any]) -> str:
+    # #1862 lost five turns to a bare "KeyError: 'content'".
+    missing = [key for key in ("path", "content") if key not in args]
+    if missing:
+        raise ValueError(
+            "write_file is missing " + " and ".join(repr(k) for k in missing) + ". "
+            "Always pass path and content. For an edit, content is the replacement "
+            "text for old_text; to delete old_text, pass content as an empty string."
+        )
     if not isinstance(args["path"], str) or not isinstance(args["content"], str):
         raise TypeError("write_file requires string path and content")
     path = _safe_path(str(args["path"]))

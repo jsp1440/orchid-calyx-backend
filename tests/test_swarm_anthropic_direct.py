@@ -1463,3 +1463,19 @@ def test_a_tool_call_cut_off_at_the_output_limit_is_not_run(
     assert results["cut"].startswith("ERROR: your reply reached the")
     assert "output limit" in results["cut"]
     assert not results["ok"].startswith("ERROR")  # complete calls still run
+
+
+def test_write_file_names_a_missing_argument(tmp_path, monkeypatch):
+    """#1862: five turns were lost to a bare KeyError: 'content'."""
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    (tmp_path / "a.py").write_text("x = 1\n")
+    with pytest.raises(ValueError, match="missing 'content'.*replacement text"):
+        direct._tool_write_file({"path": "a.py", "old_text": "x = 1"})
+    with pytest.raises(ValueError, match="missing 'path' and 'content'"):
+        direct._tool_write_file({})
+    assert (tmp_path / "a.py").read_text() == "x = 1\n"
+    assert direct.WRITTEN == set()
+    direct._tool_write_file({"path": "a.py", "old_text": "x = 1\n", "content": ""})
+    assert (tmp_path / "a.py").read_text() == ""
