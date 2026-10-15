@@ -14,28 +14,24 @@ Covers:
 
 from __future__ import annotations
 
-import time
-
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.routers.scientific_intelligence import router
+from runtime.scientific_intelligence.adapters import (
+    fetch_all_adapters,
+    grant_office_adapter,
+)
+from runtime.scientific_intelligence.aggregator import (
+    BUILD_ID,
+    build_daily_brief,
+    build_scientific_intelligence_payload,
+)
 from runtime.scientific_intelligence.cache import (
     cache_stats,
     get_cached,
     invalidate_all,
     set_cached,
-)
-from runtime.scientific_intelligence.normalizer import (
-    normalize,
-    normalize_atlas,
-    normalize_grant_office,
-    normalize_knowledge_graph,
-    normalize_literature,
-    normalize_mycorrhiza,
-    normalize_pollinators,
-    normalize_vision,
 )
 from runtime.scientific_intelligence.intelligence import (
     data_collection_bottlenecks,
@@ -50,14 +46,15 @@ from runtime.scientific_intelligence.intelligence import (
     research_risks,
     suggested_next_action,
 )
-from runtime.scientific_intelligence.aggregator import (
-    BUILD_ID,
-    build_daily_brief,
-    build_scientific_intelligence_payload,
-)
-from runtime.scientific_intelligence.adapters import (
-    fetch_all_adapters,
-    grant_office_adapter,
+from runtime.scientific_intelligence.normalizer import (
+    normalize,
+    normalize_atlas,
+    normalize_grant_office,
+    normalize_knowledge_graph,
+    normalize_literature,
+    normalize_mycorrhiza,
+    normalize_pollinators,
+    normalize_vision,
 )
 
 
@@ -747,7 +744,6 @@ def test_router_mounts_expected_endpoints():
             paths.add(route.path)
         # APIRouter include creates _IncludedRouter objects with a path prefix
         if hasattr(route, "path_regex"):
-            import re
             pattern = route.path_regex.pattern.rstrip("$").rstrip("/")
             paths.add(pattern)
     # Check via the test client instead of inspecting route objects directly
@@ -890,4 +886,62 @@ def test_normalizer_handles_garbage_input():
     assert result["entities"] == 0
     assert result["relationships"] == 0
     # available=True but count=0 → "empty" (not "unavailable")
+    assert result["status"] == "empty"
+
+
+# ---------------------------------------------------------------------------
+# to_int() tests for OverflowError (issue #1866)
+# ---------------------------------------------------------------------------
+
+
+def test_to_int_with_positive_infinity():
+    """to_int should return default for positive infinity."""
+    from runtime.scientific_intelligence.utils import to_int
+    assert to_int(float("inf")) == 0
+    assert to_int(float("inf"), 5) == 5
+
+
+def test_to_int_with_negative_infinity():
+    """to_int should return default for negative infinity."""
+    from runtime.scientific_intelligence.utils import to_int
+    assert to_int(float("-inf")) == 0
+    assert to_int(float("-inf"), 5) == 5
+
+
+def test_to_int_with_invalid_string():
+    """to_int should return default for non-numeric strings."""
+    from runtime.scientific_intelligence.utils import to_int
+    assert to_int("x") == 0
+    assert to_int("x", 10) == 10
+
+
+def test_to_int_with_valid_string():
+    """to_int should convert valid numeric strings."""
+    from runtime.scientific_intelligence.utils import to_int
+    assert to_int("7") == 7
+    assert to_int("42", 0) == 42
+
+
+def test_to_int_with_valid_int():
+    """to_int should pass through valid integers."""
+    from runtime.scientific_intelligence.utils import to_int
+    assert to_int(100) == 100
+    assert to_int(-50) == -50
+
+
+def test_normalize_atlas_with_infinite_occurrences():
+    """normalize_atlas should handle infinite occurrences by returning 'empty' status."""
+    raw = {"available": True, "occurrences": float("inf"), "taxa_covered": 4200, "coordinate_coverage_pct": 72.3}
+    result = normalize_atlas(raw)
+    assert result["subsystem_id"] == "atlas"
+    assert result["available"] is True
+    assert result["occurrences"] == 0
+    assert result["status"] == "empty"
+
+
+def test_normalize_atlas_with_negative_infinite_occurrences():
+    """normalize_atlas should handle negative infinite occurrences by returning 'empty' status."""
+    raw = {"available": True, "occurrences": float("-inf"), "taxa_covered": 4200}
+    result = normalize_atlas(raw)
+    assert result["occurrences"] == 0
     assert result["status"] == "empty"
