@@ -226,3 +226,147 @@ class TestBottleneckService:
         # Should not contain the old hardcoded "Next bottleneck" claim
         assert "Next bottleneck" not in result
         assert "live CDS integration" not in result
+
+    def test_single_warning_check(self):
+        """Single warning check should report degraded service."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            )
+        ]
+        result = self.service.detect(health)
+        assert result == "Degraded service: backend — HTTP 500"
+        # Verify that GoalPlannerService maps to investigate goal
+        goal = self.goal_planner.plan(result)
+        assert goal == "Investigate degraded service and rerun health checks."
+
+    def test_multiple_warning_checks(self):
+        """Multiple warning checks should all be reported in input order."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 503"
+            ),
+            HealthCheckResult(
+                component="frontend",
+                status="warning",
+                message="HTTP 502"
+            ),
+        ]
+        result = self.service.detect(health)
+        assert result == "Degraded service: backend — HTTP 503; frontend — HTTP 502"
+        # Verify that GoalPlannerService maps to investigate goal
+        goal = self.goal_planner.plan(result)
+        assert goal == "Investigate degraded service and rerun health checks."
+
+    def test_warning_with_healthy_checks(self):
+        """Warning checks should be reported even with healthy checks present."""
+        health = [
+            HealthCheckResult(
+                component="cache",
+                status="healthy",
+                message="Cache is working"
+            ),
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+        ]
+        result = self.service.detect(health)
+        assert result == "Degraded service: backend — HTTP 500"
+        goal = self.goal_planner.plan(result)
+        assert goal == "Investigate degraded service and rerun health checks."
+
+    def test_critical_beats_warning(self):
+        """When both critical and warning exist, critical should be reported."""
+        health = [
+            HealthCheckResult(
+                component="database",
+                status="critical",
+                message="Database is offline"
+            ),
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="cache",
+                status="healthy",
+                message="Cache is working"
+            ),
+        ]
+        result = self.service.detect(health)
+        assert result == "Critical service failure: database — Database is offline"
+        goal = self.goal_planner.plan(result)
+        assert goal == "Restore failed service and rerun health checks."
+
+    def test_unknown_beats_warning(self):
+        """When both unknown and warning exist, unknown should be reported."""
+        health = [
+            HealthCheckResult(
+                component="external_api",
+                status="unknown",
+                message="Configuration missing"
+            ),
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="cache",
+                status="healthy",
+                message="Cache is working"
+            ),
+        ]
+        result = self.service.detect(health)
+        assert result == "Missing configuration or visibility: external_api"
+        goal = self.goal_planner.plan(result)
+        assert goal == "Configure missing runtime environment variables and rerun health checks."
+
+    def test_preserves_input_order_for_warning(self):
+        """Warning checks should appear in input order."""
+        health = [
+            HealthCheckResult(
+                component="service_c",
+                status="warning",
+                message="HTTP 503"
+            ),
+            HealthCheckResult(
+                component="service_a",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="service_b",
+                status="warning",
+                message="HTTP 502"
+            ),
+        ]
+        result = self.service.detect(health)
+        # Should maintain input order, not alphabetical
+        assert result == "Degraded service: service_c — HTTP 503; service_a — HTTP 500; service_b — HTTP 502"
+
+    def test_warning_checks_only_no_healthy(self):
+        """Only warning checks with no healthy checks should report degraded service."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="frontend",
+                status="warning",
+                message="HTTP 503"
+            ),
+        ]
+        result = self.service.detect(health)
+        assert result == "Degraded service: backend — HTTP 500; frontend — HTTP 503"
+        goal = self.goal_planner.plan(result)
+        assert goal == "Investigate degraded service and rerun health checks."
