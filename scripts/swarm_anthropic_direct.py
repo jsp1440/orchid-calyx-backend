@@ -318,6 +318,24 @@ def _stage_written_files() -> bool:
     return bool(staged.stdout.strip())
 
 
+def _whitespace_problems() -> str:
+    """Report `git diff --check` problems in the written files ('' when clean).
+
+    #1861 (run 38805836543) finished its work, then died committing because a
+    written file had a whitespace error; the model is asked to fix it instead.
+    """
+    # Best effort: the commit-time check in _open_draft_pr stays authoritative.
+    try:
+        if not WRITTEN or not _stage_written_files():
+            return ""
+        result = _run(["git", "diff", "--cached", "--check"], timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    if result.returncode == 0:
+        return ""
+    return (result.stdout or result.stderr or "whitespace errors").strip()[:2000]
+
+
 def _safe_target(raw: str | None) -> str:
     if not raw:
         return ""
@@ -666,7 +684,20 @@ def main() -> int:
 
             messages.append({"role": "assistant", "content": content})
             if not tool_uses:
-                break
+                problems = _whitespace_problems() if turn < bounded_turns else ""
+                if not problems:
+                    break
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": (
+                            "`git diff --check` rejects your changes. Remove the "
+                            "trailing whitespace or blank lines it reports, using "
+                            "write_file, then finish:\n" + problems
+                        ),
+                    }
+                )
+                continue
 
             results: list[dict[str, Any]] = []
             for block in tool_uses:

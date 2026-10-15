@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 from pathlib import Path
@@ -1040,3 +1041,131 @@ def test_only_written_files_are_staged_never_test_side_effects(tmp_path, monkeyp
 
 def test_no_git_add_all_remains_in_the_executor():
     assert '"add", "-A"' not in SCRIPT.read_text()
+
+
+def _run_executor(tmp_path, monkeypatch, replies, check_results, max_turns="6"):
+    packet = tmp_path / "packet.md"
+    packet.write_text("Allowed paths:\n- `app/a.py`\n")
+    execution_file = tmp_path / "execution.json"
+    sent: list[list[dict]] = []
+    checks = iter(check_results)
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        result = Result()
+        if cmd == ["git", "diff", "--cached", "--name-only"]:
+            result.stdout = "app/a.py\n"
+        elif cmd == ["git", "diff", "--cached", "--check"]:
+            result.returncode, result.stdout = next(checks)
+        return result
+
+    def model(**kwargs):
+        sent.append(copy.deepcopy(kwargs["messages"]))
+        return replies.pop(0)
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "3000")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "_prepare_branch", lambda *a, **k: "dryrun/3000")
+    monkeypatch.setattr(direct, "_anthropic_message", model)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *a, **k: "https://pr/1")
+    monkeypatch.setattr(direct, "_run", fake_run)
+    monkeypatch.setattr(
+        direct.sys,
+        "argv",
+        [
+            "swarm_anthropic_direct.py",
+            "--issue-number",
+            "1861",
+            "--title",
+            "Whitespace feedback",
+            "--packet-file",
+            str(packet),
+            "--model",
+            "claude-haiku-4-5",
+            "--max-turns",
+            max_turns,
+            "--execution-file",
+            str(execution_file),
+        ],
+    )
+    code = direct.main()
+    return code, json.loads(execution_file.read_text()), sent
+
+
+def _write(n, content):
+    return {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": f"w{n}",
+                "name": "write_file",
+                "input": {"path": "app/a.py", "content": content},
+            }
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+
+
+DONE = {
+    "content": [{"type": "text", "text": "Done."}],
+    "usage": {"input_tokens": 3, "output_tokens": 2},
+}
+
+
+def test_whitespace_errors_go_back_to_the_model_instead_of_failing_the_run(
+    tmp_path, monkeypatch
+):
+    """#1861: finished work died on `git diff --cached --check` at commit time."""
+    report = "app/a.py:1: trailing whitespace.\n+x = 1"
+    code, result, sent = _run_executor(
+        tmp_path,
+        monkeypatch,
+        [_write(1, "x = 1  \n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)],
+        [(2, report), (0, "")],
+    )
+    assert code == 0
+    assert result["subtype"] == "success"
+    feedback = sent[2][-1]
+    assert feedback["role"] == "user"
+    assert "git diff --check" in feedback["content"]
+    assert report in feedback["content"]
+    assert len(sent) == 4
+
+
+def test_clean_changes_finish_without_an_extra_turn(tmp_path, monkeypatch):
+    code, _, sent = _run_executor(
+        tmp_path, monkeypatch, [_write(1, "x = 1\n"), dict(DONE)], [(0, "")]
+    )
+    assert code == 0
+    assert len(sent) == 2
+
+
+def test_no_whitespace_turn_is_taken_on_the_last_allowed_turn(tmp_path, monkeypatch):
+    code, _, sent = _run_executor(
+        tmp_path,
+        monkeypatch,
+        [_write(1, "x = 1  \n"), dict(DONE)],
+        [],
+        max_turns="2",
+    )
+    assert len(sent) == 2
+    assert code == 0
+
+
+def test_whitespace_problems_reads_a_real_index(tmp_path, monkeypatch):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    direct._tool_write_file({"path": "app/new.py", "content": "x = 1  \n"})
+    assert "trailing whitespace" in direct._whitespace_problems()
+    direct._tool_write_file({"path": "app/new.py", "content": "x = 1\n"})
+    assert direct._whitespace_problems() == ""
