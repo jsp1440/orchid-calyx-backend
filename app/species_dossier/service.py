@@ -177,7 +177,7 @@ def normalize_scientific_name(value: str) -> str | None:
     genus, epithet, rank, infra = match.groups()
     normalized = f"{genus[:1].upper()}{genus[1:].lower()} {epithet.lower()}"
     if rank and infra:
-        normalized += f" {rank} {infra.lower()}"
+        normalized += f" {rank.lower()} {infra.lower()}"
     return normalized
 
 
