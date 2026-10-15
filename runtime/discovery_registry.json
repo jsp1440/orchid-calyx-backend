@@ -280,8 +280,7 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
-        "models",
-        "typing"
+        "models"
       ],
       "description": "BottleneckService provides: Provide runtime component",
       "health": "healthy",
@@ -3328,6 +3327,72 @@
       "provider": "PortfolioStewardReport"
     },
     {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.autonomy_observers",
+        "app.calyx_orchestrator.autonomy_policy",
+        "app.calyx_orchestrator.executor_registry",
+        "app.calyx_orchestrator.pulse_ledger_store",
+        "app.calyx_orchestrator.workspace_refresh",
+        "app.database",
+        "calyx_brain.autonomy_loop",
+        "calyx_brain.autonomy_pulse",
+        "calyx_brain.canonical_handoff",
+        "calyx_brain.work_sources",
+        "collections.abc",
+        "dataclasses",
+        "json",
+        "os",
+        "pathlib",
+        "runtime.program_autonomy_worker",
+        "sys",
+        "threading",
+        "typing"
+      ],
+      "description": "BrainWorker provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "BrainWorker"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.autonomy_cycles",
+        "app.calyx_orchestrator.autonomy_policy",
+        "app.calyx_orchestrator.executor_registry",
+        "app.calyx_orchestrator.program_cycle",
+        "app.calyx_orchestrator.schema",
+        "app.database",
+        "app.routers.release_identity",
+        "collections.abc",
+        "datetime",
+        "json",
+        "logging",
+        "signal",
+        "threading",
+        "time",
+        "typing"
+      ],
+      "description": "ProgramAutonomyWorker provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "ProgramAutonomyWorker"
+    },
+    {
       "category": "Runtime",
       "dependencies": [
         "__future__",
@@ -4652,6 +4717,66 @@
         "Plan runtime work"
       ],
       "provider": "ReadinessCheck"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "enum",
+        "pydantic",
+        "typing"
+      ],
+      "description": "GateStatus provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "GateStatus"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "models",
+        "service",
+        "typing"
+      ],
+      "description": "Routes provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Routes"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "httpx",
+        "io",
+        "models",
+        "re",
+        "typing",
+        "urllib.parse",
+        "zipfile"
+      ],
+      "description": "ApplicationCertificationService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "ApplicationCertificationService"
     },
     {
       "category": "Brain",
@@ -7025,6 +7150,29 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "calyx_brain.autonomy_loop",
+        "collections",
+        "collections.abc",
+        "hashlib",
+        "json",
+        "program_models",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "description": "CalyxHealthObserver provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CalyxHealthObserver"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "collections.abc",
         "dataclasses",
         "os"
@@ -7378,7 +7526,8 @@
         "isolated_patch_executor",
         "pathlib",
         "repository_evidence_executor",
-        "static_validation_executor"
+        "static_validation_executor",
+        "traitbank_validation_executor"
       ],
       "description": "AutonomyProbeExecutor provides: Execute runtime work",
       "health": "healthy",
@@ -8344,7 +8493,7 @@
       "provider": "CycleJobResult"
     },
     {
-      "category": "Runtime",
+      "category": "Brain",
       "dependencies": [
         "__future__",
         "app.database",
@@ -8360,6 +8509,28 @@
       "name": "Analyze dependencies",
       "outputs": [
         "Analyze dependencies"
+      ],
+      "provider": "CalyxProgram"
+    },
+    {
+      "category": "Brain",
+      "dependencies": [
+        "__future__",
+        "app.database",
+        "datetime",
+        "models",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "uuid"
+      ],
+      "description": "CalyxProgram provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
       ],
       "provider": "CalyxProgram"
     },
@@ -8639,6 +8810,32 @@
         "Provide runtime component"
       ],
       "provider": "ProviderIntent"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contextlib",
+        "hashlib",
+        "json",
+        "program_models",
+        "schema",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "threading",
+        "typing"
+      ],
+      "description": "DatabasePulseLedger provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "DatabasePulseLedger"
     },
     {
       "category": "Execution",
@@ -9003,6 +9200,54 @@
         "Provide runtime component"
       ],
       "provider": "IntentDecision"
+    },
+    {
+      "category": "Execution",
+      "dependencies": [
+        "__future__",
+        "app.traitbank",
+        "app.traitbank.guards",
+        "app.traitbank.models",
+        "dataclasses",
+        "engineering_core",
+        "executor",
+        "hashlib",
+        "json",
+        "pathlib",
+        "pydantic",
+        "re",
+        "repository_evidence_executor",
+        "time",
+        "typing"
+      ],
+      "description": "TraitBankBatchValidationExecutor provides: Execute runtime work",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Execute runtime work",
+      "outputs": [
+        "Execute runtime work"
+      ],
+      "provider": "TraitBankBatchValidationExecutor"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "pathlib",
+        "re",
+        "subprocess",
+        "time",
+        "typing"
+      ],
+      "description": "WorkspaceRefresher provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "WorkspaceRefresher"
     },
     {
       "category": "Runtime",
@@ -9515,6 +9760,7 @@
       "category": "Brain",
       "dependencies": [
         "__future__",
+        "app.calyx_orchestrator.schema",
         "app.database",
         "app.security",
         "build_queue",
@@ -9545,6 +9791,7 @@
         "app.calyx_orchestrator.program_models",
         "app.calyx_orchestrator.program_repository",
         "app.calyx_orchestrator.static_validation_executor",
+        "app.calyx_orchestrator.traitbank_validation_executor",
         "build_queue",
         "hashlib",
         "json",
@@ -13794,6 +14041,7 @@
     {
       "category": "API",
       "dependencies": [
+        "app.application_certification.routes",
         "app.atlas_intelligence.api",
         "app.brain.routes",
         "app.calyx_conversation.store",
@@ -13817,8 +14065,7 @@
         "app.intake.routes",
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
-        "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_briefing.routes"
       ],
       "description": "VerificationRequest provides: Execute runtime work",
       "health": "healthy",
@@ -13834,6 +14081,7 @@
     {
       "category": "API",
       "dependencies": [
+        "app.application_certification.routes",
         "app.atlas_intelligence.api",
         "app.brain.routes",
         "app.calyx_conversation.store",
@@ -13857,8 +14105,7 @@
         "app.intake.routes",
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
-        "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_briefing.routes"
       ],
       "description": "VerificationRequest provides: Expose API endpoints",
       "health": "healthy",
@@ -13874,6 +14121,7 @@
     {
       "category": "API",
       "dependencies": [
+        "app.application_certification.routes",
         "app.atlas_intelligence.api",
         "app.brain.routes",
         "app.calyx_conversation.store",
@@ -13897,8 +14145,7 @@
         "app.intake.routes",
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
-        "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_briefing.routes"
       ],
       "description": "VerificationRequest provides: Inspect Brain state",
       "health": "healthy",
@@ -16566,9 +16813,9 @@
         "app.routers.scientific_observability",
         "app.routers.taxonomy_releases",
         "app.trait_genomics.routes",
+        "app.traitbank.routes",
         "app.workflow.routes",
-        "fastapi",
-        "os"
+        "fastapi"
       ],
       "description": "Health provides: Expose API endpoints",
       "health": "healthy",
@@ -19633,6 +19880,202 @@
       "category": "Runtime",
       "dependencies": [
         "__future__",
+        "app.literature_extraction.models",
+        "collections.abc",
+        "contract",
+        "dataclasses",
+        "hashlib",
+        "json",
+        "math",
+        "models",
+        "re",
+        "typing"
+      ],
+      "description": "TraitIndex provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "TraitIndex"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "adapters",
+        "app.literature_extraction.models",
+        "argparse",
+        "collections.abc",
+        "harvesters.traitbank",
+        "json",
+        "models",
+        "os",
+        "pathlib",
+        "repository",
+        "sys",
+        "typing"
+      ],
+      "description": "Cli provides: Inspect Brain state",
+      "health": "healthy",
+      "inputs": [
+        "DATABASE_URL"
+      ],
+      "name": "Inspect Brain state",
+      "outputs": [
+        "Inspect Brain state"
+      ],
+      "provider": "Cli"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "csv",
+        "functools",
+        "hashlib",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "description": "TraitBankContractError provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "TraitBankContractError"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "dataclasses",
+        "models",
+        "re"
+      ],
+      "description": "Violation provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "Violation"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "contract",
+        "math",
+        "pydantic",
+        "re",
+        "typing"
+      ],
+      "description": "_Strict provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "_Strict"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "hashlib",
+        "json",
+        "models",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "taxa",
+        "typing"
+      ],
+      "description": "TraitBankRefused provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "TraitBankRefused"
+    },
+    {
+      "category": "API",
+      "dependencies": [
+        "__future__",
+        "app.member_auth",
+        "fastapi",
+        "functools",
+        "models",
+        "re",
+        "service"
+      ],
+      "description": "Routes provides: Expose API endpoints",
+      "health": "healthy",
+      "inputs": [
+        "HTTP request"
+      ],
+      "name": "Expose API endpoints",
+      "outputs": [
+        "Expose API endpoints"
+      ],
+      "provider": "Routes"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "models",
+        "psycopg",
+        "repository",
+        "runtime.matrix_relationship",
+        "typing"
+      ],
+      "description": "TraitBankService provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "TraitBankService"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
+        "app.research_traits.service",
+        "dataclasses",
+        "psycopg",
+        "typing"
+      ],
+      "description": "CanonicalTaxon provides: Provide runtime component",
+      "health": "healthy",
+      "inputs": [],
+      "name": "Provide runtime component",
+      "outputs": [
+        "Provide runtime component"
+      ],
+      "provider": "CanonicalTaxon"
+    },
+    {
+      "category": "Runtime",
+      "dependencies": [
+        "__future__",
         "app.mission_control_access",
         "durable_config",
         "durable_repository",
@@ -20097,7 +20540,7 @@
   ],
   "graph": {
     "cycles": [],
-    "edge_count": 2695,
+    "edge_count": 2767,
     "edges": [
       {
         "from": "GovernanceError",
@@ -20300,7 +20743,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CalyxCoreCertification",
         "type": "import"
       },
@@ -21010,7 +21453,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "SentinelFinding",
         "type": "import"
       },
@@ -21055,6 +21498,11 @@
         "type": "import"
       },
       {
+        "from": "CanonicalTaxon",
+        "to": "YongGeeRecord",
+        "type": "import"
+      },
+      {
         "from": "Policy",
         "to": "GithubCodingAgentAutonomyWorker",
         "type": "import"
@@ -21070,7 +21518,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "GithubCodingAgentAutonomyWorker",
         "type": "import"
       },
@@ -21245,6 +21693,11 @@
         "type": "import"
       },
       {
+        "from": "CanonicalTaxon",
+        "to": "Init",
+        "type": "import"
+      },
+      {
         "from": "Checkpoint",
         "to": "Init",
         "type": "import"
@@ -21362,6 +21815,11 @@
       {
         "from": "PostgresSourceRegistryRepository",
         "to": "ProjectionPlan",
+        "type": "import"
+      },
+      {
+        "from": "CanonicalTaxon",
+        "to": "FirecrawlTaxonomy",
         "type": "import"
       },
       {
@@ -21547,6 +22005,11 @@
       {
         "from": "Vocabulary",
         "to": "Traversal",
+        "type": "import"
+      },
+      {
+        "from": "Projection",
+        "to": "UnresolvedTaxonItem",
         "type": "import"
       },
       {
@@ -21810,12 +22273,17 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "TaxonomyReconciliationContext",
         "type": "import"
       },
       {
         "from": "JsonActivationStateStore",
+        "to": "TaxonomyReconciliationContext",
+        "type": "import"
+      },
+      {
+        "from": "CanonicalTaxon",
         "to": "TaxonomyReconciliationContext",
         "type": "import"
       },
@@ -21910,7 +22378,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "PortfolioStewardReport",
         "type": "import"
       },
@@ -21936,6 +22404,51 @@
       },
       {
         "from": "Policy",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "Executor",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "WorkspaceRefresher",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "DatabasePulseLedger",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "InvalidDispositionError",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "ProgramAutonomyWorker",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "ExecutiveSubsystem",
+        "to": "BrainWorker",
+        "type": "import"
+      },
+      {
+        "from": "AutonomyCycles",
+        "to": "ProgramAutonomyWorker",
+        "type": "import"
+      },
+      {
+        "from": "Policy",
         "to": "ProgramAutonomyWorker",
         "type": "import"
       },
@@ -21945,7 +22458,17 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "SchemaFingerprint",
+        "to": "ProgramAutonomyWorker",
+        "type": "import"
+      },
+      {
+        "from": "DatabasePulseLedger",
+        "to": "ProgramAutonomyWorker",
+        "type": "import"
+      },
+      {
+        "from": "Identity",
         "to": "ProgramAutonomyWorker",
         "type": "import"
       },
@@ -22175,7 +22698,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "InProcessHarvester",
         "type": "import"
       },
@@ -22740,7 +23263,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "WorldPlantsMigrationPreflight",
         "type": "import"
       },
@@ -22765,7 +23288,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "TaxonomyStagingReceipt",
         "type": "import"
       },
@@ -22782,6 +23305,41 @@
       {
         "from": "DeployedPreflight",
         "to": "SynonymAssertion",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "Init",
+        "type": "import"
+      },
+      {
+        "from": "Security",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "InvalidDispositionError",
+        "to": "ApplicationCertificationService",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "ApplicationCertificationService",
+        "type": "import"
+      },
+      {
+        "from": "Parser",
+        "to": "ApplicationCertificationService",
         "type": "import"
       },
       {
@@ -23270,7 +23828,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -23945,7 +24503,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ConversationCreateRequest",
         "type": "import"
       },
@@ -24100,7 +24658,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CompletionWorker",
         "type": "import"
       },
@@ -24225,7 +24783,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ChangeRequest",
         "type": "import"
       },
@@ -24310,7 +24868,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "JournalismEvidencePacketRecord",
         "type": "import"
       },
@@ -24330,7 +24888,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "BriefSubmissionRequest",
         "type": "import"
       },
@@ -24430,12 +24988,32 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "AutonomyCycles",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "AutonomyCycles",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "CalyxHealthObserver",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "CalyxHealthObserver",
+        "type": "import"
+      },
+      {
         "from": "InvalidDispositionError",
         "to": "ProgramAutonomyPolicy",
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "AutonomousCycleRequest",
         "type": "import"
       },
@@ -24565,7 +25143,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "DurableReservoirRun",
         "type": "import"
       },
@@ -24640,6 +25218,11 @@
         "type": "import"
       },
       {
+        "from": "Executor",
+        "to": "AutonomyProbeExecutor",
+        "type": "import"
+      },
+      {
         "from": "JsonActivationStateStore",
         "to": "ExperienceMemory",
         "type": "import"
@@ -24685,7 +25268,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CiConclusion",
         "type": "import"
       },
@@ -24765,7 +25348,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "GitProposalMutationJournalEventRecord",
         "type": "import"
       },
@@ -24875,7 +25458,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "GitHubAgentDispatchRecordRow",
         "type": "import"
       },
@@ -25090,7 +25673,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CalyxJob",
         "type": "import"
       },
@@ -25101,6 +25684,11 @@
       },
       {
         "from": "ApprovedTask",
+        "to": "Operations",
+        "type": "import"
+      },
+      {
+        "from": "AutonomyCycles",
         "to": "Operations",
         "type": "import"
       },
@@ -25215,7 +25803,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "PortfolioRoutes",
         "type": "import"
       },
@@ -25270,7 +25858,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CalyxProgram",
         "type": "import"
       },
@@ -25300,7 +25888,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ProgramJobRequest",
         "type": "import"
       },
@@ -25395,7 +25983,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ProposalAuthorizationDecisionRecord",
         "type": "import"
       },
@@ -25475,6 +26063,21 @@
         "type": "import"
       },
       {
+        "from": "JsonActivationStateStore",
+        "to": "DatabasePulseLedger",
+        "type": "import"
+      },
+      {
+        "from": "SchemaFingerprint",
+        "to": "DatabasePulseLedger",
+        "type": "import"
+      },
+      {
+        "from": "OperatorMessage",
+        "to": "DatabasePulseLedger",
+        "type": "import"
+      },
+      {
         "from": "Engine",
         "to": "RepositoryEvidenceExecutor",
         "type": "import"
@@ -25510,7 +26113,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "JobRequest",
         "type": "import"
       },
@@ -25590,7 +26193,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "SandboxValidationRequestRecord",
         "type": "import"
       },
@@ -25600,7 +26203,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ValidationTargetRequest",
         "type": "import"
       },
@@ -25670,7 +26273,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "SpecialistMission",
         "type": "import"
       },
@@ -25680,7 +26283,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "MissionRequest",
         "type": "import"
       },
@@ -25755,6 +26358,36 @@
         "type": "import"
       },
       {
+        "from": "Engine",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "DefaultTaskExecutor",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "Executor",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "TraitBankBatchValidationExecutor",
+        "type": "import"
+      },
+      {
         "from": "EngineeringCompletionScheduler",
         "to": "Worker",
         "type": "import"
@@ -25770,7 +26403,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Worker",
         "type": "import"
       },
@@ -25787,6 +26420,16 @@
       {
         "from": "RuntimeMemoryWriter",
         "to": "Worker",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "WorkspaceRefresher",
+        "type": "import"
+      },
+      {
+        "from": "RuntimeMemoryWriter",
+        "to": "WorkspaceRefresher",
         "type": "import"
       },
       {
@@ -26050,7 +26693,12 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "SchemaFingerprint",
+        "to": "BrainProgramRequest",
+        "type": "import"
+      },
+      {
+        "from": "DatabasePulseLedger",
         "to": "BrainProgramRequest",
         "type": "import"
       },
@@ -26086,6 +26734,11 @@
       },
       {
         "from": "Repository",
+        "to": "ProgramHandoff",
+        "type": "import"
+      },
+      {
+        "from": "Executor",
         "to": "ProgramHandoff",
         "type": "import"
       },
@@ -26280,7 +26933,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ConversationSession",
         "type": "import"
       },
@@ -26400,7 +27053,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Deps",
         "type": "import"
       },
@@ -26840,7 +27493,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "EvalTask",
         "type": "import"
       },
@@ -26865,7 +27518,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "EngineeringMemoryRun",
         "type": "import"
       },
@@ -26885,7 +27538,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -27425,7 +28078,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "BHLHarvester",
         "type": "import"
       },
@@ -27440,7 +28093,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "GBIFHarvester",
         "type": "import"
       },
@@ -27460,7 +28113,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "INaturalistHarvester",
         "type": "import"
       },
@@ -27475,7 +28128,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "HarvesterRegistry",
         "type": "import"
       },
@@ -28225,7 +28878,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Init",
         "type": "import"
       },
@@ -28235,7 +28888,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ClaimExtractor",
         "type": "import"
       },
@@ -28255,7 +28908,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "EntityRule",
         "type": "import"
       },
@@ -28275,7 +28928,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "GlossaryExtractor",
         "type": "import"
       },
@@ -28295,7 +28948,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "MetadataExtractor",
         "type": "import"
       },
@@ -28315,7 +28968,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "CanonicalMorphologyExtractor",
         "type": "import"
       },
@@ -28330,7 +28983,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "HeadingMatch",
         "type": "import"
       },
@@ -28635,12 +29288,12 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "PipelineRunner",
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ExtractorRegistry",
         "type": "import"
       },
@@ -28785,6 +29438,11 @@
         "type": "import"
       },
       {
+        "from": "ConnectorRoutes",
+        "to": "VerificationRequest",
+        "type": "import"
+      },
+      {
         "from": "ApiCallSite",
         "to": "VerificationRequest",
         "type": "import"
@@ -28816,11 +29474,6 @@
       },
       {
         "from": "Routers",
-        "to": "VerificationRequest",
-        "type": "import"
-      },
-      {
-        "from": "ConnectorRoutes",
         "to": "VerificationRequest",
         "type": "import"
       },
@@ -29065,7 +29718,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -29240,7 +29893,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Organization",
         "type": "import"
       },
@@ -29715,7 +30368,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "StaleLedgerVersionError",
         "type": "import"
       },
@@ -29745,7 +30398,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -29860,7 +30513,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ReasoningPublicationArtifactRow",
         "type": "import"
       },
@@ -29870,7 +30523,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -29975,7 +30628,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ProjectStatus",
         "type": "import"
       },
@@ -29985,7 +30638,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -30225,7 +30878,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ConversationSourceLinkRequest",
         "type": "import"
       },
@@ -30395,7 +31048,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "OperatorMessageRequest",
         "type": "import"
       },
@@ -30430,7 +31083,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "StrictModel",
         "type": "import"
       },
@@ -30665,6 +31318,11 @@
         "type": "import"
       },
       {
+        "from": "Projection",
+        "to": "ControlledDryRunRequest",
+        "type": "import"
+      },
+      {
         "from": "Status",
         "to": "ControlledDryRunRequest",
         "type": "import"
@@ -30875,12 +31533,12 @@
         "type": "import"
       },
       {
-        "from": "Api",
+        "from": "ConnectorRoutes",
         "to": "Health",
         "type": "import"
       },
       {
-        "from": "InvalidDispositionError",
+        "from": "Api",
         "to": "Health",
         "type": "import"
       },
@@ -31255,7 +31913,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "OrchidWidgets",
         "type": "import"
       },
@@ -31940,7 +32598,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ScientificMemoryCapture",
         "type": "import"
       },
@@ -31950,7 +32608,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Routes",
         "type": "import"
       },
@@ -32650,12 +33308,12 @@
         "type": "import"
       },
       {
-        "from": "ApprovedTask",
+        "from": "ApplicationCertificationService",
         "to": "ShowApp",
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "ShowApp",
         "type": "import"
       },
@@ -32760,7 +33418,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "AcquisitionLedgerRow",
         "type": "import"
       },
@@ -33130,6 +33788,151 @@
         "type": "import"
       },
       {
+        "from": "RouteContract",
+        "to": "TraitIndex",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "TraitIndex",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "TraitIndex",
+        "type": "import"
+      },
+      {
+        "from": "Adapters",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "TraitBankBatchValidationExecutor",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "InvalidDispositionError",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "RepositoryContext",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "ExecutiveSubsystem",
+        "to": "Cli",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "TraitBankContractError",
+        "type": "import"
+      },
+      {
+        "from": "RouteContract",
+        "to": "Violation",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "Violation",
+        "type": "import"
+      },
+      {
+        "from": "RouteContract",
+        "to": "_Strict",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "_Strict",
+        "type": "import"
+      },
+      {
+        "from": "RouteContract",
+        "to": "Projection",
+        "type": "import"
+      },
+      {
+        "from": "RepositoryContext",
+        "to": "Projection",
+        "type": "import"
+      },
+      {
+        "from": "MatrixRelationshipSources",
+        "to": "Projection",
+        "type": "import"
+      },
+      {
+        "from": "RouteContract",
+        "to": "TraitBankRefused",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "TraitBankRefused",
+        "type": "import"
+      },
+      {
+        "from": "InvalidDispositionError",
+        "to": "TraitBankRefused",
+        "type": "import"
+      },
+      {
+        "from": "JsonActivationStateStore",
+        "to": "TraitBankRefused",
+        "type": "import"
+      },
+      {
+        "from": "MemberAuth",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "Api",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "DeployedPreflight",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "Routes",
+        "type": "import"
+      },
+      {
+        "from": "RouteContract",
+        "to": "TraitBankService",
+        "type": "import"
+      },
+      {
+        "from": "RepositoryContext",
+        "to": "TraitBankService",
+        "type": "import"
+      },
+      {
+        "from": "MatrixRelationshipSources",
+        "to": "TraitBankService",
+        "type": "import"
+      },
+      {
+        "from": "BottleneckService",
+        "to": "CanonicalTaxon",
+        "type": "import"
+      },
+      {
         "from": "Access",
         "to": "UniversityActivationService",
         "type": "import"
@@ -33460,7 +34263,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "HardenedPostgresVisionLexiconRepository",
         "type": "import"
       },
@@ -33520,7 +34323,7 @@
         "type": "import"
       },
       {
-        "from": "Database",
+        "from": "DatabasePulseLedger",
         "to": "Worker",
         "type": "import"
       },
@@ -33653,10 +34456,6 @@
         "module": "Telemetry"
       },
       {
-        "dependency": "runtime.knowledge_graph.canonical_taxonomy",
-        "module": "YongGeeRecord"
-      },
-      {
         "dependency": "runtime.knowledge_graph.models",
         "module": "YongGeeRecord"
       },
@@ -33717,10 +34516,6 @@
         "module": "MatrixRelationshipSources"
       },
       {
-        "dependency": "runtime.knowledge_graph.canonical_taxonomy",
-        "module": "TaxonomyReconciliationContext"
-      },
-      {
         "dependency": "runtime.occurrence_staging",
         "module": "TaxonomyReconciliationContext"
       },
@@ -33731,6 +34526,14 @@
       {
         "dependency": "app.calyx_orchestrator.durable_reservoir_models",
         "module": "PortfolioStewardReport"
+      },
+      {
+        "dependency": "app.calyx_orchestrator.autonomy_observers",
+        "module": "BrainWorker"
+      },
+      {
+        "dependency": "app.calyx_orchestrator.pulse_ledger_store",
+        "module": "BrainWorker"
       },
       {
         "dependency": "app.calyx_orchestrator.program_cycle",
@@ -33977,7 +34780,7 @@
         "module": "GovervedResearchExecutor"
       }
     ],
-    "node_count": 1141,
+    "node_count": 1162,
     "nodes": [
       {
         "category": "Runtime",
@@ -35534,8 +36337,15 @@
         "type": "python_module"
       },
       {
+        "category": "Brain",
+        "health": "healthy",
+        "name": "BrainWorker",
+        "path": "runtime/program_autonomy_brain_worker.py",
+        "type": "worker"
+      },
+      {
         "category": "Execution",
-        "health": "available",
+        "health": "healthy",
         "name": "ProgramAutonomyWorker",
         "path": "runtime/program_autonomy_worker.py",
         "type": "python_module"
@@ -36071,6 +36881,34 @@
         "name": "ReadinessCheck",
         "path": "runtime/world_plants_upload_readiness.py",
         "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
+        "path": "app/application_certification/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "GateStatus",
+        "path": "app/application_certification/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Routes",
+        "path": "app/application_certification/routes.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "ApplicationCertificationService",
+        "path": "app/application_certification/service.py",
+        "type": "service"
       },
       {
         "category": "Runtime",
@@ -36949,6 +37787,20 @@
       },
       {
         "category": "Runtime",
+        "health": "available",
+        "name": "AutonomyCycles",
+        "path": "app/calyx_orchestrator/autonomy_cycles.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CalyxHealthObserver",
+        "path": "app/calyx_orchestrator/autonomy_observers.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
         "health": "healthy",
         "name": "ProgramAutonomyPolicy",
         "path": "app/calyx_orchestrator/autonomy_policy.py",
@@ -37417,7 +38269,7 @@
         "type": "python_module"
       },
       {
-        "category": "Runtime",
+        "category": "Brain",
         "health": "healthy",
         "name": "CalyxProgram",
         "path": "app/calyx_orchestrator/program_models.py",
@@ -37498,6 +38350,13 @@
         "health": "healthy",
         "name": "ProviderIntent",
         "path": "app/calyx_orchestrator/provider_intent_reservoir.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "DatabasePulseLedger",
+        "path": "app/calyx_orchestrator/pulse_ledger_store.py",
         "type": "python_module"
       },
       {
@@ -37614,9 +38473,23 @@
       },
       {
         "category": "Execution",
+        "health": "healthy",
+        "name": "TraitBankBatchValidationExecutor",
+        "path": "app/calyx_orchestrator/traitbank_validation_executor.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Execution",
         "health": "available",
         "name": "Worker",
         "path": "app/calyx_orchestrator/worker.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "WorkspaceRefresher",
+        "path": "app/calyx_orchestrator/workspace_refresh.py",
         "type": "python_module"
       },
       {
@@ -41746,6 +42619,83 @@
         "category": "Runtime",
         "health": "available",
         "name": "Init",
+        "path": "app/traitbank/__init__.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "TraitIndex",
+        "path": "app/traitbank/adapters.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Cli",
+        "path": "app/traitbank/cli.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "TraitBankContractError",
+        "path": "app/traitbank/contract.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "Violation",
+        "path": "app/traitbank/guards.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "_Strict",
+        "path": "app/traitbank/models.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Projection",
+        "path": "app/traitbank/projection.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "TraitBankRefused",
+        "path": "app/traitbank/repository.py",
+        "type": "python_module"
+      },
+      {
+        "category": "API",
+        "health": "healthy",
+        "name": "Routes",
+        "path": "app/traitbank/routes.py",
+        "type": "api_router"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "TraitBankService",
+        "path": "app/traitbank/service.py",
+        "type": "service"
+      },
+      {
+        "category": "Runtime",
+        "health": "healthy",
+        "name": "CanonicalTaxon",
+        "path": "app/traitbank/taxa.py",
+        "type": "python_module"
+      },
+      {
+        "category": "Runtime",
+        "health": "available",
+        "name": "Init",
         "path": "app/university/__init__.py",
         "type": "python_module"
       },
@@ -42320,8 +43270,7 @@
       ],
       "dependencies": [
         "__future__",
-        "models",
-        "typing"
+        "models"
       ],
       "functions": [
         "detect"
@@ -48535,19 +49484,72 @@
       "status": "healthy"
     },
     {
-      "capabilities": [],
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Brain",
+      "classes": [
+        "BrainWorker"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.calyx_orchestrator.autonomy_observers",
+        "app.calyx_orchestrator.autonomy_policy",
+        "app.calyx_orchestrator.executor_registry",
+        "app.calyx_orchestrator.pulse_ledger_store",
+        "app.calyx_orchestrator.workspace_refresh",
+        "app.database",
+        "calyx_brain.autonomy_loop",
+        "calyx_brain.autonomy_pulse",
+        "calyx_brain.canonical_handoff",
+        "calyx_brain.work_sources",
+        "collections.abc",
+        "dataclasses",
+        "json",
+        "os",
+        "pathlib",
+        "runtime.program_autonomy_worker",
+        "sys",
+        "threading",
+        "typing"
+      ],
+      "functions": [
+        "configuration_problems",
+        "_workspace_branch",
+        "build_worker",
+        "main",
+        "emit",
+        "replenish",
+        "replenish",
+        "replenish"
+      ],
+      "module_type": "worker",
+      "name": "BrainWorker",
+      "path": "runtime/program_autonomy_brain_worker.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
       "category": "Execution",
       "classes": [],
       "dependencies": [
         "__future__",
+        "app.calyx_orchestrator.autonomy_cycles",
         "app.calyx_orchestrator.autonomy_policy",
         "app.calyx_orchestrator.executor_registry",
         "app.calyx_orchestrator.program_cycle",
+        "app.calyx_orchestrator.schema",
         "app.database",
+        "app.routers.release_identity",
         "collections.abc",
         "datetime",
         "json",
         "logging",
+        "signal",
+        "threading",
         "time",
         "typing"
       ],
@@ -48557,14 +49559,19 @@
         "classify_cycle",
         "run_once",
         "run_forever",
+        "database_recorder",
+        "install_stop_handlers",
         "main",
+        "record",
+        "finish_stop",
+        "request_stop",
         "emit"
       ],
       "module_type": "python_module",
       "name": "ProgramAutonomyWorker",
       "path": "runtime/program_autonomy_worker.py",
       "routers": [],
-      "status": "available"
+      "status": "healthy"
     },
     {
       "capabilities": [
@@ -51145,6 +52152,114 @@
       "module_type": "python_module",
       "name": "ReadinessCheck",
       "path": "runtime/world_plants_upload_readiness.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "models",
+        "service"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
+      "path": "app/application_certification/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "GateStatus",
+        "CertificationTarget",
+        "CertificationGate",
+        "CertificationReport"
+      ],
+      "dependencies": [
+        "__future__",
+        "datetime",
+        "enum",
+        "pydantic",
+        "typing"
+      ],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "GateStatus",
+      "path": "app/application_certification/models.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.security",
+        "fastapi",
+        "models",
+        "service",
+        "typing"
+      ],
+      "functions": [
+        "get_service",
+        "edith_target",
+        "certify",
+        "certify_edith"
+      ],
+      "module_type": "api_router",
+      "name": "Routes",
+      "path": "app/application_certification/routes.py",
+      "routers": [
+        "GET /targets/edith-bramble",
+        "POST /certify",
+        "POST /targets/edith-bramble/run"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "ApplicationCertificationService"
+      ],
+      "dependencies": [
+        "__future__",
+        "httpx",
+        "io",
+        "models",
+        "re",
+        "typing",
+        "urllib.parse",
+        "zipfile"
+      ],
+      "functions": [
+        "__init__",
+        "certify",
+        "_source_inventory",
+        "_inspect_zip_source",
+        "_source_contract_checks",
+        "_backend_probes",
+        "_runtime_gate",
+        "_report",
+        "_aggregate",
+        "_probe",
+        "_get_json",
+        "_split_repo"
+      ],
+      "module_type": "service",
+      "name": "ApplicationCertificationService",
+      "path": "app/application_certification/service.py",
       "routers": [],
       "status": "healthy"
     },
@@ -55124,6 +56239,71 @@
       "status": "healthy"
     },
     {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "collections",
+        "datetime",
+        "json",
+        "program_cycle",
+        "program_models",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "_aware",
+        "_parse",
+        "_replenishment_summary",
+        "_loop_summary",
+        "record_cycle",
+        "_consecutive_nonproductive",
+        "_idle_view",
+        "_cycle_view",
+        "autonomy_status"
+      ],
+      "module_type": "python_module",
+      "name": "AutonomyCycles",
+      "path": "app/calyx_orchestrator/autonomy_cycles.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CalyxHealthObserver"
+      ],
+      "dependencies": [
+        "__future__",
+        "calyx_brain.autonomy_loop",
+        "collections",
+        "collections.abc",
+        "hashlib",
+        "json",
+        "program_models",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "typing"
+      ],
+      "functions": [
+        "_fingerprint",
+        "proposals_summary",
+        "coding_lane_status",
+        "__init__",
+        "observe"
+      ],
+      "module_type": "python_module",
+      "name": "CalyxHealthObserver",
+      "path": "app/calyx_orchestrator/autonomy_observers.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
       "capabilities": [
         "Provide runtime component"
       ],
@@ -55143,6 +56323,7 @@
         "program_autonomy_status",
         "from_environ",
         "validated",
+        "next_sleep_seconds",
         "status"
       ],
       "module_type": "python_module",
@@ -55744,7 +56925,8 @@
         "isolated_patch_executor",
         "pathlib",
         "repository_evidence_executor",
-        "static_validation_executor"
+        "static_validation_executor",
+        "traitbank_validation_executor"
       ],
       "functions": [
         "execute",
@@ -57227,6 +58409,8 @@
       "dependencies": [
         "__future__",
         "approved_tasks",
+        "autonomy_cycles",
+        "autonomy_observers",
         "collections",
         "datetime",
         "models",
@@ -57523,13 +58707,17 @@
     },
     {
       "capabilities": [
-        "Analyze dependencies"
+        "Analyze dependencies",
+        "Inspect Brain state"
       ],
-      "category": "Runtime",
+      "category": "Brain",
       "classes": [
         "CalyxProgram",
         "CalyxProgramJob",
-        "CalyxProgramDependency"
+        "CalyxProgramDependency",
+        "CalyxAutonomyCycle",
+        "CalyxBrainPulseLedger",
+        "CalyxBrainPulseReceipt"
       ],
       "dependencies": [
         "__future__",
@@ -57954,6 +59142,43 @@
     },
     {
       "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "DatabasePulseLedger"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contextlib",
+        "hashlib",
+        "json",
+        "program_models",
+        "schema",
+        "sqlalchemy",
+        "sqlalchemy.orm",
+        "threading",
+        "typing"
+      ],
+      "functions": [
+        "_advisory_key",
+        "__init__",
+        "_empty",
+        "load",
+        "save",
+        "append_receipt",
+        "receipts",
+        "exclusive"
+      ],
+      "module_type": "python_module",
+      "name": "DatabasePulseLedger",
+      "path": "app/calyx_orchestrator/pulse_ledger_store.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
         "Execute runtime work"
       ],
       "category": "Execution",
@@ -58316,7 +59541,8 @@
         "specialist_models",
         "sqlalchemy",
         "sqlalchemy.orm",
-        "threading"
+        "threading",
+        "weakref"
       ],
       "functions": [
         "ensure_orchestrator_schema"
@@ -58558,6 +59784,46 @@
       "status": "healthy"
     },
     {
+      "capabilities": [
+        "Execute runtime work"
+      ],
+      "category": "Execution",
+      "classes": [
+        "TraitBankTarget",
+        "TraitBankBatchValidationExecutor"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.traitbank",
+        "app.traitbank.guards",
+        "app.traitbank.models",
+        "dataclasses",
+        "engineering_core",
+        "executor",
+        "hashlib",
+        "json",
+        "pathlib",
+        "pydantic",
+        "re",
+        "repository_evidence_executor",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "parse_target",
+        "parse_targets",
+        "_model_errors",
+        "validate_batch_document",
+        "__init__",
+        "execute"
+      ],
+      "module_type": "python_module",
+      "name": "TraitBankBatchValidationExecutor",
+      "path": "app/calyx_orchestrator/traitbank_validation_executor.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
       "capabilities": [],
       "category": "Execution",
       "classes": [],
@@ -58585,6 +59851,35 @@
       "path": "app/calyx_orchestrator/worker.py",
       "routers": [],
       "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "WorkspaceRefresher"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "pathlib",
+        "re",
+        "subprocess",
+        "time",
+        "typing"
+      ],
+      "functions": [
+        "refresher_from_env",
+        "__init__",
+        "_git",
+        "refresh"
+      ],
+      "module_type": "python_module",
+      "name": "WorkspaceRefresher",
+      "path": "app/calyx_orchestrator/workspace_refresh.py",
+      "routers": [],
+      "status": "healthy"
     },
     {
       "capabilities": [],
@@ -59297,6 +60592,7 @@
       ],
       "dependencies": [
         "__future__",
+        "app.calyx_orchestrator.schema",
         "app.database",
         "app.security",
         "build_queue",
@@ -59329,6 +60625,7 @@
         "app.calyx_orchestrator.program_models",
         "app.calyx_orchestrator.program_repository",
         "app.calyx_orchestrator.static_validation_executor",
+        "app.calyx_orchestrator.traitbank_validation_executor",
         "build_queue",
         "hashlib",
         "json",
@@ -67496,6 +68793,7 @@
         "RunnerConfirmRequest"
       ],
       "dependencies": [
+        "app.application_certification.routes",
         "app.atlas_intelligence.api",
         "app.brain.routes",
         "app.calyx_conversation.store",
@@ -67519,8 +68817,7 @@
         "app.intake.routes",
         "app.interaction_discovery.routes",
         "app.literature_extraction.routes",
-        "app.mission_control_briefing.routes",
-        "app.mission_control_release.routes"
+        "app.mission_control_briefing.routes"
       ],
       "functions": [
         "require_database_url",
@@ -72478,9 +73775,9 @@
         "app.routers.scientific_observability",
         "app.routers.taxonomy_releases",
         "app.trait_genomics.routes",
+        "app.traitbank.routes",
         "app.workflow.routes",
-        "fastapi",
-        "os"
+        "fastapi"
       ],
       "functions": [
         "allowed_mission_control_origins",
@@ -77980,6 +79277,428 @@
       "functions": [],
       "module_type": "python_module",
       "name": "Init",
+      "path": "app/traitbank/__init__.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "TraitIndex",
+        "Normalized"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.literature_extraction.models",
+        "collections.abc",
+        "contract",
+        "dataclasses",
+        "hashlib",
+        "json",
+        "math",
+        "models",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "_norm",
+        "convert",
+        "_unmapped",
+        "_batch_key",
+        "_citation",
+        "_evidence_type",
+        "_state_for_review",
+        "from_paper_knowledge",
+        "_http_url",
+        "_number",
+        "from_traitbank_harvester",
+        "__post_init__",
+        "resolve",
+        "state",
+        "locate",
+        "subject",
+        "links_for",
+        "habitats_for",
+        "provenance"
+      ],
+      "module_type": "python_module",
+      "name": "TraitIndex",
+      "path": "app/traitbank/adapters.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Inspect Brain state"
+      ],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "adapters",
+        "app.literature_extraction.models",
+        "argparse",
+        "collections.abc",
+        "harvesters.traitbank",
+        "json",
+        "models",
+        "os",
+        "pathlib",
+        "repository",
+        "sys",
+        "typing"
+      ],
+      "functions": [
+        "_database_url",
+        "load_definition_file",
+        "_trait_index",
+        "_emit",
+        "parse_traitbank_tsv",
+        "main"
+      ],
+      "module_type": "python_module",
+      "name": "Cli",
+      "path": "app/traitbank/cli.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "TraitBankContractError"
+      ],
+      "dependencies": [
+        "__future__",
+        "csv",
+        "functools",
+        "hashlib",
+        "json",
+        "pathlib",
+        "typing"
+      ],
+      "functions": [
+        "_pinned_bytes",
+        "load_contract",
+        "load_oao_terms",
+        "contract",
+        "oao_terms",
+        "vocabulary"
+      ],
+      "module_type": "python_module",
+      "name": "TraitBankContractError",
+      "path": "app/traitbank/contract.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "Violation"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "dataclasses",
+        "models",
+        "re"
+      ],
+      "functions": [
+        "_texts_of_provenance",
+        "_privacy",
+        "_placeholder",
+        "_assertion_texts",
+        "_relation_texts",
+        "_verified_requires_review",
+        "check_batch",
+        "check_definition",
+        "as_dict"
+      ],
+      "module_type": "python_module",
+      "name": "Violation",
+      "path": "app/traitbank/guards.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "_Strict",
+        "ProvenanceIn",
+        "SubjectIn",
+        "ValueIn",
+        "LinkIn",
+        "AssertionIn",
+        "EnvironmentRelationIn",
+        "TraitStateIn",
+        "MethodIn",
+        "TraitDefinitionIn",
+        "TraitBankBatch"
+      ],
+      "dependencies": [
+        "__future__",
+        "contract",
+        "math",
+        "pydantic",
+        "re",
+        "typing"
+      ],
+      "functions": [
+        "_require",
+        "_check",
+        "_taxon",
+        "_check",
+        "bounds",
+        "_check",
+        "_check",
+        "_check",
+        "describe",
+        "_check",
+        "state",
+        "_unique"
+      ],
+      "module_type": "python_module",
+      "name": "_Strict",
+      "path": "app/traitbank/models.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.parallel_platform.brain_candidate_handoff",
+        "collections",
+        "contract",
+        "hashlib",
+        "itertools",
+        "models",
+        "repository",
+        "runtime.matrix_relationship",
+        "typing"
+      ],
+      "functions": [
+        "active",
+        "value_text",
+        "describe",
+        "_disagreement",
+        "conflicts",
+        "summarize",
+        "_bounded_id",
+        "matrix_assertions",
+        "_confidence",
+        "calyx_envelope",
+        "candidate_handoff_requests"
+      ],
+      "module_type": "python_module",
+      "name": "Projection",
+      "path": "app/traitbank/projection.py",
+      "routers": [],
+      "status": "available"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "TraitBankRefused",
+        "TraitBankRepository"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "hashlib",
+        "json",
+        "models",
+        "os",
+        "psycopg",
+        "psycopg.rows",
+        "psycopg.types.json",
+        "taxa",
+        "typing"
+      ],
+      "functions": [
+        "_sha256",
+        "record_sha256",
+        "_v",
+        "row_to_assertion",
+        "row_to_relation",
+        "__init__",
+        "__init__",
+        "_connect",
+        "load_definitions",
+        "_definitions",
+        "_reference_checks",
+        "ingest",
+        "_read",
+        "definitions",
+        "assertions",
+        "relations",
+        "canonical_taxa",
+        "resolve_species",
+        "genus_ids"
+      ],
+      "module_type": "python_module",
+      "name": "TraitBankRefused",
+      "path": "app/traitbank/repository.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Expose API endpoints"
+      ],
+      "category": "API",
+      "classes": [],
+      "dependencies": [
+        "__future__",
+        "app.member_auth",
+        "fastapi",
+        "functools",
+        "models",
+        "re",
+        "service"
+      ],
+      "functions": [
+        "get_service",
+        "_taxon_id",
+        "_trait_id",
+        "_safe_id",
+        "taxon_traits",
+        "species_traits",
+        "genus_traits",
+        "character",
+        "assertion",
+        "source",
+        "habitat",
+        "conflicts",
+        "calyx",
+        "matrix"
+      ],
+      "module_type": "api_router",
+      "name": "Routes",
+      "path": "app/traitbank/routes.py",
+      "routers": [
+        "GET /taxa/{taxon_id}",
+        "GET /species",
+        "GET /genera/{genus}",
+        "GET /characters/{trait_id}",
+        "GET /assertions/{assertion_id:path}",
+        "GET /sources/{source_id:path}",
+        "GET /habitats",
+        "GET /conflicts",
+        "GET /taxa/{taxon_id}/calyx/{trait_id}",
+        "GET /matrix"
+      ],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "TraitBankService"
+      ],
+      "dependencies": [
+        "__future__",
+        "collections.abc",
+        "contract",
+        "models",
+        "psycopg",
+        "repository",
+        "runtime.matrix_relationship",
+        "typing"
+      ],
+      "functions": [
+        "_public_assertion",
+        "__init__",
+        "_guard",
+        "_taxon",
+        "taxon",
+        "species",
+        "genus",
+        "character",
+        "assertion",
+        "source",
+        "habitat",
+        "conflicts",
+        "calyx",
+        "matrix",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run",
+        "run"
+      ],
+      "module_type": "service",
+      "name": "TraitBankService",
+      "path": "app/traitbank/service.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [
+        "Provide runtime component"
+      ],
+      "category": "Runtime",
+      "classes": [
+        "CanonicalTaxon",
+        "CanonicalTaxa",
+        "PostgresCanonicalTaxa"
+      ],
+      "dependencies": [
+        "__future__",
+        "app.research_traits.service",
+        "dataclasses",
+        "psycopg",
+        "typing"
+      ],
+      "functions": [
+        "get_many",
+        "resolve_species",
+        "genus_ids",
+        "__init__",
+        "_sources",
+        "get_many",
+        "resolve_species",
+        "genus_ids"
+      ],
+      "module_type": "python_module",
+      "name": "CanonicalTaxon",
+      "path": "app/traitbank/taxa.py",
+      "routers": [],
+      "status": "healthy"
+    },
+    {
+      "capabilities": [],
+      "category": "Runtime",
+      "classes": [],
+      "dependencies": [],
+      "functions": [],
+      "module_type": "python_module",
+      "name": "Init",
       "path": "app/university/__init__.py",
       "routers": [],
       "status": "available"
@@ -79042,12 +80761,12 @@
   "status": "discovered",
   "summary": {
     "brain_connected": true,
-    "capabilities": 946,
+    "capabilities": 965,
     "degraded": 1,
-    "graph_edges": 2695,
-    "graph_nodes": 1141,
-    "healthy": 839,
-    "modules": 1141,
+    "graph_edges": 2767,
+    "graph_nodes": 1162,
+    "healthy": 857,
+    "modules": 1162,
     "recommendations": 3
   }
 }

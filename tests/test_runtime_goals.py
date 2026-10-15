@@ -191,3 +191,123 @@ class TestGoalPlannerService:
         result = self.planner.plan("")
         assert "Convert HealthMonitorService into a backend API endpoint" not in result
         assert "Mission Control" not in result
+
+    # Tests for degraded service (warning status)
+
+    def test_degraded_service_single_warning(self):
+        """Single degraded service should return investigate goal."""
+        result = self.planner.plan("Degraded service: backend — HTTP 500")
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_multiple_warnings(self):
+        """Multiple degraded services should return investigate goal."""
+        result = self.planner.plan("Degraded service: backend — HTTP 500; frontend — HTTP 503")
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_from_bottleneck_service_single(self):
+        """Single warning from BottleneckService should map correctly."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            )
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck.startswith("Degraded service: ")
+        result = self.planner.plan(bottleneck)
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_from_bottleneck_service_multiple(self):
+        """Multiple warnings from BottleneckService should map correctly."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="frontend",
+                status="warning",
+                message="HTTP 503"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck.startswith("Degraded service: ")
+        result = self.planner.plan(bottleneck)
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_degraded_service_with_healthy_checks(self):
+        """Warning with healthy checks should still return investigate goal."""
+        health = [
+            HealthCheckResult(
+                component="database",
+                status="healthy",
+                message="Database connection successful"
+            ),
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        result = self.planner.plan(bottleneck)
+        assert result == "Investigate degraded service and rerun health checks."
+
+    def test_critical_priority_over_warning_in_plan(self):
+        """Critical should still take priority over warning in goal planning."""
+        health = [
+            HealthCheckResult(
+                component="database",
+                status="critical",
+                message="Database is offline"
+            ),
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck.startswith("Critical service failure: ")
+        result = self.planner.plan(bottleneck)
+        assert result == "Restore failed service and rerun health checks."
+
+    def test_unknown_priority_over_warning_in_plan(self):
+        """Unknown should still take priority over warning in goal planning."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="external_api",
+                status="unknown",
+                message="Configuration missing"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck.startswith("Missing configuration or visibility: ")
+        result = self.planner.plan(bottleneck)
+        assert result == "Configure missing runtime environment variables and rerun health checks."
+
+    def test_end_to_end_degraded_service_flow(self):
+        """End-to-end test: warning health through bottleneck to goal."""
+        health = [
+            HealthCheckResult(
+                component="backend",
+                status="warning",
+                message="HTTP 500"
+            ),
+            HealthCheckResult(
+                component="frontend",
+                status="warning",
+                message="HTTP 503"
+            ),
+        ]
+        bottleneck = self.bottleneck_service.detect(health)
+        assert bottleneck == "Degraded service: backend — HTTP 500; frontend — HTTP 503"
+        goal = self.planner.plan(bottleneck)
+        assert goal == "Investigate degraded service and rerun health checks."

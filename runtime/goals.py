@@ -14,6 +14,9 @@ class GoalPlannerService:
         if bottleneck.startswith("Missing configuration or visibility: "):
             return "Configure missing runtime environment variables and rerun health checks."
 
+        if bottleneck.startswith("Degraded service: "):
+            return "Investigate degraded service and rerun health checks."
+
         if bottleneck.startswith("No critical operational bottleneck detected"):
             return "No corrective goal; all health checks passed. Continue monitoring."
 
