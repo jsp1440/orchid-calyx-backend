@@ -1,19 +1,26 @@
 from __future__ import annotations
-from typing import List
+
 from .models import HealthCheckResult
 
 
 class BottleneckService:
     """Ranks current bottlenecks from health and runtime evidence."""
 
-    def detect(self, health: List[HealthCheckResult]) -> str:
+    def detect(self, health: list[HealthCheckResult]) -> str:
         critical = [h for h in health if h.status == "critical"]
         unknown = [h for h in health if h.status == "unknown"]
 
         if critical:
-            return f"Critical service failure: {critical[0].component} — {critical[0].message}"
+            # Join all critical checks with semicolon separator
+            critical_items = [f"{h.component} — {h.message}" for h in critical]
+            return f"Critical service failure: {'; '.join(critical_items)}"
 
         if unknown:
-            return f"Missing configuration or visibility: {unknown[0].component}"
+            # Join all unknown components with comma separator
+            unknown_items = [h.component for h in unknown]
+            return f"Missing configuration or visibility: {', '.join(unknown_items)}"
 
-        return "No critical operational bottleneck detected. Next bottleneck is live CDS integration."
+        if not health:
+            return "Missing configuration or visibility: no health checks reported."
+
+        return f"No critical operational bottleneck detected across {len(health)} health checks."
