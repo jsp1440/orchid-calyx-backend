@@ -831,11 +831,25 @@ def main() -> int:
                 )
                 continue
 
+            # A reply cut off at max_tokens ends in a tool call whose arguments
+            # are incomplete (#1863: eight write_file calls failed with
+            # KeyError 'content' while rewriting a 676-line file). That call is
+            # not run; the model is told to make a smaller edit instead.
+            cut_off = (
+                tool_uses[-1] if response.get("stop_reason") == "max_tokens" else None
+            )
             results: list[dict[str, Any]] = []
             for block in tool_uses:
                 name = str(block.get("name", ""))
                 handler = TOOL_HANDLERS.get(name)
-                if handler is None:
+                if block is cut_off:
+                    tool_result = (
+                        f"ERROR: your reply reached the {bounded_tokens}-token output "
+                        "limit before this call's arguments were complete, so it was "
+                        "not run. Make a smaller change: write_file with a short, "
+                        "exact old_text and only its replacement, never a whole file."
+                    )
+                elif handler is None:
                     tool_result = f"ERROR: unsupported tool: {name}"
                 else:
                     try:

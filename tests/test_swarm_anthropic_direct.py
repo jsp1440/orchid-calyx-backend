@@ -1432,3 +1432,34 @@ def test_a_call_lost_in_transport_reports_no_actual_cost(
     assert code == 1
     # 100 * $1 + 10 * $5 per million = 0.00015, rounded up
     assert result["total_cost_usd"] == cost
+
+
+def test_a_tool_call_cut_off_at_the_output_limit_is_not_run(
+    tmp_path, monkeypatch, capsys
+):
+    """#1863: truncated write_file calls arrived without their content."""
+    truncated = {
+        "stop_reason": "max_tokens",
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "ok",
+                "name": "list_files",
+                "input": {"pattern": "*.py"},
+            },
+            {
+                "type": "tool_use",
+                "id": "cut",
+                "name": "write_file",
+                "input": {"path": "app/a.py"},
+            },
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    replies = [truncated, _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    results = {r["tool_use_id"]: r["content"] for r in sent[1][-1]["content"][:-1]}
+    assert results["cut"].startswith("ERROR: your reply reached the")
+    assert "output limit" in results["cut"]
+    assert not results["ok"].startswith("ERROR")  # complete calls still run
