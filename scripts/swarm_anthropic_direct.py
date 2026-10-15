@@ -230,12 +230,70 @@ def _tool_search_text(args: dict[str, Any]) -> str:
     return "\n".join(hits) or "(no matches)"
 
 
+# Files the model wrote through write_file in this run, and the issue's declared
+# "Allowed paths" (None when the task declares none). Only written files are
+# committed: running the test suite rewrites tracked artifacts such as
+# calyx_runtime_journal.jsonl and runtime/discovery_registry.json, and
+# "git add -A" swept those into PR #1855, failing the hosted scope check.
+WRITTEN: set[str] = set()
+ALLOWED_PATHS: set[str] | None = None
+_ALLOWED_HEADER = re.compile(r"^\s*Allowed paths:(?P<rest>.*)$", re.IGNORECASE)
+_LIST_PATH = re.compile(
+    r"^\s*[-*]\s+(?:`(?P<quoted>[^`]+)`(?:\s.*)?|(?P<bare>[\w./-]+))\s*$"
+)
+_BARE_PATH = re.compile(r"^[\w.-]*(?:/[\w.-]+)+$|^[\w-]+\.\w+$")
+
+
+def _inline_paths(rest: str) -> set[str]:
+    quoted = set(re.findall(r"`([^`]+)`", rest))
+    if quoted:
+        return quoted
+    # Bare paths: read only the leading run of paths, so trailing prose such as
+    # "only; do not change runtime/health.py" never widens the scope.
+    found: set[str] = set()
+    for token in re.split(r"[\s,]+", rest.strip()):
+        if token.lower() == "and":
+            continue
+        path = token.rstrip(".;:")
+        if not _BARE_PATH.match(path):
+            break
+        found.add(path)
+        if path != token:
+            break
+    return found
+
+
+def _parse_allowed_paths(packet: str) -> set[str] | None:
+    """Read the task's "Allowed paths:" declaration, inline or as a bullet list."""
+    lines = packet.splitlines()
+    found: set[str] | None = None
+    for index, line in enumerate(lines):
+        header = _ALLOWED_HEADER.match(line)
+        if not header:
+            continue
+        if found is not None:
+            return set()  # ambiguous declaration: allow nothing
+        found = _inline_paths(header.group("rest"))
+        if not found:
+            for item in lines[index + 1 :]:
+                listed = _LIST_PATH.match(item)
+                if not listed:
+                    break
+                found.add(listed.group("quoted") or listed.group("bare"))
+    return found
+
+
 def _tool_write_file(args: dict[str, Any]) -> str:
     if not isinstance(args["path"], str) or not isinstance(args["content"], str):
         raise TypeError("write_file requires string path and content")
     path = _safe_path(str(args["path"]))
     if not _writable(path):
         return f"ERROR: protected path is not writable: {_relative(path)}"
+    if ALLOWED_PATHS is not None and _relative(path) not in ALLOWED_PATHS:
+        return (
+            f"ERROR: {_relative(path)} is outside this task's allowed paths: "
+            + ", ".join(sorted(ALLOWED_PATHS))
+        )
     content = args["content"]
     if "old_text" in args:
         old_text = args["old_text"]
@@ -247,7 +305,17 @@ def _tool_write_file(args: dict[str, Any]) -> str:
         content = current.replace(old_text, content, 1)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
+    WRITTEN.add(_relative(path))
     return f"WROTE {_relative(path)} bytes={len(content.encode('utf-8'))}"
+
+
+def _stage_written_files() -> bool:
+    """Stage only files the model wrote; report whether anything is staged."""
+    paths = sorted(WRITTEN)
+    if paths:
+        _run(["git", "add", "--", *paths], timeout=30, check=True)
+    staged = _run(["git", "diff", "--cached", "--name-only"], timeout=30, check=True)
+    return bool(staged.stdout.strip())
 
 
 def _safe_target(raw: str | None) -> str:
@@ -424,14 +492,10 @@ def _prepare_branch(
 
 
 def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str:
-    status = _run(
-        ["git", "status", "--porcelain"], timeout=30, check=True
-    ).stdout.strip()
-    if not status:
+    if not _stage_written_files():
         return ""
 
-    _run(["git", "diff", "--check"], timeout=60, check=True)
-    _run(["git", "add", "-A"], timeout=30, check=True)
+    _run(["git", "diff", "--cached", "--check"], timeout=60, check=True)
     _run(
         [
             "git",
@@ -540,6 +604,9 @@ def main() -> int:
     run_id = os.getenv("GITHUB_RUN_ID", str(int(time.time())))
     packet = Path(args.packet_file).read_text(encoding="utf-8")
     execution_path = Path(args.execution_file)
+    global ALLOWED_PATHS
+    ALLOWED_PATHS = _parse_allowed_paths(packet)
+    WRITTEN.clear()
 
     input_tokens = 0
     output_tokens = 0
@@ -721,9 +788,7 @@ def main() -> int:
         partial_branch: str | None = None
         if branch and error_kind in {"max_turns", "provider_or_executor_error"}:
             try:
-                dirty = _run(["git", "status", "--porcelain"], timeout=30)
-                if dirty.stdout.strip():
-                    _run(["git", "add", "-A"], timeout=30)
+                if _stage_written_files():
                     msg = (
                         f"partial(oc): salvage partial changes for "
                         f"#{args.issue_number} [{error_kind}]\n\n"

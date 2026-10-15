@@ -561,22 +561,28 @@ def test_direct_executor_salvages_partial_changes_on_max_turns(
         class FakeResult:
             returncode = 0
             stdout = (
-                "M app/partial.py\n" if cmd == ["git", "status", "--porcelain"] else ""
+                "app/partial.py\n"
+                if cmd == ["git", "diff", "--cached", "--name-only"]
+                else ""
             )
             stderr = ""
 
         return FakeResult()
 
+    turns = {"n": 0}
+
     def tool_response(**kwargs):
+        turns["n"] += 1
+        call = (
+            {
+                "name": "write_file",
+                "input": {"path": "app/partial.py", "content": "x = 1\n"},
+            }
+            if turns["n"] == 1
+            else {"name": "list_files", "input": {"pattern": "*.py"}}
+        )
         return {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "tool-loop",
-                    "name": "list_files",
-                    "input": {"pattern": "*.py"},
-                }
-            ],
+            "content": [{"type": "tool_use", "id": f"tool-{turns['n']}", **call}],
             "usage": {"input_tokens": 3, "output_tokens": 2},
         }
 
@@ -615,13 +621,10 @@ def test_direct_executor_salvages_partial_changes_on_max_turns(
     cmd_names = [c[0] if c else "" for c in salvage_calls]
     assert "git" in cmd_names
 
-    status_calls = [c for c in salvage_calls if c == ["git", "status", "--porcelain"]]
-    assert len(status_calls) >= 1, (
-        "git status --porcelain must be called during salvage"
-    )
-
     add_calls = [c for c in salvage_calls if c[:2] == ["git", "add"]]
-    assert add_calls, "git add must be called when dirty working tree is found"
+    assert add_calls == [["git", "add", "--", "app/partial.py"]], (
+        "salvage must stage only the files the model wrote"
+    )
 
     commit_calls = [c for c in salvage_calls if c[:2] == ["git", "commit"]]
     assert commit_calls, "git commit must be called during salvage"
@@ -944,3 +947,96 @@ def test_every_tool_result_carries_the_turn_budget_and_the_prompt_states_it(
             "type": "text",
             "text": direct._turn_budget_notice(index, 24),
         }
+
+
+@pytest.mark.parametrize(
+    ("packet", "expected"),
+    [
+        (
+            "Allowed paths: `runtime/a.py` and a new `tests/test_a.py`. Do not...",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Scope\nAllowed paths:\n- `runtime/a.py`\n- `tests/test_a.py`\nDo not change x",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        ("No declaration here.", None),
+        ("Allowed paths: `a.py`\nAllowed paths: `b.py`", set()),
+        (
+            "Allowed paths: runtime/a.py, tests/test_a.py.",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Allowed paths:\n- `runtime/a.py` (new)\n- tests/test_a.py\nDone",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Allowed paths: runtime/a.py only; do not change runtime/health.py.",
+            {"runtime/a.py"},
+        ),
+        ("Allowed paths: runtime/a.py; see README.md", {"runtime/a.py"}),
+        (
+            "Allowed paths:\n- runtime/a.py\n- runtime/health.py must stay unchanged",
+            {"runtime/a.py"},
+        ),
+    ],
+)
+def test_allowed_paths_are_read_inline_or_as_a_list(packet, expected):
+    assert direct._parse_allowed_paths(packet) == expected
+
+
+def test_writes_outside_the_allowed_paths_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", {"runtime/a.py"})
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    ok = direct._tool_write_file({"path": "runtime/a.py", "content": "a = 1\n"})
+    assert ok.startswith("WROTE runtime/a.py")
+    refused = direct._tool_write_file(
+        {"path": "test_verify_changes.py", "content": "x"}
+    )
+    assert refused.startswith("ERROR: test_verify_changes.py is outside")
+    assert not (tmp_path / "test_verify_changes.py").exists()
+    assert direct.WRITTEN == {"runtime/a.py"}
+
+
+def test_only_written_files_are_staged_never_test_side_effects(tmp_path, monkeypatch):
+    """PR #1855 carried calyx_runtime_journal.jsonl and runtime/discovery_registry.json,
+    which the test suite rewrites; git add -A committed them."""
+    calls = []
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        calls.append(cmd)
+
+        class Result:
+            returncode = 0
+            stdout = "runtime/a.py\n" if cmd[:3] == ["git", "diff", "--cached"] else ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(direct, "_run", fake_run)
+    monkeypatch.setattr(direct, "WRITTEN", {"runtime/a.py"})
+    assert direct._stage_written_files() is True
+    adds = [c for c in calls if c[:2] == ["git", "add"]]
+    assert adds == [["git", "add", "--", "runtime/a.py"]]
+    assert ["git", "add", "-A"] not in calls
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    calls.clear()
+
+    def nothing_staged(cmd, *, timeout=120, check=False):
+        calls.append(cmd)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(direct, "_run", nothing_staged)
+    assert direct._stage_written_files() is False
+    assert not [c for c in calls if c[:2] == ["git", "add"]]
+
+
+def test_no_git_add_all_remains_in_the_executor():
+    assert '"add", "-A"' not in SCRIPT.read_text()
