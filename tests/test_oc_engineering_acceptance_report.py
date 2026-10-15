@@ -371,6 +371,8 @@ def test_lists_are_paged_on_repo_paths_not_link_headers(monkeypatch):
 def test_controller_slots_can_be_bounded_by_a_repository_variable():
     """A bounded demonstration needs scheduled waves to lease one lane, not eight."""
     text = (ROOT / ".github" / "workflows" / "orchid-swarm-controller.yml").read_text()
-    expected = "WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}"
+    expected = (
+        "WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}"
+    )
     assert text.count(expected) == 2  # plan and refill read the same bound
     assert "WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}" not in text
