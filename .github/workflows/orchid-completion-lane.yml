@@ -140,6 +140,10 @@ jobs:
           ISSUE_TITLE: ${{ steps.issue.outputs.title }}
           ISSUE_BODY: ${{ steps.packet.outputs.routing_text }}
           ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
+          # Highest tier a route may reach, repair escalation included. Unset
+          # keeps the router default (deep); "cheap" pins a bounded window to
+          # the smallest model even on a repair attempt.
+          OC_CLAUDE_MAXIMUM_TIER: ${{ vars.OC_CLAUDE_MAXIMUM_TIER || 'deep' }}
         shell: bash
         run: |
           set -euo pipefail

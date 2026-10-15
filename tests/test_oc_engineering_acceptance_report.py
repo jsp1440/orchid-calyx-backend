@@ -327,17 +327,84 @@ def test_caller_chosen_cycles_are_never_certified():
 
 
 def test_the_streak_is_the_most_recent_unbroken_run():
-    records = [_record(0, settle=False)] + _ten()
-    records[0]["issue"]["number"] = 1999
-    report = _evaluate(records)
-    # The unsettled cycle sorts last, so it is the most recent: streak 0.
-    assert report["consecutive_completed"] == 0 and report["certified"] is False
     early_failure = _ten({1: {"verdict": CheckerVerdict.FAIL}}) + [
         _record(11),
         _record(12),
     ]
     report = _evaluate(early_failure)
     assert report["consecutive_completed"] == 11  # 2..12 after the early failure
+    # A finished attempt that never settled is a failure, and here the latest.
+    stalled = _record(13, settle=False)
+    stalled["issue"].update(
+        state="open", labels=[{"name": "oc-queued"}, {"name": "oc-repair"}]
+    )
+    report = _evaluate(_ten() + [stalled])
+    assert report["consecutive_completed"] == 0 and report["certified"] is False
+    assert "NO_DURABLE_SETTLEMENT_RECEIPT" in report["reason"]
+
+
+def test_a_running_attempt_is_in_progress_not_a_break():
+    running = _record(13, settle=False)  # open, oc-validating
+    report = _evaluate(_ten() + [running])
+    assert report["in_progress"] == [2013]
+    assert report["consecutive_completed"] == 10 and report["certified"] is True
+
+
+def _lane_claim_only(n, *comments):
+    """A claim in the window whose latest attempt never reached a provider."""
+    issue_no, run = 2000 + n, int(f"9{n:03d}")
+    return {
+        "repository": REPO,
+        "issue": {
+            "number": issue_no,
+            "state": "open",
+            "state_reason": None,
+            "labels": [{"name": "oc-queued"}],
+        },
+        "comments": [_claim(11, issue_no, run, 1, f"{_day(n)}:01:00Z"), *comments],
+    }
+
+
+def test_claims_that_never_reached_a_provider_are_zero_execution_not_breaks():
+    n = 13
+    provider_free = _lane_claim_only(
+        n,
+        _c(
+            12,
+            "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: "
+            '`{"disposition":"done","mode":"validate"}`.',
+            f"{_day(n)}:02:00Z",
+        ),
+    )
+    denied = _lane_claim_only(14)
+    denied["comments"] += [
+        _c(
+            12,
+            "[OC-AUTO] Completion worker started from schedule; economy-policy=one-provider-per-run; "
+            "primary=Claude; route=tier=cheap; model=claude-haiku-4-5; reason=x; packet=f. "
+            f"Run https://github.com/{REPO}/actions/runs/9014.",
+            f"{_day(14)}:01:10Z",
+        ),
+        _c(
+            13,
+            "[OC-SWARM-V4] Provider admission denied; requested lease disposition: `"
+            + json.dumps(
+                {
+                    "disposition": "queued",
+                    "message": "BLOCKED_NO_API_MODE",
+                    "lease_comment_id": 11,
+                }
+            )
+            + "`.",
+            f"{_day(14)}:01:20Z",
+        ),
+    ]
+    report = _evaluate(_ten() + [provider_free, denied])
+    assert report["consecutive_completed"] == 10 and report["certified"] is True
+    zero = {z["issue"]: z["reasons"] for z in report["zero_execution_issues"]}
+    assert zero[2013] == ["NO_AUTHORIZED_PROVIDER_WORKER"]
+    assert zero[2014] == ["BLOCKED_NO_API_MODE"]
+    assert all(c["issue"] not in (2013, 2014) for c in report["cycles"])
 
 
 # --- each criterion, and its binding to the settled attempt -------------------
@@ -752,3 +819,51 @@ def test_controller_slots_can_be_bounded_by_a_repository_variable():
     )
     assert text.count(expected) == 2  # plan and refill read the same bound
     assert "WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}" not in text
+
+
+def test_the_route_tier_can_be_capped_for_a_bounded_window():
+    """Repair escalation must not leave the approved model during a demonstration."""
+    import yaml
+
+    workflow = yaml.safe_load(
+        (ROOT / ".github" / "workflows" / "orchid-completion-lane.yml").read_text()
+    )
+    steps = workflow["jobs"]["execute"]["steps"]
+    route = next(s for s in steps if s.get("name") == "Select bounded Claude route")
+    assert (
+        route["env"]["OC_CLAUDE_MAXIMUM_TIER"]
+        == "${{ vars.OC_CLAUDE_MAXIMUM_TIER || 'deep' }}"
+    )
+
+    from scripts import oc_model_router as router
+
+    labels = "oc-queued,oc-model-cheap,oc-repair"
+    capped = router.choose_route(
+        title="t", body="b", labels=labels, maximum_tier="cheap"
+    )
+    assert (capped.tier, capped.model) == ("cheap", "claude-haiku-4-5")
+    uncapped = router.choose_route(title="t", body="b", labels=labels)
+    assert uncapped.tier == "standard"  # the default still escalates a repair
+
+
+def test_window_times_compare_as_instants_not_strings():
+    module = _module()
+    record = _record(1)  # claimed at 2026-10-16T01:01:00Z
+    starts = (
+        "2026-10-16T01:00:59.500000+00:00",
+        "2026-10-16T02:01:00+01:00",
+        "2026-10-16T01:01:01Z",
+        "2026-10-16T01:00:00",
+    )
+    api, _ = _api_for(
+        [record],
+        {
+            f"repos/{REPO}/issues?state=all&since={t}&per_page=100": [record["issue"]]
+            for t in starts
+        },
+    )
+    assert len(module.window_records(REPO, starts[0], api=api)) == 1
+    assert len(module.window_records(REPO, starts[1], api=api)) == 1  # the same instant
+    assert module.window_records(REPO, starts[2], api=api) == []
+    with pytest.raises(ValueError, match="timezone"):
+        module.window_records(REPO, starts[3], api=api)

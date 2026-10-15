@@ -410,9 +410,29 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
                 }
             )
     evidence["zero_execution"] = zero
+    if final is not None:
+        evidence["claimed_at"] = final[0].get("created_at")
+
+    # What kind of record this is. A claim whose latest attempt never reached a
+    # provider (provider-free or acquisition lanes, or an admission denied for
+    # that lease) is not an engineering cycle at all: it is reported as zero
+    # execution with the engine's reason, never as a pass and never as a break.
+    # An executed attempt still running is "in_progress", not yet judged.
+    labels_now = {label.get("name") for label in issue.get("labels") or []}
+    if settlement is None and (worker is None or denied):
+        status = "zero_execution"
+    elif (
+        settlement is None
+        and issue.get("state") == "open"
+        and labels_now & {"oc-running", "oc-validating"}
+    ):
+        status = "in_progress"
+    else:
+        status = "passed" if not failures else "failed"
 
     return {
         "issue": number,
+        "status": status,
         "passed": not failures,
         "criteria": {
             "acquired": acquired,
@@ -438,12 +458,13 @@ def evaluate(
     every claimed issue in a window GitHub enumerated (``--window-start``), not
     a list a caller chose, so failures cannot be left out of "consecutive".
     """
-    cycles = [evaluate_cycle(r) for r in records]
-    # Settlement order; unsettled cycles sort last.
+    judged = [evaluate_cycle(r) for r in records]
+    zero_issues = [c for c in judged if c["status"] == "zero_execution"]
+    cycles = [c for c in judged if c["status"] != "zero_execution"]
+    # Settlement time, else the claim time of the attempt (in-progress or failed).
     cycles.sort(
         key=lambda c: (
-            c["evidence"].get("settled_at") is None,
-            c["evidence"].get("settled_at") or "",
+            c["evidence"].get("settled_at") or c["evidence"].get("claimed_at") or "",
             c["issue"],
         )
     )
@@ -454,6 +475,8 @@ def evaluate(
         "pull_request": set(),
     }
     for cycle in cycles:
+        if cycle["status"] == "in_progress":
+            continue
         reused = [
             k
             for k, values in seen.items()
@@ -465,12 +488,15 @@ def evaluate(
         if any(not z["reason"] for z in cycle["evidence"]["zero_execution"]):
             cycle["passed"] = False
             cycle["failures"].append("ZERO_EXECUTION_WITHOUT_REASON")
+        cycle["status"] = "passed" if cycle["passed"] else "failed"
         for k, values in seen.items():
             if cycle["evidence"].get(k):
                 values.add(cycle["evidence"][k])
-    # The most recent unbroken run of passing cycles.
+    # The most recent unbroken run of passing cycles; running ones are skipped.
     streak, recovered, stop = 0, False, None
     for cycle in reversed(cycles):
+        if cycle["status"] == "in_progress":
+            continue
         if not cycle["passed"]:
             stop = f"issue {cycle['issue']}: {', '.join(cycle['failures'])}"
             break
@@ -494,6 +520,17 @@ def evaluate(
         "certified": certified,
         "reason": reason,
         "cycles": cycles,
+        "in_progress": [c["issue"] for c in cycles if c["status"] == "in_progress"],
+        "zero_execution_issues": [
+            {
+                "issue": c["issue"],
+                # The engine's own reasons, else why no provider attempt exists
+                # (e.g. a provider-free or acquisition lane served the claim).
+                "reasons": [z["reason"] for z in c["evidence"]["zero_execution"]]
+                or c["failures"][:1],
+            }
+            for c in zero_issues
+        ],
     }
 
 
@@ -590,6 +627,14 @@ def fetch_record(
     return record
 
 
+def _utc(value: str) -> datetime:
+    """Parse an ISO timestamp (Z, offset, fractional seconds) to aware UTC."""
+    parsed = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        raise ValueError(f"timestamp needs a timezone: {value!r}")
+    return parsed.astimezone(UTC)
+
+
 def window_records(
     repository: str, start: str, api: Callable[[str], Any] = gh_api
 ) -> list[dict[str, Any]]:
@@ -599,6 +644,7 @@ def window_records(
     bumps, so no claimed issue in the window can be missed; pull requests are
     skipped. The claim time, not the update time, decides membership.
     """
+    since = _utc(start)
     rows = api(f"repos/{repository}/issues?state=all&since={start}&per_page=100")
     records = []
     for row in rows:
@@ -607,7 +653,7 @@ def window_records(
         record = fetch_record(repository, int(row["number"]), api=api)
         if any(
             _by_bot(c)
-            and str(c.get("created_at") or "") >= start
+            and _utc(str(c.get("created_at") or "")) >= since
             and (_json_after(CLAIM, c.get("body", "")) or {}).get("schema")
             == "oc.swarm-claim.v1"
             for c in record["comments"]
@@ -662,7 +708,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     print(json.dumps({k: report[k] for k in keys}))
     if args.first_cycle:
-        latest = report["cycles"][-1] if report["cycles"] else None
+        finished = [c for c in report["cycles"] if c["status"] != "in_progress"]
+        latest = finished[-1] if finished else None
         return 0 if args.window_start and latest is not None and latest["passed"] else 1
     return 0 if report["certified"] else 1
 
