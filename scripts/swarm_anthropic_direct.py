@@ -726,6 +726,10 @@ def main() -> int:
     input_tokens = 0
     output_tokens = 0
     usage_totals = dict.fromkeys(USAGE_FIELDS.values(), 0)
+    # A call that dies in transport (timeout, cut-off response) may still be
+    # billed without its usage reaching us; the run then reports no actual
+    # cost so the ledger keeps the reservation.
+    call_in_flight = False
     calls = 0
     branch = ""
     pr_url = ""
@@ -765,6 +769,7 @@ def main() -> int:
         # while still keeping a hard repository-local cap (bounded_turns above).
         bounded_tokens = min(max(args.max_tokens, 256), 3072)
         for turn in range(1, bounded_turns + 1):
+            call_in_flight = True
             response = _anthropic_message(
                 api_key=api_key,
                 model=args.model,
@@ -772,6 +777,7 @@ def main() -> int:
                 max_tokens=bounded_tokens,
                 timeout=120,
             )
+            call_in_flight = False
             calls += 1
             usage = response.get("usage") or {}
             input_tokens += int(usage.get("input_tokens") or 0)
@@ -966,7 +972,10 @@ def main() -> int:
             "is_error": True,
             "num_turns": calls,
             "total_cost_usd": (
-                _actual_cost_usd(args.model, usage_totals) if calls else None
+                _actual_cost_usd(args.model, usage_totals)
+                if calls
+                and not (call_in_flight and not isinstance(exc, AnthropicHTTPError))
+                else None
             ),
             "modelUsage": (
                 {

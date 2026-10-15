@@ -1066,7 +1066,10 @@ def _run_executor(tmp_path, monkeypatch, replies, check_results, max_turns="6"):
 
     def model(**kwargs):
         sent.append(copy.deepcopy(kwargs["messages"]))
-        return replies.pop(0)
+        reply = replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
 
     monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
     monkeypatch.setenv("GITHUB_RUN_ID", "3000")
@@ -1400,3 +1403,23 @@ def test_the_result_records_cache_usage_and_actual_cost(tmp_path, monkeypatch):
     assert usage["cacheReadInputTokens"] == 5000
     # 200 in * 1.00 + 20 out * 5.00 + 5000 * 1.25 + 5000 * 0.10, per million
     assert result["total_cost_usd"] == "0.0071"  # 0.00705 rounded up
+
+
+@pytest.mark.parametrize(
+    ("failure", "cost"),
+    [
+        (TimeoutError("read timed out"), None),  # may be billed: keep reservation
+        (direct.AnthropicHTTPError(529, {"error": {"type": "overloaded"}}), "0.0002"),
+    ],
+)
+def test_a_call_lost_in_transport_reports_no_actual_cost(
+    tmp_path, monkeypatch, failure, cost
+):
+    first = {
+        **_write(1, "x = 1\n"),
+        "usage": {"input_tokens": 100, "output_tokens": 10},
+    }
+    code, result, _ = _run_executor(tmp_path, monkeypatch, [first, failure], [])
+    assert code == 1
+    # 100 * $1 + 10 * $5 per million = 0.00015, rounded up
+    assert result["total_cost_usd"] == cost
