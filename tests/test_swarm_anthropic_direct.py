@@ -1304,3 +1304,45 @@ def test_finish_problems_labels_each_report(monkeypatch):
     assert direct._finish_problems() == "[ruff check]\na.py:1:8: F401"
     monkeypatch.setattr(direct, "_lint_problems", lambda: "")
     assert direct._finish_problems() == ""
+
+
+def test_old_text_errors_say_whether_it_was_missing_or_ambiguous(tmp_path, monkeypatch):
+    """#1863: eleven failed writes; the model was only told to read again."""
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    (tmp_path / "a.py").write_text("x = '\u2014'\ny = 1\ny = 1\n")
+    with pytest.raises(ValueError, match="not found.*em dash"):
+        direct._tool_write_file(
+            {"path": "a.py", "old_text": "x = '-'", "content": "x = 2"}
+        )
+    with pytest.raises(ValueError, match="matches 2 times"):
+        direct._tool_write_file({"path": "a.py", "old_text": "y = 1", "content": "y"})
+    assert direct.WRITTEN == set()
+
+
+def test_tool_errors_are_logged_with_their_reason(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.py").write_text("x = 1\n")
+    bad = {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "bad",
+                "name": "write_file",
+                "input": {"path": "app/a.py", "old_text": "nope", "content": "y"},
+            }
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    _run_executor(tmp_path, monkeypatch, [bad, _write(2, "x = 2\n"), dict(DONE)], [])
+    lines = [
+        json.loads(line.split(" ", 1)[1])
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("[OC-DIRECT-TOOL]")
+    ]
+    assert lines[0]["input_error"] is True
+    assert lines[0]["error"].startswith("ERROR: ValueError: old_text was not found")
+    assert "error" not in lines[1]
