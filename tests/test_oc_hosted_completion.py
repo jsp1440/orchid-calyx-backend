@@ -321,6 +321,37 @@ def test_changed_material_is_rejected_before_any_action(material, change):
         validate(material)
 
 
+def _claim_with_labels(material, labels):
+    packet = build_work_packet(
+        issue_number="1400",
+        title=material["issue"]["title"],
+        body=material["issue"]["body"],
+        labels=labels,
+    )
+    body = material["lease"]["body"]
+    claim = json.loads(body[body.index("`") + 1 : body.rindex("`")])
+    claim["material_fingerprint"] = packet.fingerprint
+    material["lease"]["body"] = (
+        f"[OC-SWARM-V4] Dependency/resource lease claimed: `{json.dumps(claim)}`."
+    )
+
+
+def test_repair_attempt_claimed_with_oc_repair_stays_bound_after_settlement(material):
+    """Settlement removes oc-repair on the way to oc-validating (#1843, attempt 3).
+
+    The claim was taken with oc-repair present; completion must still bind it.
+    """
+    _claim_with_labels(material, {"oc-running", "oc-p4", "oc-repair"})
+    assert validate(material)["passed"] is True
+
+
+@pytest.mark.parametrize("extra", ["oc-p1", "oc-model-deep", "oc-owner-gate"])
+def test_only_the_engine_removed_repair_label_is_tolerated(material, extra):
+    _claim_with_labels(material, {"oc-running", "oc-p4", extra})
+    with pytest.raises(ValueError, match="lease_binding_changed"):
+        validate(material)
+
+
 def test_reopened_dependency_cannot_be_bypassed(material):
     material["issue"]["body"] += "\nOC-SWARM-DEPENDS-ON: #1399"
     material["grant"]["issue_material"] = hosted.issue_material(material["issue"])
