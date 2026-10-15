@@ -580,6 +580,21 @@ class MarkdownExportService:
     """Serialises an ArticleGenerationResponse to Markdown."""
 
     @staticmethod
+    def _escape_table_cell(value: str | None) -> str:
+        """Escape newlines and pipes in a table cell value.
+        
+        Replaces \\r\\n, \\r, and \\n with spaces, and escapes | with \\|.
+        Returns '—' for None or empty strings (following Markdown table convention).
+        """
+        if value is None or value == "":
+            return "—"
+        # Replace all types of newlines with a single space
+        escaped = value.replace("\r\n", " ").replace("\r", " ").replace("\n", " ")
+        # Escape pipe characters
+        escaped = escaped.replace("|", r"\|")
+        return escaped
+
+    @staticmethod
     def export(
         response: ArticleGenerationResponse,
         publication: PublicationMeta,
@@ -617,10 +632,11 @@ class MarkdownExportService:
             lines.append("| Project | Country | Region | Source |")
             lines.append("| --- | --- | --- | --- |")
             for proj in response.verified_projects:
-                lines.append(
-                    f"| {proj.project_name} | {proj.country or '—'} "
-                    f"| {proj.region or '—'} | {proj.source_id or '—'} |"
-                )
+                project_name = MarkdownExportService._escape_table_cell(proj.project_name)
+                country = MarkdownExportService._escape_table_cell(proj.country)
+                region = MarkdownExportService._escape_table_cell(proj.region)
+                source_id = MarkdownExportService._escape_table_cell(proj.source_id)
+                lines.append(f"| {project_name} | {country} | {region} | {source_id} |")
             lines.append("")
 
         # Unavailable dependencies

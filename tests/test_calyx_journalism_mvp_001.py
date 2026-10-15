@@ -894,3 +894,82 @@ def test_http_insufficient_evidence_flagged_in_response() -> None:
     data = resp.json()
     assert data["insufficient_evidence"] is True
     assert any("insufficient" in w.lower() for w in data["warnings"])
+
+
+# ---------------------------------------------------------------------------
+# Table cell escaping tests
+# ---------------------------------------------------------------------------
+
+def test_escape_table_cell_with_pipe_and_newline() -> None:
+    """A pipe and newline in project and region produce one row with exactly 4 cells."""
+    from app.calyx_journalism.services import MarkdownExportService
+    
+    # Create evidence with problematic characters
+    items = [
+        {
+            "project_name": "Seed bank | phase 2",
+            "country": "Ecuador",
+            "region": "Loja\nSouth",
+            "source_id": "src-1",
+        },
+    ]
+    
+    # Generate article with this evidence
+    response = _generation_service().generate(
+        _generation_request(mode="limited_evidence", evidence_items=items)
+    )
+    
+    # Export to Markdown
+    result = _export_service().export(response, _fcos_publication(), _fcos_brief())
+    
+    # Verify the project table row is correctly escaped
+    lines = result.content.split("\n")
+    project_table_lines = []
+    in_table = False
+    for line in lines:
+        if "## Verified Projects" in line:
+            in_table = True
+            continue
+        if in_table and line.startswith("| "):
+            project_table_lines.append(line)
+        elif in_table and line and not line.startswith("|"):
+            break
+    
+    # Should have exactly 3 rows: header separator, and one data row
+    assert len(project_table_lines) == 2, f"Expected 2 table rows, got {len(project_table_lines)}"
+    
+    # The data row should be exactly: | Seed bank \| phase 2 | Ecuador | Loja South | src-1 |
+    data_row = project_table_lines[1]
+    assert data_row == "| Seed bank \\| phase 2 | Ecuador | Loja South | src-1 |", (
+        f"Expected escaped row with pipe and newline replaced, got: {data_row}"
+    )
+    
+    # Count cells (separated by unescaped pipes)
+    cells = [c.strip() for c in data_row.split("|") if c.strip()]
+    assert len(cells) == 4, f"Expected 4 cells, got {len(cells)}: {cells}"
+
+
+def test_plain_row_unchanged_in_markdown_export() -> None:
+    """A plain row without special characters renders exactly as today."""
+    from app.calyx_journalism.services import MarkdownExportService
+    
+    # Create evidence with normal values
+    items = [
+        {
+            "project_name": "EDGE Orchids",
+            "country": "United Kingdom",
+            "region": "Europe",
+            "source_id": "src-001",
+        },
+    ]
+    
+    # Generate article with this evidence
+    response = _generation_service().generate(
+        _generation_request(mode="limited_evidence", evidence_items=items)
+    )
+    
+    # Export to Markdown
+    result = _export_service().export(response, _fcos_publication(), _fcos_brief())
+    
+    # Verify the project table row is unchanged
+    assert "| EDGE Orchids | United Kingdom | Europe | src-001 |" in result.content
