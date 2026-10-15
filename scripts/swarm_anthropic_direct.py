@@ -361,6 +361,27 @@ def _whitespace_problems() -> str:
     return (result.stdout or result.stderr or "whitespace errors").strip()[:2000]
 
 
+def _autofix_written() -> None:
+    """Apply ruff's safe fixes to the Python files the model wrote.
+
+    #1866 twice opened PRs that failed validation on one mechanical finding
+    (an unused import, then unsorted imports) that `ruff check --fix` fixes
+    deterministically. Only safe fixes, only files in WRITTEN; best effort.
+    """
+    files = sorted(
+        p for p in WRITTEN if p.endswith(".py") and (REPO_ROOT / p).is_file()
+    )
+    if not files:
+        return
+    try:
+        _run(
+            [sys.executable, "-m", "ruff", "check", "--fix", "--quiet", "--", *files],
+            timeout=180,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+
+
 def _lint_problems() -> str:
     """Report `ruff check` problems in changed Python files ('' when clean).
 
@@ -368,6 +389,7 @@ def _lint_problems() -> str:
     pre-existing findings count too. #1860 and #1862 opened PRs whose tests
     passed but whose lint failed, and stopped at hosted prepare.
     """
+    _autofix_written()
     files = sorted(
         p for p in WRITTEN | RETAINED if p.endswith(".py") and (REPO_ROOT / p).is_file()
     )
@@ -631,6 +653,9 @@ def _prepare_branch(
 
 
 def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str:
+    # Also covers a model that finished on its last turn, when no finish
+    # feedback round (and so no earlier auto-fix) was possible.
+    _autofix_written()
     if not _stage_written_files():
         return ""
 
