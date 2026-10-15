@@ -5,10 +5,16 @@ class GoalPlannerService:
     """Selects the single recommended next goal."""
 
     def plan(self, bottleneck: str) -> str:
-        if "Critical service failure" in bottleneck:
+        if bottleneck.startswith("Critical service failure: "):
             return "Restore failed service and rerun health checks."
 
-        if "Missing configuration" in bottleneck:
+        if bottleneck == "Missing configuration or visibility: no health checks reported.":
+            return "Run the health checks; none were reported."
+
+        if bottleneck.startswith("Missing configuration or visibility: "):
             return "Configure missing runtime environment variables and rerun health checks."
 
-        return "Convert HealthMonitorService into a backend API endpoint and display it in Mission Control."
+        if bottleneck.startswith("No critical operational bottleneck detected"):
+            return "No corrective goal; all health checks passed. Continue monitoring."
+
+        return "Investigate unrecognized bottleneck report and rerun health checks."

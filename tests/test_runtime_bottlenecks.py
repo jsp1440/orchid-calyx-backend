@@ -50,9 +50,9 @@ class TestBottleneckService:
         ]
         result = self.service.detect(health)
         assert result == "No critical operational bottleneck detected across 3 health checks."
-        # Verify that GoalPlannerService still maps to the default goal
+        # Verify that GoalPlannerService maps to continue monitoring goal
         goal = self.goal_planner.plan(result)
-        assert goal == "Convert HealthMonitorService into a backend API endpoint and display it in Mission Control."
+        assert goal == "No corrective goal; all health checks passed. Continue monitoring."
 
     def test_single_critical_check(self):
         """Single critical check should report it."""
