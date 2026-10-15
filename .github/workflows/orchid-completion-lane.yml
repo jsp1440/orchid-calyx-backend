@@ -172,8 +172,25 @@ jobs:
             --ledger-issue 1330 \
             --github-output "$GITHUB_OUTPUT"
 
-      - name: Swarm governor precheck — primary provider
+      # Budgets say whether paid execution may run; this says on which work.
+      # Only an issue with a valid owner OC-HOSTED-FACTORY-AUTHORIZATION-V1
+      # record reaches a provider (#1823: ten unauthorized issues were paid for
+      # after a budget change re-queued them). A refusal skips the governor and
+      # parks the issue as governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED, which
+      # blocked reconciliation holds as owner-gated.
+      - name: Owner issue authorization for paid execution
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
+        id: issue_auth
+        # A crashed check must still reach the denial settlement below.
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/oc_paid_issue_admission.py \
+            --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER"
+
+      - name: Swarm governor precheck — primary provider
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.issue_auth.outputs.authorized == 'true'
         id: governor
         env:
           NO_API_MODE: ${{ vars.NO_API_MODE }}
@@ -201,7 +218,7 @@ jobs:
         shell: bash
         env:
           LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
-          DENIAL_REASON: ${{ steps.governor.outputs.reason || 'GOVERNOR_ADMISSION_UNCONFIRMED' }}
+          DENIAL_REASON: ${{ steps.issue_auth.outputs.authorized != 'true' && (steps.issue_auth.outputs.reason || 'OWNER_ISSUE_AUTHORIZATION_REQUIRED') || steps.governor.outputs.reason || 'GOVERNOR_ADMISSION_UNCONFIRMED' }}
           BLOCKER_FINGERPRINT: ${{ steps.governor.outputs.blocker_fingerprint }}
         run: |
           set -euo pipefail
