@@ -118,6 +118,7 @@ def test_resume_real_git_retains_partial_work_and_new_control_plane(
     )
     assert (worker / "app/example.py").read_text() == "VALUE = 2\n"
     assert (worker / "current-control-plane.txt").read_text() == "repaired executor\n"
+    assert direct.RETAINED == {"app/example.py"}
     git(worker, "merge-base", "--is-ancestor", partial, "HEAD")
     git(worker, "merge-base", "--is-ancestor", current, "HEAD")
 
@@ -1189,3 +1190,117 @@ def test_a_model_that_never_fixes_stays_within_the_turn_limit(tmp_path, monkeypa
     assert "[turn budget] 2 of 4 turns used; 2 remaining." in sent[2][-1]["content"]
     assert "no tool call" not in sent[2][-1]["content"]
     assert code == 0  # the mocked commit; the real commit check stays authoritative
+
+
+def test_lint_findings_go_back_to_the_model(tmp_path, monkeypatch):
+    """#1860/#1862: tests passed, but `ruff check` in PR validation did not."""
+    lint = "app/a.py:1:8: F401 `os` imported but unused\nFound 1 error."
+    findings = iter([lint, ""])
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: next(findings))
+    monkeypatch.setattr(direct, "RETAINED", set())
+    replies = [_write(1, "import os\n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    feedback = sent[2][-1]["content"]
+    assert "ruff check" in feedback
+    assert lint in feedback
+    assert len(sent) == 4
+
+
+def _lint_run(returncode, stdout, seen):
+    def fake_run(cmd, *, timeout=120, check=False):
+        seen.append(cmd)
+
+        class Result:
+            pass
+
+        result = Result()
+        result.returncode, result.stdout, result.stderr = returncode, stdout, ""
+        return result
+
+    return fake_run
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [
+        (1, "app/a.py:1:8: F401 unused", "app/a.py:1:8: F401 unused"),
+        (0, "All checks passed!", ""),
+        (2, "error: ruff crashed", ""),  # not actionable by the model
+        (1, "", ""),  # ruff missing: exit 1, message only on stderr
+    ],
+)
+def test_lint_problems_runs_ruff_on_written_python_files_only(
+    tmp_path, monkeypatch, returncode, stdout, expected
+):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.py").write_text("import os\n")
+    (tmp_path / "notes.md").write_text("x\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"app/a.py", "notes.md", "gone.py"})
+    monkeypatch.setattr(direct, "RETAINED", set())
+    monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
+    assert direct._lint_problems() == expected
+    assert seen == [
+        [
+            direct.sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--output-format=concise",
+            "--",
+            "app/a.py",
+        ]
+    ]
+
+
+def test_lint_problems_is_silent_without_written_python(tmp_path, monkeypatch):
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"notes.md"})
+    monkeypatch.setattr(direct, "RETAINED", set())
+    monkeypatch.setattr(direct, "_run", _lint_run(1, "x", seen))
+    assert direct._lint_problems() == ""
+    assert seen == []
+
+
+def test_lint_problems_includes_retained_partial_branch_files(tmp_path, monkeypatch):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "retained.py").write_text("import os\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", {"app/retained.py"})
+    monkeypatch.setattr(
+        direct,
+        "_run",
+        _lint_run(1, "app/retained.py:1:8: F401 unused", seen),
+    )
+    assert "F401" in direct._lint_problems()
+    assert seen[0][-1] == "app/retained.py"
+
+
+def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
+    pytest.importorskip("ruff")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    direct._tool_write_file({"path": "app/a.py", "content": "import os\n"})
+    assert "F401" in direct._lint_problems()
+    direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})
+    assert direct._lint_problems() == ""
+
+
+def test_finish_problems_labels_each_report(monkeypatch):
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "a.py:1: trailing")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "a.py:1:8: F401")
+    assert direct._finish_problems() == (
+        "[git diff --check]\na.py:1: trailing\n[ruff check]\na.py:1:8: F401"
+    )
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    assert direct._finish_problems() == "[ruff check]\na.py:1:8: F401"
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "")
+    assert direct._finish_problems() == ""
