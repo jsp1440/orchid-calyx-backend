@@ -373,8 +373,8 @@ def _autofix_written() -> None:
     )
     if not files:
         return
-    before = {p: (REPO_ROOT / p).read_bytes() for p in files}
     try:
+        before = {p: (REPO_ROOT / p).read_bytes() for p in files}
         _run(
             [
                 sys.executable,
@@ -393,7 +393,10 @@ def _autofix_written() -> None:
     except (OSError, subprocess.SubprocessError):
         return
     # Record what the auto-fix changed (e.g. a removed import) for reviewers.
-    changed = [p for p in files if (REPO_ROOT / p).read_bytes() != before[p]]
+    try:
+        changed = [p for p in files if (REPO_ROOT / p).read_bytes() != before[p]]
+    except OSError:
+        return
     if changed:
         print("[OC-DIRECT-AUTOFIX] " + json.dumps({"files": changed}), flush=True)
 
