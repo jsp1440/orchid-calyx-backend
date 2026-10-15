@@ -301,8 +301,18 @@ def _tool_write_file(args: dict[str, Any]) -> str:
         if not isinstance(old_text, str) or not old_text:
             raise ValueError("old_text must be a nonempty string")
         current = path.read_text(encoding="utf-8")
-        if current.count(old_text) != 1:
-            raise ValueError("old_text must match exactly once; read the file again")
+        matches = current.count(old_text)
+        if matches == 0:
+            raise ValueError(
+                "old_text was not found. Copy it character for character from "
+                "read_file output, including indentation and non-ASCII characters "
+                "such as the em dash \u2014; prefer a short, distinctive old_text."
+            )
+        if matches > 1:
+            raise ValueError(
+                f"old_text matches {matches} times; extend it with surrounding "
+                "lines until it matches exactly once."
+            )
         content = current.replace(old_text, content, 1)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
@@ -780,6 +790,12 @@ def main() -> int:
                             "turn": turn,
                             "tool": name if handler else "unsupported",
                             "input_error": tool_result.startswith("ERROR:"),
+                            # #1863 failed eleven writes with no recorded reason.
+                            **(
+                                {"error": tool_result[:160]}
+                                if tool_result.startswith("ERROR:")
+                                else {}
+                            ),
                         }
                     ),
                     flush=True,
