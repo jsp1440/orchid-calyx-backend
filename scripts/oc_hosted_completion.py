@@ -594,7 +594,8 @@ def _review_json(text):
     ```json fence. Exactly one surrounding fence is removed; any other prose,
     a second object or a non-object still fails closed with a named reason.
     """
-    text = (text or "").strip()
+    require(isinstance(text, str), "checker_output_invalid")
+    text = text.strip()
     fenced = _FENCED_JSON.match(text)
     if fenced:
         text = fenced.group("body").strip()

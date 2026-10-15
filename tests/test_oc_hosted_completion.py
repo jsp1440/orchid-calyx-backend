@@ -1066,3 +1066,11 @@ def test_non_canonical_or_unfinished_runs_are_never_trusted_workers(run):
 def test_a_schedule_run_needs_a_known_default_branch():
     run = _worker(event="schedule", head_branch="main")
     assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "") is False
+
+
+@pytest.mark.parametrize("text", [None, 7, ["{}"], {"verdict": "pass"}])
+def test_non_text_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_invalid$"):
+        hosted.parse_review(value)
