@@ -449,7 +449,15 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
     run = run if isinstance(run, dict) else {}
     if run.get("id") != run_id or (run.get("repository") or {}).get("full_name") != repository:
         errors.append({"source": "scheduler_run", "reason": "run_identity_unavailable"})
-    if run.get("head_branch") != "oc-autonomous-integration" or run.get("path") not in {
+    from scripts.oc_controller_trust import on_trusted_controller_ref
+
+    default_branch = None
+    if run.get("event") == "schedule":
+        try:
+            default_branch = (read_json(f"repos/{repository}") or {}).get("default_branch")
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            errors.append({"source": "repository", "reason": "evidence_unavailable"})
+    if not on_trusted_controller_ref(run, default_branch, repository=repository) or run.get("path") not in {
         ".github/workflows/orchid-swarm-controller.yml",
         ".github/workflows/orchid-continuous-completion.yml",
     }:

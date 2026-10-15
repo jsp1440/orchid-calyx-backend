@@ -97,7 +97,10 @@ def test_coding_executor_requires_governor_admission_before_planning_and_claims(
     plan = text[plan_start:claim_start]
     guard = (
         'if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && '
-        '"${{ steps.coding_governor.outputs.authorized }}" == "true" ]]; then'
+        '"${{ steps.coding_governor.outputs.authorized }}" == "true" && '
+        '"${{ steps.controller_revision.outputs.canonical_integration }}" == "true" && '
+        '( "${{ github.event_name }}" == "schedule" || '
+        '"${{ github.ref }}" == "refs/heads/oc-autonomous-integration" ) ]]; then'
     )
     assert guard in plan
     assert plan.index(guard) < plan.index("provider_args+=(--coding-executor)")
