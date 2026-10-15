@@ -280,3 +280,77 @@ def test_current_main_routes_and_migration_governance_are_present():
     assert "CHECK (evidence_authority = FALSE)" in migration
     assert "CHECK (scientific_publication_authorized = FALSE)" in migration
     assert "CHECK (knowledge_graph_mutation_authorized = FALSE)" in migration
+
+
+def test_report_deduplicates_source_within_message():
+    source = {
+        "result_id": "result-1",
+        "object_type": "PAPER",
+        "title": "Evidence",
+        "citation": {
+            "document_id": "doc-target",
+            "revision_id": "rev-target",
+            "identifier": "doi:fixture",
+            "locator": "p. 4",
+        },
+    }
+    conversation = {
+        "conversation_id": "conversation-1",
+        "title": "Fixture",
+        "messages": [
+            {
+                "role": "CALYX",
+                "content": "First message with duplicate source",
+                "source_refs": [source, source],
+            },
+        ],
+    }
+    report = build_conversation_markdown(conversation)
+    # Should have only one source link, not two
+    assert report.count("- Sources: [Source 1](#source-1)") == 1
+    assert "- Sources: [Source 1](#source-1), [Source 1](#source-1)" not in report
+    # Source ledger should still have only one entry
+    assert report.count('<a id="source-1"></a>Source 1:') == 1
+    assert "Source 2:" not in report
+
+
+def test_report_preserves_order_of_distinct_sources_within_message():
+    source1 = {
+        "result_id": "result-1",
+        "object_type": "PAPER",
+        "title": "Evidence One",
+        "citation": {
+            "document_id": "doc-target-1",
+            "revision_id": "rev-target-1",
+            "identifier": "doi:fixture-1",
+            "locator": "p. 1",
+        },
+    }
+    source2 = {
+        "result_id": "result-2",
+        "object_type": "PAPER",
+        "title": "Evidence Two",
+        "citation": {
+            "document_id": "doc-target-2",
+            "revision_id": "rev-target-2",
+            "identifier": "doi:fixture-2",
+            "locator": "p. 2",
+        },
+    }
+    conversation = {
+        "conversation_id": "conversation-1",
+        "title": "Fixture",
+        "messages": [
+            {
+                "role": "CALYX",
+                "content": "Message with two distinct sources",
+                "source_refs": [source1, source2],
+            },
+        ],
+    }
+    report = build_conversation_markdown(conversation)
+    # Should have both sources in order
+    assert "- Sources: [Source 1](#source-1), [Source 2](#source-2)" in report
+    # Source ledger should have both entries
+    assert report.count('<a id="source-1"></a>Source 1:') == 1
+    assert report.count('<a id="source-2"></a>Source 2:') == 1
