@@ -127,6 +127,21 @@ PROTECTED = (
     "tests/test_durable_reservoir_postgres",
     "tests/test_durable_e2e_conductor_proof",
     "scripts/prove_real_canonical_matrix_slice",
+    # Pull-request workflows run these with production credentials
+    # (DATABASE_URL, CALYX_OWNER_ACCESS_CODE, MISSION_CONTROL_SMOKE_TOKEN).
+    "scripts/build_078_postgres_validation",
+    "scripts/build_079_postgres_validation",
+    "scripts/run_with_postgres_validation_lock",
+    "app/publication/",
+    "app/missions/",
+    "app/routers/mission_control",
+    "app/main.py",
+    "tests/test_build_078_",
+    "tests/test_build_079_",
+    "scripts/discover_hassler_release_intake",
+    "app/executive_telemetry/",
+    "scripts/smoke_mission_control_telemetry",
+    "tests/test_mission_control_telemetry_001f",
     "Dockerfile",
     "render",
 )
