@@ -175,3 +175,18 @@ def test_an_admission_refusal_is_parked_through_the_governor_denial_path():
     reason = denial["env"]["DENIAL_REASON"]
     assert "steps.issue_auth.outputs.authorized != 'true'" in reason
     assert "OWNER_ISSUE_AUTHORIZATION_REQUIRED" in reason
+
+
+def test_paid_coding_work_is_planned_only_on_the_integration_ref():
+    """A PR-close run (#1847) leased #1843 and started a paid worker on the PR
+    branch; hosted completion can only accept workers on the integration ref."""
+    with open(
+        ".github/workflows/orchid-swarm-controller.yml", encoding="utf-8"
+    ) as handle:
+        text = handle.read()
+    start = text.index("provider_args=()")
+    gate = text[start : text.index("provider_args+=(--coding-executor)", start)]
+    assert 'steps.coding_governor.outputs.authorized }}" == "true"' in gate
+    assert (
+        'steps.controller_revision.outputs.canonical_integration }}" == "true"' in gate
+    )
