@@ -1254,6 +1254,8 @@ def test_lint_problems_runs_ruff_on_written_python_files_only(
         "ruff",
         "check",
         "--fix",
+        "--extend-select",
+        "I001",
         "--quiet",
         "--",
         "app/a.py",

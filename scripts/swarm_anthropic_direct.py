@@ -376,7 +376,18 @@ def _autofix_written() -> None:
     before = {p: (REPO_ROOT / p).read_bytes() for p in files}
     try:
         _run(
-            [sys.executable, "-m", "ruff", "check", "--fix", "--quiet", "--", *files],
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "check",
+                "--fix",
+                "--extend-select",
+                "I001",
+                "--quiet",
+                "--",
+                *files,
+            ],
             timeout=180,
         )
     except (OSError, subprocess.SubprocessError):
