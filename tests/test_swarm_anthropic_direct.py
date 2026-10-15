@@ -1189,3 +1189,74 @@ def test_a_model_that_never_fixes_stays_within_the_turn_limit(tmp_path, monkeypa
     assert "[turn budget] 2 of 4 turns used; 2 remaining." in sent[2][-1]["content"]
     assert "no tool call" not in sent[2][-1]["content"]
     assert code == 0  # the mocked commit; the real commit check stays authoritative
+
+
+def test_lint_findings_go_back_to_the_model(tmp_path, monkeypatch):
+    """#1860/#1862: tests passed, but `ruff check` in PR validation did not."""
+    lint = "app/a.py:1:8: F401 `os` imported but unused\nFound 1 error."
+    findings = iter([lint, ""])
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: next(findings))
+    replies = [_write(1, "import os\n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    feedback = sent[2][-1]["content"]
+    assert "ruff check" in feedback
+    assert lint in feedback
+    assert len(sent) == 4
+
+
+def _lint_run(returncode, stdout, seen):
+    def fake_run(cmd, *, timeout=120, check=False):
+        seen.append(cmd)
+
+        class Result:
+            pass
+
+        result = Result()
+        result.returncode, result.stdout, result.stderr = returncode, stdout, ""
+        return result
+
+    return fake_run
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [
+        (1, "app/a.py:1:8: F401 unused", "app/a.py:1:8: F401 unused"),
+        (0, "All checks passed!", ""),
+        (2, "error: ruff crashed", ""),  # not actionable by the model
+    ],
+)
+def test_lint_problems_runs_ruff_on_written_python_files_only(
+    tmp_path, monkeypatch, returncode, stdout, expected
+):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.py").write_text("import os\n")
+    (tmp_path / "notes.md").write_text("x\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"app/a.py", "notes.md", "gone.py"})
+    monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
+    assert direct._lint_problems() == expected
+    assert seen == [[direct.sys.executable, "-m", "ruff", "check", "app/a.py"]]
+
+
+def test_lint_problems_is_silent_without_written_python(tmp_path, monkeypatch):
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"notes.md"})
+    monkeypatch.setattr(direct, "_run", _lint_run(1, "x", seen))
+    assert direct._lint_problems() == ""
+    assert seen == []
+
+
+def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
+    pytest.importorskip("ruff")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    direct._tool_write_file({"path": "app/a.py", "content": "import os\n"})
+    assert "F401" in direct._lint_problems()
+    direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})
+    assert direct._lint_problems() == ""

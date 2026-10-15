@@ -339,6 +339,33 @@ def _whitespace_problems() -> str:
     return (result.stdout or result.stderr or "whitespace errors").strip()[:2000]
 
 
+def _lint_problems() -> str:
+    """Report `ruff check` problems in the written Python files ('' when clean).
+
+    PR validation runs `ruff check` on every changed Python file, so its
+    pre-existing findings count too. #1860 and #1862 opened PRs whose tests
+    passed but whose lint failed, and stopped at hosted prepare.
+    """
+    files = sorted(
+        p for p in WRITTEN if p.endswith(".py") and (REPO_ROOT / p).is_file()
+    )
+    if not files:
+        return ""
+    try:
+        result = _run([sys.executable, "-m", "ruff", "check", *files], timeout=180)
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    # ruff exits 1 for findings; anything else (ruff missing, a crash) is not
+    # actionable by the model and is left to validation.
+    if result.returncode != 1:
+        return ""
+    return (result.stdout or "ruff findings").strip()[:3000]
+
+
+def _finish_problems() -> str:
+    return "\n".join(p for p in (_whitespace_problems(), _lint_problems()) if p)
+
+
 def _safe_target(raw: str | None) -> str:
     if not raw:
         return ""
@@ -688,16 +715,17 @@ def main() -> int:
             messages.append({"role": "assistant", "content": content})
             if not tool_uses:
                 # A fix needs a write turn and a finishing turn.
-                problems = _whitespace_problems() if turn < bounded_turns - 1 else ""
+                problems = _finish_problems() if turn < bounded_turns - 1 else ""
                 if not problems:
                     break
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "`git diff --check` rejects your changes. Remove the "
-                            "trailing whitespace or blank lines it reports, using "
-                            "write_file, then finish. "
+                            "PR validation would reject your changes: it runs "
+                            "`git diff --check` and `ruff check` on every changed "
+                            "Python file, including findings already in the file. "
+                            "Fix what is reported below using write_file, then finish. "
                             # The bare count: _turn_budget_notice's "finish now"
                             # wording would contradict the fix request.
                             f"[turn budget] {turn} of {bounded_turns} turns used; "
