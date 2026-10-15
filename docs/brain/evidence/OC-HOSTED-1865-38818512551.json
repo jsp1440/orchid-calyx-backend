@@ -1,0 +1,2385 @@
+{
+  "central_brain_sync": "UNPROVEN: no cross-repository credential used",
+  "health": {
+    "blocked_backoff_count": 19,
+    "ci_infrastructure_state": {
+      "reason": "executed_success",
+      "run_id": 38818062950,
+      "state": "HEALTHY"
+    },
+    "contract_health": {
+      "counts": {
+        "blocked": 10,
+        "queued": 1,
+        "repair_backoff": 6,
+        "running": 0,
+        "runtime_backoff": 3,
+        "validating": 11
+      },
+      "exception_decision": {
+        "action": "park_and_reconcile",
+        "autonomous_repair_available": false,
+        "exception_class": "engineering_exception",
+        "independent_authorized_work_available": false,
+        "owner_decision_required": false,
+        "owner_exception_category": null,
+        "should_interrupt_owner": false
+      },
+      "exceptions": [
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "healthy": false,
+      "integration": {
+        "head_sha": "e442b603e4d5b90020ee8c7d2fe27f0739a3a83a",
+        "ready": "UNKNOWN"
+      },
+      "issues": {
+        "blocked": [
+          1426,
+          1425,
+          1424,
+          1402,
+          1396,
+          1361,
+          1345,
+          1298,
+          1264,
+          1050
+        ],
+        "queued": [
+          1866
+        ],
+        "repair_backoff": [
+          1193,
+          1168,
+          1140,
+          1096,
+          1084,
+          1023
+        ],
+        "running": [],
+        "runtime_backoff": [
+          1863,
+          1736,
+          1732
+        ],
+        "validating": [
+          1403,
+          1236,
+          1187,
+          1139,
+          1129,
+          1114,
+          1089,
+          1088,
+          1087,
+          1030,
+          832
+        ]
+      },
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "validating_targets": [
+        {
+          "head_sha": null,
+          "issue": 1403,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1236,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1187,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1139,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1129,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1114,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1089,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1088,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1087,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1030,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 832,
+          "pr": null
+        }
+      ],
+      "violations": [
+        {
+          "issue": 1863,
+          "lease": 6202209367,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1863,
+          "lease": 6202209367,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1863,
+          "lease": 6203636502,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1403,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1236,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1187,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1139,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1129,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1114,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1089,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1088,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1087,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1030,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 832,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        }
+      ]
+    },
+    "contract_snapshot": {
+      "autonomous_prs": [
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "f9ac6fad2e507a0366ba5f42507e1096c0e38d7e",
+          "number": 1827
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "051ba150d1cf3bd094725c173c9003e9420f9889",
+          "number": 1824
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "669ace6467d2646bb4392421cb21a470832465d7",
+          "number": 1811
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "5aa61a375f29dfa25e8748e7449b23f3732fc236",
+          "number": 1808
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "6ae92dfdf9154c00c7159fbb5ef2510ea14440ff",
+          "number": 1804
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b2a3b470422bdee7d24fb5874802096bf711f85",
+          "number": 1802
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "1acc402bd76bfb1bb60b226b74890d73a419adda",
+          "number": 1792
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2a2c8e4af54a8fe89f10e6d7bfd5686e96e0f2fe",
+          "number": 1790
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "e0afc3bb1125f60083b2fb0ec43655a2d43989c7",
+          "number": 1789
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a1e1744a9ca1878466f10bf0e7257350947af09c",
+          "number": 1788
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b308b63e648b19dc7ad5042ea83c243853fcb64",
+          "number": 1778
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "efab3af06c986d83515cebd29cfba7840d30480a",
+          "number": 1723
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "68f91759aa94d859e720e75ee7b7f6bc18b4a0a9",
+          "number": 1716
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "8ed8eb34aae89a1665793eb18ce2847bbf1e9da3",
+          "number": 1704
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "763d39daea54cc0151f7ad29c21a5aed1c3d08db",
+          "number": 1511
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7aea8ebcc6cbdab897dc61412d57d3d4566c5609",
+          "number": 1445
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a17cf90e40becee2d784498e57b99f18dcd22017",
+          "number": 1444
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7976a95206a15ba57afd3edb6769dbb84b3a8de5",
+          "number": 1443
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "36087372e7871913d7b8fde69e39d7a35224e6b3",
+          "number": 1439
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "635b778271ebe945961d302d437fdf437dca21c0",
+          "number": 1437
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "27e6b754aa7fd11221da143e7242eb463a9d13b8",
+          "number": 1404
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "ae0b3fa0acff258c9f0ea2cbb26036b6341acd04",
+          "number": 1397
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2acf9e22f1efa72ab6faa9f24f082178d94824f3",
+          "number": 1169
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "902d25d89a982bbf17211320fa1b54c6f2832ee9",
+          "number": 1113
+        }
+      ],
+      "autonomous_repair_available": false,
+      "deterministic_work_available": false,
+      "dispatch_fingerprints": [
+        "2031401be6e0e7df",
+        "65fc5870987c7e11",
+        "cbeb1829229ae7f9",
+        "c76e3b3650fc3851",
+        "871f271dc2c402e7"
+      ],
+      "exception_context": {},
+      "exceptions": [
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "generated_at": "2026-10-15T22:40:39.950196Z",
+      "independent_authorized_work_available": false,
+      "integration": {
+        "head_sha": "e442b603e4d5b90020ee8c7d2fe27f0739a3a83a",
+        "ready": "UNKNOWN"
+      },
+      "issues": [
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-queued"
+          ],
+          "number": 1866
+        },
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-runtime-backoff"
+          ],
+          "number": 1863
+        },
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-repair"
+          ],
+          "number": 1862
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1858
+        },
+        {
+          "labels": [],
+          "number": 1826
+        },
+        {
+          "labels": [],
+          "number": 1823
+        },
+        {
+          "labels": [],
+          "number": 1805
+        },
+        {
+          "labels": [],
+          "number": 1786
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1783
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1782
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1781
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1780
+        },
+        {
+          "labels": [],
+          "number": 1776
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-owner-gate",
+            "oc-p5"
+          ],
+          "number": 1773
+        },
+        {
+          "labels": [],
+          "number": 1772
+        },
+        {
+          "labels": [],
+          "number": 1770
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1742
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:improvement-discovery",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1741
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1740
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1739
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1738
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4"
+          ],
+          "number": 1737
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1736
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1735
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1734
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1733
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1732
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1731
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1730
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1729
+        },
+        {
+          "labels": [],
+          "number": 1728
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1725
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1724
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1722
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1721
+        },
+        {
+          "labels": [
+            "oc-repair"
+          ],
+          "number": 1717
+        },
+        {
+          "labels": [],
+          "number": 1692
+        },
+        {
+          "labels": [],
+          "number": 1690
+        },
+        {
+          "labels": [],
+          "number": 1685
+        },
+        {
+          "labels": [],
+          "number": 1684
+        },
+        {
+          "labels": [],
+          "number": 1682
+        },
+        {
+          "labels": [],
+          "number": 1670
+        },
+        {
+          "labels": [],
+          "number": 1669
+        },
+        {
+          "labels": [],
+          "number": 1668
+        },
+        {
+          "labels": [],
+          "number": 1667
+        },
+        {
+          "labels": [],
+          "number": 1659
+        },
+        {
+          "labels": [],
+          "number": 1658
+        },
+        {
+          "labels": [],
+          "number": 1657
+        },
+        {
+          "labels": [],
+          "number": 1656
+        },
+        {
+          "labels": [],
+          "number": 1655
+        },
+        {
+          "labels": [],
+          "number": 1654
+        },
+        {
+          "labels": [],
+          "number": 1653
+        },
+        {
+          "labels": [],
+          "number": 1652
+        },
+        {
+          "labels": [],
+          "number": 1651
+        },
+        {
+          "labels": [],
+          "number": 1565
+        },
+        {
+          "labels": [],
+          "number": 1533
+        },
+        {
+          "labels": [],
+          "number": 1501
+        },
+        {
+          "labels": [
+            "calyx-research"
+          ],
+          "number": 1497
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1484
+        },
+        {
+          "labels": [
+            "blocked-on-owner",
+            "lane-c"
+          ],
+          "number": 1453
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1426
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1425
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1424
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1403
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1402
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1",
+            "oc-repair"
+          ],
+          "number": 1396
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1361
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1345
+        },
+        {
+          "labels": [],
+          "number": 1336
+        },
+        {
+          "labels": [],
+          "number": 1330
+        },
+        {
+          "labels": [
+            "oc-active-tracker",
+            "oc-tracker"
+          ],
+          "number": 1299
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1298
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1264
+        },
+        {
+          "labels": [],
+          "number": 1242
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1236
+        },
+        {
+          "labels": [],
+          "number": 1194
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1193
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1187
+        },
+        {
+          "labels": [],
+          "number": 1182
+        },
+        {
+          "labels": [],
+          "number": 1181
+        },
+        {
+          "labels": [],
+          "number": 1175
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1168
+        },
+        {
+          "labels": [],
+          "number": 1166
+        },
+        {
+          "labels": [],
+          "number": 1153
+        },
+        {
+          "labels": [],
+          "number": 1151
+        },
+        {
+          "labels": [],
+          "number": 1141
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-repair-backoff"
+          ],
+          "number": 1140
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1139
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1129
+        },
+        {
+          "labels": [],
+          "number": 1125
+        },
+        {
+          "labels": [],
+          "number": 1123
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1114
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-repair-backoff"
+          ],
+          "number": 1096
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1089
+        },
+        {
+          "labels": [
+            "oc-p3",
+            "oc-validating"
+          ],
+          "number": 1088
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-validating"
+          ],
+          "number": 1087
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1085
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1084
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1050
+        },
+        {
+          "labels": [
+            "oc-runtime-degraded"
+          ],
+          "number": 1031
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1030
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1027
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1026
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0",
+            "oc-p4"
+          ],
+          "number": 1024
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1023
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1022
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1021
+        },
+        {
+          "labels": [],
+          "number": 1011
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1008
+        },
+        {
+          "labels": [],
+          "number": 1005
+        },
+        {
+          "labels": [],
+          "number": 1003
+        },
+        {
+          "labels": [],
+          "number": 858
+        },
+        {
+          "labels": [],
+          "number": 842
+        },
+        {
+          "labels": [],
+          "number": 833
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 832
+        },
+        {
+          "labels": [],
+          "number": 831
+        },
+        {
+          "labels": [],
+          "number": 830
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 793
+        },
+        {
+          "labels": [],
+          "number": 739
+        },
+        {
+          "labels": [],
+          "number": 736
+        },
+        {
+          "labels": [],
+          "number": 729
+        },
+        {
+          "labels": [],
+          "number": 716
+        },
+        {
+          "labels": [],
+          "number": 701
+        },
+        {
+          "labels": [],
+          "number": 699
+        },
+        {
+          "labels": [],
+          "number": 692
+        },
+        {
+          "labels": [],
+          "number": 691
+        },
+        {
+          "labels": [],
+          "number": 683
+        },
+        {
+          "labels": [],
+          "number": 680
+        },
+        {
+          "labels": [],
+          "number": 639
+        },
+        {
+          "labels": [],
+          "number": 617
+        },
+        {
+          "labels": [],
+          "number": 580
+        },
+        {
+          "labels": [],
+          "number": 543
+        },
+        {
+          "labels": [],
+          "number": 523
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 486
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 481
+        },
+        {
+          "labels": [],
+          "number": 480
+        },
+        {
+          "labels": [],
+          "number": 479
+        },
+        {
+          "labels": [],
+          "number": 478
+        },
+        {
+          "labels": [],
+          "number": 477
+        },
+        {
+          "labels": [],
+          "number": 476
+        },
+        {
+          "labels": [],
+          "number": 475
+        },
+        {
+          "labels": [],
+          "number": 474
+        },
+        {
+          "labels": [],
+          "number": 473
+        },
+        {
+          "labels": [],
+          "number": 471
+        },
+        {
+          "labels": [],
+          "number": 470
+        },
+        {
+          "labels": [],
+          "number": 468
+        },
+        {
+          "labels": [],
+          "number": 467
+        },
+        {
+          "labels": [],
+          "number": 466
+        },
+        {
+          "labels": [],
+          "number": 465
+        },
+        {
+          "labels": [],
+          "number": 464
+        },
+        {
+          "labels": [],
+          "number": 462
+        },
+        {
+          "labels": [],
+          "number": 457
+        },
+        {
+          "labels": [],
+          "number": 456
+        },
+        {
+          "labels": [],
+          "number": 455
+        },
+        {
+          "labels": [],
+          "number": 454
+        },
+        {
+          "labels": [],
+          "number": 453
+        },
+        {
+          "labels": [],
+          "number": 452
+        },
+        {
+          "labels": [],
+          "number": 451
+        },
+        {
+          "labels": [],
+          "number": 450
+        },
+        {
+          "labels": [],
+          "number": 447
+        },
+        {
+          "labels": [],
+          "number": 446
+        },
+        {
+          "labels": [],
+          "number": 445
+        },
+        {
+          "labels": [],
+          "number": 435
+        },
+        {
+          "labels": [],
+          "number": 434
+        },
+        {
+          "labels": [],
+          "number": 419
+        },
+        {
+          "labels": [],
+          "number": 418
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 416
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 414
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 409
+        },
+        {
+          "labels": [],
+          "number": 401
+        },
+        {
+          "labels": [],
+          "number": 400
+        },
+        {
+          "labels": [],
+          "number": 398
+        },
+        {
+          "labels": [],
+          "number": 397
+        },
+        {
+          "labels": [],
+          "number": 396
+        },
+        {
+          "labels": [],
+          "number": 395
+        },
+        {
+          "labels": [],
+          "number": 394
+        },
+        {
+          "labels": [],
+          "number": 386
+        },
+        {
+          "labels": [],
+          "number": 384
+        },
+        {
+          "labels": [],
+          "number": 320
+        },
+        {
+          "labels": [],
+          "number": 319
+        },
+        {
+          "labels": [],
+          "number": 318
+        },
+        {
+          "labels": [],
+          "number": 317
+        },
+        {
+          "labels": [],
+          "number": 316
+        },
+        {
+          "labels": [],
+          "number": 315
+        },
+        {
+          "labels": [],
+          "number": 314
+        },
+        {
+          "labels": [],
+          "number": 312
+        },
+        {
+          "labels": [],
+          "number": 311
+        },
+        {
+          "labels": [],
+          "number": 308
+        },
+        {
+          "labels": [],
+          "number": 298
+        },
+        {
+          "labels": [],
+          "number": 296
+        },
+        {
+          "labels": [],
+          "number": 294
+        },
+        {
+          "labels": [],
+          "number": 292
+        },
+        {
+          "labels": [],
+          "number": 290
+        },
+        {
+          "labels": [],
+          "number": 287
+        },
+        {
+          "labels": [],
+          "number": 264
+        },
+        {
+          "labels": [],
+          "number": 198
+        },
+        {
+          "labels": [],
+          "number": 195
+        },
+        {
+          "labels": [],
+          "number": 192
+        },
+        {
+          "labels": [],
+          "number": 190
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 186
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 184
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 181
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 173
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 171
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 141
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 127
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 126
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 123
+        },
+        {
+          "labels": [],
+          "number": 78
+        },
+        {
+          "labels": [],
+          "number": 76
+        }
+      ],
+      "leases": [
+        {
+          "active": true,
+          "age_seconds": 5891,
+          "id": 6202209367,
+          "issue": 1863,
+          "material_fingerprint": "2031401be6e0e7df",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 509,
+          "id": 6203636502,
+          "issue": 1863,
+          "material_fingerprint": "65fc5870987c7e11",
+          "owner": "github-actions[bot]",
+          "stale": false
+        },
+        {
+          "active": true,
+          "age_seconds": 64873,
+          "id": 6184549580,
+          "issue": 1736,
+          "material_fingerprint": "cbeb1829229ae7f9",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 64885,
+          "id": 6184547135,
+          "issue": 1732,
+          "material_fingerprint": "c76e3b3650fc3851",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 2847212,
+          "id": 5649481701,
+          "issue": 1396,
+          "material_fingerprint": "871f271dc2c402e7",
+          "owner": "github-actions[bot]",
+          "stale": true
+        }
+      ],
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "schema": "oc.completion-health-snapshot.v1"
+    },
+    "current_running_lease": null,
+    "duplicate_authoritative_mission_count": "UNKNOWN",
+    "generated_at": "2026-10-15T22:40:39.950196Z",
+    "healthy": false,
+    "integration_head": "e442b603e4d5b90020ee8c7d2fe27f0739a3a83a",
+    "last_dispatch_time": "UNKNOWN",
+    "last_integration_promotion": "UNKNOWN",
+    "last_main_promotion": "UNKNOWN",
+    "last_successful_exact_head_validation": "UNKNOWN",
+    "main_head": "e950e55a19fc15a8c33799fc5ca19b9e8377c5eb",
+    "observation_complete": true,
+    "observation_errors": [],
+    "provider_availability_state": "UNKNOWN",
+    "queued_p0_count": 0,
+    "reason_no_work_running": "UNKNOWN",
+    "running_lease_count": 0,
+    "scheduler_heartbeat": "2026-10-15T22:38:48Z",
+    "schema": "orchid.control-plane-health.v1",
+    "stale_lease_count": 4,
+    "validating_count": 11
+  },
+  "schema": "oc.hosted-completion-evidence.v1",
+  "state": {
+    "assignment": {
+      "checker_id": "anthropic:checker:38818512551:1865",
+      "head_sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+      "issue_number": 1865,
+      "maker_id": "anthropic:maker:38818062950:1865",
+      "material_fingerprint": "758a2ba08ee5b0208cd219b96cc6c3a6247fa6da218a935cef44c21f7a19fa1b",
+      "pr_number": 1879,
+      "repository": "jsp1440/orchid-calyx-backend"
+    },
+    "assignment_comment": 6203746631,
+    "attempt_comment": 6203746938,
+    "context": {
+      "completion_run": 38818512551,
+      "head": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+      "issue": 1865,
+      "lease": 6203688294,
+      "pr": 1879,
+      "repository": "jsp1440/orchid-calyx-backend",
+      "trusted_sha": "77a8e53850e6f127624d27727fefbf6801e02f33",
+      "worker_attempt": 1,
+      "worker_run": 38818062950
+    },
+    "decision": {
+      "action": "auto_integrate",
+      "continuation": {
+        "action": "continue_provider_free",
+        "fingerprint": "50c0e88f528c2f8ce77c9119da4210567a2e90cffed716d68b661178104de67f",
+        "reason": "TERMINAL_EVENT_READY_FOR_DETERMINISTIC_RECONCILIATION",
+        "side_effects_authorized": false
+      },
+      "factory": {
+        "action": "auto_integrate",
+        "fingerprint": "758a2ba08ee5b0208cd219b96cc6c3a6247fa6da218a935cef44c21f7a19fa1b",
+        "integration_authorized": true,
+        "reason": "INDEPENDENT_VALIDATION_PASSED_SAFE_INTEGRATION"
+      },
+      "integration_authorized": true,
+      "mission_status": "validating",
+      "reason": "INDEPENDENT_VALIDATION_PASSED_SAFE_INTEGRATION"
+    },
+    "decision_comment": 6203752776,
+    "evidence_body": "<!-- OC-CHECKER-EVIDENCE-V1\n{\n  \"checked_head_sha\": \"fba1ee713d377ba29290874b92ecf51aedcf171a\",\n  \"checker_id\": \"anthropic:checker:38818512551:1865\",\n  \"checks_head_sha\": \"\",\n  \"issue_number\": 1865,\n  \"maker_id\": \"anthropic:maker:38818062950:1865\",\n  \"material_fingerprint\": \"758a2ba08ee5b0208cd219b96cc6c3a6247fa6da218a935cef44c21f7a19fa1b\",\n  \"pr_number\": 1879,\n  \"reason\": \"The diff correctly implements deduplication of sources within individual messages while preserving report-level numbering and order. The code change is minimal and surgical: a `seen_indices` set tracks which source indices have already been added to the current message, preventing duplicates via an `and idx not in seen_indices` guard. Two new tests comprehensively cover the required behavior: one verifies duplicate sources within a message are deduplicated (only one link rendered), and another confirms distinct sources preserve order. Both tests verify source ledger consistency. The change is confined to allowed paths only (report.py and test file). No existing tests are modified. The implementation maintains backward compatibility\\u2014unchanged report-level structure and numbering.\",\n  \"repair_lineage\": null,\n  \"repository\": \"jsp1440/orchid-calyx-backend\",\n  \"required_checks_passed\": true,\n  \"tag\": \"OC-CHECKER-EVIDENCE-V1\",\n  \"verdict\": \"pass\"\n}\n-->\n[OC-CHECKER-EVIDENCE] Checker `anthropic:checker:38818512551:1865` verdict: **PASS** on head `fba1ee713d37` for issue #1865 (PR #1879). The diff correctly implements deduplication of sources within individual messages while preserving report-level numbering and order. The code change is minimal and surgical: a `seen_indices` set tracks which source indices have already been added to the current message, preventing duplicates via an `and idx not in seen_indices` guard. Two new tests comprehensively cover the required behavior: one verifies duplicate sources within a message are deduplicated (only one link rendered), and another confirms distinct sources preserve order. Both tests verify source ledger consistency. The change is confined to allowed paths only (report.py and test file). No existing tests are modified. The implementation maintains backward compatibility\u2014unchanged report-level structure and numbering.",
+    "evidence_comment": 6203748470,
+    "final_state": {
+      "labels": [
+        "oc-done",
+        "oc-model-cheap"
+      ],
+      "state": "closed"
+    },
+    "grant": {
+      "allowed_paths": [
+        "app/conversation_memory/report.py",
+        "tests/test_calyx_conversation_current_main_714.py"
+      ],
+      "checker_calls": 1,
+      "comment_id": 6201806006,
+      "digest": "54cbd79a6a73dabc22f1db2c3b437c19db86e1601c0e322079d99802bb3cfcaf",
+      "expires_at": "2026-10-22T00:00:00Z",
+      "issue": 1865,
+      "issue_material": "50d27f9d14838319be2ed4f7b74ae0165449bcbc7d3460c8065d63d6e1aa48d0",
+      "repository": "jsp1440/orchid-calyx-backend",
+      "risk": "low",
+      "target": "oc-autonomous-integration"
+    },
+    "intent": {
+      "changes_credentials": false,
+      "changes_scientific_authority": false,
+      "destructive": false,
+      "exposes_sensitive_locality": false,
+      "head_sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+      "issue_number": 1865,
+      "provider_required": false,
+      "repository": "jsp1440/orchid-calyx-backend",
+      "reversible": true,
+      "risk_tier": "low",
+      "spends_money": false,
+      "target_branch": "oc-autonomous-integration",
+      "touches_production": false
+    },
+    "merge_receipt": 6203754923,
+    "merge_sha": "e442b603e4d5b90020ee8c7d2fe27f0739a3a83a",
+    "prompt": {
+      "files": [
+        {
+          "filename": "app/conversation_memory/report.py",
+          "patch": "@@ -97,10 +97,12 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:\n                     ]\n                 )\n             msg_source_indices = []\n+            seen_indices: set[int] = set()\n             for source in message.get(\"source_refs\") or []:\n                 idx = source_index_map.get(_source_key(dict(source)))\n-                if idx is not None:\n+                if idx is not None and idx not in seen_indices:\n                     msg_source_indices.append(idx)\n+                    seen_indices.add(idx)\n             if msg_source_indices:\n                 refs_str = \", \".join(\n                     f\"[Source {i}](#source-{i})\" for i in msg_source_indices",
+          "status": "modified"
+        },
+        {
+          "filename": "tests/test_calyx_conversation_current_main_714.py",
+          "patch": "@@ -280,3 +280,77 @@ def test_current_main_routes_and_migration_governance_are_present():\n     assert \"CHECK (evidence_authority = FALSE)\" in migration\n     assert \"CHECK (scientific_publication_authorized = FALSE)\" in migration\n     assert \"CHECK (knowledge_graph_mutation_authorized = FALSE)\" in migration\n+\n+\n+def test_report_deduplicates_source_within_message():\n+    source = {\n+        \"result_id\": \"result-1\",\n+        \"object_type\": \"PAPER\",\n+        \"title\": \"Evidence\",\n+        \"citation\": {\n+            \"document_id\": \"doc-target\",\n+            \"revision_id\": \"rev-target\",\n+            \"identifier\": \"doi:fixture\",\n+            \"locator\": \"p. 4\",\n+        },\n+    }\n+    conversation = {\n+        \"conversation_id\": \"conversation-1\",\n+        \"title\": \"Fixture\",\n+        \"messages\": [\n+            {\n+                \"role\": \"CALYX\",\n+                \"content\": \"First message with duplicate source\",\n+                \"source_refs\": [source, source],\n+            },\n+        ],\n+    }\n+    report = build_conversation_markdown(conversation)\n+    # Should have only one source link, not two\n+    assert report.count(\"- Sources: [Source 1](#source-1)\") == 1\n+    assert \"- Sources: [Source 1](#source-1), [Source 1](#source-1)\" not in report\n+    # Source ledger should still have only one entry\n+    assert report.count('<a id=\"source-1\"></a>Source 1:') == 1\n+    assert \"Source 2:\" not in report\n+\n+\n+def test_report_preserves_order_of_distinct_sources_within_message():\n+    source1 = {\n+        \"result_id\": \"result-1\",\n+        \"object_type\": \"PAPER\",\n+        \"title\": \"Evidence One\",\n+        \"citation\": {\n+            \"document_id\": \"doc-target-1\",\n+            \"revision_id\": \"rev-target-1\",\n+            \"identifier\": \"doi:fixture-1\",\n+            \"locator\": \"p. 1\",\n+        },\n+    }\n+    source2 = {\n+        \"result_id\": \"result-2\",\n+        \"object_type\": \"PAPER\",\n+        \"title\": \"Evidence Two\",\n+        \"citation\": {\n+            \"document_id\": \"doc-target-2\",\n+            \"revision_id\": \"rev-target-2\",\n+            \"identifier\": \"doi:fixture-2\",\n+            \"locator\": \"p. 2\",\n+        },\n+    }\n+    conversation = {\n+        \"conversation_id\": \"conversation-1\",\n+        \"title\": \"Fixture\",\n+        \"messages\": [\n+            {\n+                \"role\": \"CALYX\",\n+                \"content\": \"Message with two distinct sources\",\n+                \"source_refs\": [source1, source2],\n+            },\n+        ],\n+    }\n+    report = build_conversation_markdown(conversation)\n+    # Should have both sources in order\n+    assert \"- Sources: [Source 1](#source-1), [Source 2](#source-2)\" in report\n+    # Source ledger should have both entries\n+    assert report.count('<a id=\"source-1\"></a>Source 1:') == 1\n+    assert report.count('<a id=\"source-2\"></a>Source 2:') == 1",
+          "status": "modified"
+        }
+      ],
+      "head": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+      "task": {
+        "body": "## Problem\n`build_conversation_markdown` (`app/conversation_memory/report.py`) de-duplicates sources across the report but not within one message, so a message citing the same source twice renders `- Sources: [Source 1](#source-1), [Source 1](#source-1)`.\n\n## Required behaviour\n- Within one message, each source index appears at most once, in first-seen order.\n- The example renders `- Sources: [Source 1](#source-1)`.\n- Distinct sources still render in order: `[Source 1](#source-1), [Source 2](#source-2)`.\n- Report-level numbering and the source list are unchanged; existing tests are unchanged.\n\n## Scope\nAllowed paths:\n- `app/conversation_memory/report.py`\n- `tests/test_calyx_conversation_current_main_714.py`\n\nDo not change any other file. Existing tests must keep passing unchanged; add new tests only to the test file above.\n\n## Validation\n- `python -m pytest -q tests/test_calyx_conversation_current_main_714.py`\n- `python -m ruff check app/conversation_memory/report.py tests/test_calyx_conversation_current_main_714.py`\n- `python -m ruff format --check app/conversation_memory/report.py tests/test_calyx_conversation_current_main_714.py`\n\nNew tests must cover:\n- a duplicate source within one message;\n- two distinct sources keep their order.\n\nOC-SWARM-CAPABILITY: open-ended-code-authoring\nOC-SWARM-WRITES: repo-global\n\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_",
+        "title": "Do not list the same source twice in one conversation report message"
+      },
+      "validation_run": 38818508936
+    },
+    "review": {
+      "changes_credentials": false,
+      "changes_scientific_authority": false,
+      "destructive": false,
+      "exposes_sensitive_locality": false,
+      "reason": "The diff correctly implements deduplication of sources within individual messages while preserving report-level numbering and order. The code change is minimal and surgical: a `seen_indices` set tracks which source indices have already been added to the current message, preventing duplicates via an `and idx not in seen_indices` guard. Two new tests comprehensively cover the required behavior: one verifies duplicate sources within a message are deduplicated (only one link rendered), and another confirms distinct sources preserve order. Both tests verify source ledger consistency. The change is confined to allowed paths only (report.py and test file). No existing tests are modified. The implementation maintains backward compatibility\u2014unchanged report-level structure and numbering.",
+      "reversible": true,
+      "risk": "low",
+      "spends_money": false,
+      "touches_production": false,
+      "verdict": "pass"
+    },
+    "settlement_receipt": 6203755600,
+    "usage": {
+      "model": "claude-haiku-4-5-20251001",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "inference_geo": "not_available",
+        "input_tokens": 2354,
+        "output_tokens": 242,
+        "service_tier": "standard",
+        "speed": "standard"
+      }
+    },
+    "validation": {
+      "base_sha": "77a8e53850e6f127624d27727fefbf6801e02f33",
+      "checks": [
+        {
+          "app": {
+            "client_id": "Iv1.05c79e9ad1f6bdfa",
+            "created_at": "2018-07-30T09:30:17Z",
+            "description": "Automate your workflow from idea to production",
+            "events": [
+              "branch_protection_rule",
+              "check_run",
+              "check_suite",
+              "create",
+              "delete",
+              "deployment",
+              "deployment_status",
+              "discussion",
+              "discussion_comment",
+              "fork",
+              "gollum",
+              "issues",
+              "issue_comment",
+              "label",
+              "merge_group",
+              "milestone",
+              "page_build",
+              "public",
+              "pull_request",
+              "pull_request_review",
+              "pull_request_review_comment",
+              "push",
+              "registry_package",
+              "release",
+              "repository",
+              "repository_dispatch",
+              "status",
+              "watch",
+              "workflow_dispatch",
+              "workflow_run"
+            ],
+            "external_url": "https://help.github.com/en/actions",
+            "html_url": "https://github.com/apps/github-actions",
+            "id": 15368,
+            "name": "GitHub Actions",
+            "node_id": "MDM6QXBwMTUzNjg=",
+            "owner": {
+              "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+              "events_url": "https://api.github.com/users/github/events{/privacy}",
+              "followers_url": "https://api.github.com/users/github/followers",
+              "following_url": "https://api.github.com/users/github/following{/other_user}",
+              "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+              "gravatar_id": "",
+              "html_url": "https://github.com/github",
+              "id": 9919,
+              "login": "github",
+              "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+              "organizations_url": "https://api.github.com/users/github/orgs",
+              "received_events_url": "https://api.github.com/users/github/received_events",
+              "repos_url": "https://api.github.com/users/github/repos",
+              "site_admin": false,
+              "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+              "type": "Organization",
+              "url": "https://api.github.com/users/github",
+              "user_view_type": "public"
+            },
+            "permissions": {
+              "actions": "write",
+              "administration": "read",
+              "artifact_metadata": "write",
+              "attestations": "write",
+              "checks": "write",
+              "code_quality": "write",
+              "contents": "write",
+              "copilot_requests": "write",
+              "deployments": "write",
+              "discussions": "write",
+              "drives": "write",
+              "issues": "write",
+              "merge_queues": "write",
+              "metadata": "read",
+              "models": "read",
+              "packages": "write",
+              "pages": "write",
+              "pull_requests": "write",
+              "repository_hooks": "write",
+              "repository_projects": "write",
+              "security_events": "write",
+              "statuses": "write",
+              "vulnerability_alerts": "read"
+            },
+            "slug": "github-actions",
+            "updated_at": "2026-06-18T16:17:48Z"
+          },
+          "check_suite": {
+            "id": 105201425840
+          },
+          "completed_at": "2026-10-15T22:39:41Z",
+          "conclusion": "success",
+          "details_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38818508936/job/116709061452",
+          "external_id": "8f8b9def-0665-5293-9e9e-ca5ae62f2d00",
+          "head_sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38818508936/job/116709061452",
+          "id": 116709061452,
+          "name": "validate",
+          "node_id": "CR_kwDORL8wa88AAAAbLGbzTA",
+          "output": {
+            "annotations_count": 2,
+            "annotations_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/116709061452/annotations",
+            "summary": null,
+            "text": null,
+            "title": null
+          },
+          "pull_requests": [
+            {
+              "base": {
+                "ref": "oc-autonomous-integration",
+                "repo": {
+                  "id": 1153380459,
+                  "name": "orchid-calyx-backend",
+                  "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+                },
+                "sha": "77a8e53850e6f127624d27727fefbf6801e02f33"
+              },
+              "head": {
+                "ref": "claude-direct/issue-1865-38818062950",
+                "repo": {
+                  "id": 1153380459,
+                  "name": "orchid-calyx-backend",
+                  "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+                },
+                "sha": "fba1ee713d377ba29290874b92ecf51aedcf171a"
+              },
+              "id": 4880760728,
+              "number": 1879,
+              "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls/1879"
+            }
+          ],
+          "started_at": "2026-10-15T22:38:46Z",
+          "status": "completed",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/116709061452"
+        }
+      ],
+      "commit_status_evidence": {
+        "commit_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits/fba1ee713d377ba29290874b92ecf51aedcf171a",
+        "repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+        "state": "failure",
+        "statuses": [
+          {
+            "avatar_url": "https://avatars.githubusercontent.com/in/1054195?v=4",
+            "context": "recurseml/analysis",
+            "created_at": "2026-10-15T22:38:40Z",
+            "description": "Error occurred during analysis (77a8e538..fba1ee71)",
+            "id": 56477721373,
+            "node_id": "SC_kwDORL8wa88AAAANJlWjHQ",
+            "state": "error",
+            "target_url": "https://github.com/jsp1440/orchid-calyx-backend/pull/1879/files",
+            "updated_at": "2026-10-15T22:38:40Z",
+            "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/fba1ee713d377ba29290874b92ecf51aedcf171a"
+          }
+        ],
+        "total_count": 1,
+        "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits/fba1ee713d377ba29290874b92ecf51aedcf171a/status"
+      },
+      "jobs": [
+        {
+          "check_run_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/116709061452",
+          "completed_at": "2026-10-15T22:39:41Z",
+          "conclusion": "success",
+          "created_at": "2026-10-15T22:38:44Z",
+          "head_branch": "claude-direct/issue-1865-38818062950",
+          "head_sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38818508936/job/116709061452",
+          "id": 116709061452,
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "name": "validate",
+          "node_id": "CR_kwDORL8wa88AAAAbLGbzTA",
+          "run_attempt": 1,
+          "run_id": 38818508936,
+          "run_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions",
+          "runner_id": 1000113579,
+          "runner_name": "GitHub Actions 1000113579",
+          "started_at": "2026-10-15T22:38:46Z",
+          "status": "completed",
+          "steps": [
+            {
+              "completed_at": "2026-10-15T22:38:47Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "started_at": "2026-10-15T22:38:47Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:00Z",
+              "conclusion": "success",
+              "name": "Initialize containers",
+              "number": 2,
+              "started_at": "2026-10-15T22:38:47Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:04Z",
+              "conclusion": "success",
+              "name": "Run actions/checkout@v4",
+              "number": 3,
+              "started_at": "2026-10-15T22:39:00Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:06Z",
+              "conclusion": "success",
+              "name": "Swarm post-build write-set verification",
+              "number": 4,
+              "started_at": "2026-10-15T22:39:04Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:10Z",
+              "conclusion": "success",
+              "name": "Run actions/setup-python@v5",
+              "number": 5,
+              "started_at": "2026-10-15T22:39:06Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:31Z",
+              "conclusion": "success",
+              "name": "Install runtime and validation dependencies",
+              "number": 6,
+              "started_at": "2026-10-15T22:39:10Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:31Z",
+              "conclusion": "success",
+              "name": "Diff hygiene",
+              "number": 7,
+              "started_at": "2026-10-15T22:39:31Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:34Z",
+              "conclusion": "success",
+              "name": "Compile Python sources",
+              "number": 8,
+              "started_at": "2026-10-15T22:39:31Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:37Z",
+              "conclusion": "success",
+              "name": "Validate changed Python files",
+              "number": 9,
+              "started_at": "2026-10-15T22:39:34Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:37Z",
+              "conclusion": "success",
+              "name": "Post Run actions/setup-python@v5",
+              "number": 16,
+              "started_at": "2026-10-15T22:39:37Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:37Z",
+              "conclusion": "success",
+              "name": "Post Run actions/checkout@v4",
+              "number": 17,
+              "started_at": "2026-10-15T22:39:37Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:39Z",
+              "conclusion": "success",
+              "name": "Stop containers",
+              "number": 18,
+              "started_at": "2026-10-15T22:39:37Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-15T22:39:39Z",
+              "conclusion": "success",
+              "name": "Complete job",
+              "number": 19,
+              "started_at": "2026-10-15T22:39:39Z",
+              "status": "completed"
+            }
+          ],
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/jobs/116709061452",
+          "workflow_name": "Orchid Autonomous Backend Validation"
+        }
+      ],
+      "required_status_contexts": [],
+      "ruleset_evidence": [],
+      "run": {
+        "actor": {
+          "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
+          "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+          "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+          "gravatar_id": "",
+          "html_url": "https://github.com/apps/github-actions",
+          "id": 41898282,
+          "login": "github-actions[bot]",
+          "node_id": "MDM6Qm90NDE4OTgyODI=",
+          "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+          "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+          "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+          "site_admin": false,
+          "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+          "type": "Bot",
+          "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+          "user_view_type": "public"
+        },
+        "artifacts_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936/artifacts",
+        "cancel_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936/cancel",
+        "check_suite_id": 105201425840,
+        "check_suite_node_id": "CS_kwDORL8wa88AAAAYfn5dsA",
+        "check_suite_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-suites/105201425840",
+        "conclusion": "success",
+        "created_at": "2026-10-15T22:38:43Z",
+        "display_title": "Orchid Autonomous Backend Validation",
+        "event": "workflow_dispatch",
+        "head_branch": "claude-direct/issue-1865-38818062950",
+        "head_commit": {
+          "author": {
+            "email": "41898282+github-actions[bot]@users.noreply.github.com",
+            "name": "orchid-continuum-orchestrator[bot]"
+          },
+          "committer": {
+            "email": "41898282+github-actions[bot]@users.noreply.github.com",
+            "name": "orchid-continuum-orchestrator[bot]"
+          },
+          "id": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+          "message": "feat(oc): implement issue #1865 via direct Claude",
+          "timestamp": "2026-10-15T22:38:30Z",
+          "tree_id": "bdb04c57478e18999b897bd580cf80985af6e8e5"
+        },
+        "head_repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "head_sha": "fba1ee713d377ba29290874b92ecf51aedcf171a",
+        "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38818508936",
+        "id": 38818508936,
+        "jobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936/jobs",
+        "logs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936/logs",
+        "name": "Orchid Autonomous Backend Validation",
+        "node_id": "WFR_kwLORL8wa88AAAAJCcNwiA",
+        "path": ".github/workflows/orchid-autonomous-validation.yml",
+        "previous_attempt_url": null,
+        "pull_requests": [
+          {
+            "base": {
+              "ref": "oc-autonomous-integration",
+              "repo": {
+                "id": 1153380459,
+                "name": "orchid-calyx-backend",
+                "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+              },
+              "sha": "77a8e53850e6f127624d27727fefbf6801e02f33"
+            },
+            "head": {
+              "ref": "claude-direct/issue-1865-38818062950",
+              "repo": {
+                "id": 1153380459,
+                "name": "orchid-calyx-backend",
+                "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+              },
+              "sha": "fba1ee713d377ba29290874b92ecf51aedcf171a"
+            },
+            "id": 4880760728,
+            "number": 1879,
+            "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls/1879"
+          }
+        ],
+        "referenced_workflows": [],
+        "repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "rerun_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936/rerun",
+        "run_attempt": 1,
+        "run_number": 1378,
+        "run_started_at": "2026-10-15T22:38:43Z",
+        "status": "completed",
+        "triggering_actor": {
+          "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
+          "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+          "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+          "gravatar_id": "",
+          "html_url": "https://github.com/apps/github-actions",
+          "id": 41898282,
+          "login": "github-actions[bot]",
+          "node_id": "MDM6Qm90NDE4OTgyODI=",
+          "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+          "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+          "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+          "site_admin": false,
+          "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+          "type": "Bot",
+          "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+          "user_view_type": "public"
+        },
+        "updated_at": "2026-10-15T22:39:41Z",
+        "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38818508936",
+        "workflow_id": 338255043,
+        "workflow_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/workflows/338255043"
+      }
+    }
+  }
+}
