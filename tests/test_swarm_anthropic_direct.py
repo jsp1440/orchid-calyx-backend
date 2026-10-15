@@ -118,6 +118,7 @@ def test_resume_real_git_retains_partial_work_and_new_control_plane(
     )
     assert (worker / "app/example.py").read_text() == "VALUE = 2\n"
     assert (worker / "current-control-plane.txt").read_text() == "repaired executor\n"
+    assert direct.RETAINED == {"app/example.py"}
     git(worker, "merge-base", "--is-ancestor", partial, "HEAD")
     git(worker, "merge-base", "--is-ancestor", current, "HEAD")
 
@@ -1197,6 +1198,7 @@ def test_lint_findings_go_back_to_the_model(tmp_path, monkeypatch):
     findings = iter([lint, ""])
     monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
     monkeypatch.setattr(direct, "_lint_problems", lambda: next(findings))
+    monkeypatch.setattr(direct, "RETAINED", set())
     replies = [_write(1, "import os\n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)]
     code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
     assert code == 0
@@ -1238,6 +1240,7 @@ def test_lint_problems_runs_ruff_on_written_python_files_only(
     seen: list[list[str]] = []
     monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(direct, "WRITTEN", {"app/a.py", "notes.md", "gone.py"})
+    monkeypatch.setattr(direct, "RETAINED", set())
     monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
     assert direct._lint_problems() == expected
     assert seen == [
@@ -1257,9 +1260,26 @@ def test_lint_problems_is_silent_without_written_python(tmp_path, monkeypatch):
     seen: list[list[str]] = []
     monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(direct, "WRITTEN", {"notes.md"})
+    monkeypatch.setattr(direct, "RETAINED", set())
     monkeypatch.setattr(direct, "_run", _lint_run(1, "x", seen))
     assert direct._lint_problems() == ""
     assert seen == []
+
+
+def test_lint_problems_includes_retained_partial_branch_files(tmp_path, monkeypatch):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "retained.py").write_text("import os\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", {"app/retained.py"})
+    monkeypatch.setattr(
+        direct,
+        "_run",
+        _lint_run(1, "app/retained.py:1:8: F401 unused", seen),
+    )
+    assert "F401" in direct._lint_problems()
+    assert seen[0][-1] == "app/retained.py"
 
 
 def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
@@ -1267,6 +1287,7 @@ def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
     monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
     monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
     direct._tool_write_file({"path": "app/a.py", "content": "import os\n"})
     assert "F401" in direct._lint_problems()
     direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})

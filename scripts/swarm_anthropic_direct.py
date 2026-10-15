@@ -236,6 +236,7 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 # calyx_runtime_journal.jsonl and runtime/discovery_registry.json, and
 # "git add -A" swept those into PR #1855, failing the hosted scope check.
 WRITTEN: set[str] = set()
+RETAINED: set[str] = set()
 ALLOWED_PATHS: set[str] | None = None
 _ALLOWED_HEADER = re.compile(r"^\s*Allowed paths:(?P<rest>.*)$", re.IGNORECASE)
 _LIST_PATH = re.compile(
@@ -340,14 +341,14 @@ def _whitespace_problems() -> str:
 
 
 def _lint_problems() -> str:
-    """Report `ruff check` problems in the written Python files ('' when clean).
+    """Report `ruff check` problems in changed Python files ('' when clean).
 
     PR validation runs `ruff check` on every changed Python file, so its
     pre-existing findings count too. #1860 and #1862 opened PRs whose tests
     passed but whose lint failed, and stopped at hosted prepare.
     """
     files = sorted(
-        p for p in WRITTEN if p.endswith(".py") and (REPO_ROOT / p).is_file()
+        p for p in WRITTEN | RETAINED if p.endswith(".py") and (REPO_ROOT / p).is_file()
     )
     if not files:
         return ""
@@ -501,6 +502,7 @@ def _prepare_branch(
     *,
     resume: tuple[str, str] | None = None,
 ) -> str:
+    RETAINED.clear()
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
     if resume:
@@ -523,6 +525,7 @@ def _prepare_branch(
         ).stdout.splitlines()
         if not files or any(not _writable(_safe_path(path)) for path in files):
             raise DirectExecutorError("partial branch has no admissible work set")
+        RETAINED.update(files)
         start = expected_sha
     else:
         start = f"origin/{base}"
@@ -668,6 +671,7 @@ def main() -> int:
     global ALLOWED_PATHS
     ALLOWED_PATHS = _parse_allowed_paths(packet)
     WRITTEN.clear()
+    RETAINED.clear()
 
     input_tokens = 0
     output_tokens = 0
