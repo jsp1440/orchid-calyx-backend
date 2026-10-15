@@ -1,0 +1,1617 @@
+{
+  "central_brain_sync": "UNPROVEN: no cross-repository credential used",
+  "health": {
+    "blocked_backoff_count": 18,
+    "ci_infrastructure_state": {
+      "reason": "executed_success",
+      "run_id": 38822179586,
+      "state": "HEALTHY"
+    },
+    "contract_health": {
+      "counts": {
+        "blocked": 10,
+        "queued": 0,
+        "repair_backoff": 6,
+        "running": 0,
+        "runtime_backoff": 2,
+        "validating": 12
+      },
+      "exception_decision": {
+        "action": "park_and_reconcile",
+        "autonomous_repair_available": false,
+        "exception_class": "engineering_exception",
+        "independent_authorized_work_available": false,
+        "owner_decision_required": false,
+        "owner_exception_category": null,
+        "should_interrupt_owner": false
+      },
+      "exceptions": [
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "healthy": false,
+      "integration": {
+        "head_sha": "fdff5b79db813733a05b1e964b501619dfcc7d96",
+        "ready": "UNKNOWN"
+      },
+      "issues": {
+        "blocked": [
+          1426,
+          1425,
+          1424,
+          1402,
+          1396,
+          1361,
+          1345,
+          1298,
+          1264,
+          1050
+        ],
+        "queued": [],
+        "repair_backoff": [
+          1193,
+          1168,
+          1140,
+          1096,
+          1084,
+          1023
+        ],
+        "running": [],
+        "runtime_backoff": [
+          1736,
+          1732
+        ],
+        "validating": [
+          1866,
+          1403,
+          1236,
+          1187,
+          1139,
+          1129,
+          1114,
+          1089,
+          1088,
+          1087,
+          1030,
+          832
+        ]
+      },
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "validating_targets": [
+        {
+          "head_sha": "617c4d9767a2d36209bbea4eff21f4864e206daa",
+          "issue": 1866,
+          "pr": 1884
+        },
+        {
+          "head_sha": null,
+          "issue": 1403,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1236,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1187,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1139,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1129,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1114,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1089,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1088,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1087,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1030,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 832,
+          "pr": null
+        }
+      ],
+      "violations": [
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1403,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1236,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1187,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1139,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1129,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1114,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1089,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1088,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1087,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1030,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 832,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        }
+      ]
+    },
+    "contract_snapshot": {
+      "autonomous_prs": [
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "617c4d9767a2d36209bbea4eff21f4864e206daa",
+          "number": 1884
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "f9ac6fad2e507a0366ba5f42507e1096c0e38d7e",
+          "number": 1827
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "051ba150d1cf3bd094725c173c9003e9420f9889",
+          "number": 1824
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "669ace6467d2646bb4392421cb21a470832465d7",
+          "number": 1811
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "5aa61a375f29dfa25e8748e7449b23f3732fc236",
+          "number": 1808
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "6ae92dfdf9154c00c7159fbb5ef2510ea14440ff",
+          "number": 1804
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b2a3b470422bdee7d24fb5874802096bf711f85",
+          "number": 1802
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "1acc402bd76bfb1bb60b226b74890d73a419adda",
+          "number": 1792
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2a2c8e4af54a8fe89f10e6d7bfd5686e96e0f2fe",
+          "number": 1790
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "e0afc3bb1125f60083b2fb0ec43655a2d43989c7",
+          "number": 1789
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a1e1744a9ca1878466f10bf0e7257350947af09c",
+          "number": 1788
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b308b63e648b19dc7ad5042ea83c243853fcb64",
+          "number": 1778
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "efab3af06c986d83515cebd29cfba7840d30480a",
+          "number": 1723
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "68f91759aa94d859e720e75ee7b7f6bc18b4a0a9",
+          "number": 1716
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "8ed8eb34aae89a1665793eb18ce2847bbf1e9da3",
+          "number": 1704
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "763d39daea54cc0151f7ad29c21a5aed1c3d08db",
+          "number": 1511
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7aea8ebcc6cbdab897dc61412d57d3d4566c5609",
+          "number": 1445
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a17cf90e40becee2d784498e57b99f18dcd22017",
+          "number": 1444
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7976a95206a15ba57afd3edb6769dbb84b3a8de5",
+          "number": 1443
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "36087372e7871913d7b8fde69e39d7a35224e6b3",
+          "number": 1439
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "635b778271ebe945961d302d437fdf437dca21c0",
+          "number": 1437
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "27e6b754aa7fd11221da143e7242eb463a9d13b8",
+          "number": 1404
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "ae0b3fa0acff258c9f0ea2cbb26036b6341acd04",
+          "number": 1397
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2acf9e22f1efa72ab6faa9f24f082178d94824f3",
+          "number": 1169
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "902d25d89a982bbf17211320fa1b54c6f2832ee9",
+          "number": 1113
+        }
+      ],
+      "autonomous_repair_available": false,
+      "deterministic_work_available": false,
+      "dispatch_fingerprints": [
+        "cbeb1829229ae7f9",
+        "c76e3b3650fc3851",
+        "871f271dc2c402e7"
+      ],
+      "exception_context": {},
+      "exceptions": [
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "generated_at": "2026-10-15T23:16:52.764131Z",
+      "independent_authorized_work_available": false,
+      "integration": {
+        "head_sha": "fdff5b79db813733a05b1e964b501619dfcc7d96",
+        "ready": "UNKNOWN"
+      },
+      "issues": [
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-validating"
+          ],
+          "number": 1866,
+          "validation_target": {
+            "head_sha": "617c4d9767a2d36209bbea4eff21f4864e206daa",
+            "pr": 1884
+          }
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1863
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1858
+        },
+        {
+          "labels": [],
+          "number": 1826
+        },
+        {
+          "labels": [],
+          "number": 1823
+        },
+        {
+          "labels": [],
+          "number": 1805
+        },
+        {
+          "labels": [],
+          "number": 1786
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1783
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1782
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1781
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1780
+        },
+        {
+          "labels": [],
+          "number": 1776
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-owner-gate",
+            "oc-p5"
+          ],
+          "number": 1773
+        },
+        {
+          "labels": [],
+          "number": 1772
+        },
+        {
+          "labels": [],
+          "number": 1770
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1742
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:improvement-discovery",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1741
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1740
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1739
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1738
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4"
+          ],
+          "number": 1737
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1736
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1735
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1734
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1733
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1732
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1731
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1730
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1729
+        },
+        {
+          "labels": [],
+          "number": 1728
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1725
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1724
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1722
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1721
+        },
+        {
+          "labels": [
+            "oc-repair"
+          ],
+          "number": 1717
+        },
+        {
+          "labels": [],
+          "number": 1692
+        },
+        {
+          "labels": [],
+          "number": 1690
+        },
+        {
+          "labels": [],
+          "number": 1685
+        },
+        {
+          "labels": [],
+          "number": 1684
+        },
+        {
+          "labels": [],
+          "number": 1682
+        },
+        {
+          "labels": [],
+          "number": 1670
+        },
+        {
+          "labels": [],
+          "number": 1669
+        },
+        {
+          "labels": [],
+          "number": 1668
+        },
+        {
+          "labels": [],
+          "number": 1667
+        },
+        {
+          "labels": [],
+          "number": 1659
+        },
+        {
+          "labels": [],
+          "number": 1658
+        },
+        {
+          "labels": [],
+          "number": 1657
+        },
+        {
+          "labels": [],
+          "number": 1656
+        },
+        {
+          "labels": [],
+          "number": 1655
+        },
+        {
+          "labels": [],
+          "number": 1654
+        },
+        {
+          "labels": [],
+          "number": 1653
+        },
+        {
+          "labels": [],
+          "number": 1652
+        },
+        {
+          "labels": [],
+          "number": 1651
+        },
+        {
+          "labels": [],
+          "number": 1565
+        },
+        {
+          "labels": [],
+          "number": 1533
+        },
+        {
+          "labels": [],
+          "number": 1501
+        },
+        {
+          "labels": [
+            "calyx-research"
+          ],
+          "number": 1497
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1484
+        },
+        {
+          "labels": [
+            "blocked-on-owner",
+            "lane-c"
+          ],
+          "number": 1453
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1426
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1425
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1424
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1403
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1402
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1",
+            "oc-repair"
+          ],
+          "number": 1396
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1361
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1345
+        },
+        {
+          "labels": [],
+          "number": 1336
+        },
+        {
+          "labels": [],
+          "number": 1330
+        },
+        {
+          "labels": [
+            "oc-active-tracker",
+            "oc-tracker"
+          ],
+          "number": 1299
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1298
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1264
+        },
+        {
+          "labels": [],
+          "number": 1242
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1236
+        },
+        {
+          "labels": [],
+          "number": 1194
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1193
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1187
+        },
+        {
+          "labels": [],
+          "number": 1182
+        },
+        {
+          "labels": [],
+          "number": 1181
+        },
+        {
+          "labels": [],
+          "number": 1175
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1168
+        },
+        {
+          "labels": [],
+          "number": 1166
+        },
+        {
+          "labels": [],
+          "number": 1153
+        },
+        {
+          "labels": [],
+          "number": 1151
+        },
+        {
+          "labels": [],
+          "number": 1141
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-repair-backoff"
+          ],
+          "number": 1140
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1139
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1129
+        },
+        {
+          "labels": [],
+          "number": 1125
+        },
+        {
+          "labels": [],
+          "number": 1123
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1114
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-repair-backoff"
+          ],
+          "number": 1096
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1089
+        },
+        {
+          "labels": [
+            "oc-p3",
+            "oc-validating"
+          ],
+          "number": 1088
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-validating"
+          ],
+          "number": 1087
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1085
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1084
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1050
+        },
+        {
+          "labels": [
+            "oc-runtime-degraded"
+          ],
+          "number": 1031
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1030
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1027
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1026
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0",
+            "oc-p4"
+          ],
+          "number": 1024
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1023
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1022
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1021
+        },
+        {
+          "labels": [],
+          "number": 1011
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1008
+        },
+        {
+          "labels": [],
+          "number": 1005
+        },
+        {
+          "labels": [],
+          "number": 1003
+        },
+        {
+          "labels": [],
+          "number": 858
+        },
+        {
+          "labels": [],
+          "number": 842
+        },
+        {
+          "labels": [],
+          "number": 833
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 832
+        },
+        {
+          "labels": [],
+          "number": 831
+        },
+        {
+          "labels": [],
+          "number": 830
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 793
+        },
+        {
+          "labels": [],
+          "number": 739
+        },
+        {
+          "labels": [],
+          "number": 736
+        },
+        {
+          "labels": [],
+          "number": 729
+        },
+        {
+          "labels": [],
+          "number": 716
+        },
+        {
+          "labels": [],
+          "number": 701
+        },
+        {
+          "labels": [],
+          "number": 699
+        },
+        {
+          "labels": [],
+          "number": 692
+        },
+        {
+          "labels": [],
+          "number": 691
+        },
+        {
+          "labels": [],
+          "number": 683
+        },
+        {
+          "labels": [],
+          "number": 680
+        },
+        {
+          "labels": [],
+          "number": 639
+        },
+        {
+          "labels": [],
+          "number": 617
+        },
+        {
+          "labels": [],
+          "number": 580
+        },
+        {
+          "labels": [],
+          "number": 543
+        },
+        {
+          "labels": [],
+          "number": 523
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 486
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 481
+        },
+        {
+          "labels": [],
+          "number": 480
+        },
+        {
+          "labels": [],
+          "number": 479
+        },
+        {
+          "labels": [],
+          "number": 478
+        },
+        {
+          "labels": [],
+          "number": 477
+        },
+        {
+          "labels": [],
+          "number": 476
+        },
+        {
+          "labels": [],
+          "number": 475
+        },
+        {
+          "labels": [],
+          "number": 474
+        },
+        {
+          "labels": [],
+          "number": 473
+        },
+        {
+          "labels": [],
+          "number": 471
+        },
+        {
+          "labels": [],
+          "number": 470
+        },
+        {
+          "labels": [],
+          "number": 468
+        },
+        {
+          "labels": [],
+          "number": 467
+        },
+        {
+          "labels": [],
+          "number": 466
+        },
+        {
+          "labels": [],
+          "number": 465
+        },
+        {
+          "labels": [],
+          "number": 464
+        },
+        {
+          "labels": [],
+          "number": 462
+        },
+        {
+          "labels": [],
+          "number": 457
+        },
+        {
+          "labels": [],
+          "number": 456
+        },
+        {
+          "labels": [],
+          "number": 455
+        },
+        {
+          "labels": [],
+          "number": 454
+        },
+        {
+          "labels": [],
+          "number": 453
+        },
+        {
+          "labels": [],
+          "number": 452
+        },
+        {
+          "labels": [],
+          "number": 451
+        },
+        {
+          "labels": [],
+          "number": 450
+        },
+        {
+          "labels": [],
+          "number": 447
+        },
+        {
+          "labels": [],
+          "number": 446
+        },
+        {
+          "labels": [],
+          "number": 445
+        },
+        {
+          "labels": [],
+          "number": 435
+        },
+        {
+          "labels": [],
+          "number": 434
+        },
+        {
+          "labels": [],
+          "number": 419
+        },
+        {
+          "labels": [],
+          "number": 418
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 416
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 414
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 409
+        },
+        {
+          "labels": [],
+          "number": 401
+        },
+        {
+          "labels": [],
+          "number": 400
+        },
+        {
+          "labels": [],
+          "number": 398
+        },
+        {
+          "labels": [],
+          "number": 397
+        },
+        {
+          "labels": [],
+          "number": 396
+        },
+        {
+          "labels": [],
+          "number": 395
+        },
+        {
+          "labels": [],
+          "number": 394
+        },
+        {
+          "labels": [],
+          "number": 386
+        },
+        {
+          "labels": [],
+          "number": 384
+        },
+        {
+          "labels": [],
+          "number": 320
+        },
+        {
+          "labels": [],
+          "number": 319
+        },
+        {
+          "labels": [],
+          "number": 318
+        },
+        {
+          "labels": [],
+          "number": 317
+        },
+        {
+          "labels": [],
+          "number": 316
+        },
+        {
+          "labels": [],
+          "number": 315
+        },
+        {
+          "labels": [],
+          "number": 314
+        },
+        {
+          "labels": [],
+          "number": 312
+        },
+        {
+          "labels": [],
+          "number": 311
+        },
+        {
+          "labels": [],
+          "number": 308
+        },
+        {
+          "labels": [],
+          "number": 298
+        },
+        {
+          "labels": [],
+          "number": 296
+        },
+        {
+          "labels": [],
+          "number": 294
+        },
+        {
+          "labels": [],
+          "number": 292
+        },
+        {
+          "labels": [],
+          "number": 290
+        },
+        {
+          "labels": [],
+          "number": 287
+        },
+        {
+          "labels": [],
+          "number": 264
+        },
+        {
+          "labels": [],
+          "number": 198
+        },
+        {
+          "labels": [],
+          "number": 195
+        },
+        {
+          "labels": [],
+          "number": 192
+        },
+        {
+          "labels": [],
+          "number": 190
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 186
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 184
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 181
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 173
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 171
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 141
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 127
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 126
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 123
+        },
+        {
+          "labels": [],
+          "number": 78
+        },
+        {
+          "labels": [],
+          "number": 76
+        }
+      ],
+      "leases": [
+        {
+          "active": true,
+          "age_seconds": 67046,
+          "id": 6184549580,
+          "issue": 1736,
+          "material_fingerprint": "cbeb1829229ae7f9",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 67058,
+          "id": 6184547135,
+          "issue": 1732,
+          "material_fingerprint": "c76e3b3650fc3851",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 2849385,
+          "id": 5649481701,
+          "issue": 1396,
+          "material_fingerprint": "871f271dc2c402e7",
+          "owner": "github-actions[bot]",
+          "stale": true
+        }
+      ],
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "schema": "oc.completion-health-snapshot.v1"
+    },
+    "current_running_lease": null,
+    "duplicate_authoritative_mission_count": "UNKNOWN",
+    "generated_at": "2026-10-15T23:16:52.764131Z",
+    "healthy": false,
+    "integration_head": "fdff5b79db813733a05b1e964b501619dfcc7d96",
+    "last_dispatch_time": "UNKNOWN",
+    "last_integration_promotion": "UNKNOWN",
+    "last_main_promotion": "UNKNOWN",
+    "last_successful_exact_head_validation": "UNKNOWN",
+    "main_head": "d1031cb9f1dc956ebc90dd1b07521c0f4304a798",
+    "observation_complete": true,
+    "observation_errors": [],
+    "provider_availability_state": "UNKNOWN",
+    "queued_p0_count": 0,
+    "reason_no_work_running": "UNKNOWN",
+    "running_lease_count": 0,
+    "scheduler_heartbeat": "2026-10-15T23:15:31Z",
+    "schema": "orchid.control-plane-health.v1",
+    "stale_lease_count": 3,
+    "validating_count": 12
+  },
+  "schema": "oc.hosted-completion-evidence.v1",
+  "state": {
+    "context": {
+      "completion_run": 38822482431,
+      "head": "617c4d9767a2d36209bbea4eff21f4864e206daa",
+      "issue": 1866,
+      "lease": 6204226850,
+      "pr": 1884,
+      "repository": "jsp1440/orchid-calyx-backend",
+      "trusted_sha": "fdff5b79db813733a05b1e964b501619dfcc7d96",
+      "worker_attempt": 1,
+      "worker_run": 38822179586
+    }
+  }
+}
