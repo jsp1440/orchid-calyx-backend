@@ -91,7 +91,7 @@ jobs:
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
       CONTROLLER_REF: ${{ github.event_name == 'schedule' && 'oc-autonomous-integration' || github.sha }}
-      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
     steps:
@@ -867,7 +867,7 @@ jobs:
       INTEGRATION_BRANCH: oc-autonomous-integration
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
-      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}
     steps:
       - name: Dispatch bounded refill wave
         shell: bash
