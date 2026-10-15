@@ -91,3 +91,42 @@ def test_histogram_chart_spec_filters_non_numeric_values():
 def test_chart_spec_rejects_missing_axis():
     with pytest.raises(ValueError, match="requires y"):
         chart_spec({"x": [1]}, chart_type="scatter", x="x")
+
+
+def test_normalize_headers_handles_suffix_collision():
+    """Test that ["a", "a", "a_2"] becomes ["a", "a_2", "a_2_2"]."""
+    parsed = parse_tabular_file(
+        b"a,a,a_2\n1,2,3\n",
+        "d.csv",
+    )
+    assert parsed["column_count"] == 3
+    assert list(parsed["columns"]) == ["a", "a_2", "a_2_2"]
+    assert parsed["columns"]["a"] == [1]
+    assert parsed["columns"]["a_2"] == [2]
+    assert parsed["columns"]["a_2_2"] == [3]
+
+
+def test_normalize_headers_handles_triple_duplicate():
+    """Test that ["x", "x", "x"] becomes ["x", "x_2", "x_3"]."""
+    parsed = parse_tabular_file(
+        b"x,x,x\n10,20,30\n",
+        "data.csv",
+    )
+    assert parsed["column_count"] == 3
+    assert list(parsed["columns"]) == ["x", "x_2", "x_3"]
+    assert parsed["columns"]["x"] == [10]
+    assert parsed["columns"]["x_2"] == [20]
+    assert parsed["columns"]["x_3"] == [30]
+
+
+def test_normalize_headers_preserves_existing_valid_case():
+    """Test that existing case like ["species", "temp", "temp_2"] is unchanged."""
+    parsed = parse_tabular_file(
+        b"species,temp,temp_2\nA,10,11\nB,12,13\n",
+        "data.csv",
+    )
+    assert parsed["column_count"] == 3
+    assert list(parsed["columns"]) == ["species", "temp", "temp_2"]
+    assert parsed["columns"]["species"] == ["A", "B"]
+    assert parsed["columns"]["temp"] == [10, 12]
+    assert parsed["columns"]["temp_2"] == [11, 13]
