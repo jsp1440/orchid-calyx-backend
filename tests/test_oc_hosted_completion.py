@@ -1120,3 +1120,83 @@ def test_an_unattributable_attempt_record_counts_against_every_authorization(
     assert hosted.checker_attempt_reserved(
         {**material["grant"], "comment_id": 7000000000}, [row]
     )
+
+
+def test_every_boundary_flag_has_a_definition_the_checker_receives():
+    """#1843: undefined touches_production owner-gated a plain code change."""
+    for field in hosted.RISK_FIELDS:
+        assert f"{field}:" in hosted.BOUNDARY_DEFINITIONS
+    text = hosted.BOUNDARY_DEFINITIONS
+    # The integration branch is not isolated (#1851 review): migrations and the
+    # control plane run from it, so those are named as touching production.
+    for exception in (
+        "alembic/",
+        "migrations/",
+        "workflow",
+        "control-plane",
+        "app/calyx_orchestrator/",
+    ):
+        assert exception in text
+    assert "FALSE only for" in text
+    assert "tests or scripts that CI runs with production credentials" in text
+    assert "drops or deletes schema" in text
+    assert "weakens or removes their" in text
+    # Ambiguity still fails toward the owner gate.
+    assert "genuinely ambiguous for this diff, set the flag true" in text
+
+
+def test_the_checker_prompt_includes_the_boundary_definitions(monkeypatch, tmp_path):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+    seen = {}
+
+    class Done(Exception):
+        pass
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        raise Done
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", capture)
+    with pytest.raises(Done):
+        hosted.check(tmp_path)
+    assert hosted.BOUNDARY_DEFINITIONS in seen["payload"]["system"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "alembic/versions/abc_add_table.py",
+        "alembic/env.py",
+        "app/calyx_orchestrator/durable_reservoir.py",
+        "app/calyx_orchestrator/durable_reservoir_models.py",
+        "app/calyx_orchestrator/bounded_dispatcher.py",
+        "app/calyx_orchestrator/leaf_worker.py",
+        "app/calyx_orchestrator/owner_authorization_gate.py",
+        ".github/workflows/calyx-durable-autonomy-neon-proof.yml",
+        "migrations/20261015_x.sql",
+        "tests/test_durable_reservoir_postgres.py",
+        "tests/test_durable_e2e_conductor_proof.py",
+        "scripts/prove_real_canonical_matrix_slice.py",
+        "scripts/build_078_postgres_validation.py",
+        "scripts/build_079_postgres_validation.py",
+        "scripts/run_with_postgres_validation_lock.py",
+        "app/publication/gate.py",
+        "app/missions/queue.py",
+        "app/routers/mission_control.py",
+        "app/main.py",
+        "tests/test_build_078_publication_gate.py",
+        "tests/test_build_079_mission_queue.py",
+        "scripts/discover_hassler_release_intake.py",
+        "app/executive_telemetry/service.py",
+        "scripts/smoke_mission_control_telemetry.py",
+        "tests/test_mission_control_telemetry_001f_release_readiness.py",
+    ],
+)
+def test_paths_that_reach_the_production_database_can_never_be_owner_enrolled(
+    material, path
+):
+    """A push to the integration branch runs alembic against production for these."""
+    with pytest.raises(ValueError, match="unsafe_allowed_paths"):
+        authorize(material, allowed_paths=[path, "tests/test_x.py"])

@@ -53,6 +53,39 @@ STATE_LABELS = {
     "oc-runtime-backoff",
     "oc-repair-backoff",
 }
+# What each boundary flag means for the checker. Without definitions the
+# first live checker (#1843, run 38714227054) read touches_production as "code
+# that will eventually run in production" and owner-gated a plain runtime fix.
+# The integration branch is not isolated, though (#1851 review): migrations run
+# against the production database from it and the control plane executes it,
+# so those areas are named as touching production.
+BOUNDARY_DEFINITIONS = (
+    "Judge each boundary by what merging this change into the integration "
+    "branch oc-autonomous-integration does. That branch is not deployed to the "
+    "Render services, but it is not isolated either: database migrations run "
+    "against the production database from it, and the control plane (the swarm "
+    "controller, completion lane, checker and their scripts and workflows) "
+    "executes code from it with live credentials. touches_production: TRUE "
+    "when the change adds or alters database migrations, schema or the models "
+    "and tables migrations act on (alembic/, migrations/, ORM models, DDL); "
+    "any workflow, CI, deploy or infrastructure configuration; control-plane, "
+    "orchestration, scheduler, provider or governor code under scripts/ or "
+    "app/calyx_orchestrator/; or code that directly reads or mutates production "
+    "data or live external services when it runs, including tests or scripts "
+    "that CI runs with production credentials. It is FALSE only for "
+    "application code, tests and docs outside those areas that would reach "
+    "the deployed services after a separate owner-gated promotion to main. "
+    "changes_credentials: the change adds, rotates, exposes or alters handling "
+    "of secrets, tokens or keys. changes_scientific_authority: the change "
+    "publishes, activates or alters governed scientific records, taxonomy or "
+    "provenance rules. exposes_sensitive_locality: the change can reveal "
+    "protected species localities or coordinates, or weakens or removes their "
+    "redaction or generalization. spends_money: the change itself triggers or "
+    "raises paid usage (not this separately authorized review call). "
+    "destructive: the change drops or deletes schema, data, branches or "
+    "history, or irreversibly overwrites them. When a definition is genuinely "
+    "ambiguous for this diff, set the flag true and explain why in reason."
+)
 RISK_FIELDS = (
     "touches_production",
     "changes_credentials",
@@ -81,6 +114,34 @@ PROTECTED = (
     "docs/AGENT",
     "docs/SOFTWARE-FACTORY",
     "migrations/",
+    # Changes here run DDL against the production database on push to the
+    # integration branch (calyx-durable-autonomy-neon-proof.yml), so they are
+    # never auto-integrated.
+    "alembic/",
+    "app/calyx_orchestrator/durable_reservoir",
+    "app/calyx_orchestrator/bounded_dispatcher",
+    "app/calyx_orchestrator/leaf_worker",
+    "app/calyx_orchestrator/owner_authorization_gate",
+    # CI runs these with the production DATABASE_URL (the durable proof on
+    # integration pushes; the canonical matrix proof at pull_request time).
+    "tests/test_durable_reservoir_postgres",
+    "tests/test_durable_e2e_conductor_proof",
+    "scripts/prove_real_canonical_matrix_slice",
+    # Pull-request workflows run these with production credentials
+    # (DATABASE_URL, CALYX_OWNER_ACCESS_CODE, MISSION_CONTROL_SMOKE_TOKEN).
+    "scripts/build_078_postgres_validation",
+    "scripts/build_079_postgres_validation",
+    "scripts/run_with_postgres_validation_lock",
+    "app/publication/",
+    "app/missions/",
+    "app/routers/mission_control",
+    "app/main.py",
+    "tests/test_build_078_",
+    "tests/test_build_079_",
+    "scripts/discover_hassler_release_intake",
+    "app/executive_telemetry/",
+    "scripts/smoke_mission_control_telemetry",
+    "tests/test_mission_control_telemetry_001f",
     "Dockerfile",
     "render",
 )
@@ -676,7 +737,7 @@ def check(directory):
         "findings, not private reasoning), risk (low/moderate/high/owner_gated), reversible (boolean), "
         + ", ".join(RISK_FIELDS)
         + " (each boolean). Mark all applicable governed boundaries accurately. "
-        "spends_money describes the proposed code/integration, not this separately authorized review call."
+        + BOUNDARY_DEFINITIONS
     )
     payload = {
         "model": MODEL,
