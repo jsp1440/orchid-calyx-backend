@@ -51,6 +51,11 @@ _CLASSIFIERS: tuple[tuple[re.Pattern[str], Deficiency, str], ...] = (
         "The evidence names a genus where the question needs a species.",
     ),
     (
+        re.compile(r"establishes this at genus level.*nothing.*species specifically", re.IGNORECASE | re.DOTALL),
+        Deficiency.MISSING_EVIDENCE,
+        "The relationship is established at genus level, but species-level evidence is not retrieved.",
+    ),
+    (
         re.compile(r"no (?:source|record) quantifies", re.IGNORECASE),
         Deficiency.MISSING_EVIDENCE,
         "The relationship is reported but never measured.",
