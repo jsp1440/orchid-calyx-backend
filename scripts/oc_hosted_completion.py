@@ -692,11 +692,19 @@ def _review_json(text):
     if fenced:
         text = fenced.group("body").strip()
     try:
-        review = json.loads(text)
+        review = json.loads(text, object_pairs_hook=_unique_keys)
     except json.JSONDecodeError:
         raise ValueError("checker_output_not_json") from None
     require(isinstance(review, dict), "checker_output_not_json")
     return review
+
+
+def _unique_keys(pairs):
+    """A repeated key (``"verdict": "fail", ..., "verdict": "pass"``) is ambiguous;
+    json.loads would silently keep the last one."""
+    keys = [key for key, _ in pairs]
+    require(len(keys) == len(set(keys)), "checker_output_ambiguous")
+    return dict(pairs)
 
 
 # The checker's answer is prefilled with the opening brace, so the model cannot

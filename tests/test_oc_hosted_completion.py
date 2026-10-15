@@ -1284,3 +1284,25 @@ def test_the_checker_model_accepts_an_assistant_prefill():
     """Newer models reject a prefill with HTTP 400; a model change must
     replace the prefill instead of failing every checker call."""
     assert hosted.MODEL in hosted.PREFILL_MODELS
+
+
+def test_a_pretty_printed_continuation_after_the_prefill_is_accepted(
+    monkeypatch, tmp_path
+):
+    continuation = json.dumps(review(), indent=2)[1:]
+    assert continuation.startswith("\n")
+    _, parsed = _run_check(monkeypatch, tmp_path, continuation)
+    assert parsed == review()
+
+
+@pytest.mark.parametrize("where", ["top", "nested"])
+def test_a_repeated_key_in_the_review_fails_closed(where):
+    body = json.dumps(review(verdict="fail"))[:-1]
+    if where == "top":
+        text = body + ', "verdict": "pass"}'
+    else:
+        text = body + ', "extra": {"a": 1, "a": 2}}'
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_ambiguous$"):
+        hosted.parse_review(value)
