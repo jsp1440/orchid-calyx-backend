@@ -421,6 +421,40 @@ def test_ambiguous_checker_result_stays_closed(change):
         hosted.parse_review(value)
 
 
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda body: f"```json\n{body}\n```",
+        lambda body: f"```\n{body}\n```",
+        lambda body: f"  ```json\n{body}\n```\n",
+    ],
+)
+def test_a_single_markdown_fence_around_the_json_review_is_accepted(wrap):
+    """The first live checker answer (#1843) was valid JSON inside a fence."""
+    value = response(review())
+    value["content"][0]["text"] = wrap(value["content"][0]["text"])
+    assert hosted.parse_review(value) == review()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Here is my review: {}",
+        "```json\n{}\n```\nI am confident.",
+        "not json",
+        "[]",
+        '"pass"',
+        "```python\n{}\n```",
+        "",
+    ],
+)
+def test_prose_or_non_object_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_"):
+        hosted.parse_review(value)
+
+
 def test_existing_factory_admits_independent_exact_head_pass(material):
     state, checked, assignment, evidence = factory_state(material)
     decision = hosted.decide(state, material, checked, assignment, evidence)

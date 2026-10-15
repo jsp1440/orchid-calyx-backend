@@ -583,6 +583,29 @@ def reserve(directory):
     (directory / "prepared.json").write_text(json.dumps(state))
 
 
+_FENCED_JSON = re.compile(r"\A```(?:json)?[ \t]*\n(?P<body>.*)\n```\Z", re.DOTALL)
+
+
+def _review_json(text):
+    """Decode the checker's single JSON object, tolerating one Markdown fence.
+
+    The first live checker call (#1843, run 38702689548) returned 200 with
+    usage but failed to decode: models often wrap a JSON-only answer in a
+    ```json fence. Exactly one surrounding fence is removed; any other prose,
+    a second object or a non-object still fails closed with a named reason.
+    """
+    text = (text or "").strip()
+    fenced = _FENCED_JSON.match(text)
+    if fenced:
+        text = fenced.group("body").strip()
+    try:
+        review = json.loads(text)
+    except json.JSONDecodeError:
+        raise ValueError("checker_output_not_json") from None
+    require(isinstance(review, dict), "checker_output_not_json")
+    return review
+
+
 def parse_review(response):
     require(response.get("stop_reason") == "end_turn", "checker_did_not_finish")
     content = response.get("content")
@@ -592,7 +615,7 @@ def parse_review(response):
         and content[0]["type"] == "text",
         "checker_output_invalid",
     )
-    review = json.loads(content[0]["text"])
+    review = _review_json(content[0]["text"])
     require(
         set(review) == {"verdict", "reason", "risk", "reversible", *RISK_FIELDS},
         "checker_schema_invalid",
