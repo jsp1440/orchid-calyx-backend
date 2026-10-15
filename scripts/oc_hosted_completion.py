@@ -227,18 +227,26 @@ def validate_material(context, issue, pr, lease, files, grant, dependency_issues
     require(match, "lease_malformed")
     claim = json.loads(match[1])
     # Recompute the original running packet, without mutating current queue state.
-    packet = build_work_packet(
-        issue_number=str(context["issue"]),
-        title=issue["title"],
-        body=issue.get("body") or "",
-        labels=(labels - {"oc-validating"}) | {"oc-running"},
-    )
+    # A repair attempt is claimed while the issue carries oc-repair, and the
+    # worker's own settlement removes that label on the way to oc-validating.
+    # Accept that one engine-removed label and nothing else, so a repair attempt
+    # stays bound to the same issue material instead of failing closed forever.
+    running = (labels - {"oc-validating"}) | {"oc-running"}
+    fingerprints = {
+        build_work_packet(
+            issue_number=str(context["issue"]),
+            title=issue["title"],
+            body=issue.get("body") or "",
+            labels=candidate,
+        ).fingerprint
+        for candidate in (running, running | {"oc-repair"})
+    }
     require(
         claim.get("schema") == "oc.swarm-claim.v1"
         and claim.get("issue_number") == context["issue"]
         and claim.get("lease_id")
         == f"{context['repository']}:{context['worker_run']}:{context['worker_attempt']}:{context['issue']}"
-        and claim.get("material_fingerprint") == packet.fingerprint,
+        and claim.get("material_fingerprint") in fingerprints,
         "lease_binding_changed",
     )
     deps = dependencies(issue)
