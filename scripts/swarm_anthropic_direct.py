@@ -238,7 +238,16 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 WRITTEN: set[str] = set()
 ALLOWED_PATHS: set[str] | None = None
 _ALLOWED_HEADER = re.compile(r"^\s*Allowed paths:(?P<rest>.*)$", re.IGNORECASE)
-_LIST_PATH = re.compile(r"^\s*[-*]\s+`(?P<path>[^`]+)`\s*$")
+_LIST_PATH = re.compile(r"^\s*[-*]\s+`?(?P<path>[\w./-]+)`?(?:\s.*)?$")
+_BARE_PATH = re.compile(r"^[\w.-]*(?:/[\w.-]+)+$|^[\w-]+\.\w+$")
+
+
+def _inline_paths(rest: str) -> set[str]:
+    quoted = set(re.findall(r"`([^`]+)`", rest))
+    if quoted:
+        return quoted
+    tokens = (t.strip(".,;:()") for t in re.split(r"[\s,]+", rest))
+    return {t for t in tokens if t and _BARE_PATH.match(t)}
 
 
 def _parse_allowed_paths(packet: str) -> set[str] | None:
@@ -251,7 +260,7 @@ def _parse_allowed_paths(packet: str) -> set[str] | None:
             continue
         if found is not None:
             return set()  # ambiguous declaration: allow nothing
-        found = set(re.findall(r"`([^`]+)`", header.group("rest")))
+        found = _inline_paths(header.group("rest"))
         if not found:
             for item in lines[index + 1 :]:
                 listed = _LIST_PATH.match(item)

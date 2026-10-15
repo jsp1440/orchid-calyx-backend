@@ -962,6 +962,14 @@ def test_every_tool_result_carries_the_turn_budget_and_the_prompt_states_it(
         ),
         ("No declaration here.", None),
         ("Allowed paths: `a.py`\nAllowed paths: `b.py`", set()),
+        (
+            "Allowed paths: runtime/a.py, tests/test_a.py.",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Allowed paths:\n- `runtime/a.py` (new)\n- tests/test_a.py\nDone",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
     ],
 )
 def test_allowed_paths_are_read_inline_or_as_a_list(packet, expected):
