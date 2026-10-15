@@ -165,6 +165,19 @@ def build_pollination_repository() -> InMemoryGraphRepository:
 
 #: Relationships the scenario deliberately does NOT contain, so that gap
 #: detection has something real to find rather than a contrived absence.
+#:
+#: Each tuple pairs the edge type that would close the gap with the human-readable
+#: gap statement the reasoning engine will emit. Together they document:
+#: (1) what observation or measurement would close the gap, and
+#: (2) that no such observation is currently held in the knowledge graph.
+#:
+#: - ``observed_pollination_event``: Direct field observation of pollination events
+#:   in a natural population. Required to establish which pollinators (if any) actually
+#:   visit and effect reproduction in populations where the species occurs. Currently
+#:   unavailable in the fixture.
+#: - ``quantified_seed_set``: Measured reproductive output under each reported strategy.
+#:   Required to quantify the relative contribution of insect pollination vs. autogamy
+#:   where both are reported. Currently unavailable in the fixture.
 EXPECTED_BUT_ABSENT = (
     ("observed_pollination_event", "no population-level pollination observation is held"),
     ("quantified_seed_set", "no source quantifies the contribution of either strategy"),
