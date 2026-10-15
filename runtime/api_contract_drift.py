@@ -220,8 +220,26 @@ def path_is_served(normalized: str, routes: list[str]) -> bool:
     for route in routes:
         if ":path}" in route:
             # A path converter swallows the rest, so only the prefix matters.
-            prefix = _segments(route.split("{", 1)[0])
-            if call[: len(prefix)] == prefix:
+            # Every prefix segment must match (using wildcard logic), and the call
+            # must have at least that many segments. Any remaining call segments
+            # (zero or more) are accepted.
+            # Find the segment containing :path} and use all segments before it.
+            route_segments = _segments(route)
+            path_converter_idx = None
+            for i, seg in enumerate(route_segments):
+                if ":path}" in seg:
+                    path_converter_idx = i
+                    break
+            if path_converter_idx is None:
+                # Should not happen if ":path}" is in route, but be safe
+                continue
+            prefix = route_segments[:path_converter_idx]
+            if len(call) < len(prefix):
+                continue
+            if all(
+                a == b or _is_wildcard(a) or _is_wildcard(b)
+                for a, b in zip(call, prefix)
+            ):
                 return True
             continue
         target = _segments(route)

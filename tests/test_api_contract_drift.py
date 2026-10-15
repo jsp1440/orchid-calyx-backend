@@ -75,6 +75,33 @@ def test_a_path_converter_route_spans_separators():
     assert path_is_served("/api/concepts/http://example.org/a/b", matchers)
 
 
+def test_path_converter_with_zero_trailing_segments():
+    """A path converter accepts calls with exactly the prefix segments."""
+    matchers = build_route_matchers(["/api/concepts/{id_or_uri:path}"])
+    assert path_is_served("/api/concepts", matchers)
+
+
+def test_path_converter_with_multiple_trailing_segments():
+    """A path converter accepts calls with several trailing segments."""
+    matchers = build_route_matchers(["/api/sources/{source_id}/files/{file_path:path}"])
+    assert path_is_served("/api/sources/abc/files/a/b.pdf", matchers)
+
+
+def test_path_converter_requires_matching_prefix_literal():
+    """A literal mismatch in the prefix before the converter is not served."""
+    matchers = build_route_matchers(["/api/{tenant}/docs/{rest:path}"])
+    assert not path_is_served("/api/lexicon/search", matchers)
+
+
+def test_path_converter_requires_matching_prefix_with_parameter():
+    """A parameter segment before the converter must match the call segment."""
+    matchers = build_route_matchers(["/api/sources/{source_id}/files/{file_path:path}"])
+    # Call with a literal in place of {source_id} - should match
+    assert path_is_served("/api/sources/abc/files/a/b.pdf", matchers)
+    # Call with a different literal prefix - should not match
+    assert not path_is_served("/api/sources/{*}/other", matchers)
+
+
 def test_an_unserved_path_is_not_matched():
     matchers = build_route_matchers(["/api/species", "/api/species/{id}"])
     assert not path_is_served("/api/zoo/status", matchers)
