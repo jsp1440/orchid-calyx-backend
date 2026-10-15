@@ -24,12 +24,10 @@ Validation matrix
 """
 from __future__ import annotations
 
-import os
-
 import pytest
 from fastapi.testclient import TestClient
 
-from app.calyx_journalism.presets import fcos_preset, get_preset, list_presets
+from app.calyx_journalism.presets import get_preset, list_presets
 from app.calyx_journalism.schemas import (
     ArticleBrief,
     ArticleGenerationRequest,
@@ -38,7 +36,6 @@ from app.calyx_journalism.schemas import (
 )
 from app.calyx_journalism.services import (
     ArticleGenerationService,
-    ArticleStore,
     EvidencePreviewService,
     MarkdownExportService,
 )
@@ -339,6 +336,56 @@ def test_markdown_omits_project_table_when_no_verified_projects() -> None:
     # The section heading will be present (with "No verified projects..." body),
     # but the Markdown pipe table must not be rendered when there are no rows.
     assert "| Project | Country | Region | Source |" not in result.content
+
+
+def test_markdown_escapes_pipe_in_project_and_region() -> None:
+    """Pipes and newlines in project/region names are escaped and normalized."""
+    evidence = [
+        {
+            "project_name": "Seed bank | phase 2",
+            "country": "Ecuador",
+            "region": "Loja\nSouth",
+            "source_id": "src-1",
+        }
+    ]
+    request = ArticleGenerationRequest(
+        publication=_fcos_publication(),
+        brief=_fcos_brief(),
+        generation_mode=GenerationMode(
+            mode="limited_evidence",
+            unavailable_dependencies=[],
+        ),
+        evidence_items=evidence,
+    )
+    article = _generation_service().generate(request)
+    result = _export_service().export(article, _fcos_publication(), _fcos_brief())  # type: ignore[arg-type]
+    # The row should have exactly 4 cells with pipes escaped and newline replaced
+    assert "| Seed bank \\| phase 2 | Ecuador | Loja South | src-1 |" in result.content
+
+
+def test_markdown_plain_project_unchanged() -> None:
+    """Ordinary project values render exactly as today."""
+    evidence = [
+        {
+            "project_name": "EDGE Orchids",
+            "country": "UK",
+            "region": "Europe",
+            "source_id": "src-001",
+        }
+    ]
+    request = ArticleGenerationRequest(
+        publication=_fcos_publication(),
+        brief=_fcos_brief(),
+        generation_mode=GenerationMode(
+            mode="limited_evidence",
+            unavailable_dependencies=[],
+        ),
+        evidence_items=evidence,
+    )
+    article = _generation_service().generate(request)
+    result = _export_service().export(article, _fcos_publication(), _fcos_brief())  # type: ignore[arg-type]
+    # Plain values should render unchanged
+    assert "| EDGE Orchids | UK | Europe | src-001 |" in result.content
 
 
 # ---------------------------------------------------------------------------

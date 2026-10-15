@@ -9,6 +9,7 @@ Key guarantees enforced throughout:
 All generated content is grounded in caller-supplied evidence fragments or
 explicitly declared as unavailable.
 """
+
 from __future__ import annotations
 
 import re
@@ -21,7 +22,6 @@ from .schemas import (
     ArticleGenerationResponse,
     EvidencePreviewPacket,
     GeneratedSection,
-    GenerationMode,
     MarkdownExportResponse,
     PublicationMeta,
     VerifiedProject,
@@ -580,6 +580,20 @@ class MarkdownExportService:
     """Serialises an ArticleGenerationResponse to Markdown."""
 
     @staticmethod
+    def _escape_table_cell(value: str | None) -> str:
+        """Escape a table cell value for Markdown.
+
+        Replaces newlines with spaces and pipes with escaped pipes.
+        """
+        if value is None:
+            return "—"
+        # Replace all forms of newlines with a single space
+        escaped = re.sub(r"\r\n|\r|\n", " ", str(value))
+        # Escape pipe characters
+        escaped = escaped.replace("|", r"\|")
+        return escaped
+
+    @staticmethod
     def export(
         response: ArticleGenerationResponse,
         publication: PublicationMeta,
@@ -617,9 +631,14 @@ class MarkdownExportService:
             lines.append("| Project | Country | Region | Source |")
             lines.append("| --- | --- | --- | --- |")
             for proj in response.verified_projects:
+                project_cell = MarkdownExportService._escape_table_cell(
+                    proj.project_name
+                )
+                country_cell = MarkdownExportService._escape_table_cell(proj.country)
+                region_cell = MarkdownExportService._escape_table_cell(proj.region)
+                source_cell = MarkdownExportService._escape_table_cell(proj.source_id)
                 lines.append(
-                    f"| {proj.project_name} | {proj.country or '—'} "
-                    f"| {proj.region or '—'} | {proj.source_id or '—'} |"
+                    f"| {project_cell} | {country_cell} | {region_cell} | {source_cell} |"
                 )
             lines.append("")
 
