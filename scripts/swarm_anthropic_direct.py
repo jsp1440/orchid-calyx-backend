@@ -236,6 +236,7 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 # calyx_runtime_journal.jsonl and runtime/discovery_registry.json, and
 # "git add -A" swept those into PR #1855, failing the hosted scope check.
 WRITTEN: set[str] = set()
+RETAINED: set[str] = set()
 ALLOWED_PATHS: set[str] | None = None
 _ALLOWED_HEADER = re.compile(r"^\s*Allowed paths:(?P<rest>.*)$", re.IGNORECASE)
 _LIST_PATH = re.compile(
@@ -337,6 +338,50 @@ def _whitespace_problems() -> str:
     if result.returncode == 0:
         return ""
     return (result.stdout or result.stderr or "whitespace errors").strip()[:2000]
+
+
+def _lint_problems() -> str:
+    """Report `ruff check` problems in changed Python files ('' when clean).
+
+    PR validation runs `ruff check` on every changed Python file, so its
+    pre-existing findings count too. #1860 and #1862 opened PRs whose tests
+    passed but whose lint failed, and stopped at hosted prepare.
+    """
+    files = sorted(
+        p for p in WRITTEN | RETAINED if p.endswith(".py") and (REPO_ROOT / p).is_file()
+    )
+    if not files:
+        return ""
+    try:
+        result = _run(
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "check",
+                "--output-format=concise",
+                "--",
+                *files,
+            ],
+            timeout=180,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    # ruff exits 1 with findings on stdout. Anything else is not actionable by
+    # the model and is left to validation: a crash, or a missing ruff, which
+    # also exits 1 but writes only "No module named ruff" to stderr.
+    findings = (result.stdout or "").strip()
+    if result.returncode != 1 or not findings:
+        return ""
+    return findings[:3000]
+
+
+def _finish_problems() -> str:
+    sections = (
+        ("git diff --check", _whitespace_problems()),
+        ("ruff check", _lint_problems()),
+    )
+    return "\n".join(f"[{name}]\n{found}" for name, found in sections if found)
 
 
 def _safe_target(raw: str | None) -> str:
@@ -461,6 +506,7 @@ def _prepare_branch(
     *,
     resume: tuple[str, str] | None = None,
 ) -> str:
+    RETAINED.clear()
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
     if resume:
@@ -483,6 +529,7 @@ def _prepare_branch(
         ).stdout.splitlines()
         if not files or any(not _writable(_safe_path(path)) for path in files):
             raise DirectExecutorError("partial branch has no admissible work set")
+        RETAINED.update(files)
         start = expected_sha
     else:
         start = f"origin/{base}"
@@ -628,6 +675,7 @@ def main() -> int:
     global ALLOWED_PATHS
     ALLOWED_PATHS = _parse_allowed_paths(packet)
     WRITTEN.clear()
+    RETAINED.clear()
 
     input_tokens = 0
     output_tokens = 0
@@ -688,16 +736,17 @@ def main() -> int:
             messages.append({"role": "assistant", "content": content})
             if not tool_uses:
                 # A fix needs a write turn and a finishing turn.
-                problems = _whitespace_problems() if turn < bounded_turns - 1 else ""
+                problems = _finish_problems() if turn < bounded_turns - 1 else ""
                 if not problems:
                     break
                 messages.append(
                     {
                         "role": "user",
                         "content": (
-                            "`git diff --check` rejects your changes. Remove the "
-                            "trailing whitespace or blank lines it reports, using "
-                            "write_file, then finish. "
+                            "PR validation would reject your changes: it runs "
+                            "`git diff --check` and `ruff check` on every changed "
+                            "Python file, including findings already in the file. "
+                            "Fix what is reported below using write_file, then finish. "
                             # The bare count: _turn_budget_notice's "finish now"
                             # wording would contradict the fix request.
                             f"[turn budget] {turn} of {bounded_turns} turns used; "
