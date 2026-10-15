@@ -698,9 +698,10 @@ def main() -> int:
                             "`git diff --check` rejects your changes. Remove the "
                             "trailing whitespace or blank lines it reports, using "
                             "write_file, then finish. "
-                            + _turn_budget_notice(turn, bounded_turns)
-                            + "\n"
-                            + problems
+                            # The bare count: _turn_budget_notice's "finish now"
+                            # wording would contradict the fix request.
+                            f"[turn budget] {turn} of {bounded_turns} turns used; "
+                            f"{bounded_turns - turn} remaining.\n" + problems
                         ),
                     }
                 )

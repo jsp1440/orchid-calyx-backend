@@ -1186,5 +1186,6 @@ def test_a_model_that_never_fixes_stays_within_the_turn_limit(tmp_path, monkeypa
         tmp_path, monkeypatch, replies, [report] * 5, max_turns="4"
     )
     assert len(sent) == 3, "feedback only while a write and a finish still fit"
-    assert "[turn budget] 2 of 4" in sent[2][-1]["content"]
+    assert "[turn budget] 2 of 4 turns used; 2 remaining." in sent[2][-1]["content"]
+    assert "no tool call" not in sent[2][-1]["content"]
     assert code == 0  # the mocked commit; the real commit check stays authoritative
