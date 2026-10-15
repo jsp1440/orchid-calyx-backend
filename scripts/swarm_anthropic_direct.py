@@ -290,7 +290,9 @@ def _tool_write_file(args: dict[str, Any]) -> str:
     missing = [key for key in ("path", "content") if key not in args]
     if missing:
         raise ValueError(
-            "write_file is missing " + " and ".join(repr(k) for k in missing) + ". "
+            "write_file is missing "
+            + " and ".join(repr(k) for k in missing)
+            + f" (received arguments: {sorted(str(k)[:40] for k in args)[:8]}). "
             "Always pass path and content. For an edit, content is the replacement "
             "text for old_text; to delete old_text, pass content as an empty string."
         )

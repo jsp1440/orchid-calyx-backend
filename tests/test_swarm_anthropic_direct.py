@@ -1473,6 +1473,10 @@ def test_write_file_names_a_missing_argument(tmp_path, monkeypatch):
     (tmp_path / "a.py").write_text("x = 1\n")
     with pytest.raises(ValueError, match="missing 'content'.*replacement text"):
         direct._tool_write_file({"path": "a.py", "old_text": "x = 1"})
+    with pytest.raises(
+        ValueError, match=r"received arguments: \['new_text', 'old_text', 'path'\]"
+    ):
+        direct._tool_write_file({"path": "a.py", "old_text": "x", "new_text": "y"})
     with pytest.raises(ValueError, match="missing 'path' and 'content'"):
         direct._tool_write_file({})
     assert (tmp_path / "a.py").read_text() == "x = 1\n"
