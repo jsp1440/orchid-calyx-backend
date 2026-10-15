@@ -1226,6 +1226,7 @@ def _lint_run(returncode, stdout, seen):
         (1, "app/a.py:1:8: F401 unused", "app/a.py:1:8: F401 unused"),
         (0, "All checks passed!", ""),
         (2, "error: ruff crashed", ""),  # not actionable by the model
+        (1, "", ""),  # ruff missing: exit 1, message only on stderr
     ],
 )
 def test_lint_problems_runs_ruff_on_written_python_files_only(
@@ -1239,7 +1240,17 @@ def test_lint_problems_runs_ruff_on_written_python_files_only(
     monkeypatch.setattr(direct, "WRITTEN", {"app/a.py", "notes.md", "gone.py"})
     monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
     assert direct._lint_problems() == expected
-    assert seen == [[direct.sys.executable, "-m", "ruff", "check", "app/a.py"]]
+    assert seen == [
+        [
+            direct.sys.executable,
+            "-m",
+            "ruff",
+            "check",
+            "--output-format=concise",
+            "--",
+            "app/a.py",
+        ]
+    ]
 
 
 def test_lint_problems_is_silent_without_written_python(tmp_path, monkeypatch):

@@ -352,14 +352,27 @@ def _lint_problems() -> str:
     if not files:
         return ""
     try:
-        result = _run([sys.executable, "-m", "ruff", "check", *files], timeout=180)
+        result = _run(
+            [
+                sys.executable,
+                "-m",
+                "ruff",
+                "check",
+                "--output-format=concise",
+                "--",
+                *files,
+            ],
+            timeout=180,
+        )
     except (OSError, subprocess.SubprocessError):
         return ""
-    # ruff exits 1 for findings; anything else (ruff missing, a crash) is not
-    # actionable by the model and is left to validation.
-    if result.returncode != 1:
+    # ruff exits 1 with findings on stdout. Anything else is not actionable by
+    # the model and is left to validation: a crash, or a missing ruff, which
+    # also exits 1 but writes only "No module named ruff" to stderr.
+    findings = (result.stdout or "").strip()
+    if result.returncode != 1 or not findings:
         return ""
-    return (result.stdout or "ruff findings").strip()[:3000]
+    return findings[:3000]
 
 
 def _finish_problems() -> str:
