@@ -1360,8 +1360,17 @@ def test_actual_cost_prices_every_usage_kind():
     }
     # 1.00 + 0.50 + 0.25 + 0.20
     assert direct._actual_cost_usd("claude-haiku-4-5", usage) == "1.9500"
-    assert direct._actual_cost_usd("claude-haiku-4-5", {}) == "0.0000"
+    assert direct._actual_cost_usd("claude-haiku-4-5", {}) is None
     assert direct._actual_cost_usd("some-unpriced-model", usage) is None
+
+
+def test_missing_provider_usage_does_not_report_zero_actual_cost(tmp_path, monkeypatch):
+    done_without_usage = dict(DONE)
+    del done_without_usage["usage"]
+    replies = [_write(1, "x = 1\n"), done_without_usage]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    assert result["total_cost_usd"] is None
 
 
 def test_requests_enable_automatic_prompt_caching(monkeypatch):

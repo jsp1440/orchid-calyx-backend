@@ -465,14 +465,30 @@ USAGE_FIELDS = {
 }
 
 
+def _validated_usage(usage: Any) -> dict[str, int] | None:
+    if not isinstance(usage, dict):
+        return None
+    counts = {}
+    for kind, field in USAGE_FIELDS.items():
+        value = usage.get(field, 0)
+        if kind in {"input", "output"} and field not in usage:
+            return None
+        if type(value) is not int or value < 0:
+            return None
+        counts[field] = value
+    return counts
+
+
 def _actual_cost_usd(model: str, usage: dict[str, int]) -> str | None:
     """Provider cost of this run from its token usage, or None if unpriced."""
     prices = PRICE_PER_MTOK.get(model)
     if prices is None:
         return None
+    counts = _validated_usage(usage)
+    if counts is None:
+        return None
     total = sum(
-        Decimal(usage.get(field, 0)) * prices[kind]
-        for kind, field in USAGE_FIELDS.items()
+        Decimal(counts[field]) * prices[kind] for kind, field in USAGE_FIELDS.items()
     ) / Decimal(1_000_000)
     # Round up: the budget may overcount by a fraction of a cent, never under.
     return str(total.quantize(Decimal("0.0001"), rounding=ROUND_CEILING))
@@ -726,6 +742,7 @@ def main() -> int:
     input_tokens = 0
     output_tokens = 0
     usage_totals = dict.fromkeys(USAGE_FIELDS.values(), 0)
+    usage_complete = True
     # A call that dies in transport (timeout, cut-off response) may still be
     # billed without its usage reaching us; the run then reports no actual
     # cost so the ledger keeps the reservation.
@@ -779,11 +796,14 @@ def main() -> int:
             )
             call_in_flight = False
             calls += 1
-            usage = response.get("usage") or {}
-            input_tokens += int(usage.get("input_tokens") or 0)
-            output_tokens += int(usage.get("output_tokens") or 0)
+            usage = _validated_usage(response.get("usage"))
+            if usage is None:
+                usage_complete = False
+                usage = dict.fromkeys(USAGE_FIELDS.values(), 0)
+            input_tokens += usage["input_tokens"]
+            output_tokens += usage["output_tokens"]
             for field in usage_totals:
-                usage_totals[field] += int(usage.get(field) or 0)
+                usage_totals[field] += usage[field]
             content = response.get("content") or []
             final_text = _content_text(content) or final_text
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
@@ -875,7 +895,9 @@ def main() -> int:
             "subtype": "success",
             "is_error": False,
             "num_turns": calls,
-            "total_cost_usd": _actual_cost_usd(args.model, usage_totals),
+            "total_cost_usd": (
+                _actual_cost_usd(args.model, usage_totals) if usage_complete else None
+            ),
             "modelUsage": {
                 args.model: {
                     "inputTokens": input_tokens,
@@ -974,6 +996,7 @@ def main() -> int:
             "total_cost_usd": (
                 _actual_cost_usd(args.model, usage_totals)
                 if calls
+                and usage_complete
                 and not (call_in_flight and not isinstance(exc, AnthropicHTTPError))
                 else None
             ),
