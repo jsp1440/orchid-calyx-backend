@@ -1200,3 +1200,109 @@ def test_paths_that_reach_the_production_database_can_never_be_owner_enrolled(
     """A push to the integration branch runs alembic against production for these."""
     with pytest.raises(ValueError, match="unsafe_allowed_paths"):
         authorize(material, allowed_paths=[path, "tests/test_x.py"])
+
+
+def _run_check(monkeypatch, tmp_path, text):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+    seen = {}
+
+    class Reply:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps(self.body).encode()
+
+    def answer(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        return Reply(
+            {
+                "model": hosted.MODEL,
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": text}],
+                "usage": {"input_tokens": 10, "output_tokens": 20},
+            }
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", answer)
+    hosted.check(tmp_path)
+    return seen["payload"], json.loads((tmp_path / "review.json").read_text())
+
+
+def test_the_checker_answer_is_prefilled_with_the_opening_brace(monkeypatch, tmp_path):
+    """#1858: the checker opened with prose and failed closed as not JSON."""
+    continuation = json.dumps(review())[1:]
+    payload, parsed = _run_check(monkeypatch, tmp_path, continuation)
+    assert payload["messages"][-1] == {
+        "role": "assistant",
+        "content": hosted.REVIEW_PREFILL,
+    }
+    assert payload["messages"][0]["role"] == "user"
+    assert parsed == review()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        json.dumps(review()),  # repeats the prefilled brace
+        json.dumps(review())[1:] + " I am confident.",
+        json.dumps(review())[1:] + "\n```",
+        "",
+    ],
+)
+def test_a_prefilled_answer_still_fails_closed_on_anything_but_the_object(
+    monkeypatch, tmp_path, text
+):
+    with pytest.raises(ValueError, match="^checker_"):
+        _run_check(monkeypatch, tmp_path, text)
+    assert not (tmp_path / "review.json").exists()
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        {"stop_reason": "end_turn", "content": []},
+        {"stop_reason": "end_turn", "content": [{"type": "tool_use", "id": "x"}]},
+        {"stop_reason": "end_turn", "content": [{"type": "text", "text": None}]},
+    ],
+)
+def test_prefill_completion_leaves_non_text_answers_to_fail_closed(value):
+    assert hosted._complete_prefill(value) == value
+    with pytest.raises(ValueError, match="^checker_"):
+        hosted.parse_review(hosted._complete_prefill(value))
+
+
+def test_the_checker_model_accepts_an_assistant_prefill():
+    """Newer models reject a prefill with HTTP 400; a model change must
+    replace the prefill instead of failing every checker call."""
+    assert hosted.MODEL in hosted.PREFILL_MODELS
+
+
+def test_a_pretty_printed_continuation_after_the_prefill_is_accepted(
+    monkeypatch, tmp_path
+):
+    continuation = json.dumps(review(), indent=2)[1:]
+    assert continuation.startswith("\n")
+    _, parsed = _run_check(monkeypatch, tmp_path, continuation)
+    assert parsed == review()
+
+
+@pytest.mark.parametrize("where", ["top", "nested"])
+def test_a_repeated_key_in_the_review_fails_closed(where):
+    body = json.dumps(review(verdict="fail"))[:-1]
+    if where == "top":
+        text = body + ', "verdict": "pass"}'
+    else:
+        text = body + ', "extra": {"a": 1, "a": 2}}'
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_ambiguous$"):
+        hosted.parse_review(value)
