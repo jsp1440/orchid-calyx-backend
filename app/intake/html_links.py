@@ -7,8 +7,24 @@ by the deterministic intelligence parser.
 
 from __future__ import annotations
 
+import re
 from html.parser import HTMLParser
 from urllib.parse import urlparse
+
+
+def _is_link_present_in_text(link: str, text: str) -> bool:
+    """Check if a link appears in text followed by proper delimiters.
+
+    A link counts as present only when some occurrence of it in the text is
+    immediately followed by: end of text; whitespace; one of `, ; : ! ? ) ] > " '`;
+    or a `.` that is itself followed by end of text or whitespace.
+    """
+    # Build a regex pattern that matches the link followed by valid delimiters
+    # Escape the link for use in regex
+    escaped_link = re.escape(link)
+    # Match the link followed by: end of string, whitespace, punctuation, or . followed by whitespace/end
+    pattern = escaped_link + r"(?:$|\s|[,;:!?)\]>\"']|\.(?:\s|$))"
+    return bool(re.search(pattern, text))
 
 
 class _LinkPreservingParser(HTMLParser):
@@ -41,7 +57,9 @@ class _LinkPreservingParser(HTMLParser):
 
     def text(self) -> str:
         text = "\n".join(self.parts).strip()
-        missing_links = [link for link in self.links if link not in text]
+        missing_links = [
+            link for link in self.links if not _is_link_present_in_text(link, text)
+        ]
         if not missing_links:
             return text
         source_block = "\n".join(f"Source URL: {link}" for link in missing_links)
@@ -68,7 +86,11 @@ def merge_plain_with_html_links(plain_text: str, html: str) -> str:
         for line in html_text.splitlines()
         if line.startswith("Source URL: ")
     ]
-    missing = [link for link in html_links if link and link not in plain]
+    missing = [
+        link
+        for link in html_links
+        if link and not _is_link_present_in_text(link, plain)
+    ]
     if not missing:
         return plain
     return plain + "\n\n" + "\n".join(f"Source URL: {link}" for link in missing)

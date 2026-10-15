@@ -36,3 +36,35 @@ def test_non_http_href_is_not_preserved():
     text = html_to_text_preserving_links(html)
     assert "mailto:" not in text
     assert "javascript:" not in text
+
+
+def test_prefix_url_in_html_visible_text_not_dropped():
+    """A link should not be dropped when a longer URL with it as prefix is visible."""
+    html = """
+    <html><body>
+      <p>Supplement: https://example.org/paper/123/supplement</p>
+      <a href="https://example.org/paper/123">View Source</a>
+    </body></html>
+    """
+    text = html_to_text_preserving_links(html)
+    assert "Supplement: https://example.org/paper/123/supplement" in text
+    assert "View Source" in text
+    assert "Source URL: https://example.org/paper/123" in text
+
+
+def test_prefix_url_in_plain_text_merge():
+    """A link should not be dropped when plain text contains a URL with it as prefix."""
+    plain = "Full text: https://example.org/paper/1234"
+    html = '<a href="https://example.org/paper/123">View Source</a>'
+    merged = merge_plain_with_html_links(plain, html)
+    assert plain in merged
+    assert "Source URL: https://example.org/paper/123" in merged
+
+
+def test_link_followed_by_sentence_punctuation_counts_as_present():
+    """A link followed by sentence-ending punctuation should count as present."""
+    plain = "Source: https://example.org/source."
+    html = '<a href="https://example.org/source">View Source</a>'
+    merged = merge_plain_with_html_links(plain, html)
+    assert merged == plain
+    assert "Source URL:" not in merged
