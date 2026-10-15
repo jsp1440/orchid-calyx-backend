@@ -692,11 +692,45 @@ def _review_json(text):
     if fenced:
         text = fenced.group("body").strip()
     try:
-        review = json.loads(text)
+        review = json.loads(text, object_pairs_hook=_unique_keys)
     except json.JSONDecodeError:
         raise ValueError("checker_output_not_json") from None
     require(isinstance(review, dict), "checker_output_not_json")
     return review
+
+
+def _unique_keys(pairs):
+    """A repeated key (``"verdict": "fail", ..., "verdict": "pass"``) is ambiguous;
+    json.loads would silently keep the last one."""
+    keys = [key for key, _ in pairs]
+    require(len(keys) == len(set(keys)), "checker_output_ambiguous")
+    return dict(pairs)
+
+
+# The checker's answer is prefilled with the opening brace, so the model cannot
+# open with prose. #1858 (run 38804593153) failed closed as
+# checker_output_not_json. The parser stays strict: anything after the
+# object still fails closed. Prefill is accepted by claude-haiku-4-5 but
+# rejected (HTTP 400) by the 4.6+ and 5.x models, so changing MODEL requires
+# replacing the prefill (e.g. with structured outputs);
+# PREFILL_MODELS pins that coupling in tests.
+REVIEW_PREFILL = "{"
+PREFILL_MODELS = frozenset({"claude-haiku-4-5"})
+
+
+def _complete_prefill(response):
+    """Return the response with the prefilled opening restored to its text."""
+    content = response.get("content")
+    if (
+        isinstance(content, list)
+        and len(content) == 1
+        and isinstance(content[0], dict)
+        and content[0].get("type") == "text"
+        and isinstance(content[0].get("text"), str)
+    ):
+        block = {**content[0], "text": REVIEW_PREFILL + content[0]["text"]}
+        return {**response, "content": [block]}
+    return response
 
 
 def parse_review(response):
@@ -743,7 +777,10 @@ def check(directory):
         "model": MODEL,
         "max_tokens": 1800,
         "system": system,
-        "messages": [{"role": "user", "content": json.dumps(state["prompt"])}],
+        "messages": [
+            {"role": "user", "content": json.dumps(state["prompt"])},
+            {"role": "assistant", "content": REVIEW_PREFILL},
+        ],
     }
     req = request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -770,7 +807,8 @@ def check(directory):
         and usage["output_tokens"] <= 1800,
         "checker_usage_unconfirmed",
     )
-    (directory / "review.json").write_text(json.dumps(parse_review(response)))
+    review = parse_review(_complete_prefill(response))
+    (directory / "review.json").write_text(json.dumps(review))
 
 
 def record(directory):
