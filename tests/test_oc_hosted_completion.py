@@ -1120,3 +1120,33 @@ def test_an_unattributable_attempt_record_counts_against_every_authorization(
     assert hosted.checker_attempt_reserved(
         {**material["grant"], "comment_id": 7000000000}, [row]
     )
+
+
+def test_every_boundary_flag_has_a_definition_the_checker_receives():
+    """#1843: undefined touches_production owner-gated a plain code change."""
+    for field in hosted.RISK_FIELDS:
+        assert f"{field}:" in hosted.BOUNDARY_DEFINITIONS
+    text = hosted.BOUNDARY_DEFINITIONS
+    assert "separate owner-gated steps" in text
+    assert "later owner-gated promotion are false" in text
+    # Ambiguity still fails toward the owner gate.
+    assert "genuinely ambiguous for this diff, set the flag true" in text
+
+
+def test_the_checker_prompt_includes_the_boundary_definitions(monkeypatch, tmp_path):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+    seen = {}
+
+    class Done(Exception):
+        pass
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        raise Done
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", capture)
+    with pytest.raises(Done):
+        hosted.check(tmp_path)
+    assert hosted.BOUNDARY_DEFINITIONS in seen["payload"]["system"]

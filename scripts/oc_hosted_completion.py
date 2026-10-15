@@ -53,6 +53,30 @@ STATE_LABELS = {
     "oc-runtime-backoff",
     "oc-repair-backoff",
 }
+# What each boundary flag means for the checker. The PR under review only
+# integrates into oc-autonomous-integration; promotion to main and every
+# deployment are separate owner-gated steps. Without these definitions the
+# first live checker (#1843, run 38714227054) read touches_production as "code
+# that will eventually run in production", which owner-gates nearly every
+# runtime change and makes the integration factory unreachable.
+BOUNDARY_DEFINITIONS = (
+    "Judge each boundary by what integrating this change into the non-main "
+    "integration branch itself does; promotion to main and any deployment are "
+    "separate owner-gated steps. touches_production: the change deploys, or "
+    "when integrated directly reads or mutates production data, production "
+    "infrastructure, deployment configuration or live external services; "
+    "ordinary application code, tests or docs that would reach production only "
+    "after a later owner-gated promotion are false. changes_credentials: the "
+    "change adds, rotates, exposes or alters handling of secrets, tokens or "
+    "keys. changes_scientific_authority: the change publishes, activates or "
+    "alters governed scientific records, taxonomy or provenance rules. "
+    "exposes_sensitive_locality: the change can reveal protected species "
+    "localities or coordinates. spends_money: the change itself triggers or "
+    "raises paid usage (not this separately authorized review call). "
+    "destructive: the change deletes or irreversibly overwrites data or "
+    "history. When a definition is genuinely ambiguous for this diff, set the "
+    "flag true and explain why in reason."
+)
 RISK_FIELDS = (
     "touches_production",
     "changes_credentials",
@@ -676,7 +700,7 @@ def check(directory):
         "findings, not private reasoning), risk (low/moderate/high/owner_gated), reversible (boolean), "
         + ", ".join(RISK_FIELDS)
         + " (each boolean). Mark all applicable governed boundaries accurately. "
-        "spends_money describes the proposed code/integration, not this separately authorized review call."
+        + BOUNDARY_DEFINITIONS
     )
     payload = {
         "model": MODEL,
