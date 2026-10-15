@@ -970,6 +970,15 @@ def test_every_tool_result_carries_the_turn_budget_and_the_prompt_states_it(
             "Allowed paths:\n- `runtime/a.py` (new)\n- tests/test_a.py\nDone",
             {"runtime/a.py", "tests/test_a.py"},
         ),
+        (
+            "Allowed paths: runtime/a.py only; do not change runtime/health.py.",
+            {"runtime/a.py"},
+        ),
+        ("Allowed paths: runtime/a.py; see README.md", {"runtime/a.py"}),
+        (
+            "Allowed paths:\n- runtime/a.py\n- runtime/health.py must stay unchanged",
+            {"runtime/a.py"},
+        ),
     ],
 )
 def test_allowed_paths_are_read_inline_or_as_a_list(packet, expected):

@@ -238,7 +238,9 @@ def _tool_search_text(args: dict[str, Any]) -> str:
 WRITTEN: set[str] = set()
 ALLOWED_PATHS: set[str] | None = None
 _ALLOWED_HEADER = re.compile(r"^\s*Allowed paths:(?P<rest>.*)$", re.IGNORECASE)
-_LIST_PATH = re.compile(r"^\s*[-*]\s+`?(?P<path>[\w./-]+)`?(?:\s.*)?$")
+_LIST_PATH = re.compile(
+    r"^\s*[-*]\s+(?:`(?P<quoted>[^`]+)`(?:\s.*)?|(?P<bare>[\w./-]+))\s*$"
+)
 _BARE_PATH = re.compile(r"^[\w.-]*(?:/[\w.-]+)+$|^[\w-]+\.\w+$")
 
 
@@ -246,8 +248,19 @@ def _inline_paths(rest: str) -> set[str]:
     quoted = set(re.findall(r"`([^`]+)`", rest))
     if quoted:
         return quoted
-    tokens = (t.strip(".,;:()") for t in re.split(r"[\s,]+", rest))
-    return {t for t in tokens if t and _BARE_PATH.match(t)}
+    # Bare paths: read only the leading run of paths, so trailing prose such as
+    # "only; do not change runtime/health.py" never widens the scope.
+    found: set[str] = set()
+    for token in re.split(r"[\s,]+", rest.strip()):
+        if token.lower() == "and":
+            continue
+        path = token.rstrip(".;:")
+        if not _BARE_PATH.match(path):
+            break
+        found.add(path)
+        if path != token:
+            break
+    return found
 
 
 def _parse_allowed_paths(packet: str) -> set[str] | None:
@@ -266,7 +279,7 @@ def _parse_allowed_paths(packet: str) -> set[str] | None:
                 listed = _LIST_PATH.match(item)
                 if not listed:
                     break
-                found.add(listed.group("path"))
+                found.add(listed.group("quoted") or listed.group("bare"))
     return found
 
 
