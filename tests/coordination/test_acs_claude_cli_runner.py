@@ -15,6 +15,7 @@ from pathlib import Path
 
 from test_acs_claude_adapter import HUB, Base
 
+from coordination import claude_cli_runner
 from coordination.claude_adapter import (
     ExecutionPolicy,
     LiveExecutionDisabled,
@@ -41,6 +42,11 @@ if mode == "hang":
     time.sleep(600)
 if mode == "crash":
     sys.stderr.write("boom\n"); sys.exit(2)
+if mode == "outside":
+    sentinel = open(os.path.join(here, "sentinel_path")).read().strip()
+    open(sentinel, "w").write("overwritten by absolute path")
+    rel = os.path.relpath(sentinel + ".rel", os.getcwd())
+    open(rel, "w").write("written by ../ traversal")
 if mode == "escape":
     os.symlink("/etc/hostname", "RESULT.md")
 elif mode == "leak":
@@ -56,9 +62,17 @@ print(json.dumps({"type": "result", "subtype": "success", "is_error": False,
 """
 
 
+# Test-only stand-in for an enforced boundary. Production has none, so the
+# runner refuses live construction there (see ConfinementGate).
+STAND_IN = "offline-stand-in-not-a-sandbox"
+
+
 class CliBase(Base):
     def setUp(self):
         super().setUp()
+        saved = claude_cli_runner.VERIFIED_CONFINEMENTS
+        claude_cli_runner.VERIFIED_CONFINEMENTS = frozenset({STAND_IN})
+        self.addCleanup(setattr, claude_cli_runner, "VERIFIED_CONFINEMENTS", saved)
         self.bin = self.root / "bin"
         self.bin.mkdir()
         claude = self.bin / "claude"
@@ -89,6 +103,7 @@ class CliBase(Base):
         kw.setdefault("env", self.env)
         kw.setdefault("poll_seconds", 0.05)
         kw.setdefault("kill_grace_seconds", 0.5)
+        kw.setdefault("confinement", STAND_IN)
         return ClaudeCodeCliRunner(kw.pop("policy", LIVE), **kw)
 
     def spec(self, task_id="t1", attempt=1):
@@ -239,3 +254,33 @@ class FullLoop(CliBase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ConfinementGate(CliBase):
+    """Review on #1841: cwd plus a post-run scan is not a filesystem boundary."""
+
+    def test_no_enforced_boundary_is_registered_in_production(self):
+        source = Path(claude_cli_runner.__file__).read_text()
+        self.assertIn("VERIFIED_CONFINEMENTS: frozenset = frozenset()\n", source)
+
+    def test_live_construction_is_refused_without_a_verified_boundary(self):
+        for confinement in (None, "", "cwd", "private-home", "allowedTools"):
+            with self.assertRaises(LiveExecutionDisabled) as ctx:
+                self.runner(confinement=confinement)
+            self.assertEqual(str(ctx.exception), "WORKSPACE_CONFINEMENT_UNVERIFIED")
+
+    @unittest.expectedFailure
+    def test_writes_outside_the_workspace_leave_the_sentinel_unchanged(self):
+        """Fails today: without an enforced boundary the run escapes.
+
+        Expected to fail until a real boundary exists; when it does, this test
+        passes, the expectedFailure marker must be removed, and the boundary
+        can be added to VERIFIED_CONFINEMENTS.
+        """
+        sentinel = self.root / "outside-sentinel.txt"
+        sentinel.write_text("original")
+        (self.bin / "sentinel_path").write_text(str(sentinel))
+        self.mode("outside")
+        self.run_job(self.runner().start(self.spec()))
+        self.assertEqual(sentinel.read_text(), "original")
+        self.assertFalse(Path(str(sentinel) + ".rel").exists())

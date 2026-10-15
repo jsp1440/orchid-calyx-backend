@@ -10,6 +10,10 @@ refusals on top:
   that is present, so an owner's personal ``ANTHROPIC_API_KEY`` or GitHub token
   can never be picked up by accident;
 * the ``claude`` binary must be installed;
+* the run must name an entry of ``VERIFIED_CONFINEMENTS``, an independently
+  enforced filesystem boundary. That set is empty, so live construction is
+  refused with ``WORKSPACE_CONFINEMENT_UNVERIFIED``: the private working
+  directory below is not a sandbox;
 * the child process gets a scrubbed environment (no inherited tokens, its own
   ``HOME``) and runs inside a private per-attempt directory;
 * shell, network and MCP tools are never allowed, whatever the caller passes;
@@ -55,6 +59,13 @@ SAFE_TOOLS = frozenset({"Read", "Glob", "Grep", "Edit", "Write"})
 NEVER_TOOLS = ("Bash", "WebFetch", "WebSearch", "Task", "NotebookEdit")
 INHERITED_ENV = ("PATH", "LANG", "LC_ALL", "TZ")
 MAX_TURNS_CEILING = 50
+# Names of independently enforced OS/container filesystem boundaries that mount
+# only the task workspace read-write. A working directory, a post-run artifact
+# scan, a private HOME and --allowedTools are NOT such a boundary: absolute
+# paths and ../ traversal can still reach anything the host user can. Empty
+# until a real boundary is implemented and its sentinel test passes, so live
+# construction is refused (review on #1841).
+VERIFIED_CONFINEMENTS: frozenset = frozenset()
 SECRET_MARKER = re.compile(rb"(?i)(token|secret|password|api[_-]?key)\s*[:=]")
 
 
@@ -92,10 +103,13 @@ class ClaudeCodeCliRunner(ClaudeRunner):
         max_artifact_bytes: int = 256 * 1024,
         max_artifacts: int = 20,
         kill_grace_seconds: float = 5.0,
+        confinement: str | None = None,
     ):
         super().__init__(
             policy, credential_ref=credential_ref, approval_ref=approval_ref
         )
+        if confinement not in VERIFIED_CONFINEMENTS:
+            raise LiveExecutionDisabled("WORKSPACE_CONFINEMENT_UNVERIFIED")
         env = dict(os.environ if env is None else env)
         if not CREDENTIAL_REF.fullmatch(credential_ref or ""):
             raise LiveExecutionDisabled(

@@ -19,10 +19,18 @@ The adapter (#1836) ships `MockClaudeExecutor` and a `ClaudeRunner` interface. T
 | `--max-turns` is between 1 and 50 | `MAX_TURNS_OUT_OF_BOUNDS` |
 | The tools are a subset of Read, Glob, Grep, Edit and Write | `TOOLS_OUTSIDE_SAFE_SET` |
 | `claude` is installed | `CLAUDE_CLI_NOT_INSTALLED` |
+| The run names an independently enforced filesystem boundary (`VERIFIED_CONFINEMENTS`, **empty**) | `WORKSPACE_CONFINEMENT_UNVERIFIED` |
 | The capabilities are within the policy and the objective is a GitHub reference | `CAPABILITY_NOT_ALLOWED` / `OBJECTIVE_IS_NOT_A_REFERENCE` |
 | Attempt directories are never reused | `ATTEMPT_DIRECTORY_EXISTS` |
 
 ## Isolation
+
+> **Workspace confinement is unverified, so live runs are refused.** The working directory, the post-run artifact scan, the private `HOME` and `--allowedTools` are not a filesystem sandbox. Absolute paths and `../` traversal can reach anything the host user can, and writes outside the workspace never appear in the artifact scan. `ConfinementGate.test_writes_outside_the_workspace_leave_the_sentinel_unchanged` shows the escape: it is an expected failure today. Live use needs three things, in order:
+> 1. an OS or container boundary that mounts only the task workspace read-write, with no host secrets and no network except the provider;
+> 2. that sentinel test passing under the boundary;
+> 3. the boundary's name added to `VERIFIED_CONFINEMENTS`.
+>
+> This was raised in the review on #1841.
 
 - **Working directory.** Each run happens in a private directory, `acs/claude/<task>/attempt-N/workspace`.
 - **Logs.** The runner's logs and a private `HOME` live in a separate `runner/` directory, outside what Claude can write.
