@@ -19,6 +19,7 @@ import re
 import subprocess
 import sys
 import time
+from decimal import ROUND_CEILING, Decimal
 from pathlib import Path
 from typing import Any
 from urllib import error as urlerror
@@ -446,6 +447,37 @@ TOOL_HANDLERS = {
 }
 
 
+# USD per million tokens. Only models listed here get an actual cost; any other
+# model reports none, and the governor ledger keeps its reservation instead.
+PRICE_PER_MTOK: dict[str, dict[str, Decimal]] = {
+    "claude-haiku-4-5": {
+        "input": Decimal("1.00"),
+        "output": Decimal("5.00"),
+        "cache_write": Decimal("1.25"),  # 5-minute TTL write, 1.25x input
+        "cache_read": Decimal("0.10"),
+    },
+}
+USAGE_FIELDS = {
+    "input": "input_tokens",
+    "output": "output_tokens",
+    "cache_write": "cache_creation_input_tokens",
+    "cache_read": "cache_read_input_tokens",
+}
+
+
+def _actual_cost_usd(model: str, usage: dict[str, int]) -> str | None:
+    """Provider cost of this run from its token usage, or None if unpriced."""
+    prices = PRICE_PER_MTOK.get(model)
+    if prices is None:
+        return None
+    total = sum(
+        Decimal(usage.get(field, 0)) * prices[kind]
+        for kind, field in USAGE_FIELDS.items()
+    ) / Decimal(1_000_000)
+    # Round up: the budget may overcount by a fraction of a cent, never under.
+    return str(total.quantize(Decimal("0.0001"), rounding=ROUND_CEILING))
+
+
 def _anthropic_message(
     *,
     api_key: str,
@@ -460,6 +492,9 @@ def _anthropic_message(
             "max_tokens": max_tokens,
             "messages": messages,
             "tools": TOOLS,
+            # Automatic prompt caching: each turn resends the whole conversation,
+            # so the growing prefix is read from cache at ~0.1x input price.
+            "cache_control": {"type": "ephemeral"},
         }
     ).encode("utf-8")
     req = urlrequest.Request(
@@ -626,6 +661,7 @@ def _write_result(path: Path, payload: dict[str, Any]) -> None:
             "is_error",
             "num_turns",
             "modelUsage",
+            "total_cost_usd",
             "pr_url",
             "branch",
             "partial_branch",
@@ -689,6 +725,7 @@ def main() -> int:
 
     input_tokens = 0
     output_tokens = 0
+    usage_totals = dict.fromkeys(USAGE_FIELDS.values(), 0)
     calls = 0
     branch = ""
     pr_url = ""
@@ -739,6 +776,8 @@ def main() -> int:
             usage = response.get("usage") or {}
             input_tokens += int(usage.get("input_tokens") or 0)
             output_tokens += int(usage.get("output_tokens") or 0)
+            for field in usage_totals:
+                usage_totals[field] += int(usage.get(field) or 0)
             content = response.get("content") or []
             final_text = _content_text(content) or final_text
             tool_uses = [b for b in content if b.get("type") == "tool_use"]
@@ -830,11 +869,15 @@ def main() -> int:
             "subtype": "success",
             "is_error": False,
             "num_turns": calls,
-            "total_cost_usd": None,
+            "total_cost_usd": _actual_cost_usd(args.model, usage_totals),
             "modelUsage": {
                 args.model: {
                     "inputTokens": input_tokens,
                     "outputTokens": output_tokens,
+                    "cacheCreationInputTokens": usage_totals[
+                        "cache_creation_input_tokens"
+                    ],
+                    "cacheReadInputTokens": usage_totals["cache_read_input_tokens"],
                 }
             },
             "result": final_text,
@@ -922,12 +965,18 @@ def main() -> int:
             "subtype": "error",
             "is_error": True,
             "num_turns": calls,
-            "total_cost_usd": None,
+            "total_cost_usd": (
+                _actual_cost_usd(args.model, usage_totals) if calls else None
+            ),
             "modelUsage": (
                 {
                     args.model: {
                         "inputTokens": input_tokens,
                         "outputTokens": output_tokens,
+                        "cacheCreationInputTokens": usage_totals[
+                            "cache_creation_input_tokens"
+                        ],
+                        "cacheReadInputTokens": usage_totals["cache_read_input_tokens"],
                     }
                 }
                 if calls

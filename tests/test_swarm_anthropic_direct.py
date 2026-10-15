@@ -1346,3 +1346,57 @@ def test_tool_errors_are_logged_with_their_reason(tmp_path, monkeypatch, capsys)
     assert lines[0]["input_error"] is True
     assert lines[0]["error"].startswith("ERROR: ValueError: old_text was not found")
     assert "error" not in lines[1]
+
+
+def test_actual_cost_prices_every_usage_kind():
+    usage = {
+        "input_tokens": 1_000_000,
+        "output_tokens": 100_000,
+        "cache_creation_input_tokens": 200_000,
+        "cache_read_input_tokens": 2_000_000,
+    }
+    # 1.00 + 0.50 + 0.25 + 0.20
+    assert direct._actual_cost_usd("claude-haiku-4-5", usage) == "1.9500"
+    assert direct._actual_cost_usd("claude-haiku-4-5", {}) == "0.0000"
+    assert direct._actual_cost_usd("some-unpriced-model", usage) is None
+
+
+def test_requests_enable_automatic_prompt_caching(monkeypatch):
+    seen = {}
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"content": []}'
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        return Reply()
+
+    monkeypatch.setattr(direct.urlrequest, "urlopen", capture)
+    direct._anthropic_message(
+        api_key="k", model="claude-haiku-4-5", messages=[], max_tokens=10, timeout=5
+    )
+    assert seen["payload"]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_the_result_records_cache_usage_and_actual_cost(tmp_path, monkeypatch):
+    def with_usage(reply, **usage):
+        return {**reply, "usage": {"input_tokens": 100, "output_tokens": 10, **usage}}
+
+    replies = [
+        with_usage(_write(1, "x = 1\n"), cache_creation_input_tokens=5000),
+        with_usage(dict(DONE), cache_read_input_tokens=5000),
+    ]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    usage = result["modelUsage"]["claude-haiku-4-5"]
+    assert usage["cacheCreationInputTokens"] == 5000
+    assert usage["cacheReadInputTokens"] == 5000
+    # 200 in * 1.00 + 20 out * 5.00 + 5000 * 1.25 + 5000 * 0.10, per million
+    assert result["total_cost_usd"] == "0.0071"  # 0.00705 rounded up
