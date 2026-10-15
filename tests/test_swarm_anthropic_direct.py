@@ -1151,7 +1151,7 @@ def test_no_whitespace_turn_is_taken_on_the_last_allowed_turn(tmp_path, monkeypa
         monkeypatch,
         [_write(1, "x = 1  \n"), dict(DONE)],
         [],
-        max_turns="2",
+        max_turns="3",
     )
     assert len(sent) == 2
     assert code == 0
@@ -1169,3 +1169,22 @@ def test_whitespace_problems_reads_a_real_index(tmp_path, monkeypatch):
     assert "trailing whitespace" in direct._whitespace_problems()
     direct._tool_write_file({"path": "app/new.py", "content": "x = 1\n"})
     assert direct._whitespace_problems() == ""
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert staged.stdout == "", "the probe must leave the index as it found it"
+
+
+def test_a_model_that_never_fixes_stays_within_the_turn_limit(tmp_path, monkeypatch):
+    report = (2, "app/a.py:1: trailing whitespace.")
+    replies = [_write(1, "x = 1  \n")] + [dict(DONE) for _ in range(5)]
+    code, _, sent = _run_executor(
+        tmp_path, monkeypatch, replies, [report] * 5, max_turns="4"
+    )
+    assert len(sent) == 3, "feedback only while a write and a finish still fit"
+    assert "[turn budget] 2 of 4" in sent[2][-1]["content"]
+    assert code == 0  # the mocked commit; the real commit check stays authoritative

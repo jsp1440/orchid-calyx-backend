@@ -329,6 +329,9 @@ def _whitespace_problems() -> str:
         if not WRITTEN or not _stage_written_files():
             return ""
         result = _run(["git", "diff", "--cached", "--check"], timeout=60)
+        # Unstage again so the model's own diff checks still compare its
+        # working tree against HEAD.
+        _run(["git", "reset", "-q", "--", *sorted(WRITTEN)], timeout=30)
     except (OSError, subprocess.SubprocessError):
         return ""
     if result.returncode == 0:
@@ -684,7 +687,8 @@ def main() -> int:
 
             messages.append({"role": "assistant", "content": content})
             if not tool_uses:
-                problems = _whitespace_problems() if turn < bounded_turns else ""
+                # A fix needs a write turn and a finishing turn.
+                problems = _whitespace_problems() if turn < bounded_turns - 1 else ""
                 if not problems:
                     break
                 messages.append(
@@ -693,7 +697,10 @@ def main() -> int:
                         "content": (
                             "`git diff --check` rejects your changes. Remove the "
                             "trailing whitespace or blank lines it reports, using "
-                            "write_file, then finish:\n" + problems
+                            "write_file, then finish. "
+                            + _turn_budget_notice(turn, bounded_turns)
+                            + "\n"
+                            + problems
                         ),
                     }
                 )
