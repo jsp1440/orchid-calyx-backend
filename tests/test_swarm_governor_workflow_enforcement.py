@@ -446,6 +446,25 @@ def test_precheck_paid_mode_provider_in_allowlist_authorizes() -> None:
     assert out.get("reason") == "AUTHORIZED"
 
 
+@pytest.mark.parametrize("provider", [None, "", "   "])
+def test_precheck_paid_mode_requires_explicit_provider_identity(provider) -> None:
+    env = {
+        "NO_API_MODE": "false",
+        "OC_GOVERNOR_PAID_EXECUTION_ENABLED": "true",
+        "OC_GOVERNOR_PROVIDER_ALLOWLIST": "anthropic",
+        "OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD": "0.50",
+        "OC_GOVERNOR_PER_RUN_BUDGET_USD": "1.00",
+        "OC_GOVERNOR_DAILY_BUDGET_USD": "5.00",
+        "OC_GOVERNOR_MONTHLY_BUDGET_USD": "20.00",
+    }
+    if provider is not None:
+        env["OC_GOVERNOR_PROVIDER"] = provider
+    _, out = _run_precheck(env)
+    assert out.get("authorized") == "false"
+    assert out.get("reason") == "BLOCKED_MISSING_PROVIDER"
+    assert out.get("blocker_fingerprint", "") == ""
+
+
 def test_precheck_retry_limit_blocks() -> None:
     _, out = _run_precheck(
         {

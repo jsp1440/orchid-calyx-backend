@@ -1,4 +1,5 @@
 """Tests for oc_no_api_guard.py — NO-API mode enforcement."""
+
 from __future__ import annotations
 
 import importlib
@@ -61,7 +62,9 @@ class TestEvaluateAllowed:
     def test_disable_value_allows_providers(self, value: str):
         assert evaluate(value) is False
 
-    @pytest.mark.parametrize("value", ["FALSE", "False", "DISABLED", "Disabled", "NO", "OFF", "0"])
+    @pytest.mark.parametrize(
+        "value", ["FALSE", "False", "DISABLED", "Disabled", "NO", "OFF", "0"]
+    )
     def test_disable_value_case_insensitive(self, value: str):
         assert evaluate(value) is False
 
@@ -170,3 +173,62 @@ class TestMain:
         oc_no_api_guard.main()
         captured = capsys.readouterr()
         assert "ALLOWED" in captured.out
+
+
+@pytest.mark.parametrize(
+    ("value", "status", "blocked"),
+    [
+        (None, "missing", True),
+        ("", "missing", True),
+        ("   ", "missing", True),
+        (" true ", "enabled", True),
+        ("ENABLED", "enabled", True),
+        ("yes", "enabled", True),
+        ("1", "enabled", True),
+        ("ON", "enabled", True),
+        (" false ", "disabled", False),
+        ("DISABLED", "disabled", False),
+        ("0", "disabled", False),
+        ("no", "disabled", False),
+        ("off", "disabled", False),
+        ("ture", "invalid", True),
+        ("false\nauthorized=true", "invalid", True),
+    ],
+)
+def test_configuration_diagnostics_preserve_guard_decision(
+    value, status, blocked, monkeypatch, tmp_path, capsys
+):
+    output = tmp_path / "output"
+    monkeypatch.setenv("GITHUB_OUTPUT", str(output))
+    if value is None:
+        monkeypatch.delenv("NO_API_MODE", raising=False)
+    else:
+        monkeypatch.setenv("NO_API_MODE", value)
+    oc_no_api_guard.main()
+    assert output.read_text().splitlines() == [
+        f"blocked={str(blocked).lower()}",
+        f"configuration_status={status}",
+    ]
+    assert oc_no_api_guard.configuration_status(value) == status
+    assert evaluate(value) is blocked
+    if status == "invalid":
+        assert value not in capsys.readouterr().out
+
+
+def test_disabled_guard_does_not_claim_spending_authority(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    monkeypatch.setenv("NO_API_MODE", "false")
+    oc_no_api_guard.main()
+    assert "paid execution still requires governor admission" in capsys.readouterr().out
+
+
+def test_invalid_configuration_is_not_echoed(monkeypatch, capsys):
+    monkeypatch.delenv("GITHUB_OUTPUT", raising=False)
+    raw = "unexpected-private-value\n::error::injected"
+    monkeypatch.setenv("NO_API_MODE", raw)
+    oc_no_api_guard.main()
+    captured = capsys.readouterr().out
+    assert raw not in captured
+    assert "::error::injected" not in captured
+    assert "configuration_status=invalid" in captured
+    assert "blocked=true" in captured
