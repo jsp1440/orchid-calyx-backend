@@ -97,10 +97,12 @@ def build_conversation_markdown(conversation: dict[str, Any]) -> str:
                     ]
                 )
             msg_source_indices = []
+            seen_indices: set[int] = set()
             for source in message.get("source_refs") or []:
                 idx = source_index_map.get(_source_key(dict(source)))
-                if idx is not None:
+                if idx is not None and idx not in seen_indices:
                     msg_source_indices.append(idx)
+                    seen_indices.add(idx)
             if msg_source_indices:
                 refs_str = ", ".join(
                     f"[Source {i}](#source-{i})" for i in msg_source_indices
