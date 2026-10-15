@@ -71,7 +71,8 @@ BOUNDARY_DEFINITIONS = (
     "any workflow, CI, deploy or infrastructure configuration; control-plane, "
     "orchestration, scheduler, provider or governor code under scripts/ or "
     "app/calyx_orchestrator/; or code that directly reads or mutates production "
-    "data or live external services when it runs. It is FALSE only for "
+    "data or live external services when it runs, including tests or scripts "
+    "that CI runs with production credentials. It is FALSE only for "
     "application code, tests and docs outside those areas that would reach "
     "the deployed services after a separate owner-gated promotion to main. "
     "changes_credentials: the change adds, rotates, exposes or alters handling "
@@ -121,6 +122,11 @@ PROTECTED = (
     "app/calyx_orchestrator/bounded_dispatcher",
     "app/calyx_orchestrator/leaf_worker",
     "app/calyx_orchestrator/owner_authorization_gate",
+    # CI runs these with the production DATABASE_URL (the durable proof on
+    # integration pushes; the canonical matrix proof at pull_request time).
+    "tests/test_durable_reservoir_postgres",
+    "tests/test_durable_e2e_conductor_proof",
+    "scripts/prove_real_canonical_matrix_slice",
     "Dockerfile",
     "render",
 )

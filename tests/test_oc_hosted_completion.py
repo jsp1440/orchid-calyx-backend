@@ -1138,6 +1138,7 @@ def test_every_boundary_flag_has_a_definition_the_checker_receives():
     ):
         assert exception in text
     assert "FALSE only for" in text
+    assert "tests or scripts that CI runs with production credentials" in text
     assert "drops or deletes schema" in text
     assert "weakens or removes their" in text
     # Ambiguity still fails toward the owner gate.
@@ -1175,6 +1176,9 @@ def test_the_checker_prompt_includes_the_boundary_definitions(monkeypatch, tmp_p
         "app/calyx_orchestrator/owner_authorization_gate.py",
         ".github/workflows/calyx-durable-autonomy-neon-proof.yml",
         "migrations/20261015_x.sql",
+        "tests/test_durable_reservoir_postgres.py",
+        "tests/test_durable_e2e_conductor_proof.py",
+        "scripts/prove_real_canonical_matrix_slice.py",
     ],
 )
 def test_paths_that_reach_the_production_database_can_never_be_owner_enrolled(
