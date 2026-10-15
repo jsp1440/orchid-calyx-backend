@@ -203,6 +203,37 @@ def authorization(issue, comments, repository, now=None):
     return {**grant, "comment_id": record["id"], "digest": digest(grant)}
 
 
+def checker_attempt_reserved(grant, comments):
+    """Whether this owner authorization has already spent its checker call.
+
+    ``checker_calls`` is 1 per authorization record, so each attempt record
+    names the authorization it was reserved under. A fresh owner record (a new
+    comment, after the old one is withdrawn) grants exactly one new call; the
+    old attempt stays on the issue as evidence. An attempt record that cannot
+    be attributed to a different authorization -- unparseable, unbound, not
+    written by the workflow bot, or edited -- counts against this one.
+    """
+    for comment_row in comments:
+        body = comment_row.get("body") or ""
+        if ATTEMPT_TAG not in body:
+            continue
+        genuine = (comment_row.get("user") or {}).get(
+            "login"
+        ) == "github-actions[bot]" and (
+            comment_row.get("created_at")
+            and comment_row.get("created_at") == comment_row.get("updated_at")
+        )
+        if not genuine:
+            return True
+        try:
+            bound = parse_tag(body, ATTEMPT_TAG).get("authorization")
+        except (ValueError, AttributeError):
+            return True
+        if bound is None or bound == grant["comment_id"]:
+            return True
+    return False
+
+
 def validate_material(context, issue, pr, lease, files, grant, dependency_issues):
     labels = {label["name"] for label in issue["labels"]}
     require(
@@ -496,7 +527,7 @@ def prepare(directory):
                 raise
             time.sleep(15)
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     intent = WorkIntent(
@@ -544,7 +575,7 @@ def reserve(directory):
     material = inspect(context)
     require(material["grant"] == state["grant"], "authorization_changed")
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     from decimal import Decimal
@@ -583,6 +614,30 @@ def reserve(directory):
     (directory / "prepared.json").write_text(json.dumps(state))
 
 
+_FENCED_JSON = re.compile(r"\A```(?:json)?[ \t]*\n(?P<body>.*)\n```\Z", re.DOTALL)
+
+
+def _review_json(text):
+    """Decode the checker's single JSON object, tolerating one Markdown fence.
+
+    The first live checker call (#1843, run 38702689548) returned 200 with
+    usage but failed to decode: models often wrap a JSON-only answer in a
+    ```json fence. Exactly one surrounding fence is removed; any other prose,
+    a second object or a non-object still fails closed with a named reason.
+    """
+    require(isinstance(text, str), "checker_output_invalid")
+    text = text.strip()
+    fenced = _FENCED_JSON.match(text)
+    if fenced:
+        text = fenced.group("body").strip()
+    try:
+        review = json.loads(text)
+    except json.JSONDecodeError:
+        raise ValueError("checker_output_not_json") from None
+    require(isinstance(review, dict), "checker_output_not_json")
+    return review
+
+
 def parse_review(response):
     require(response.get("stop_reason") == "end_turn", "checker_did_not_finish")
     content = response.get("content")
@@ -592,7 +647,7 @@ def parse_review(response):
         and content[0]["type"] == "text",
         "checker_output_invalid",
     )
-    review = json.loads(content[0]["text"])
+    review = _review_json(content[0]["text"])
     require(
         set(review) == {"verdict", "reason", "risk", "reversible", *RISK_FIELDS},
         "checker_schema_invalid",
