@@ -144,11 +144,21 @@ def resolve_priority(issue: dict) -> tuple[int, str]:
 
 
 def durable_pr_index(pull_requests: Iterable[dict]) -> dict[int, int]:
-    """Map issue number -> lowest open durable integration PR number."""
+    """Map issue number -> lowest open durable integration PR number.
+
+    The controller snapshots PRs with ``--state all`` (blocked reconciliation
+    needs merged state), so a PR closed without merging must be skipped here:
+    it is no longer durable work, and counting it suppressed its issue forever.
+    Open and merged PRs, and rows without a state, still count.
+    """
     index: dict[int, int] = {}
     for pr in pull_requests or []:
         number = pr.get("number")
         if number is None:
+            continue
+        state = str(pr.get("state") or "").upper()
+        merged = bool(pr.get("mergedAt") or pr.get("merged_at") or pr.get("merged"))
+        if state == "CLOSED" and not merged:
             continue
         for raw_issue in AUTO_ISSUE_MARKER_RE.findall(str(pr.get("body") or "")):
             issue = int(raw_issue)

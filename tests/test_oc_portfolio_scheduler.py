@@ -14,6 +14,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPT = Path("scripts/oc_portfolio_scheduler.py")
 
 _spec = importlib.util.spec_from_file_location("oc_portfolio_scheduler", SCRIPT)
@@ -332,6 +334,27 @@ def test_durable_pr_lineage_suppresses_duplicate_dispatch():
         row for row in result["suppressed"] if row["number"] == 1100 and row["reason"] == "durable-pr"
     ]
     assert result["suppressed"][0]["durable_pr"] == 77
+
+
+def test_a_pr_closed_without_merging_no_longer_suppresses_its_issue():
+    """The controller snapshots PRs with --state all (#1843 / closed PR #1845)."""
+    closed = {**DURABLE_PR, "state": "CLOSED", "mergedAt": None}
+    result = plan([issue(1100, title="P0 retried slice")], [closed])
+    assert result["selected_numbers"] == [1100]
+
+
+@pytest.mark.parametrize(
+    "pr",
+    [
+        {**DURABLE_PR, "state": "OPEN", "mergedAt": None},
+        {**DURABLE_PR, "state": "MERGED", "mergedAt": "2026-08-21T05:30:00Z"},
+        {**DURABLE_PR, "state": "CLOSED", "mergedAt": "2026-08-21T05:30:00Z"},
+    ],
+)
+def test_open_and_merged_prs_still_suppress_duplicate_dispatch(pr):
+    result = plan([issue(1100, title="P0 delivered slice")], [pr])
+    assert result["selected_numbers"] == []
+    assert result["suppressed"][0]["reason"] == "durable-pr"
 
 
 def test_oc_repair_authorizes_exactly_one_bounded_redispatch_over_a_durable_pr():
