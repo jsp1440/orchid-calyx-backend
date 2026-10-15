@@ -373,6 +373,7 @@ def _autofix_written() -> None:
     )
     if not files:
         return
+    before = {p: (REPO_ROOT / p).read_bytes() for p in files}
     try:
         _run(
             [sys.executable, "-m", "ruff", "check", "--fix", "--quiet", "--", *files],
@@ -380,6 +381,10 @@ def _autofix_written() -> None:
         )
     except (OSError, subprocess.SubprocessError):
         return
+    # Record what the auto-fix changed (e.g. a removed import) for reviewers.
+    changed = [p for p in files if (REPO_ROOT / p).read_bytes() != before[p]]
+    if changed:
+        print("[OC-DIRECT-AUTOFIX] " + json.dumps({"files": changed}), flush=True)
 
 
 def _lint_problems() -> str:
@@ -420,6 +425,9 @@ def _lint_problems() -> str:
 
 
 def _finish_problems() -> str:
+    # Auto-fix first: a fix can itself leave a whitespace problem (removing a
+    # trailing import leaves a blank line at EOF) that the probe must report.
+    _autofix_written()
     sections = (
         ("git diff --check", _whitespace_problems()),
         ("ruff check", _lint_problems()),

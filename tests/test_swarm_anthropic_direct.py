@@ -1513,6 +1513,23 @@ def test_safe_ruff_fixes_are_applied_to_written_files(tmp_path, monkeypatch):
     assert (tmp_path / "untouched.py").read_text() == "import sys\nimport os\n"
 
 
+def test_autofix_runs_before_the_whitespace_probe_and_is_logged(
+    tmp_path, monkeypatch, capsys
+):
+    """Removing a trailing unused import leaves a blank line at EOF."""
+    pytest.importorskip("ruff")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    direct._tool_write_file({"path": "a.py", "content": "x = 1\n\nimport os\n"})
+    problems = direct._finish_problems()
+    assert "[git diff --check]" in problems
+    assert "blank line at EOF" in problems
+    assert '[OC-DIRECT-AUTOFIX] {"files": ["a.py"]}' in capsys.readouterr().out
+
+
 def test_autofix_is_best_effort(tmp_path, monkeypatch):
     monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
     monkeypatch.setattr(direct, "WRITTEN", {"a.py"})
