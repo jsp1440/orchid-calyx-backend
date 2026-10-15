@@ -61,10 +61,10 @@ WORKER = re.compile(
     re.DOTALL,
 )
 DENIED = "[OC-SWARM-V4] Provider admission denied"
-RECOVERY_SCHEMA = "oc.swarm-lease-recovery.v1"
 SETTLEMENT_TAG = "OC-HOSTED-SETTLEMENT-V1"
 SETTLED_RESULT = re.compile(
-    r"^\[OC-SWARM-V4\] (?:Worker result validated|Provider admission denied)[^`]*`(\{.*\})`",
+    r"^\[OC-SWARM-V4\] (?:Worker result validated|Provider admission denied)"
+    r"[^`]*`(\{.*\})`",
     re.DOTALL,
 )
 ZERO_DISPOSITIONS = frozenset({"runtime-backoff", "repair", "blocked", "queued"})
@@ -72,8 +72,19 @@ VALIDATION_WORKFLOW = "orchid-autonomous-validation.yml"
 INTEGRATION_BRANCH = "oc-autonomous-integration"
 RUN_URL = re.compile(r"/actions/runs/(\d+)(?:/|$)")
 MAKER_BRANCH = re.compile(r"claude-direct/issue-\d+-\d+")
+CHECKER_ID = re.compile(r"anthropic:checker:\d+:\d+")
+# oc_swarm_lease_reconcile: the receipt drops "action" and adds "released_state".
+RECOVERY_SCHEMA = "oc.swarm-lease-recovery.v1"
 RECOVERY_PREFIX = "[OC-SWARM-V4] Stale lease recovered: `"
 RECOVERY = re.compile(r"^\[OC-SWARM-V4\] Stale lease recovered: `(\{[^\n]+\})`")
+RECOVER_REASONS = frozenset(
+    {
+        "running_label_beside_parked_state",
+        "settled_without_label_release",
+        "worker_run_terminated_without_settlement",
+        "manual_lease_expired",
+    }
+)
 
 
 def _json_after(pattern: re.Pattern, body: str) -> dict | None:
@@ -104,33 +115,46 @@ def _by_bot(comment: Mapping[str, Any]) -> bool:
     return (comment.get("user") or {}).get("login") == BOT
 
 
+def _order(comment: Mapping[str, Any]) -> tuple:
+    """Comment order. Ids only increase, so they break same-second ties."""
+    return (str(comment.get("created_at") or ""), int(comment.get("id") or 0))
+
+
 def _run_id(url: str) -> int | None:
     match = RUN_URL.search(url or "")
     return int(match.group(1)) if match else None
 
 
-def _newest(runs: list[Mapping[str, Any]]) -> Mapping[str, Any] | None:
-    """The latest validation attempt; GitHub lists runs newest-first, but never rely on it."""
-    if not runs:
-        return None
-    return max(
-        runs,
-        key=lambda r: (
-            str(r.get("created_at") or ""),
-            int(r.get("run_attempt") or 1),
-            int(r.get("id") or 0),
-        ),
-    )
+def _settled_validation(
+    runs: list[Mapping[str, Any]], *, head: str, branch: str, after: str
+) -> Mapping[str, Any] | None:
+    """The validation run the settlement relied on.
+
+    Chosen as ``oc_hosted_completion.validation`` chooses it: runs of the
+    validation workflow dispatched by the bot on the PR's own branch at this
+    head, created after the worker started, highest run id. Never GitHub's list
+    order (newest-first) and never a run someone else started.
+    """
+    matches = [
+        r
+        for r in runs
+        if r.get("head_sha") == head
+        and r.get("head_branch") == branch
+        and r.get("event") == "workflow_dispatch"
+        and (r.get("actor") or {}).get("login") == BOT
+        and str(r.get("path") or "").endswith(
+            f".github/workflows/{VALIDATION_WORKFLOW}"
+        )
+        and str(r.get("created_at") or "") >= after
+    ]
+    return max(matches, key=lambda r: int(r.get("id") or 0)) if matches else None
 
 
 def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     """Judge one issue from its fetched records (pure; see ``fetch_record``)."""
     issue = record["issue"]
     number = int(issue["number"])
-    comments = sorted(
-        record.get("comments") or [],
-        key=lambda c: (c.get("created_at") or "", c.get("id") or 0),
-    )
+    comments = sorted(record.get("comments") or [], key=_order)
     failures: list[str] = []
     evidence: dict[str, Any] = {"issue": number}
 
@@ -148,13 +172,18 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
         for c in comments
         if _by_bot(c) and (s := _tagged(c.get("body", ""), SETTLEMENT_TAG))
     ]
-    settlement_comment, settlement = settlements[-1] if settlements else (None, None)
-    context = (settlement or {}).get("context") or {}
-    repository = record.get("repository") or context.get("repository") or ""
-    worker_run, worker_attempt = (
-        context.get("worker_run"),
-        context.get("worker_attempt"),
+    # One receipt. Several distinct bot-tagged receipts are ambiguity, not evidence.
+    distinct = {json.dumps(s, sort_keys=True) for _, s in settlements}
+    settlement_comment, settlement = (
+        settlements[0] if len(distinct) == 1 else (None, None)
     )
+    if len(distinct) > 1:
+        failures.append("AMBIGUOUS_SETTLEMENT_RECEIPTS")
+    context = (settlement or {}).get("context") or {}
+    repository = str(record.get("repository") or context.get("repository") or "")
+    repository = repository.lower()
+    worker_run = context.get("worker_run")
+    worker_attempt = context.get("worker_attempt")
 
     # 1. acquisition: the claim the settlement names, for the attempt that did the work
     final = next(
@@ -163,9 +192,12 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     if final is None and claims and settlement is None:
         final = claims[-1]
     acquired = final is not None and (
-        settlement is None
-        or final[1]["lease_id"]
-        == f"{repository}:{worker_run}:{worker_attempt}:{number}"
+        settlement_comment is None
+        or (
+            str(final[1]["lease_id"]).lower()
+            == f"{repository}:{worker_run}:{worker_attempt}:{number}"
+            and _order(final[0]) < _order(settlement_comment)
+        )
     )
     if final is not None:
         evidence["lease_id"] = final[1]["lease_id"]
@@ -179,18 +211,25 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
             else "NO_GOVERNED_CLAIM"
         )
 
-    # 2. dispatch: that attempt's provider worker started, and was never denied after the claim
-    after = [
-        c
-        for c in comments
-        if final is not None
-        and (c.get("created_at") or "") >= (final[0].get("created_at") or "")
-    ]
-    worker = next(
-        (m for c in after if _by_bot(c) and (m := WORKER.search(c.get("body", "")))),
-        None,
+    # 2. dispatch: that attempt's provider worker started; no denial names this lease
+    after = [c for c in comments if final is not None and _order(c) > _order(final[0])]
+    worker_comment, worker = next(
+        (
+            (c, m)
+            for c in after
+            if _by_bot(c) and (m := WORKER.search(c.get("body", "")))
+        ),
+        (None, None),
     )
-    denied = any(_by_bot(c) and c.get("body", "").startswith(DENIED) for c in after)
+    denied = any(
+        _by_bot(c)
+        and c.get("body", "").startswith(DENIED)
+        and (_json_after(SETTLED_RESULT, c.get("body", "")) or {}).get(
+            "lease_comment_id"
+        )
+        in (None, final[0].get("id"))
+        for c in after
+    )
     worker_bound = worker is not None and (
         settlement is None or _run_id(worker.group("run")) == worker_run
     )
@@ -216,14 +255,13 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     # 3. engineering work: the maker's own PR for this issue, at the settled head
     pr = record.get("pull_request") or {}
     head = context.get("head", "")
+    branch = (pr.get("head") or {}).get("ref") or ""
     engineered = (
         bool(pr)
         and pr.get("number") == context.get("pr")
         and (pr.get("user") or {}).get("login") == BOT
-        and bool(MAKER_BRANCH.fullmatch((pr.get("head") or {}).get("ref") or ""))
-        and (pr.get("head") or {})
-        .get("ref", "")
-        .startswith(f"claude-direct/issue-{number}-")
+        and bool(MAKER_BRANCH.fullmatch(branch))
+        and branch.startswith(f"claude-direct/issue-{number}-")
         and f"OC-AUTO-ISSUE: #{number}" in (pr.get("body") or "")
         and (pr.get("head") or {}).get("sha") == head
         and bool(SHA40.fullmatch(head or ""))
@@ -236,14 +274,19 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     if not engineered:
         failures.append("NO_MAKER_PR_AT_SETTLED_HEAD")
 
-    # 4. independent validation at exactly that head; the newest attempt decides
-    latest = _newest(
-        [r for r in record.get("validation_runs") or [] if r.get("head_sha") == head]
+    # 4. independent validation at exactly that head
+    validation = _settled_validation(
+        list(record.get("validation_runs") or []),
+        head=head,
+        branch=branch,
+        after=str((worker_comment or {}).get("created_at") or "~"),
     )
-    validation_green = latest is not None and latest.get("conclusion") == "success"
+    validation_green = (
+        validation is not None and validation.get("conclusion") == "success"
+    )
     checks = [
         e
-        for c in record.get("pr_comments") or []
+        for c in sorted(record.get("pr_comments") or [], key=_order)
         if _by_bot(c) and (e := parse_evidence(c.get("body", "")))
     ]
     checker = next(
@@ -254,6 +297,7 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
             and e.checks_head_sha in ("", head)
             and e.pr_number == pr.get("number")
             and e.issue_number == number
+            and e.repository.lower() == repository
         ),
         None,
     )
@@ -261,11 +305,15 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
         checker is not None
         and checker.verdict is CheckerVerdict.PASS
         and checker.required_checks_passed
-        and bool(checker.checker_id.strip())
         and not same_actor(checker.checker_id, checker.maker_id)
+        # The identities oc_hosted_completion assigns: the maker is this
+        # worker run; the checker is a completion run, both for this issue.
+        and checker.maker_id == f"anthropic:maker:{worker_run}:{number}"
+        and bool(CHECKER_ID.fullmatch(checker.checker_id))
+        and checker.checker_id.endswith(f":{number}")
     )
-    if latest is not None:
-        evidence["validation_run"] = latest.get("html_url")
+    if validation is not None:
+        evidence["validation_run"] = validation.get("html_url")
     if checker is not None:
         evidence["maker_id"] = checker.maker_id
         evidence["checker_id"] = checker.checker_id
@@ -290,15 +338,16 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
         and issue.get("state_reason") == "completed"
         and "oc-done" in issue_labels
     )
+    parents = record.get("merge_parents") or []
     merge_verified = (
         receipted
         and pr.get("merged") is True
         and pr.get("merge_commit_sha") == merge_sha
         and (pr.get("base") or {}).get("ref") == INTEGRATION_BRANCH
         and record.get("merge_on_target") is True
-        # A real merge commit of the settled head into the target branch.
-        and len(record.get("merge_parents") or []) == 2
-        and head in (record.get("merge_parents") or [])
+        # A real two-parent merge of the settled head into the target branch.
+        and len(parents) == 2
+        and head in parents
     )
     if settlement_comment is not None:
         evidence["settlement_receipt"] = settlement_comment.get("html_url")
@@ -309,8 +358,8 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
     elif not merge_verified:
         failures.append("SETTLED_MERGE_NOT_VERIFIED_ON_TARGET")
 
-    # Recovery counts only for an earlier lease of this issue, recovered before
-    # the settled claim, naming that lease's own run.
+    # Recovery: the reconciler's own receipt for an earlier lease of this issue,
+    # naming that lease's run, released off oc-running, before the settled claim.
     earlier = {
         c.get("id"): k
         for c, k in claims
@@ -324,16 +373,19 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
         if (
             not rec
             or rec.get("schema") != RECOVERY_SCHEMA
-            or rec.get("action") != "recover"
+            or rec.get("issue_number") != number
+            or rec.get("reason") not in RECOVER_REASONS
+            or not isinstance(rec.get("released_state"), list)
+            or "oc-running" in rec["released_state"]
         ):
             continue
         claim = earlier.get(rec.get("lease_comment_id"))
         if (
             claim is not None
             and rec.get("lease_id") == claim["lease_id"]
-            and str(rec.get("run_id")) == claim["lease_id"].split(":")[-3]
+            and str(rec.get("run_id")) == str(claim["lease_id"]).split(":")[-3]
             and final is not None
-            and (c.get("created_at") or "") < (final[0].get("created_at") or "")
+            and _order(c) < _order(final[0])
         ):
             recovered.append(c.get("html_url"))
     evidence["recovered_leases"] = len(recovered)
@@ -375,55 +427,62 @@ def evaluate_cycle(record: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def evaluate(
-    records: Iterable[Mapping[str, Any]], target: int = TARGET
+    records: Iterable[Mapping[str, Any]],
+    target: int = TARGET,
+    *,
+    window_complete: bool = False,
 ) -> dict[str, Any]:
+    """Judge every cycle, then the most recent run of consecutive passes.
+
+    Certification additionally requires ``window_complete``: the cycles must be
+    every claimed issue in a window GitHub enumerated (``--window-start``), not
+    a list a caller chose, so failures cannot be left out of "consecutive".
+    """
     cycles = [evaluate_cycle(r) for r in records]
-    # Settlement order; unsettled cycles sort last and break the streak there.
+    # Settlement order; unsettled cycles sort last.
     cycles.sort(
         key=lambda c: (
             c["evidence"].get("settled_at") is None,
             c["evidence"].get("settled_at") or "",
+            c["issue"],
         )
     )
-    streak, recovered, seen = (
-        0,
-        False,
-        {
-            "head_sha": set(),
-            "merge_sha": set(),
-            "lease_id": set(),
-            "pull_request": set(),
-        },
-    )
-    stop = None
+    seen: dict[str, set] = {
+        "head_sha": set(),
+        "merge_sha": set(),
+        "lease_id": set(),
+        "pull_request": set(),
+    }
     for cycle in cycles:
         reused = [
             k
-            for k in seen
-            if cycle["evidence"].get(k) and cycle["evidence"][k] in seen[k]
+            for k, values in seen.items()
+            if cycle["evidence"].get(k) and cycle["evidence"][k] in values
         ]
         if reused:
             cycle["passed"] = False
             cycle["failures"].append("REUSED_" + "_".join(sorted(reused)).upper())
-        unexplained = [
-            z for z in cycle["evidence"]["zero_execution"] if not z["reason"]
-        ]
-        if unexplained:
+        if any(not z["reason"] for z in cycle["evidence"]["zero_execution"]):
             cycle["passed"] = False
             cycle["failures"].append("ZERO_EXECUTION_WITHOUT_REASON")
-        if not cycle["passed"]:
-            stop = stop or f"issue {cycle['issue']}: {', '.join(cycle['failures'])}"
-            break
         for k, values in seen.items():
             if cycle["evidence"].get(k):
                 values.add(cycle["evidence"][k])
+    # The most recent unbroken run of passing cycles.
+    streak, recovered, stop = 0, False, None
+    for cycle in reversed(cycles):
+        if not cycle["passed"]:
+            stop = f"issue {cycle['issue']}: {', '.join(cycle['failures'])}"
+            break
         streak += 1
         recovered = recovered or cycle["evidence"]["recovered_leases"] > 0
-    certified = streak >= target and recovered
+    certified = streak >= target and recovered and window_complete
     if certified:
         reason = "certified"
-    elif streak >= target:
+    elif streak >= target and not recovered:
         reason = "no recovered lease among the consecutive cycles"
+    elif streak >= target:
+        reason = "cycles were chosen by the caller, not enumerated from a window"
     else:
         reason = stop or f"need {target - streak} more consecutive completed cycles"
     return {
@@ -431,6 +490,7 @@ def evaluate(
         "target": target,
         "consecutive_completed": streak,
         "recovery_proven": recovered,
+        "window_complete": window_complete,
         "certified": certified,
         "reason": reason,
         "cycles": cycles,
@@ -467,9 +527,10 @@ def gh_api(path: str, max_pages: int = 50) -> Any:
     sep = "&" if "?" in path else "?"
     for page in range(1, max_pages + 1):
         batch = _gh(f"{path}{sep}page={page}")
-        if isinstance(
-            batch, dict
-        ):  # e.g. {"workflow_runs": [...]} -- one page is enough here
+        if isinstance(batch, dict):
+            # Object-wrapped lists ({"workflow_runs": [...]}) return their first
+            # page only. The one caller filters runs by head_sha with
+            # per_page=20; a head validated more than 20 times would need paging.
             return batch
         items.extend(batch)
         per_page = int(re.search(r"per_page=(\d+)", path).group(1))
@@ -529,40 +590,80 @@ def fetch_record(
     return record
 
 
+def window_records(
+    repository: str, start: str, api: Callable[[str], Any] = gh_api
+) -> list[dict[str, Any]]:
+    """Every issue with a bot lease claim at or after ``start``, from GitHub.
+
+    The issues endpoint's ``since`` filters on last update, which any claim
+    bumps, so no claimed issue in the window can be missed; pull requests are
+    skipped. The claim time, not the update time, decides membership.
+    """
+    rows = api(f"repos/{repository}/issues?state=all&since={start}&per_page=100")
+    records = []
+    for row in rows:
+        if "pull_request" in row:
+            continue
+        record = fetch_record(repository, int(row["number"]), api=api)
+        if any(
+            _by_bot(c)
+            and str(c.get("created_at") or "") >= start
+            and (_json_after(CLAIM, c.get("body", "")) or {}).get("schema")
+            == "oc.swarm-claim.v1"
+            for c in record["comments"]
+        ):
+            records.append(record)
+    return records
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--repository", required=True)
-    parser.add_argument(
-        "--issues", required=True, help="comma-separated demonstration issue numbers"
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--window-start",
+        help="UTC ISO time; judge every issue claimed since then (certifiable)",
+    )
+    source.add_argument(
+        "--issues", help="comma-separated issue numbers (inspection only)"
     )
     parser.add_argument("--target", type=int, default=TARGET)
+    parser.add_argument(
+        "--first-cycle",
+        action="store_true",
+        help="exit 0 when the most recent cycle in the window passed (no certification)",
+    )
     parser.add_argument("--output", required=True)
     args = parser.parse_args(argv)
-    numbers = [int(n) for n in args.issues.split(",") if n.strip()]
+    if args.window_start:
+        records = window_records(args.repository, args.window_start)
+        numbers = [int(r["issue"]["number"]) for r in records]
+    else:
+        numbers = [int(n) for n in args.issues.split(",") if n.strip()]
+        records = [fetch_record(args.repository, n) for n in numbers]
     report = evaluate(
-        (fetch_record(args.repository, n) for n in numbers), target=args.target
+        records, target=args.target, window_complete=bool(args.window_start)
     )
     report.update(
         repository=args.repository,
         issues=numbers,
+        window_start=args.window_start,
         generated_at=datetime.now(UTC).isoformat(),
     )
     Path(args.output).write_text(
         json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(
-        json.dumps(
-            {
-                k: report[k]
-                for k in (
-                    "certified",
-                    "consecutive_completed",
-                    "recovery_proven",
-                    "reason",
-                )
-            }
-        )
+    keys = (
+        "certified",
+        "consecutive_completed",
+        "recovery_proven",
+        "window_complete",
+        "reason",
     )
+    print(json.dumps({k: report[k] for k in keys}))
+    if args.first_cycle:
+        latest = report["cycles"][-1] if report["cycles"] else None
+        return 0 if args.window_start and latest is not None and latest["passed"] else 1
     return 0 if report["certified"] else 1
 
 
