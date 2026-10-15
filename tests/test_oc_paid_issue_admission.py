@@ -190,3 +190,52 @@ def test_paid_coding_work_is_planned_only_on_the_integration_ref():
     assert (
         'steps.controller_revision.outputs.canonical_integration }}" == "true"' in gate
     )
+    assert '"${{ github.event_name }}" == "schedule"' in gate
+    assert '"${{ github.ref }}" == "refs/heads/oc-autonomous-integration"' in gate
+
+
+@pytest.mark.parametrize(
+    ("run", "trusted"),
+    [
+        (
+            {"head_branch": "oc-autonomous-integration", "event": "workflow_dispatch"},
+            True,
+        ),
+        ({"head_branch": "main", "event": "schedule"}, True),
+        ({"head_branch": "main", "event": "pull_request"}, False),
+        ({"head_branch": "main", "event": "issues"}, False),
+        ({"head_branch": "main", "event": "workflow_dispatch"}, False),
+        ({"head_branch": "feature", "event": "schedule"}, False),
+        # A PR (even from a branch named like the integration ref) is never a worker.
+        ({"head_branch": "oc-autonomous-integration", "event": "pull_request"}, False),
+        (
+            {
+                "head_branch": "oc-autonomous-integration",
+                "event": "workflow_dispatch",
+                "head_repository": {"full_name": "fork/orchid-calyx-backend"},
+            },
+            False,
+        ),
+    ],
+)
+def test_one_trust_rule_for_controller_runs(run, trusted):
+    from scripts.oc_controller_trust import on_trusted_controller_ref
+
+    assert on_trusted_controller_ref(run, "main", repository=REPO) is trusted
+    if run.get("event") == "schedule":
+        assert on_trusted_controller_ref(run, "", repository=REPO) is False
+
+
+def test_checker_job_can_write_pr_receipts_but_its_provider_step_gets_no_token():
+    with open(
+        ".github/workflows/oc-convergence-supervisor.yml", encoding="utf-8"
+    ) as handle:
+        workflow = yaml.safe_load(handle)
+    checker = workflow["jobs"]["checker"]
+    assert checker["permissions"]["pull-requests"] == "write"
+    (provider,) = [
+        s
+        for s in checker["steps"]
+        if s.get("name") == "Independent read-only checker session"
+    ]
+    assert set(provider["env"]) == {"ANTHROPIC_API_KEY"}

@@ -949,7 +949,9 @@ def test_hosted_workflow_isolates_candidate_data_and_spending_credentials():
     checker = workflow["jobs"]["checker"]
     assert "vars.NO_API_MODE == 'false'" in checker["if"]
     assert checker["permissions"]["contents"] == "read"
-    assert checker["permissions"]["pull-requests"] == "read"
+    # PR comments carry the assignment and evidence; the provider step below
+    # still receives ANTHROPIC_API_KEY only.
+    assert checker["permissions"]["pull-requests"] == "write"
     steps = checker["steps"]
     provider = next(
         i
@@ -1013,6 +1015,7 @@ def test_canonical_controller_runs_are_trusted_workers(run):
     [
         _worker(event="pull_request", head_branch="claude/some-pr-branch"),
         _worker(event="pull_request", head_branch="main"),
+        _worker(event="pull_request", head_branch=hosted.BRANCH),
         _worker(event="issues", head_branch="main"),
         _worker(event="workflow_dispatch", head_branch="main"),
         _worker(event="schedule", head_branch="feature"),

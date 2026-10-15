@@ -300,10 +300,10 @@ def worker_run_trusted(worker, context, default_branch):
     checkout is the integration head. Any other trigger (a PR closing, an
     issue event) runs from its own SHA and is never a trusted worker.
     """
-    on_trusted_ref = worker.get("head_branch") == BRANCH or (
-        worker.get("event") == "schedule"
-        and bool(default_branch)
-        and worker.get("head_branch") == default_branch
+    from scripts.oc_controller_trust import on_trusted_controller_ref
+
+    on_trusted_ref = on_trusted_controller_ref(
+        worker, default_branch, repository=context.get("repository")
     )
     return (
         worker.get("path") == ".github/workflows/orchid-swarm-controller.yml"

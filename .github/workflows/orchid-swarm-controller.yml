@@ -433,8 +433,9 @@ jobs:
           # Paid coding work is planned only on a run of the integration ref.
           # Other triggers (a PR closing, an issue event) check out their own
           # SHA; a paid worker launched there can never be integrated, because
-          # hosted completion requires the worker run on oc-autonomous-integration.
-          if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" && "${{ steps.controller_revision.outputs.canonical_integration }}" == "true" ]]; then
+          # hosted completion trusts only integration-ref runs and schedules
+          # (scripts/oc_controller_trust.py), so the planner applies the same rule.
+          if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" && "${{ steps.controller_revision.outputs.canonical_integration }}" == "true" && ( "${{ github.event_name }}" == "schedule" || "${{ github.ref }}" == "refs/heads/oc-autonomous-integration" ) ]]; then
             provider_args+=(--coding-executor)
           else
             provider_args+=(--provider-free-only)
