@@ -27,7 +27,8 @@ def dependency_graph() -> dict[str, list[str]]:
 
 
 def reverse_dependencies(graph: dict[str, list[str]] | None = None) -> dict[str, list[str]]:
-    graph = graph or dependency_graph()
+    if graph is None:
+        graph = dependency_graph()
     reverse: dict[str, list[str]] = {}
     for node, dependencies in graph.items():
         for dependency in dependencies:
