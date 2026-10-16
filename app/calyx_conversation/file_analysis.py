@@ -64,6 +64,9 @@ def _coerce_csv_value(value: str) -> Any:
         return True
     if lowered == "false":
         return False
+    # Keep underscore-containing cells as text (never coerce to number)
+    if "_" in text:
+        return text
     try:
         if not any(marker in text.casefold() for marker in (".", "e")):
             return int(text)
