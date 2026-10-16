@@ -66,7 +66,12 @@ def receipt_spend(
 
 
 def settlements(lines: list[str]) -> dict[tuple[str, str], Decimal]:
-    """Settled actual cost per (run_id, provider); the first valid line wins."""
+    """Settled actual cost per (run_id, provider); the first valid line wins.
+
+    Callers must pass only lines written by the workflow bot (``snapshot``
+    filters by author): a settle line replaces a reservation, so an untrusted
+    one could lower counted spend.
+    """
     found: dict[tuple[str, str], Decimal] = {}
     for line in lines:
         match = SETTLE_RE.match(line.strip())
@@ -88,6 +93,33 @@ def _gh(*args: str) -> str:
     return result.stdout
 
 
+#: Settle lines lower counted spend, so only the workflow bot may write them.
+#: #1330 is a public, unlocked issue: anyone could otherwise post one (review of
+#: #1942). gh's GraphQL author login for the Actions bot is "github-actions".
+SETTLE_AUTHORS = frozenset({"github-actions", "github-actions[bot]"})
+SETTLE_PROVIDERS = frozenset({"anthropic-checker"})
+
+
+def _ledger_rows(raw: str) -> list[tuple[str | None, str]]:
+    """(author, body line) pairs; a line without author info has author None.
+
+    Receipts from any author still count (they can only raise spend, which
+    fails closed); settle lines are trusted only from ``SETTLE_AUTHORS``.
+    """
+    rows: list[tuple[str | None, str]] = []
+    for record in raw.splitlines():
+        author, body = None, record
+        try:
+            decoded = json.loads(record)
+        except ValueError:
+            decoded = None
+        if isinstance(decoded, dict) and isinstance(decoded.get("b"), str):
+            author = decoded.get("a") if isinstance(decoded.get("a"), str) else None
+            body = decoded["b"]
+        rows.extend((author, line) for line in body.splitlines())
+    return rows
+
+
 def snapshot(repo: str, ledger_issue: int) -> tuple[Decimal, Decimal]:
     raw = _gh(
         "issue",
@@ -98,15 +130,22 @@ def snapshot(repo: str, ledger_issue: int) -> tuple[Decimal, Decimal]:
         "--json",
         "comments",
         "--jq",
-        ".comments[].body",
+        ".comments[] | {a: .author.login, b: .body} | @json",
     )
     now = datetime.now(timezone.utc)
     today = now.strftime("%Y-%m-%d")
     month = now.strftime("%Y-%m")
     daily = Decimal(0)
     monthly = Decimal(0)
-    lines = raw.splitlines()
-    settled = settlements(lines)
+    rows = _ledger_rows(raw)
+    lines = [line for _, line in rows]
+    settled = {
+        key: value
+        for key, value in settlements(
+            [line for author, line in rows if author in SETTLE_AUTHORS]
+        ).items()
+        if key[1] in SETTLE_PROVIDERS
+    }
     for line in lines:
         spend = receipt_spend(line, settled)
         if spend is None:
@@ -152,11 +191,7 @@ def append_settlement(
 ) -> bool:
     """Record a run's real provider cost; False (and no write) if not a decimal."""
     value = _usd(actual_usd)
-    if (
-        value is None
-        or not str(run_id).isdigit()
-        or not re.fullmatch(r"[\w-]+", provider)
-    ):
+    if value is None or not str(run_id).isdigit() or provider not in SETTLE_PROVIDERS:
         return False
     body = f"{SETTLE_TAG} run_id={run_id} provider={provider} actual_usd={value}"
     _gh("issue", "comment", str(ledger_issue), "--repo", repo, "--body", body)

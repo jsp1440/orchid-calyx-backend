@@ -8,6 +8,7 @@ provider replaces that reservation in the totals.
 
 from __future__ import annotations
 
+import json
 from decimal import Decimal
 
 import pytest
@@ -31,8 +32,16 @@ def _settle(run="38862098700", provider="anthropic-checker", actual="0.0123"):
     return f"[OC-GOVERNOR-COST-SETTLE] run_id={run} provider={provider} actual_usd={actual}"
 
 
-def _snapshot(monkeypatch, lines):
-    monkeypatch.setattr(ledger, "_gh", lambda *args: "\n".join(lines))
+BOT = "github-actions"
+
+
+def _snapshot(monkeypatch, lines, author=BOT):
+    """Rows as the snapshot's jq emits them; ``author`` may vary per line."""
+    rows = []
+    for line in lines:
+        who, body = line if isinstance(line, tuple) else (author, line)
+        rows.append(json.dumps({"a": who, "b": body}))
+    monkeypatch.setattr(ledger, "_gh", lambda *args: "\n".join(rows))
     return ledger.snapshot("o/r", 1330)
 
 
@@ -54,6 +63,49 @@ def test_settlement_is_bound_to_run_and_provider(monkeypatch):
     ]
     daily, _ = _snapshot(monkeypatch, lines)
     assert daily == Decimal("0.58")  # neither settle line matches its receipt
+
+
+@pytest.mark.parametrize(
+    "author", ["jsp1440", "drive-by", "copilot-swe-agent[bot]", None]
+)
+def test_a_settle_line_from_anyone_but_the_workflow_bot_is_ignored(monkeypatch, author):
+    """#1330 is a public, unlocked issue: anyone could post a settle line."""
+    daily, _ = _snapshot(monkeypatch, [_receipt(), (author, _settle(actual="0"))])
+    assert daily == Decimal("0.08")
+
+
+def test_a_forged_settle_posted_first_cannot_beat_the_bot(monkeypatch):
+    lines = [
+        _receipt(),
+        ("attacker", _settle(actual="0.0000")),
+        _settle(actual="0.0500"),
+    ]
+    assert _snapshot(monkeypatch, lines)[0] == Decimal("0.0500")
+
+
+def test_only_checker_reservations_can_be_settled(monkeypatch):
+    lines = [
+        _receipt(run="7", provider="anthropic", reserved="0.50"),
+        _settle(run="7", provider="anthropic", actual="0"),
+    ]
+    assert _snapshot(monkeypatch, lines)[0] == Decimal("0.50")
+
+
+def test_receipts_from_any_author_still_count(monkeypatch):
+    """Extra receipts can only raise spend, which fails closed."""
+    lines = [_receipt(), ("someone", _receipt(run="9"))]
+    assert _snapshot(monkeypatch, lines)[0] == Decimal("0.16")
+
+
+def test_plain_body_lines_without_author_count_receipts_but_never_settle(monkeypatch):
+    plain = f"{_receipt()}\n{_settle()}"
+    monkeypatch.setattr(ledger, "_gh", lambda *args: plain)
+    assert ledger.snapshot("o/r", 1330)[0] == Decimal("0.08")
+
+
+def test_a_settle_line_inside_a_multi_line_bot_comment_is_read(monkeypatch):
+    body = "note\n" + _settle(actual="0.0100")
+    assert _snapshot(monkeypatch, [_receipt(), body])[0] == Decimal("0.0100")
 
 
 def test_an_actual_on_the_receipt_wins_over_a_settle_line(monkeypatch):
