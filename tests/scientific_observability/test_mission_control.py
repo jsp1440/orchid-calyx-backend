@@ -110,3 +110,93 @@ def test_snapshot_ignores_non_workflow_events_without_inventing_work() -> None:
 
     assert snapshot["workflow_count"] == 0
     assert snapshot["workflows"] == []
+
+
+def test_cost_benefit_handles_mixed_naive_aware_timestamps() -> None:
+    """Test that mixed naive/aware timestamps result in UNAVAILABLE duration."""
+    store = ObservationStore()
+    correlation = OCIDFactory.new(OCIDKind.EVENT)
+    first = OCIDFactory.new(OCIDKind.EVENT)
+    second = OCIDFactory.new(OCIDKind.EVENT)
+
+    # First event with naive timestamp (no timezone)
+    first_event = _event(
+        event_id=first,
+        correlation_id=correlation,
+        sequence=1,
+        previous=None,
+        resulting=WorkflowState.RUNNING,
+        stage=WorkflowStage.VALIDATE,
+    )
+    first_event_dict = first_event.to_dict()
+    first_event_dict["recorded_at"] = "2026-01-01T00:00:00"
+
+    # Second event with aware timestamp (with timezone)
+    second_event = _event(
+        event_id=second,
+        correlation_id=correlation,
+        sequence=2,
+        previous=WorkflowState.RUNNING,
+        resulting=WorkflowState.COMPLETED,
+        stage=WorkflowStage.COMPLETE,
+    )
+    second_event_dict = second_event.to_dict()
+    second_event_dict["recorded_at"] = "2026-01-01T00:05:00+00:00"
+
+    store.append(first_event_dict)
+    store.append(second_event_dict)
+
+    snapshot = build_mission_control_snapshot(store)
+
+    assert snapshot["workflow_count"] == 1
+    item = snapshot["workflows"][0]
+    duration = item["cost_benefit"]["duration"]
+    assert duration["classification"] == "UNAVAILABLE"
+    assert duration["value"] is None
+    assert duration["unit"] == "seconds"
+    assert duration["source_ref"] is None
+
+
+def test_cost_benefit_handles_both_aware_timestamps() -> None:
+    """Test that both timezone-aware timestamps calculate duration correctly."""
+    store = ObservationStore()
+    correlation = OCIDFactory.new(OCIDKind.EVENT)
+    first = OCIDFactory.new(OCIDKind.EVENT)
+    second = OCIDFactory.new(OCIDKind.EVENT)
+
+    # First event with aware timestamp
+    first_event = _event(
+        event_id=first,
+        correlation_id=correlation,
+        sequence=1,
+        previous=None,
+        resulting=WorkflowState.RUNNING,
+        stage=WorkflowStage.VALIDATE,
+    )
+    first_event_dict = first_event.to_dict()
+    first_event_dict["recorded_at"] = "2026-01-01T00:00:00+00:00"
+
+    # Second event with aware timestamp (5 minutes later)
+    second_event = _event(
+        event_id=second,
+        correlation_id=correlation,
+        sequence=2,
+        previous=WorkflowState.RUNNING,
+        resulting=WorkflowState.COMPLETED,
+        stage=WorkflowStage.COMPLETE,
+    )
+    second_event_dict = second_event.to_dict()
+    second_event_dict["recorded_at"] = "2026-01-01T00:05:00+00:00"
+
+    store.append(first_event_dict)
+    store.append(second_event_dict)
+
+    snapshot = build_mission_control_snapshot(store)
+
+    assert snapshot["workflow_count"] == 1
+    item = snapshot["workflows"][0]
+    duration = item["cost_benefit"]["duration"]
+    assert duration["classification"] == "CALCULATED"
+    assert duration["value"] == 300.0
+    assert duration["unit"] == "seconds"
+    assert duration["source_ref"] is not None
