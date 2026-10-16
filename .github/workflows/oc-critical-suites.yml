@@ -73,6 +73,7 @@ env:
     tests/test_common_security_boundary.py
     tests/test_agent_security_gateway.py
     tests/test_owner_authorization_gate.py
+    tests/test_oc_standing_authorization.py
     tests/test_build_056_owner_authentication.py
     tests/test_build_063_owner_auth.py
     tests/test_owner_session_cors_repair.py
