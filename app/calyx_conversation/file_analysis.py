@@ -17,13 +17,24 @@ SUPPORTED_EXTENSIONS = {".csv", ".xlsx"}
 
 def _normalize_headers(values: list[Any]) -> list[str]:
     headers: list[str] = []
-    seen: dict[str, int] = {}
+    seen: set[str] = set()
     for index, value in enumerate(values, start=1):
         base = str(value).strip() if value is not None else ""
         base = base or f"column_{index}"
-        count = seen.get(base, 0) + 1
-        seen[base] = count
-        headers.append(base if count == 1 else f"{base}_{count}")
+
+        # Determine the final header name
+        if base not in seen:
+            final_header = base
+        else:
+            # Find the first f"{base}_{n}" that isn't already used
+            n = 2
+            while f"{base}_{n}" in seen:
+                n += 1
+            final_header = f"{base}_{n}"
+
+        seen.add(final_header)
+        headers.append(final_header)
+
     if len(headers) > MAX_COLUMNS:
         raise ValueError(f"dataset exceeds {MAX_COLUMNS} columns")
     return headers
