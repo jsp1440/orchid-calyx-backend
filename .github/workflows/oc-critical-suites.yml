@@ -90,6 +90,7 @@ env:
     tests/test_show_output_safety_redaction.py
     tests/test_show_output_safety_timing.py
     tests/test_show_day_judging_lock.py
+    tests/test_judging_points_breakdown.py
     tests/test_show_day_phase1.py
     tests/test_calyx_core_owner_only_show_management.py
     tests/test_calyx_100_l2_all_domain_authorization.py
