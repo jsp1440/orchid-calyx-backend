@@ -14,6 +14,7 @@ character's registry-authored state is withheld with it.
 from __future__ import annotations
 
 import ast
+import re
 import time
 import unicodedata
 from collections.abc import Callable
@@ -660,6 +661,20 @@ def test_registry_detail_withholds_elevation_ids_and_never_returns_states():
     assert "1520" not in repr(detail)
 
 
+# Random ids and timestamps can contain any digit run (an observation id
+# ending "...bde90815208d" once matched "1520"), so they are removed before a
+# response is searched for a withheld number. Everything else is still searched.
+_GENERATED_VALUE = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+    r"|\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?",
+    re.IGNORECASE,
+)
+
+
+def _without_generated_values(text: str) -> str:
+    return _GENERATED_VALUE.sub("", text)
+
+
 def test_member_evaluation_withholds_abbreviated_elevation_ids(client, supabase):
     states = {character: {"min": 1520, "max": 1530} for character in NEW_ELEVATION_IDS}
     create_registry_version(
@@ -715,7 +730,8 @@ def test_member_evaluation_withholds_abbreviated_elevation_ids(client, supabase)
         f"{PREFIX}/sessions/{sid}/evaluate", headers=member, json={}
     )
     assert evaluated.status_code == 200, evaluated.text
-    assert "1520" not in evaluated.text and "1530" not in evaluated.text
+    disclosed = _without_generated_values(evaluated.text)
+    assert "1520" not in disclosed and "1530" not in disclosed
     for character in NEW_ELEVATION_IDS:
         assert character not in evaluated.text
     [candidate] = evaluated.json()["report"]["candidates"]
