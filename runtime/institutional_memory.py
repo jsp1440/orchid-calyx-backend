@@ -94,15 +94,15 @@ class InstitutionalMemoryRegistry:
         terms = tuple(part for part in query.lower().split() if part)
         if not terms:
             return ()
-        ranked: list[tuple[int, str, InstitutionalMemoryRecord]] = []
+        ranked: list[tuple[int, str, str, InstitutionalMemoryRecord]] = []
         for record in self._records.values():
             haystack = (
                 f"{record.category} {record.title} {record.summary} {record.actor}"
             ).lower()
             score = sum(term in haystack for term in terms)
             if score:
-                ranked.append((-score, record.occurred_at, record))
-        return tuple(item[2] for item in sorted(ranked))
+                ranked.append((-score, record.occurred_at, record.memory_id, record))
+        return tuple(item[3] for item in sorted(ranked))
 
     def timeline(self) -> tuple[InstitutionalMemoryRecord, ...]:
         return tuple(
