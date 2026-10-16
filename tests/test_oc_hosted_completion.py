@@ -1237,61 +1237,55 @@ def _run_check(monkeypatch, tmp_path, text):
     return seen["payload"], json.loads((tmp_path / "review.json").read_text())
 
 
-def test_the_checker_answer_is_prefilled_with_the_opening_brace(monkeypatch, tmp_path):
-    """#1858: the checker opened with prose and failed closed as not JSON."""
-    continuation = json.dumps(review())[1:]
-    payload, parsed = _run_check(monkeypatch, tmp_path, continuation)
-    assert payload["messages"][-1] == {
-        "role": "assistant",
-        "content": hosted.REVIEW_PREFILL,
+def test_the_checker_answer_is_constrained_by_the_review_schema(monkeypatch, tmp_path):
+    """#1858, #1888: free-form answers failed closed as not JSON."""
+    payload, parsed = _run_check(monkeypatch, tmp_path, json.dumps(review()))
+    assert payload["output_config"] == {
+        "format": {"type": "json_schema", "schema": hosted.REVIEW_SCHEMA}
     }
-    assert payload["messages"][0]["role"] == "user"
+    assert [m["role"] for m in payload["messages"]] == ["user"]  # no prefill
     assert parsed == review()
+
+
+def test_the_review_schema_matches_what_the_parser_accepts():
+    schema = hosted.REVIEW_SCHEMA
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"]) == set(review())
+    props = schema["properties"]
+    assert props["verdict"]["enum"] == ["pass", "fail", "inconclusive"]
+    assert props["risk"]["enum"] == ["low", "moderate", "high", "owner_gated"]
+    for field in (*hosted.RISK_FIELDS, "reversible"):
+        assert props[field] == {"type": "boolean"}
 
 
 @pytest.mark.parametrize(
     "text",
     [
-        json.dumps(review()),  # repeats the prefilled brace
-        json.dumps(review())[1:] + " I am confident.",
-        json.dumps(review())[1:] + "\n```",
+        json.dumps(review()) + " I am confident.",
+        "```json\n" + json.dumps(review()) + "\n```\nDone.",
         "",
+        "Here is my review: " + json.dumps(review()),
     ],
 )
-def test_a_prefilled_answer_still_fails_closed_on_anything_but_the_object(
-    monkeypatch, tmp_path, text
+def test_an_unparseable_answer_fails_closed_and_is_kept_for_diagnosis(
+    monkeypatch, tmp_path, capsys, text
 ):
     with pytest.raises(ValueError, match="^checker_"):
         _run_check(monkeypatch, tmp_path, text)
     assert not (tmp_path / "review.json").exists()
+    assert (tmp_path / "checker_output.txt").read_text() == text[:8000]
+    logged = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert logged["checker_output"]["chars"] == len(text)
+    assert logged["checker_output"]["stop_reason"] == "end_turn"
 
 
-@pytest.mark.parametrize(
-    "value",
-    [
-        {"stop_reason": "end_turn", "content": []},
-        {"stop_reason": "end_turn", "content": [{"type": "tool_use", "id": "x"}]},
-        {"stop_reason": "end_turn", "content": [{"type": "text", "text": None}]},
-    ],
-)
-def test_prefill_completion_leaves_non_text_answers_to_fail_closed(value):
-    assert hosted._complete_prefill(value) == value
-    with pytest.raises(ValueError, match="^checker_"):
-        hosted.parse_review(hosted._complete_prefill(value))
+def test_the_checker_model_supports_structured_outputs():
+    """A model change must keep structured outputs or replace the schema."""
+    assert hosted.MODEL in hosted.STRUCTURED_OUTPUT_MODELS
 
 
-def test_the_checker_model_accepts_an_assistant_prefill():
-    """Newer models reject a prefill with HTTP 400; a model change must
-    replace the prefill instead of failing every checker call."""
-    assert hosted.MODEL in hosted.PREFILL_MODELS
-
-
-def test_a_pretty_printed_continuation_after_the_prefill_is_accepted(
-    monkeypatch, tmp_path
-):
-    continuation = json.dumps(review(), indent=2)[1:]
-    assert continuation.startswith("\n")
-    _, parsed = _run_check(monkeypatch, tmp_path, continuation)
+def test_a_pretty_printed_answer_is_accepted(monkeypatch, tmp_path):
+    _, parsed = _run_check(monkeypatch, tmp_path, json.dumps(review(), indent=2))
     assert parsed == review()
 
 

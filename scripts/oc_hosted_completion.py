@@ -13,6 +13,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime
@@ -707,30 +708,56 @@ def _unique_keys(pairs):
     return dict(pairs)
 
 
-# The checker's answer is prefilled with the opening brace, so the model cannot
-# open with prose. #1858 (run 38804593153) failed closed as
-# checker_output_not_json. The parser stays strict: anything after the
-# object still fails closed. Prefill is accepted by claude-haiku-4-5 but
-# rejected (HTTP 400) by the 4.6+ and 5.x models, so changing MODEL requires
-# replacing the prefill (e.g. with structured outputs);
-# PREFILL_MODELS pins that coupling in tests.
-REVIEW_PREFILL = "{"
-PREFILL_MODELS = frozenset({"claude-haiku-4-5"})
+# The checker's answer is constrained to REVIEW_SCHEMA with structured outputs
+# (output_config.format), so the API guarantees a single JSON object.
+# A "{" prefill (#1870) still failed twice as checker_output_not_json (#1858,
+# #1888). The parser below stays strict as a second line of defence.
+# Structured outputs are supported by claude-haiku-4-5;
+# STRUCTURED_OUTPUT_MODELS pins that coupling in tests.
+STRUCTURED_OUTPUT_MODELS = frozenset({"claude-haiku-4-5"})
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["pass", "fail", "inconclusive"]},
+        "reason": {"type": "string"},
+        "risk": {
+            "type": "string",
+            "enum": ["low", "moderate", "high", "owner_gated"],
+        },
+        "reversible": {"type": "boolean"},
+        **{field: {"type": "boolean"} for field in RISK_FIELDS},
+    },
+    "required": ["verdict", "reason", "risk", "reversible", *RISK_FIELDS],
+    "additionalProperties": False,
+}
 
 
-def _complete_prefill(response):
-    """Return the response with the prefilled opening restored to its text."""
+def _record_unparsed(directory, response):
+    """Keep what a failed checker answer looked like, without its verdict use.
+
+    Two failures (#1858, #1888) could not be diagnosed: only the reason code
+    survived. The bounded text goes to the evidence directory and a short
+    shape summary to the log.
+    """
     content = response.get("content")
-    if (
-        isinstance(content, list)
-        and len(content) == 1
-        and isinstance(content[0], dict)
-        and content[0].get("type") == "text"
-        and isinstance(content[0].get("text"), str)
-    ):
-        block = {**content[0], "text": REVIEW_PREFILL + content[0]["text"]}
-        return {**response, "content": [block]}
-    return response
+    text = ""
+    if isinstance(content, list) and content and isinstance(content[0], dict):
+        text = content[0].get("text") if isinstance(content[0].get("text"), str) else ""
+    (directory / "checker_output.txt").write_text(text[:8000])
+    print(
+        json.dumps(
+            {
+                "checker_output": {
+                    "stop_reason": response.get("stop_reason"),
+                    "blocks": len(content) if isinstance(content, list) else None,
+                    "chars": len(text),
+                    "head": text[:80],
+                    "tail": text[-80:],
+                }
+            }
+        ),
+        file=sys.stderr,
+    )
 
 
 def parse_review(response):
@@ -777,10 +804,8 @@ def check(directory):
         "model": MODEL,
         "max_tokens": 1800,
         "system": system,
-        "messages": [
-            {"role": "user", "content": json.dumps(state["prompt"])},
-            {"role": "assistant", "content": REVIEW_PREFILL},
-        ],
+        "messages": [{"role": "user", "content": json.dumps(state["prompt"])}],
+        "output_config": {"format": {"type": "json_schema", "schema": REVIEW_SCHEMA}},
     }
     req = request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -807,7 +832,11 @@ def check(directory):
         and usage["output_tokens"] <= 1800,
         "checker_usage_unconfirmed",
     )
-    review = parse_review(_complete_prefill(response))
+    try:
+        review = parse_review(response)
+    except ValueError:
+        _record_unparsed(directory, response)
+        raise
     (directory / "review.json").write_text(json.dumps(review))
 
 
