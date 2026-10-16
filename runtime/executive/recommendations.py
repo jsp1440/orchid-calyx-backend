@@ -30,6 +30,8 @@ def recommendation_for_priority(priority: dict[str, Any], subsystem: dict[str, A
 
 
 def generate_recommendations(priorities: list[dict[str, Any]], subsystems: list[dict[str, Any]], limit: int = 8) -> list[dict[str, Any]]:
+    if limit <= 0:
+        return []
     by_id = {str(item["id"]): item for item in subsystems}
     recommendations = []
     for priority in priorities:
