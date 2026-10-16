@@ -1,0 +1,2399 @@
+{
+  "central_brain_sync": "UNPROVEN: no cross-repository credential used",
+  "health": {
+    "blocked_backoff_count": 18,
+    "ci_infrastructure_state": {
+      "reason": "executed_success",
+      "run_id": 38936048086,
+      "state": "HEALTHY"
+    },
+    "contract_health": {
+      "counts": {
+        "blocked": 10,
+        "queued": 0,
+        "repair_backoff": 6,
+        "running": 0,
+        "runtime_backoff": 2,
+        "validating": 11
+      },
+      "exception_decision": {
+        "action": "park_and_reconcile",
+        "autonomous_repair_available": false,
+        "exception_class": "engineering_exception",
+        "independent_authorized_work_available": false,
+        "owner_decision_required": false,
+        "owner_exception_category": null,
+        "should_interrupt_owner": false
+      },
+      "exceptions": [
+        {
+          "issue": 1943,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1898,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "healthy": false,
+      "integration": {
+        "head_sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4",
+        "ready": "UNKNOWN"
+      },
+      "issues": {
+        "blocked": [
+          1426,
+          1425,
+          1424,
+          1402,
+          1396,
+          1361,
+          1345,
+          1298,
+          1264,
+          1050
+        ],
+        "queued": [],
+        "repair_backoff": [
+          1193,
+          1168,
+          1140,
+          1096,
+          1084,
+          1023
+        ],
+        "running": [],
+        "runtime_backoff": [
+          1736,
+          1732
+        ],
+        "validating": [
+          1403,
+          1236,
+          1187,
+          1139,
+          1129,
+          1114,
+          1089,
+          1088,
+          1087,
+          1030,
+          832
+        ]
+      },
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "validating_targets": [
+        {
+          "head_sha": null,
+          "issue": 1403,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1236,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1187,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1139,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1129,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1114,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1089,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1088,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1087,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 1030,
+          "pr": null
+        },
+        {
+          "head_sha": null,
+          "issue": 832,
+          "pr": null
+        }
+      ],
+      "violations": [
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1736,
+          "lease": 6184549580,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1732,
+          "lease": 6184547135,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "orphan_active_lease"
+        },
+        {
+          "issue": 1396,
+          "lease": 5649481701,
+          "type": "stale_lease"
+        },
+        {
+          "issue": 1403,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1236,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1187,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1139,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1129,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1114,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1089,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1088,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1087,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 1030,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        },
+        {
+          "issue": 832,
+          "pr": null,
+          "type": "validating_without_exact_head"
+        }
+      ]
+    },
+    "contract_snapshot": {
+      "autonomous_prs": [
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+          "number": 1953
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "840b769b6d30ccc10f0f51c7e41d959efc0baa45",
+          "number": 1913
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "f9ac6fad2e507a0366ba5f42507e1096c0e38d7e",
+          "number": 1827
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "051ba150d1cf3bd094725c173c9003e9420f9889",
+          "number": 1824
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "669ace6467d2646bb4392421cb21a470832465d7",
+          "number": 1811
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "5aa61a375f29dfa25e8748e7449b23f3732fc236",
+          "number": 1808
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "6ae92dfdf9154c00c7159fbb5ef2510ea14440ff",
+          "number": 1804
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b2a3b470422bdee7d24fb5874802096bf711f85",
+          "number": 1802
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "1acc402bd76bfb1bb60b226b74890d73a419adda",
+          "number": 1792
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2a2c8e4af54a8fe89f10e6d7bfd5686e96e0f2fe",
+          "number": 1790
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "e0afc3bb1125f60083b2fb0ec43655a2d43989c7",
+          "number": 1789
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a1e1744a9ca1878466f10bf0e7257350947af09c",
+          "number": 1788
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "0b308b63e648b19dc7ad5042ea83c243853fcb64",
+          "number": 1778
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "efab3af06c986d83515cebd29cfba7840d30480a",
+          "number": 1723
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "68f91759aa94d859e720e75ee7b7f6bc18b4a0a9",
+          "number": 1716
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "8ed8eb34aae89a1665793eb18ce2847bbf1e9da3",
+          "number": 1704
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "763d39daea54cc0151f7ad29c21a5aed1c3d08db",
+          "number": 1511
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7aea8ebcc6cbdab897dc61412d57d3d4566c5609",
+          "number": 1445
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "a17cf90e40becee2d784498e57b99f18dcd22017",
+          "number": 1444
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "7976a95206a15ba57afd3edb6769dbb84b3a8de5",
+          "number": 1443
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "36087372e7871913d7b8fde69e39d7a35224e6b3",
+          "number": 1439
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "635b778271ebe945961d302d437fdf437dca21c0",
+          "number": 1437
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "27e6b754aa7fd11221da143e7242eb463a9d13b8",
+          "number": 1404
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "ae0b3fa0acff258c9f0ea2cbb26036b6341acd04",
+          "number": 1397
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "2acf9e22f1efa72ab6faa9f24f082178d94824f3",
+          "number": 1169
+        },
+        {
+          "ci_state": "UNKNOWN",
+          "head_sha": "902d25d89a982bbf17211320fa1b54c6f2832ee9",
+          "number": 1113
+        }
+      ],
+      "autonomous_repair_available": false,
+      "deterministic_work_available": false,
+      "dispatch_fingerprints": [
+        "cbeb1829229ae7f9",
+        "c76e3b3650fc3851",
+        "871f271dc2c402e7"
+      ],
+      "exception_context": {},
+      "exceptions": [
+        {
+          "issue": 1943,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1898,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1783,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1773,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1085,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1027,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1026,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1024,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1022,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1021,
+          "owner_approval_required": true
+        },
+        {
+          "issue": 1008,
+          "owner_approval_required": true
+        }
+      ],
+      "generated_at": "2026-10-16T17:03:18.587062Z",
+      "independent_authorized_work_available": false,
+      "integration": {
+        "head_sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4",
+        "ready": "UNKNOWN"
+      },
+      "issues": [
+        {
+          "labels": [],
+          "number": 1949
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1948
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1947
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1946
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1945
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1944
+        },
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-owner-gate"
+          ],
+          "number": 1943
+        },
+        {
+          "labels": [],
+          "number": 1938
+        },
+        {
+          "labels": [],
+          "number": 1924
+        },
+        {
+          "labels": [
+            "oc-model-cheap",
+            "oc-owner-gate"
+          ],
+          "number": 1898
+        },
+        {
+          "labels": [
+            "oc-model-cheap"
+          ],
+          "number": 1863
+        },
+        {
+          "labels": [],
+          "number": 1826
+        },
+        {
+          "labels": [],
+          "number": 1823
+        },
+        {
+          "labels": [],
+          "number": 1805
+        },
+        {
+          "labels": [],
+          "number": 1786
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1783
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1782
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1781
+        },
+        {
+          "labels": [
+            "oc-done",
+            "oc-r1-controlled-test"
+          ],
+          "number": 1780
+        },
+        {
+          "labels": [],
+          "number": 1776
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-owner-gate",
+            "oc-p5"
+          ],
+          "number": 1773
+        },
+        {
+          "labels": [],
+          "number": 1772
+        },
+        {
+          "labels": [],
+          "number": 1770
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1742
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:improvement-discovery",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1741
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:university-education",
+            "oc-p5",
+            "oc-repair"
+          ],
+          "number": 1740
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1739
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4",
+            "oc-repair"
+          ],
+          "number": 1738
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:atlas",
+            "oc-p4"
+          ],
+          "number": 1737
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1736
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1735
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1734
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1733
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-runtime-backoff"
+          ],
+          "number": 1732
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1731
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:literature",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1730
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1729
+        },
+        {
+          "labels": [],
+          "number": 1728
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:research-station",
+            "oc-p3",
+            "oc-repair"
+          ],
+          "number": 1725
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1724
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1722
+        },
+        {
+          "labels": [
+            "oc-discovered",
+            "oc-lane:lexicon",
+            "oc-p2",
+            "oc-repair"
+          ],
+          "number": 1721
+        },
+        {
+          "labels": [
+            "oc-repair"
+          ],
+          "number": 1717
+        },
+        {
+          "labels": [],
+          "number": 1692
+        },
+        {
+          "labels": [],
+          "number": 1690
+        },
+        {
+          "labels": [],
+          "number": 1685
+        },
+        {
+          "labels": [],
+          "number": 1684
+        },
+        {
+          "labels": [],
+          "number": 1682
+        },
+        {
+          "labels": [],
+          "number": 1670
+        },
+        {
+          "labels": [],
+          "number": 1669
+        },
+        {
+          "labels": [],
+          "number": 1668
+        },
+        {
+          "labels": [],
+          "number": 1667
+        },
+        {
+          "labels": [],
+          "number": 1659
+        },
+        {
+          "labels": [],
+          "number": 1658
+        },
+        {
+          "labels": [],
+          "number": 1657
+        },
+        {
+          "labels": [],
+          "number": 1656
+        },
+        {
+          "labels": [],
+          "number": 1655
+        },
+        {
+          "labels": [],
+          "number": 1654
+        },
+        {
+          "labels": [],
+          "number": 1653
+        },
+        {
+          "labels": [],
+          "number": 1652
+        },
+        {
+          "labels": [],
+          "number": 1651
+        },
+        {
+          "labels": [],
+          "number": 1565
+        },
+        {
+          "labels": [],
+          "number": 1533
+        },
+        {
+          "labels": [],
+          "number": 1501
+        },
+        {
+          "labels": [
+            "calyx-research"
+          ],
+          "number": 1497
+        },
+        {
+          "labels": [
+            "oc-p0"
+          ],
+          "number": 1484
+        },
+        {
+          "labels": [
+            "blocked-on-owner",
+            "lane-c"
+          ],
+          "number": 1453
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1426
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1425
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1424
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1403
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1402
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1",
+            "oc-repair"
+          ],
+          "number": 1396
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1361
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p1"
+          ],
+          "number": 1345
+        },
+        {
+          "labels": [],
+          "number": 1336
+        },
+        {
+          "labels": [],
+          "number": 1330
+        },
+        {
+          "labels": [
+            "oc-active-tracker",
+            "oc-tracker"
+          ],
+          "number": 1299
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p0"
+          ],
+          "number": 1298
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1264
+        },
+        {
+          "labels": [],
+          "number": 1242
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1236
+        },
+        {
+          "labels": [],
+          "number": 1194
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1193
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1187
+        },
+        {
+          "labels": [],
+          "number": 1182
+        },
+        {
+          "labels": [],
+          "number": 1181
+        },
+        {
+          "labels": [],
+          "number": 1175
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1168
+        },
+        {
+          "labels": [],
+          "number": 1166
+        },
+        {
+          "labels": [],
+          "number": 1153
+        },
+        {
+          "labels": [],
+          "number": 1151
+        },
+        {
+          "labels": [],
+          "number": 1141
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-repair-backoff"
+          ],
+          "number": 1140
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1139
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1129
+        },
+        {
+          "labels": [],
+          "number": 1125
+        },
+        {
+          "labels": [],
+          "number": 1123
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-validating"
+          ],
+          "number": 1114
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-repair-backoff"
+          ],
+          "number": 1096
+        },
+        {
+          "labels": [
+            "oc-p1",
+            "oc-validating"
+          ],
+          "number": 1089
+        },
+        {
+          "labels": [
+            "oc-p3",
+            "oc-validating"
+          ],
+          "number": 1088
+        },
+        {
+          "labels": [
+            "oc-p2",
+            "oc-validating"
+          ],
+          "number": 1087
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0"
+          ],
+          "number": 1085
+        },
+        {
+          "labels": [
+            "oc-p0",
+            "oc-repair-backoff"
+          ],
+          "number": 1084
+        },
+        {
+          "labels": [
+            "oc-blocked",
+            "oc-p4"
+          ],
+          "number": 1050
+        },
+        {
+          "labels": [
+            "oc-runtime-degraded"
+          ],
+          "number": 1031
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 1030
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1027
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1026
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p0",
+            "oc-p4"
+          ],
+          "number": 1024
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-repair-backoff"
+          ],
+          "number": 1023
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1022
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1021
+        },
+        {
+          "labels": [],
+          "number": 1011
+        },
+        {
+          "labels": [
+            "oc-owner-gate",
+            "oc-p4"
+          ],
+          "number": 1008
+        },
+        {
+          "labels": [],
+          "number": 1005
+        },
+        {
+          "labels": [],
+          "number": 1003
+        },
+        {
+          "labels": [],
+          "number": 858
+        },
+        {
+          "labels": [],
+          "number": 842
+        },
+        {
+          "labels": [],
+          "number": 833
+        },
+        {
+          "labels": [
+            "oc-p4",
+            "oc-validating"
+          ],
+          "number": 832
+        },
+        {
+          "labels": [],
+          "number": 831
+        },
+        {
+          "labels": [],
+          "number": 830
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 793
+        },
+        {
+          "labels": [],
+          "number": 739
+        },
+        {
+          "labels": [],
+          "number": 736
+        },
+        {
+          "labels": [],
+          "number": 729
+        },
+        {
+          "labels": [],
+          "number": 716
+        },
+        {
+          "labels": [],
+          "number": 701
+        },
+        {
+          "labels": [],
+          "number": 699
+        },
+        {
+          "labels": [],
+          "number": 692
+        },
+        {
+          "labels": [],
+          "number": 691
+        },
+        {
+          "labels": [],
+          "number": 683
+        },
+        {
+          "labels": [],
+          "number": 680
+        },
+        {
+          "labels": [],
+          "number": 639
+        },
+        {
+          "labels": [],
+          "number": 617
+        },
+        {
+          "labels": [],
+          "number": 580
+        },
+        {
+          "labels": [],
+          "number": 543
+        },
+        {
+          "labels": [],
+          "number": 523
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 486
+        },
+        {
+          "labels": [
+            "ci"
+          ],
+          "number": 481
+        },
+        {
+          "labels": [],
+          "number": 480
+        },
+        {
+          "labels": [],
+          "number": 479
+        },
+        {
+          "labels": [],
+          "number": 478
+        },
+        {
+          "labels": [],
+          "number": 477
+        },
+        {
+          "labels": [],
+          "number": 476
+        },
+        {
+          "labels": [],
+          "number": 475
+        },
+        {
+          "labels": [],
+          "number": 474
+        },
+        {
+          "labels": [],
+          "number": 473
+        },
+        {
+          "labels": [],
+          "number": 471
+        },
+        {
+          "labels": [],
+          "number": 470
+        },
+        {
+          "labels": [],
+          "number": 468
+        },
+        {
+          "labels": [],
+          "number": 467
+        },
+        {
+          "labels": [],
+          "number": 466
+        },
+        {
+          "labels": [],
+          "number": 465
+        },
+        {
+          "labels": [],
+          "number": 464
+        },
+        {
+          "labels": [],
+          "number": 462
+        },
+        {
+          "labels": [],
+          "number": 457
+        },
+        {
+          "labels": [],
+          "number": 456
+        },
+        {
+          "labels": [],
+          "number": 455
+        },
+        {
+          "labels": [],
+          "number": 454
+        },
+        {
+          "labels": [],
+          "number": 453
+        },
+        {
+          "labels": [],
+          "number": 452
+        },
+        {
+          "labels": [],
+          "number": 451
+        },
+        {
+          "labels": [],
+          "number": 450
+        },
+        {
+          "labels": [],
+          "number": 447
+        },
+        {
+          "labels": [],
+          "number": 446
+        },
+        {
+          "labels": [],
+          "number": 445
+        },
+        {
+          "labels": [],
+          "number": 435
+        },
+        {
+          "labels": [],
+          "number": 434
+        },
+        {
+          "labels": [],
+          "number": 419
+        },
+        {
+          "labels": [],
+          "number": 418
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 416
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 414
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 409
+        },
+        {
+          "labels": [],
+          "number": 401
+        },
+        {
+          "labels": [],
+          "number": 400
+        },
+        {
+          "labels": [],
+          "number": 398
+        },
+        {
+          "labels": [],
+          "number": 397
+        },
+        {
+          "labels": [],
+          "number": 396
+        },
+        {
+          "labels": [],
+          "number": 395
+        },
+        {
+          "labels": [],
+          "number": 394
+        },
+        {
+          "labels": [],
+          "number": 386
+        },
+        {
+          "labels": [],
+          "number": 384
+        },
+        {
+          "labels": [],
+          "number": 320
+        },
+        {
+          "labels": [],
+          "number": 319
+        },
+        {
+          "labels": [],
+          "number": 318
+        },
+        {
+          "labels": [],
+          "number": 317
+        },
+        {
+          "labels": [],
+          "number": 316
+        },
+        {
+          "labels": [],
+          "number": 315
+        },
+        {
+          "labels": [],
+          "number": 314
+        },
+        {
+          "labels": [],
+          "number": 312
+        },
+        {
+          "labels": [],
+          "number": 311
+        },
+        {
+          "labels": [],
+          "number": 308
+        },
+        {
+          "labels": [],
+          "number": 298
+        },
+        {
+          "labels": [],
+          "number": 296
+        },
+        {
+          "labels": [],
+          "number": 294
+        },
+        {
+          "labels": [],
+          "number": 292
+        },
+        {
+          "labels": [],
+          "number": 290
+        },
+        {
+          "labels": [],
+          "number": 287
+        },
+        {
+          "labels": [],
+          "number": 264
+        },
+        {
+          "labels": [],
+          "number": 198
+        },
+        {
+          "labels": [],
+          "number": 195
+        },
+        {
+          "labels": [],
+          "number": 192
+        },
+        {
+          "labels": [],
+          "number": 190
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 186
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 184
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 181
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 173
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 171
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 141
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 127
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 126
+        },
+        {
+          "labels": [
+            "enhancement"
+          ],
+          "number": 123
+        },
+        {
+          "labels": [],
+          "number": 78
+        },
+        {
+          "labels": [],
+          "number": 76
+        }
+      ],
+      "leases": [
+        {
+          "active": true,
+          "age_seconds": 131032,
+          "id": 6184549580,
+          "issue": 1736,
+          "material_fingerprint": "cbeb1829229ae7f9",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 131044,
+          "id": 6184547135,
+          "issue": 1732,
+          "material_fingerprint": "c76e3b3650fc3851",
+          "owner": "github-actions[bot]",
+          "stale": true
+        },
+        {
+          "active": true,
+          "age_seconds": 2913371,
+          "id": 5649481701,
+          "issue": 1396,
+          "material_fingerprint": "871f271dc2c402e7",
+          "owner": "github-actions[bot]",
+          "stale": true
+        }
+      ],
+      "provider": {
+        "disabled": false,
+        "status": "UNKNOWN"
+      },
+      "schema": "oc.completion-health-snapshot.v1"
+    },
+    "current_running_lease": null,
+    "duplicate_authoritative_mission_count": "UNKNOWN",
+    "generated_at": "2026-10-16T17:03:18.587062Z",
+    "healthy": false,
+    "integration_head": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4",
+    "last_dispatch_time": "UNKNOWN",
+    "last_integration_promotion": "UNKNOWN",
+    "last_main_promotion": "UNKNOWN",
+    "last_successful_exact_head_validation": "UNKNOWN",
+    "main_head": "176198f64082fdfd2c199728cd33a110a63af7f1",
+    "observation_complete": true,
+    "observation_errors": [],
+    "provider_availability_state": "UNKNOWN",
+    "queued_p0_count": 0,
+    "reason_no_work_running": "UNKNOWN",
+    "running_lease_count": 0,
+    "scheduler_heartbeat": "2026-10-16T17:01:46Z",
+    "schema": "orchid.control-plane-health.v1",
+    "stale_lease_count": 3,
+    "validating_count": 11
+  },
+  "schema": "oc.hosted-completion-evidence.v1",
+  "state": {
+    "assignment": {
+      "checker_id": "anthropic:checker:38936485602:1943",
+      "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+      "issue_number": 1943,
+      "maker_id": "anthropic:maker:38936048086:1943",
+      "material_fingerprint": "2add321e7673565f3872178ee269af55588948677a540838464a97aed651569f",
+      "pr_number": 1953,
+      "repository": "jsp1440/orchid-calyx-backend"
+    },
+    "assignment_comment": 6220592727,
+    "attempt_comment": 6220593136,
+    "context": {
+      "completion_run": 38936485602,
+      "head": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+      "issue": 1943,
+      "lease": 6220534479,
+      "pr": 1953,
+      "repository": "jsp1440/orchid-calyx-backend",
+      "trusted_sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4",
+      "worker_attempt": 1,
+      "worker_run": 38936048086
+    },
+    "decision": {
+      "action": "owner_gate",
+      "continuation": {
+        "action": "continue_provider_free",
+        "fingerprint": "f4d5e6c5f650d3aec4ae934752499adaa50a5dad83314bd229f3588f2443b3e8",
+        "reason": "TERMINAL_EVENT_READY_FOR_DETERMINISTIC_RECONCILIATION",
+        "side_effects_authorized": false
+      },
+      "factory": {
+        "action": "owner_gate",
+        "fingerprint": "64fadd764c9baeebe981c010b5e71b374a5ba6f18bdd218982954a7b641e4852",
+        "integration_authorized": false,
+        "reason": "OWNER_GOVERNED_BOUNDARY"
+      },
+      "integration_authorized": false,
+      "mission_status": "blocked",
+      "reason": "OWNER_GOVERNED_BOUNDARY"
+    },
+    "decision_comment": 6220600319,
+    "evidence_body": "<!-- OC-CHECKER-EVIDENCE-V1\n{\n  \"checked_head_sha\": \"dfc62025dd27e1bebbc110ad3a3f92529bee1c2c\",\n  \"checker_id\": \"anthropic:checker:38936485602:1943\",\n  \"checks_head_sha\": \"\",\n  \"issue_number\": 1943,\n  \"maker_id\": \"anthropic:maker:38936048086:1943\",\n  \"material_fingerprint\": \"2add321e7673565f3872178ee269af55588948677a540838464a97aed651569f\",\n  \"pr_number\": 1953,\n  \"reason\": \"The diff correctly fixes the pagination logic to only advertise `next_offset` when the first hop is truncated, not deeper hops. Changes are limited to the allowed paths: `runtime/knowledge_graph/traversal.py` (adds `first_hop_truncated` tracking and updates import from `typing.Iterable` to `collections.abc.Iterable` per ruff UP035) and a new test file `tests/test_knowledge_graph_traversal_deep_hop_pagination.py`. The logic is sound: tracking truncation at any hop for the `truncated` flag, but only setting `next_offset` when `hop_index == 0` and truncation occurs. Tests cover all three required scenarios (deep-hop truncation with no next_offset, first-hop truncation with next_offset, no truncation with no next_offset) and additional continuation test. No other files are modified, and the implementation maintains backward compatibility for existing pagination behavior at the first hop.\",\n  \"repair_lineage\": null,\n  \"repository\": \"jsp1440/orchid-calyx-backend\",\n  \"required_checks_passed\": true,\n  \"tag\": \"OC-CHECKER-EVIDENCE-V1\",\n  \"verdict\": \"pass\"\n}\n-->\n[OC-CHECKER-EVIDENCE] Checker `anthropic:checker:38936485602:1943` verdict: **PASS** on head `dfc62025dd27` for issue #1943 (PR #1953). The diff correctly fixes the pagination logic to only advertise `next_offset` when the first hop is truncated, not deeper hops. Changes are limited to the allowed paths: `runtime/knowledge_graph/traversal.py` (adds `first_hop_truncated` tracking and updates import from `typing.Iterable` to `collections.abc.Iterable` per ruff UP035) and a new test file `tests/test_knowledge_graph_traversal_deep_hop_pagination.py`. The logic is sound: tracking truncation at any hop for the `truncated` flag, but only setting `next_offset` when `hop_index == 0` and truncation occurs. Tests cover all three required scenarios (deep-hop truncation with no next_offset, first-hop truncation with next_offset, no truncation with no next_offset) and additional continuation test. No other files are modified, and the implementation maintains backward compatibility for existing pagination behavior at the first hop.",
+    "evidence_comment": 6220595381,
+    "grant": {
+      "allowed_paths": [
+        "runtime/knowledge_graph/traversal.py",
+        "tests/test_knowledge_graph_traversal_deep_hop_pagination.py"
+      ],
+      "checker_calls": 1,
+      "comment_id": 6220480219,
+      "digest": "f14747eaefd9859318c3a28d5d6ccca7259b6b2fed4d5ec519a252be19926e4d",
+      "expires_at": "2026-11-15T00:00:00Z",
+      "issue": 1943,
+      "issue_material": "677f6d486e894fffb1a6ae28f8ab20ceaf59b985dd21c0bc4b52cf453039854a",
+      "repository": "jsp1440/orchid-calyx-backend",
+      "risk": "low",
+      "standing": true,
+      "target": "oc-autonomous-integration"
+    },
+    "intent": {
+      "changes_credentials": false,
+      "changes_scientific_authority": false,
+      "destructive": false,
+      "exposes_sensitive_locality": false,
+      "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+      "issue_number": 1943,
+      "provider_required": false,
+      "repository": "jsp1440/orchid-calyx-backend",
+      "reversible": true,
+      "risk_tier": "low",
+      "spends_money": false,
+      "target_branch": "oc-autonomous-integration",
+      "touches_production": false
+    },
+    "prompt": {
+      "files": [
+        {
+          "filename": "runtime/knowledge_graph/traversal.py",
+          "patch": "@@ -9,7 +9,8 @@\n \n from __future__ import annotations\n \n-from typing import Any, Iterable\n+from collections.abc import Iterable\n+from typing import Any\n \n from .models import Edge, Node\n from .repository import GraphRepository\n@@ -48,8 +49,9 @@ def traverse(\n     collected_edges: dict[int, Edge] = {}\n     frontier = [focal.kg_node_id]\n     truncated = False\n+    first_hop_truncated = False\n \n-    for _ in range(depth):\n+    for hop_index in range(depth):\n         if not frontier:\n             break\n         edges = repo.get_outgoing_edges(\n@@ -60,6 +62,9 @@ def traverse(\n         )\n         if len(edges) > limit:\n             truncated = True\n+            # Only track first hop truncation\n+            if hop_index == 0:\n+                first_hop_truncated = True\n             edges = edges[:limit]\n \n         next_ids: list[int] = []\n@@ -99,7 +104,7 @@ def traverse(\n             \"limit\": limit,\n             \"offset\": requested_offset,\n             \"truncated\": truncated,\n-            \"next_offset\": (requested_offset + limit) if truncated else None,\n+            \"next_offset\": (requested_offset + limit) if first_hop_truncated else None,\n         },\n         \"filters\": {\n             \"node_types\": sorted(node_type_filter) if node_type_filter else None,",
+          "status": "modified"
+        },
+        {
+          "filename": "tests/test_knowledge_graph_traversal_deep_hop_pagination.py",
+          "patch": "@@ -0,0 +1,150 @@\n+\"\"\"Tests for pagination behavior when deeper hops are truncated.\n+\n+This module tests the pagination logic to ensure that next_offset is only\n+advertised when the first hop is truncated, not when deeper hops overflow.\n+\"\"\"\n+\n+from __future__ import annotations\n+\n+from runtime.knowledge_graph import (\n+    Edge,\n+    InMemoryGraphRepository,\n+    Node,\n+    traverse,\n+)\n+\n+\n+def _genus(nid, label, source_pk):\n+    return Node(nid, \"genus\", f\"genus:{source_pk}\", label,\n+                \"public.taxonomy_genus\", str(source_pk), \"curated\", 1.0, \"high\")\n+\n+\n+def _species(nid, label, source_pk):\n+    return Node(nid, \"taxon\", f\"taxon:{source_pk}\", label,\n+                \"public.taxonomy_species\", str(source_pk), \"curated\", 1.0, \"high\")\n+\n+\n+def _image(nid, image_id):\n+    return Node(nid, \"image\", f\"image:{image_id}\", f\"Image {image_id}\",\n+                \"oc_core.media_assets\", str(image_id), \"harvested\", 0.8, \"medium\")\n+\n+\n+def _edge(eid, etype, frm, to):\n+    return Edge(eid, etype, frm, to, \"public.taxonomy_species\", str(to),\n+                \"curated\", 1.0, \"high\", \"taxonomy_rule\")\n+\n+\n+def test_deep_hop_truncation_no_next_offset():\n+    \"\"\"Test that truncation at deeper hops does not set next_offset.\n+\n+    Graph: genus -> 1 species -> 3 images\n+    Query: depth=2, limit=2\n+\n+    The species hop has 1 edge (no truncation).\n+    The image hop would have 3 edges, but we only fetch 2 (truncated).\n+    Result: truncated=True but next_offset should be None because\n+    the first hop (genus->species) was not truncated.\n+    \"\"\"\n+    nodes = [\n+        _genus(1, \"Genus A\", 560),\n+        _species(2, \"Species A\", \"a b\"),\n+        _image(10, 0),\n+        _image(11, 1),\n+        _image(12, 2),\n+    ]\n+    edges = [\n+        _edge(1, \"genus_contains_species\", 1, 2),\n+        Edge(10, \"has_image\", 2, 10, \"oc_core.media_assets\", \"0\",\n+             \"harvested\", 0.8, \"medium\", \"media_rule\"),\n+        Edge(11, \"has_image\", 2, 11, \"oc_core.media_assets\", \"1\",\n+             \"harvested\", 0.8, \"medium\", \"media_rule\"),\n+        Edge(12, \"has_image\", 2, 12, \"oc_core.media_assets\", \"2\",\n+             \"harvested\", 0.8, \"medium\", \"media_rule\"),\n+    ]\n+    repo = InMemoryGraphRepository(nodes, edges)\n+    focal = repo.find_genus_node(\"Genus A\")\n+\n+    result = traverse(repo, focal, depth=2, limit=2)\n+\n+    # The result should show truncation at the image level\n+    assert result[\"pagination\"][\"truncated\"] is True\n+    # But next_offset should be None because first hop was not truncated\n+    assert result[\"pagination\"][\"next_offset\"] is None\n+    # We should have fetched 1 species and 2 images (limited by limit=2 at image hop)\n+    assert result[\"graph\"][\"node_count\"] == 3  # 1 species + 2 images\n+\n+\n+def test_first_hop_truncation_sets_next_offset():\n+    \"\"\"Test that truncation at the first hop properly sets next_offset.\n+\n+    Graph: genus -> 5 species (limited to 2)\n+    Query: depth=1, limit=2\n+\n+    Result: truncated=True and next_offset=2 because the first (and only) hop\n+    is truncated.\n+    \"\"\"\n+    nodes = [_genus(1, \"Genus A\", 560)]\n+    edges = []\n+    for i in range(5):\n+        nid = 2 + i\n+        nodes.append(_species(nid, f\"Species {i}\", f\"sp{i}\"))\n+        edges.append(_edge(i + 1, \"genus_contains_species\", 1, nid))\n+\n+    repo = InMemoryGraphRepository(nodes, edges)\n+    focal = repo.find_genus_node(\"Genus A\")\n+\n+    result = traverse(repo, focal, depth=1, limit=2)\n+\n+    assert result[\"pagination\"][\"truncated\"] is True\n+    assert result[\"pagination\"][\"next_offset\"] == 2\n+    assert result[\"graph\"][\"node_count\"] == 2\n+\n+\n+def test_first_hop_with_offset_continuation():\n+    \"\"\"Test that pagination continuation at first hop works correctly.\n+\n+    Graph: genus -> 5 species\n+    Query: depth=1, limit=2, offset=2\n+\n+    Result: truncated=True and next_offset=4 to continue pagination.\n+    \"\"\"\n+    nodes = [_genus(1, \"Genus A\", 560)]\n+    edges = []\n+    for i in range(5):\n+        nid = 2 + i\n+        nodes.append(_species(nid, f\"Species {i}\", f\"sp{i}\"))\n+        edges.append(_edge(i + 1, \"genus_contains_species\", 1, nid))\n+\n+    repo = InMemoryGraphRepository(nodes, edges)\n+    focal = repo.find_genus_node(\"Genus A\")\n+\n+    result = traverse(repo, focal, depth=1, limit=2, offset=2)\n+\n+    assert result[\"pagination\"][\"truncated\"] is True\n+    assert result[\"pagination\"][\"next_offset\"] == 4\n+    assert result[\"graph\"][\"node_count\"] == 2\n+\n+\n+def test_no_truncation_no_next_offset():\n+    \"\"\"Test that when there is no truncation, next_offset is None.\n+\n+    Graph: genus -> 2 species\n+    Query: depth=1, limit=5\n+\n+    Result: truncated=False and next_offset=None.\n+    \"\"\"\n+    nodes = [_genus(1, \"Genus A\", 560)]\n+    edges = []\n+    for i in range(2):\n+        nid = 2 + i\n+        nodes.append(_species(nid, f\"Species {i}\", f\"sp{i}\"))\n+        edges.append(_edge(i + 1, \"genus_contains_species\", 1, nid))\n+\n+    repo = InMemoryGraphRepository(nodes, edges)\n+    focal = repo.find_genus_node(\"Genus A\")\n+\n+    result = traverse(repo, focal, depth=1, limit=5)\n+\n+    assert result[\"pagination\"][\"truncated\"] is False\n+    assert result[\"pagination\"][\"next_offset\"] is None\n+    assert result[\"graph\"][\"node_count\"] == 2",
+          "status": "added"
+        }
+      ],
+      "head": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+      "task": {
+        "body": "## Problem\n`traverse` (`runtime/knowledge_graph/traversal.py`, served by `/api/knowledge-graph/{node,taxon,genus}`) applies `offset` only to the first hop, but sets `truncated`/`next_offset` when any hop overflows. With a genus -> 1 species -> 3 images graph, `traverse(repo, genus, depth=2, limit=2)[\"pagination\"]` is `{\"limit\": 2, \"offset\": 0, \"truncated\": True, \"next_offset\": 2}`, and following it (`offset=2`) returns an empty graph (`node_count` 0).\n\n## Required behaviour\n- `next_offset` is `offset + limit` only when the first hop itself was truncated; otherwise it is `None`. `truncated` still reports truncation at any hop.\n- For the graph above (nodes `Node(1,\"genus\",\"genus:a\",\"A\")`, `Node(2,\"species\",\"taxon:a b\",\"A b\")`, `Node(10+i,\"image\",f\"image:{i}\")` for i in 0..2; edges `Edge(1,\"genus_contains_species\",1,2)` and `Edge(10+i,\"has_image\",2,10+i)`, in an `InMemoryGraphRepository`), `traverse(repo, genus, depth=2, limit=2)[\"pagination\"] == {\"limit\": 2, \"offset\": 0, \"truncated\": True, \"next_offset\": None}`.\n- A genus with 5 species at `depth=1, limit=2` keeps `next_offset == 2` (and `4` at `offset=2`), as today.\n- With no truncation at any hop: `truncated` is `False` and `next_offset` is `None`.\n- Also replace `typing.Iterable` with `collections.abc.Iterable` in this file (ruff UP035 currently fails here). Nothing else changes.\n\n## Scope\nAllowed paths:\n- `runtime/knowledge_graph/traversal.py`\n- `tests/test_knowledge_graph_traversal_deep_hop_pagination.py`\n\nDo not change any other file. Existing tests must keep passing unchanged; add new tests only to the test file above. `tests/test_knowledge_graph_traversal_deep_hop_pagination.py` is a new file.\n\n## Validation\n- `python -m pytest -q tests/test_knowledge_graph_traversal_deep_hop_pagination.py tests/test_knowledge_graph_traversal.py`\n- `python -m ruff check runtime/knowledge_graph/traversal.py tests/test_knowledge_graph_traversal_deep_hop_pagination.py`\n\nNew tests must cover:\n- the three pagination cases above, building the graphs from `runtime.knowledge_graph.models` (`Node`, `Edge`) and `runtime.knowledge_graph.repository.InMemoryGraphRepository`.\n\nOC-SWARM-CAPABILITY: open-ended-code-authoring\nOC-SWARM-WRITES: knowledge-graph\n\n---\n_Generated by [Claude Code](https://claude.ai/code)_",
+        "title": "Do not advertise next_offset when only a deeper knowledge-graph hop was truncated"
+      },
+      "validation_run": 38936482131
+    },
+    "review": {
+      "changes_credentials": false,
+      "changes_scientific_authority": false,
+      "destructive": false,
+      "exposes_sensitive_locality": false,
+      "reason": "The diff correctly fixes the pagination logic to only advertise `next_offset` when the first hop is truncated, not deeper hops. Changes are limited to the allowed paths: `runtime/knowledge_graph/traversal.py` (adds `first_hop_truncated` tracking and updates import from `typing.Iterable` to `collections.abc.Iterable` per ruff UP035) and a new test file `tests/test_knowledge_graph_traversal_deep_hop_pagination.py`. The logic is sound: tracking truncation at any hop for the `truncated` flag, but only setting `next_offset` when `hop_index == 0` and truncation occurs. Tests cover all three required scenarios (deep-hop truncation with no next_offset, first-hop truncation with next_offset, no truncation with no next_offset) and additional continuation test. No other files are modified, and the implementation maintains backward compatibility for existing pagination behavior at the first hop.",
+      "reversible": true,
+      "risk": "low",
+      "spends_money": false,
+      "touches_production": true,
+      "verdict": "pass"
+    },
+    "usage": {
+      "model": "claude-haiku-4-5-20251001",
+      "usage": {
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "inference_geo": "not_available",
+        "input_tokens": 4453,
+        "output_tokens": 288,
+        "service_tier": "standard",
+        "speed": "standard"
+      }
+    },
+    "validation": {
+      "base_sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4",
+      "checks": [
+        {
+          "app": {
+            "client_id": "Iv1.05c79e9ad1f6bdfa",
+            "created_at": "2018-07-30T09:30:17Z",
+            "description": "Automate your workflow from idea to production",
+            "events": [
+              "branch_protection_rule",
+              "check_run",
+              "check_suite",
+              "create",
+              "delete",
+              "deployment",
+              "deployment_status",
+              "discussion",
+              "discussion_comment",
+              "fork",
+              "gollum",
+              "issues",
+              "issue_comment",
+              "label",
+              "merge_group",
+              "milestone",
+              "page_build",
+              "public",
+              "pull_request",
+              "pull_request_review",
+              "pull_request_review_comment",
+              "push",
+              "registry_package",
+              "release",
+              "repository",
+              "repository_dispatch",
+              "status",
+              "watch",
+              "workflow_dispatch",
+              "workflow_run"
+            ],
+            "external_url": "https://help.github.com/en/actions",
+            "html_url": "https://github.com/apps/github-actions",
+            "id": 15368,
+            "name": "GitHub Actions",
+            "node_id": "MDM6QXBwMTUzNjg=",
+            "owner": {
+              "avatar_url": "https://avatars.githubusercontent.com/u/9919?v=4",
+              "events_url": "https://api.github.com/users/github/events{/privacy}",
+              "followers_url": "https://api.github.com/users/github/followers",
+              "following_url": "https://api.github.com/users/github/following{/other_user}",
+              "gists_url": "https://api.github.com/users/github/gists{/gist_id}",
+              "gravatar_id": "",
+              "html_url": "https://github.com/github",
+              "id": 9919,
+              "login": "github",
+              "node_id": "MDEyOk9yZ2FuaXphdGlvbjk5MTk=",
+              "organizations_url": "https://api.github.com/users/github/orgs",
+              "received_events_url": "https://api.github.com/users/github/received_events",
+              "repos_url": "https://api.github.com/users/github/repos",
+              "site_admin": false,
+              "starred_url": "https://api.github.com/users/github/starred{/owner}{/repo}",
+              "subscriptions_url": "https://api.github.com/users/github/subscriptions",
+              "type": "Organization",
+              "url": "https://api.github.com/users/github",
+              "user_view_type": "public"
+            },
+            "permissions": {
+              "actions": "write",
+              "administration": "read",
+              "artifact_metadata": "write",
+              "attestations": "write",
+              "checks": "write",
+              "code_quality": "write",
+              "contents": "write",
+              "copilot_requests": "write",
+              "deployments": "write",
+              "discussions": "write",
+              "drives": "write",
+              "issues": "write",
+              "merge_queues": "write",
+              "metadata": "read",
+              "models": "read",
+              "packages": "write",
+              "pages": "write",
+              "pull_requests": "write",
+              "repository_hooks": "write",
+              "repository_projects": "write",
+              "security_events": "write",
+              "statuses": "write",
+              "vulnerability_alerts": "read"
+            },
+            "slug": "github-actions",
+            "updated_at": "2026-06-18T16:17:48Z"
+          },
+          "check_suite": {
+            "id": 105522224544
+          },
+          "completed_at": "2026-10-16T17:02:25Z",
+          "conclusion": "success",
+          "details_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38936482131/job/117093172277",
+          "external_id": "70f571eb-73d7-59b9-99c3-d4384e2cdb78",
+          "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38936482131/job/117093172277",
+          "id": 117093172277,
+          "name": "validate",
+          "node_id": "CR_kwDORL8wa88AAAAbQ0wENQ",
+          "output": {
+            "annotations_count": 2,
+            "annotations_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/117093172277/annotations",
+            "summary": null,
+            "text": null,
+            "title": null
+          },
+          "pull_requests": [
+            {
+              "base": {
+                "ref": "oc-autonomous-integration",
+                "repo": {
+                  "id": 1153380459,
+                  "name": "orchid-calyx-backend",
+                  "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+                },
+                "sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4"
+              },
+              "head": {
+                "ref": "claude-direct/issue-1943-38936048086",
+                "repo": {
+                  "id": 1153380459,
+                  "name": "orchid-calyx-backend",
+                  "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+                },
+                "sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c"
+              },
+              "id": 4891650608,
+              "number": 1953,
+              "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls/1953"
+            }
+          ],
+          "started_at": "2026-10-16T17:01:37Z",
+          "status": "completed",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/117093172277"
+        }
+      ],
+      "commit_status_evidence": {
+        "commit_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits/dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+        "repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+        "state": "failure",
+        "statuses": [
+          {
+            "avatar_url": "https://avatars.githubusercontent.com/in/1054195?v=4",
+            "context": "recurseml/analysis",
+            "created_at": "2026-10-16T17:01:30Z",
+            "description": "Error occurred during analysis (4c9d2a78..dfc62025)",
+            "id": 56543721937,
+            "node_id": "SC_kwDORL8wa88AAAANKkS50Q",
+            "state": "error",
+            "target_url": "https://github.com/jsp1440/orchid-calyx-backend/pull/1953/files",
+            "updated_at": "2026-10-16T17:01:30Z",
+            "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/dfc62025dd27e1bebbc110ad3a3f92529bee1c2c"
+          }
+        ],
+        "total_count": 1,
+        "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits/dfc62025dd27e1bebbc110ad3a3f92529bee1c2c/status"
+      },
+      "jobs": [
+        {
+          "check_run_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-runs/117093172277",
+          "completed_at": "2026-10-16T17:02:25Z",
+          "conclusion": "success",
+          "created_at": "2026-10-16T17:01:35Z",
+          "head_branch": "claude-direct/issue-1943-38936048086",
+          "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38936482131/job/117093172277",
+          "id": 117093172277,
+          "labels": [
+            "ubuntu-latest"
+          ],
+          "name": "validate",
+          "node_id": "CR_kwDORL8wa88AAAAbQ0wENQ",
+          "run_attempt": 1,
+          "run_id": 38936482131,
+          "run_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131",
+          "runner_group_id": 0,
+          "runner_group_name": "GitHub Actions",
+          "runner_id": 1000114999,
+          "runner_name": "GitHub Actions 1000114999",
+          "started_at": "2026-10-16T17:01:37Z",
+          "status": "completed",
+          "steps": [
+            {
+              "completed_at": "2026-10-16T17:01:38Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "started_at": "2026-10-16T17:01:37Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:01:50Z",
+              "conclusion": "success",
+              "name": "Initialize containers",
+              "number": 2,
+              "started_at": "2026-10-16T17:01:38Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:01:53Z",
+              "conclusion": "success",
+              "name": "Run actions/checkout@v4",
+              "number": 3,
+              "started_at": "2026-10-16T17:01:50Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:01:55Z",
+              "conclusion": "success",
+              "name": "Swarm post-build write-set verification",
+              "number": 4,
+              "started_at": "2026-10-16T17:01:53Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:01:57Z",
+              "conclusion": "success",
+              "name": "Run actions/setup-python@v5",
+              "number": 5,
+              "started_at": "2026-10-16T17:01:55Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:18Z",
+              "conclusion": "success",
+              "name": "Install runtime and validation dependencies",
+              "number": 6,
+              "started_at": "2026-10-16T17:01:57Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:19Z",
+              "conclusion": "success",
+              "name": "Diff hygiene",
+              "number": 7,
+              "started_at": "2026-10-16T17:02:18Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:21Z",
+              "conclusion": "success",
+              "name": "Compile Python sources",
+              "number": 8,
+              "started_at": "2026-10-16T17:02:19Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:22Z",
+              "conclusion": "success",
+              "name": "Validate changed Python files",
+              "number": 9,
+              "started_at": "2026-10-16T17:02:21Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:22Z",
+              "conclusion": "success",
+              "name": "Post Run actions/setup-python@v5",
+              "number": 16,
+              "started_at": "2026-10-16T17:02:22Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:22Z",
+              "conclusion": "success",
+              "name": "Post Run actions/checkout@v4",
+              "number": 17,
+              "started_at": "2026-10-16T17:02:22Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:24Z",
+              "conclusion": "success",
+              "name": "Stop containers",
+              "number": 18,
+              "started_at": "2026-10-16T17:02:22Z",
+              "status": "completed"
+            },
+            {
+              "completed_at": "2026-10-16T17:02:24Z",
+              "conclusion": "success",
+              "name": "Complete job",
+              "number": 19,
+              "started_at": "2026-10-16T17:02:24Z",
+              "status": "completed"
+            }
+          ],
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/jobs/117093172277",
+          "workflow_name": "Orchid Autonomous Backend Validation"
+        }
+      ],
+      "required_status_contexts": [],
+      "ruleset_evidence": [],
+      "run": {
+        "actor": {
+          "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
+          "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+          "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+          "gravatar_id": "",
+          "html_url": "https://github.com/apps/github-actions",
+          "id": 41898282,
+          "login": "github-actions[bot]",
+          "node_id": "MDM6Qm90NDE4OTgyODI=",
+          "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+          "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+          "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+          "site_admin": false,
+          "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+          "type": "Bot",
+          "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+          "user_view_type": "public"
+        },
+        "artifacts_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131/artifacts",
+        "cancel_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131/cancel",
+        "check_suite_id": 105522224544,
+        "check_suite_node_id": "CS_kwDORL8wa88AAAAYkZ1doA",
+        "check_suite_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/check-suites/105522224544",
+        "conclusion": "success",
+        "created_at": "2026-10-16T17:01:33Z",
+        "display_title": "Orchid Autonomous Backend Validation",
+        "event": "workflow_dispatch",
+        "head_branch": "claude-direct/issue-1943-38936048086",
+        "head_commit": {
+          "author": {
+            "email": "41898282+github-actions[bot]@users.noreply.github.com",
+            "name": "orchid-continuum-orchestrator[bot]"
+          },
+          "committer": {
+            "email": "41898282+github-actions[bot]@users.noreply.github.com",
+            "name": "orchid-continuum-orchestrator[bot]"
+          },
+          "id": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+          "message": "feat(oc): implement issue #1943 via direct Claude",
+          "timestamp": "2026-10-16T17:01:20Z",
+          "tree_id": "e37cb1dbaaa33eb759a4b922716f131460e3cf2c"
+        },
+        "head_repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "head_sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c",
+        "html_url": "https://github.com/jsp1440/orchid-calyx-backend/actions/runs/38936482131",
+        "id": 38936482131,
+        "jobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131/jobs",
+        "logs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131/logs",
+        "name": "Orchid Autonomous Backend Validation",
+        "node_id": "WFR_kwLORL8wa88AAAAJEMuRUw",
+        "path": ".github/workflows/orchid-autonomous-validation.yml",
+        "previous_attempt_url": null,
+        "pull_requests": [
+          {
+            "base": {
+              "ref": "oc-autonomous-integration",
+              "repo": {
+                "id": 1153380459,
+                "name": "orchid-calyx-backend",
+                "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+              },
+              "sha": "4c9d2a783bdd04d61588d1eb660bb39b21c3a2e4"
+            },
+            "head": {
+              "ref": "claude-direct/issue-1943-38936048086",
+              "repo": {
+                "id": 1153380459,
+                "name": "orchid-calyx-backend",
+                "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+              },
+              "sha": "dfc62025dd27e1bebbc110ad3a3f92529bee1c2c"
+            },
+            "id": 4891650608,
+            "number": 1953,
+            "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls/1953"
+          }
+        ],
+        "referenced_workflows": [],
+        "repository": {
+          "archive_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/{archive_format}{/ref}",
+          "assignees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/assignees{/user}",
+          "blobs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/blobs{/sha}",
+          "branches_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/branches{/branch}",
+          "collaborators_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/collaborators{/collaborator}",
+          "comments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/comments{/number}",
+          "commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/commits{/sha}",
+          "compare_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/compare/{base}...{head}",
+          "contents_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contents/{+path}",
+          "contributors_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/contributors",
+          "deployments_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/deployments",
+          "description": "Initial Calyx backend with judging system",
+          "downloads_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/downloads",
+          "events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/events",
+          "fork": false,
+          "forks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/forks",
+          "full_name": "jsp1440/orchid-calyx-backend",
+          "git_commits_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/commits{/sha}",
+          "git_refs_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/refs{/sha}",
+          "git_tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/tags{/sha}",
+          "hooks_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/hooks",
+          "html_url": "https://github.com/jsp1440/orchid-calyx-backend",
+          "id": 1153380459,
+          "issue_comment_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/comments{/number}",
+          "issue_events_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues/events{/number}",
+          "issues_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/issues{/number}",
+          "keys_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/keys{/key_id}",
+          "labels_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/labels{/name}",
+          "languages_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/languages",
+          "merges_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/merges",
+          "milestones_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/milestones{/number}",
+          "name": "orchid-calyx-backend",
+          "node_id": "R_kgDORL8waw",
+          "notifications_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/notifications{?since,all,participating}",
+          "owner": {
+            "avatar_url": "https://avatars.githubusercontent.com/u/215432720?v=4",
+            "events_url": "https://api.github.com/users/jsp1440/events{/privacy}",
+            "followers_url": "https://api.github.com/users/jsp1440/followers",
+            "following_url": "https://api.github.com/users/jsp1440/following{/other_user}",
+            "gists_url": "https://api.github.com/users/jsp1440/gists{/gist_id}",
+            "gravatar_id": "",
+            "html_url": "https://github.com/jsp1440",
+            "id": 215432720,
+            "login": "jsp1440",
+            "node_id": "U_kgDODNc-EA",
+            "organizations_url": "https://api.github.com/users/jsp1440/orgs",
+            "received_events_url": "https://api.github.com/users/jsp1440/received_events",
+            "repos_url": "https://api.github.com/users/jsp1440/repos",
+            "site_admin": false,
+            "starred_url": "https://api.github.com/users/jsp1440/starred{/owner}{/repo}",
+            "subscriptions_url": "https://api.github.com/users/jsp1440/subscriptions",
+            "type": "User",
+            "url": "https://api.github.com/users/jsp1440",
+            "user_view_type": "public"
+          },
+          "private": false,
+          "pulls_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/pulls{/number}",
+          "releases_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/releases{/id}",
+          "stargazers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/stargazers",
+          "statuses_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/statuses/{sha}",
+          "subscribers_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscribers",
+          "subscription_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/subscription",
+          "tags_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/tags",
+          "teams_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/teams",
+          "trees_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/git/trees{/sha}",
+          "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend"
+        },
+        "rerun_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131/rerun",
+        "run_attempt": 1,
+        "run_number": 1442,
+        "run_started_at": "2026-10-16T17:01:33Z",
+        "status": "completed",
+        "triggering_actor": {
+          "avatar_url": "https://avatars.githubusercontent.com/in/15368?v=4",
+          "events_url": "https://api.github.com/users/github-actions%5Bbot%5D/events{/privacy}",
+          "followers_url": "https://api.github.com/users/github-actions%5Bbot%5D/followers",
+          "following_url": "https://api.github.com/users/github-actions%5Bbot%5D/following{/other_user}",
+          "gists_url": "https://api.github.com/users/github-actions%5Bbot%5D/gists{/gist_id}",
+          "gravatar_id": "",
+          "html_url": "https://github.com/apps/github-actions",
+          "id": 41898282,
+          "login": "github-actions[bot]",
+          "node_id": "MDM6Qm90NDE4OTgyODI=",
+          "organizations_url": "https://api.github.com/users/github-actions%5Bbot%5D/orgs",
+          "received_events_url": "https://api.github.com/users/github-actions%5Bbot%5D/received_events",
+          "repos_url": "https://api.github.com/users/github-actions%5Bbot%5D/repos",
+          "site_admin": false,
+          "starred_url": "https://api.github.com/users/github-actions%5Bbot%5D/starred{/owner}{/repo}",
+          "subscriptions_url": "https://api.github.com/users/github-actions%5Bbot%5D/subscriptions",
+          "type": "Bot",
+          "url": "https://api.github.com/users/github-actions%5Bbot%5D",
+          "user_view_type": "public"
+        },
+        "updated_at": "2026-10-16T17:02:26Z",
+        "url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/runs/38936482131",
+        "workflow_id": 338255043,
+        "workflow_url": "https://api.github.com/repos/jsp1440/orchid-calyx-backend/actions/workflows/338255043"
+      }
+    }
+  }
+}
