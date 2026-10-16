@@ -50,7 +50,7 @@ def _finite(value: Any, error: str) -> float:
         raise TypeError(error)
     try:
         number = float(value)
-    except (TypeError, ValueError) as exc:
+    except (TypeError, ValueError, OverflowError) as exc:
         raise ValueError(error) from exc
     if not math.isfinite(number):
         raise ValueError(error)
