@@ -165,11 +165,25 @@ class LiteratureResultRepository:
         metadata = record.get("metadata") or {}
         if not isinstance(metadata, dict):
             metadata = {}
+        # Handle authors: if it's a string, wrap it as a single-element tuple;
+        # if it's a list, process normally; otherwise empty tuple.
+        authors_raw = metadata.get("authors") or []
+        if isinstance(authors_raw, str):
+            # String authors: strip and wrap, or empty if blank
+            stripped = authors_raw.strip()
+            authors_tuple = (stripped,) if stripped else ()
+        elif isinstance(authors_raw, list):
+            # List authors: process each as a string
+            authors_tuple = tuple(str(author) for author in authors_raw)
+        else:
+            # Dict, number, or other type: empty tuple
+            authors_tuple = ()
+
         return PaperSummary(
             paper_id=str(record.get("paper_id") or paper_id),
             readable=True,
             title=metadata.get("title"),
-            authors=tuple(str(author) for author in (metadata.get("authors") or [])),
+            authors=authors_tuple,
             journal=metadata.get("journal"),
             publication_year=metadata.get("publication_year"),
             claim_count=len(record.get("claims") or []),
