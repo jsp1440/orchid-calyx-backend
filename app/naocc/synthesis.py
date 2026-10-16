@@ -174,10 +174,11 @@ def build_provenance_aware_synthesis(
     # Convergence check: only flag hypothesis if ≥2 independent sources support it.
     hypotheses = [i for i in items if i.category == SynthesisCategory.TESTABLE_HYPOTHESIS]
     for hyp in hypotheses:
-        if len(hyp.supporting_source_ids) < 2:
+        distinct_sources = len(set(hyp.supporting_source_ids))
+        if distinct_sources < 2:
             raise ValueError(
                 f"Testable hypothesis {hyp.item_id!r} requires ≥2 independent "
-                f"supporting sources; has {len(hyp.supporting_source_ids)}: "
+                f"supporting sources; has {distinct_sources}: "
                 f"{hyp.supporting_source_ids}"
             )
 
