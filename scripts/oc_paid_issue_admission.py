@@ -7,7 +7,8 @@ on ten issues nobody authorized, after blocked reconciliation re-queued them
 when a budget variable changed. This gate closes that gap at the last point
 before a provider call. A worker may call a paid provider only for an issue
 that carries exactly one valid owner ``OC-HOSTED-FACTORY-AUTHORIZATION-V1``
-record bound to the issue's current material, unexpired, low/moderate risk.
+record bound to the issue's current material, unexpired, low/moderate risk,
+or, without one, falls inside the owner's standing grant on issue #1924.
 
 The check is the same ``authorization()`` the hosted checker already enforces,
 so a task that could never be integrated also cannot be paid for. It makes no
@@ -35,10 +36,12 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
     """Return the admission decision; never raises for an ordinary refusal."""
     fetch = fetch or _fetch
     try:
-        issue, comments = fetch(repository, issue_number)
+        issue, comments, *standing = fetch(repository, issue_number)
         if issue.get("pull_request") or issue.get("state") != "open":
             raise ValueError("issue_not_open")
-        grant = hosted.authorization(issue, comments, repository, now)
+        grant = hosted.authorization(
+            issue, comments, repository, now, standing[0] if standing else None
+        )
     except Exception as exc:  # noqa: BLE001 - every failure is a refusal
         return {
             "authorized": False,
@@ -52,6 +55,7 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
         "detail": "owner_authorization_valid",
         "issue": issue_number,
         "authorization_comment": grant["comment_id"],
+        "standing": bool(grant.get("standing")),
         "expires_at": grant["expires_at"],
     }
 
@@ -59,7 +63,8 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
 def _fetch(repository: str, issue_number: int):
     issue = hosted.api(repository, f"issues/{issue_number}")
     comments = hosted.pages(repository, f"issues/{issue_number}/comments")
-    return issue, comments
+    # Read only when the issue has no per-issue record of its own.
+    return issue, comments, lambda: hosted.standing_comments(repository)
 
 
 def main() -> int:
