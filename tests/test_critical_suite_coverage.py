@@ -84,6 +84,18 @@ EXCLUDED = {
         "schema, so listing it would only add skips; its own workflow "
         "calyx-intelligence-ledger-validation.yml provisions that database"
     ),
+    "tests/test_literature_staging_authors.py": (
+        "matches 'auth' only through 'authors': it checks that a literature "
+        "record's author string is kept whole, with no authentication concern"
+    ),
+    "tests/test_literature_summary_author_shapes.py": (
+        "matches 'auth' only through 'author': it checks literature summary "
+        "author-name shapes, with no authentication concern"
+    ),
+    "tests/test_primary_source_authority_tier.py": (
+        "matches 'auth' only through 'authority': it checks publisher-domain "
+        "ranking of literature sources, with no authentication concern"
+    ),
 }
 
 

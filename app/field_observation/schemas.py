@@ -67,6 +67,20 @@ def _reject_email_like(value: str | None, *, field: str) -> str | None:
     return value
 
 
+def _reject_whitespace_only_note(value: str) -> str:
+    if value.strip() == "":
+        raise ValueError("note must contain at least one non-whitespace character")
+    return value
+
+
+def _normalize_taxon_hint(value: str | None) -> str | None:
+    if value is None:
+        return None
+    if value.strip() == "":
+        return None
+    return value
+
+
 class MediaDescriptor(BaseModel):
     """Metadata the Field Journal client keeps for an attachment. No bytes, no URL."""
 
@@ -96,6 +110,16 @@ class FieldObservationCreate(BaseModel):
         max_length=120,
         description="The Field Journal's local draft id; makes upload idempotent per observer.",
     )
+
+    @field_validator("note")
+    @classmethod
+    def _note_not_whitespace_only(cls, value: str) -> str:
+        return _reject_whitespace_only_note(value)
+
+    @field_validator("taxon_hint")
+    @classmethod
+    def _taxon_hint_blank_becomes_none(cls, value: str | None) -> str | None:
+        return _normalize_taxon_hint(value)
 
     @model_validator(mode="before")
     @classmethod
