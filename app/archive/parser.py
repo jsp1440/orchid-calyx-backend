@@ -12,6 +12,9 @@ except ImportError:  # optional dependency
 
 
 def parse_structured(content: str, suffix: str) -> Any:
+    # Strip leading UTF-8 BOM if present
+    content = content.removeprefix("\ufeff")
+
     suffix = suffix.lower()
     if suffix == ".json":
         return json.loads(content)
