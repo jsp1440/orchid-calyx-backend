@@ -63,7 +63,8 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
 def _fetch(repository: str, issue_number: int):
     issue = hosted.api(repository, f"issues/{issue_number}")
     comments = hosted.pages(repository, f"issues/{issue_number}/comments")
-    return issue, comments, hosted.standing_comments(repository)
+    # Read only when the issue has no per-issue record of its own.
+    return issue, comments, lambda: hosted.standing_comments(repository)
 
 
 def main() -> int:

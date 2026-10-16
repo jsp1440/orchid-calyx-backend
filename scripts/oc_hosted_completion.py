@@ -40,11 +40,14 @@ from scripts.swarm_anthropic_direct import _parse_allowed_paths
 
 BRANCH = "oc-autonomous-integration"
 AUTH_TAG = "OC-HOSTED-FACTORY-AUTHORIZATION-V1"
-# One owner grant covering a range of issues, so the owner signs once per
-# batch instead of once per issue. It lives on its own issue, never the hub,
-# and must be typed by the owner directly: a comment posted through an app (an
-# agent acting with the owner's token) carries performed_via_github_app and
-# never counts, so the maker cannot authorize its own work.
+# One owner grant covering a batch of issues, so the owner signs once per
+# batch instead of once per issue. It lists each issue with the digest of its
+# title and body, so it covers exactly the text the owner saw: an issue opened
+# or edited afterwards (an agent with the owner's token can do both) is not
+# covered. It lives on its own issue, never the hub, and must be typed by the
+# owner directly: a comment posted through an app carries
+# performed_via_github_app and never counts, so the maker cannot authorize its
+# own work.
 STANDING_TAG = "OC-HOSTED-STANDING-AUTHORIZATION-V1"
 STANDING_ISSUE = 1924
 STANDING_MAX_DAYS = 31
@@ -244,7 +247,13 @@ def _owner_record(record, repository):
 
 
 def _expiry(value):
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    """A timezone-aware timestamp, or a refusal (never a stray TypeError)."""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("authorization_timestamp_invalid") from None
+    require(moment.tzinfo is not None, "authorization_timestamp_invalid")
+    return moment
 
 
 def _safe_allowed_paths(allowed):
@@ -268,11 +277,13 @@ def authorization(issue, comments, repository, now=None, standing=None):
     """A scoped owner record enrolls work; maker-authored PR markers cannot.
 
     A per-issue record, when present, decides alone. Without one, ``standing``
-    (the comments of ``STANDING_ISSUE``) may supply the owner's standing grant.
+    (the comments of ``STANDING_ISSUE``, or a callable returning them, read only
+    then) may supply the owner's standing grant.
     """
     records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
     if not records and standing is not None:
-        return standing_authorization(issue, standing, repository, now)
+        rows = standing() if callable(standing) else standing
+        return standing_authorization(issue, rows, repository, now)
     require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
     record = records[0]
     _owner_record(record, repository)
@@ -296,31 +307,50 @@ def authorization(issue, comments, repository, now=None, standing=None):
 def standing_authorization(issue, standing, repository, now=None):
     """Admit one issue under the owner's standing grant.
 
-    The grant names an issue range, so it cannot bind to text written later.
-    Instead the issue must be opened by the owner account, and its material is
-    pinned when the grant is read: every later phase compares the returned
-    grant, so an edit mid-cycle fails closed. Allowed paths come from the issue
+    The grant lists each covered issue number with the ``issue_material`` digest
+    of its title and body, exactly as the per-issue record binds one issue, so
+    it covers only text that existed when the owner signed: an issue opened or
+    edited afterwards is refused. Every later phase compares the returned grant,
+    so an edit mid-cycle also fails closed. The issue must be open, not a pull
+    request, and opened by the owner account. Allowed paths come from the issue
     body through the executor's own parser. Low risk only, at most
     ``STANDING_MAX_ISSUES`` issues, expiring at most ``STANDING_MAX_DAYS`` after
     the grant was posted. One checker call per issue still holds, because each
     attempt record binds to the grant comment on that issue.
+
+    Only owner-typed rows are considered, so a stray tagged comment from anyone
+    else cannot make the owner's grant ambiguous; two owner grants still are.
     """
-    records = [c for c in standing if STANDING_TAG in (c.get("body") or "")]
+    owner = repository.split("/")[0]
+    records = [
+        c
+        for c in standing
+        if STANDING_TAG in (c.get("body") or "")
+        and (c.get("user") or {}).get("login") == owner
+        and c.get("author_association") == "OWNER"
+        and c.get("performed_via_github_app") is None
+    ]
     require(len(records) == 1, "standing_authorization_missing_or_ambiguous")
     record = records[0]
     _owner_record(record, repository)
     grant = parse_tag(record["body"], STANDING_TAG)
     require(isinstance(grant, dict), "standing_authorization_invalid")
-    first, last = grant.get("first_issue"), grant.get("last_issue")
-    fields = {"repository", "target", "risk", "first_issue", "last_issue", "expires_at"}
+    covered = grant.get("issues")
     require(
-        set(grant) == fields
+        set(grant) == {"repository", "target", "risk", "expires_at", "issues"}
         and grant["repository"] == repository
         and grant["target"] == BRANCH
         and grant["risk"] == "low"
-        and type(first) is int
-        and type(last) is int
-        and 0 < first <= last < first + STANDING_MAX_ISSUES,
+        and isinstance(covered, dict)
+        and 0 < len(covered) <= STANDING_MAX_ISSUES
+        and all(
+            isinstance(k, str)
+            and k.isdigit()
+            and not k.startswith("0")
+            and isinstance(v, str)
+            and re.fullmatch(r"[0-9a-f]{64}", v)
+            for k, v in covered.items()
+        ),
         "standing_authorization_invalid",
     )
     expiry = _expiry(grant["expires_at"])
@@ -330,9 +360,17 @@ def standing_authorization(issue, standing, repository, now=None):
         "standing_authorization_invalid",
     )
     require(expiry > (now or datetime.now(UTC)), "authorization_expired")
-    require(first <= issue["number"] <= last, "issue_outside_standing_authorization")
+    require(str(issue["number"]) in covered, "issue_outside_standing_authorization")
     require(
-        (issue.get("user") or {}).get("login") == repository.split("/")[0],
+        covered[str(issue["number"])] == issue_material(issue),
+        "issue_material_changed",
+    )
+    require(
+        issue.get("state") == "open" and not issue.get("pull_request"),
+        "issue_not_open",
+    )
+    require(
+        (issue.get("user") or {}).get("login") == owner,
         "issue_not_owner_opened",
     )
     allowed = sorted(_parse_allowed_paths(issue.get("body") or "") or ())
@@ -502,7 +540,9 @@ def inspect(context):
     repo, number = context["repository"], context["issue"]
     issue = api(repo, f"issues/{number}")
     comments = pages(repo, f"issues/{number}/comments")
-    grant = authorization(issue, comments, repo, standing=standing_comments(repo))
+    grant = authorization(
+        issue, comments, repo, standing=lambda: standing_comments(repo)
+    )
     pr = api(repo, f"pulls/{context['pr']}")
     lease = api(repo, f"issues/comments/{context['lease']}")
     files = pages(repo, f"pulls/{context['pr']}/files")

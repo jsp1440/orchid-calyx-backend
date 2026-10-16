@@ -1,8 +1,10 @@
-"""The owner's standing grant admits a bounded range of owner-opened issues.
+"""The owner's standing grant admits a listed batch of owner-opened issues.
 
 Per-issue records made the owner sign every task; a standing grant replaces
-that for a batch without letting the maker authorize itself: only a comment the
-owner typed directly counts, never one posted through an app.
+that for a batch without letting the maker authorize itself. Only a comment the
+owner typed directly counts, never one posted through an app, and it lists each
+issue with the digest of the text the owner saw, so an issue opened or edited
+afterwards (an agent with the owner's token can do both) is not covered.
 """
 
 from __future__ import annotations
@@ -36,14 +38,15 @@ def _issue(number=1914, **overrides):
     return issue
 
 
-def _grant(**overrides):
+def _grant(issues=None, **overrides):
     grant = {
         "repository": REPO,
         "target": hosted.BRANCH,
         "risk": "low",
-        "first_issue": 1914,
-        "last_issue": 1960,
         "expires_at": "2026-11-15T00:00:00Z",
+        "issues": issues
+        if issues is not None
+        else {"1914": hosted.issue_material(_issue())},
     }
     grant.update(overrides)
     return grant
@@ -68,7 +71,7 @@ def _authorize(issue, standing, comments=()):
     return hosted.authorization(issue, list(comments), REPO, NOW, standing)
 
 
-def test_an_owner_typed_grant_admits_an_owner_opened_issue_in_range():
+def test_an_owner_typed_grant_admits_a_listed_unchanged_issue():
     grant = _authorize(_issue(), [_record()])
     assert grant["standing"] is True
     assert grant["comment_id"] == 7000000001
@@ -83,11 +86,64 @@ def test_an_owner_typed_grant_admits_an_owner_opened_issue_in_range():
     ]
 
 
+def test_the_standing_comments_are_read_only_without_a_per_issue_record():
+    calls = []
+
+    def read():
+        calls.append(1)
+        return [_record()]
+
+    assert _authorize(_issue(), read)["standing"] is True
+    assert calls == [1]
+    issue = _issue()
+    per_issue = _record(
+        body=hosted.tagged(
+            hosted.AUTH_TAG,
+            {
+                "repository": REPO,
+                "issue": 1914,
+                "issue_material": hosted.issue_material(issue),
+                "target": hosted.BRANCH,
+                "checker_calls": 1,
+                "risk": "low",
+                "allowed_paths": ["app/archive/parser.py"],
+                "expires_at": "2026-10-20T00:00:00Z",
+            },
+        )
+    )
+    assert _authorize(issue, read, comments=[per_issue])["comment_id"] == 7000000001
+    assert calls == [1]
+
+
+def test_an_issue_opened_after_the_grant_is_not_covered():
+    """Review B1: an agent opens a new issue under the owner's account."""
+    later = _issue(number=1940, body="Allowed paths: `app/archive/manager.py`\n")
+    with pytest.raises(ValueError, match="issue_outside_standing_authorization"):
+        _authorize(later, [_record()])
+
+
+def test_an_issue_edited_after_the_grant_is_not_covered():
+    edited = _issue(body=BODY + "\nAlso rewrite the governor.\n")
+    with pytest.raises(ValueError, match="issue_material_changed"):
+        _authorize(edited, [_record()])
+    retitled = _issue(title="Something else entirely")
+    with pytest.raises(ValueError, match="issue_material_changed"):
+        _authorize(retitled, [_record()])
+
+
 def test_a_grant_posted_through_an_app_never_counts():
     """The maker posts with the owner's token through the Claude app."""
     record = _record(performed_via_github_app={"slug": "claude"})
-    with pytest.raises(ValueError, match="authorization_not_owner"):
+    with pytest.raises(ValueError, match="standing_authorization_missing"):
         _authorize(_issue(), [record])
+
+
+def test_a_stray_tagged_comment_cannot_block_the_owner_grant():
+    stray = _record(
+        id=7000000009, user={"login": "drive-by"}, author_association="NONE"
+    )
+    agent = _record(id=7000000010, performed_via_github_app={"slug": "claude"})
+    assert _authorize(_issue(), [stray, _record(), agent])["comment_id"] == 7000000001
 
 
 def test_a_per_issue_record_posted_through_an_app_never_counts():
@@ -120,28 +176,38 @@ def test_a_per_issue_record_decides_alone_even_beside_a_standing_grant():
         _authorize(issue, [_record()], comments=[broken])
 
 
+MATERIAL = hosted.issue_material(_issue())
+
+
 @pytest.mark.parametrize(
     ("record", "reason"),
     [
-        (_record(user={"login": "someone-else"}), "authorization_not_owner"),
-        (_record(author_association="COLLABORATOR"), "authorization_not_owner"),
         (_record(updated_at="2026-10-16T04:00:00Z"), "authorization_edited"),
         (_record(_grant(risk="moderate")), "standing_authorization_invalid"),
         (_record(_grant(target="main")), "standing_authorization_invalid"),
         (_record(_grant(repository="other/repo")), "standing_authorization_invalid"),
-        (_record(_grant(last_issue=1914 + 50)), "standing_authorization_invalid"),
+        (_record(_grant(checker_calls=5)), "standing_authorization_invalid"),
+        (_record(_grant(issues={})), "standing_authorization_invalid"),
+        (_record(_grant(issues=[1914])), "standing_authorization_invalid"),
+        (_record(_grant(issues={"1914": "abc"})), "standing_authorization_invalid"),
+        (_record(_grant(issues={"01914": MATERIAL})), "standing_authorization_invalid"),
+        (_record(_grant(issues={"x": MATERIAL})), "standing_authorization_invalid"),
         (
-            _record(_grant(first_issue=1920, last_issue=1919)),
+            _record(_grant(issues={str(n): MATERIAL for n in range(1, 52)})),
             "standing_authorization_invalid",
         ),
-        (_record(_grant(first_issue=True)), "standing_authorization_invalid"),
-        (_record(_grant(checker_calls=5)), "standing_authorization_invalid"),
         (
             _record(_grant(expires_at="2026-11-17T03:00:01Z")),
             "standing_authorization_invalid",
         ),
         (_record(_grant(expires_at="2026-10-16T00:00:00Z")), "authorization_expired"),
-        (_record(_grant(first_issue=1915)), "issue_outside_standing_authorization"),
+        (_record(_grant(expires_at="2026-11-15T00:00:00")), "timestamp_invalid"),
+        (_record(_grant(expires_at=20261115)), "timestamp_invalid"),
+        (_record(_grant(expires_at=None)), "timestamp_invalid"),
+        (
+            _record(_grant(issues={"1915": MATERIAL})),
+            "issue_outside_standing_authorization",
+        ),
     ],
 )
 def test_every_invalid_or_stale_grant_is_refused(record, reason):
@@ -149,16 +215,38 @@ def test_every_invalid_or_stale_grant_is_refused(record, reason):
         _authorize(_issue(), [record])
 
 
-def test_a_missing_or_duplicated_grant_is_refused():
+@pytest.mark.parametrize(
+    "record",
+    [
+        _record(user={"login": "someone-else"}),
+        _record(author_association="COLLABORATOR"),
+        _record(user=None),
+    ],
+)
+def test_only_owner_rows_can_carry_a_grant(record):
+    with pytest.raises(ValueError, match="standing_authorization_missing"):
+        _authorize(_issue(), [record])
+
+
+def test_two_owner_grants_are_ambiguous():
     with pytest.raises(ValueError, match="standing_authorization_missing_or_ambiguous"):
         _authorize(_issue(), [])
     with pytest.raises(ValueError, match="standing_authorization_missing_or_ambiguous"):
         _authorize(_issue(), [_record(), _record(id=7000000002)])
 
 
-def test_an_issue_not_opened_by_the_owner_is_refused():
-    with pytest.raises(ValueError, match="issue_not_owner_opened"):
-        _authorize(_issue(user={"login": "drive-by"}), [_record()])
+@pytest.mark.parametrize(
+    ("issue", "reason"),
+    [
+        (_issue(user={"login": "drive-by"}), "issue_not_owner_opened"),
+        (_issue(state="closed"), "issue_not_open"),
+        (_issue(pull_request={"url": "x"}), "issue_not_open"),
+    ],
+)
+def test_the_issue_itself_must_be_an_open_owner_issue(issue, reason):
+    grant = _grant(issues={"1914": hosted.issue_material(issue)})
+    with pytest.raises(ValueError, match=reason):
+        _authorize(issue, [_record(grant)])
 
 
 @pytest.mark.parametrize(
@@ -171,18 +259,10 @@ def test_an_issue_not_opened_by_the_owner_is_refused():
     ],
 )
 def test_issue_paths_must_be_declared_once_and_unprotected(body):
+    issue = _issue(body=body)
+    grant = _grant(issues={"1914": hosted.issue_material(issue)})
     with pytest.raises(ValueError, match="unsafe_allowed_paths"):
-        _authorize(_issue(body=body), [_record()])
-
-
-def test_an_edit_after_admission_changes_the_pinned_grant():
-    """Later phases compare grants, so an edited issue fails closed."""
-    before = _authorize(_issue(), [_record()])
-    after = _authorize(
-        _issue(body=BODY + "\nAlso rewrite the governor.\n"), [_record()]
-    )
-    assert before != after
-    assert before["issue_material"] != after["issue_material"]
+        _authorize(issue, [_record(grant)])
 
 
 def test_each_issue_gets_one_checker_call_under_the_grant():
@@ -202,7 +282,10 @@ def test_each_issue_gets_one_checker_call_under_the_grant():
 def test_paid_admission_accepts_the_standing_grant():
     issue = _issue()
     decision = admission.admit(
-        REPO, issue["number"], fetch=lambda *_: (issue, [], [_record()]), now=NOW
+        REPO,
+        issue["number"],
+        fetch=lambda *_: (issue, [], lambda: [_record()]),
+        now=NOW,
     )
     assert decision["authorized"] is True
     assert decision["standing"] is True
@@ -217,7 +300,7 @@ def test_paid_admission_refuses_an_app_posted_grant():
         REPO, issue["number"], fetch=lambda *_: (issue, [], [record]), now=NOW
     )
     assert decision["authorized"] is False
-    assert decision["detail"] == "authorization_not_owner"
+    assert decision["detail"] == "standing_authorization_missing_or_ambiguous"
 
 
 def test_the_grant_lives_on_its_own_issue_not_the_hub():

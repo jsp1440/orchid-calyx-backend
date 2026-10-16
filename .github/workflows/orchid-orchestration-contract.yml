@@ -55,7 +55,7 @@ jobs:
 
       - name: Hosted adapter formatting and compilation
         run: |
-          ruff format --check tests/test_oc_denied_worker_settlement.py scripts/oc_hosted_completion.py tests/test_oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_checker_dispatch.py
+          ruff format --check tests/test_oc_denied_worker_settlement.py scripts/oc_hosted_completion.py tests/test_oc_hosted_completion.py app/calyx_orchestrator/checker_dispatch.py tests/test_checker_dispatch.py scripts/oc_paid_issue_admission.py tests/test_oc_standing_authorization.py
           python -m compileall -q scripts/oc_hosted_completion.py app/calyx_orchestrator
 
       - name: Every orchestration run block is valid shell
