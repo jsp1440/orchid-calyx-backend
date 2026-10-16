@@ -66,21 +66,33 @@ REQUIRED_METRIC_KEYS = {
 }
 
 
-def determine_homepage_ready(metrics: list[ReadinessMetric], domains: list[DomainCoverage]) -> tuple[bool, list[str]]:
+def determine_homepage_ready(
+    metrics: list[ReadinessMetric], domains: list[DomainCoverage]
+) -> tuple[bool, list[str]]:
     by_key = {metric.key: metric for metric in metrics}
     blockers: list[str] = []
 
     missing = sorted(REQUIRED_METRIC_KEYS - by_key.keys())
     blockers.extend(f"Required metric unavailable: {key}" for key in missing)
 
-    for key in REQUIRED_METRIC_KEYS:
+    for key in sorted(REQUIRED_METRIC_KEYS):
         metric = by_key.get(key)
         if metric is None:
             continue
         if metric.state is not MetricState.available:
             blockers.append(f"Required metric not measured: {key}")
 
-    required_domains = {"taxonomy", "media", "occurrences", "traits", "literature", "pollinators", "mycorrhizae", "climate", "conservation"}
+    required_domains = {
+        "taxonomy",
+        "media",
+        "occurrences",
+        "traits",
+        "literature",
+        "pollinators",
+        "mycorrhizae",
+        "climate",
+        "conservation",
+    }
     domain_map = {item.domain: item for item in domains}
     for domain in sorted(required_domains):
         coverage = domain_map.get(domain)
