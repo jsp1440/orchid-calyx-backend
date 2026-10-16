@@ -208,6 +208,7 @@ def _savings(telemetry: dict | None) -> dict:
          "enabled":  {"input_tokens": int, "output_tokens": int, "turns": int}}
 
     Any metric missing on either side is reported as ``"unavailable"``.
+    Source is "measured" only when at least one savings field is a number.
     """
 
     def delta(metric: str):
@@ -219,11 +220,22 @@ def _savings(telemetry: dict | None) -> dict:
             return UNAVAILABLE
         return base - enab
 
+    input_tokens_saved = delta("input_tokens")
+    output_tokens_saved = delta("output_tokens")
+    turns_saved = delta("turns")
+
+    # Source is "measured" only if at least one savings field is a number
+    has_measured_value = any(
+        isinstance(v, (int, float))
+        for v in [input_tokens_saved, output_tokens_saved, turns_saved]
+    )
+    source = "measured" if has_measured_value else UNAVAILABLE
+
     return {
-        "source": "measured" if telemetry else UNAVAILABLE,
-        "input_tokens_saved": delta("input_tokens"),
-        "output_tokens_saved": delta("output_tokens"),
-        "turns_saved": delta("turns"),
+        "source": source,
+        "input_tokens_saved": input_tokens_saved,
+        "output_tokens_saved": output_tokens_saved,
+        "turns_saved": turns_saved,
         "note": (
             "Token/turn savings require measured paired runs. Without a telemetry "
             "fixture they are reported as unavailable, never fabricated."
