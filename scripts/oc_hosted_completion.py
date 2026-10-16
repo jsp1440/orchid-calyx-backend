@@ -991,7 +991,36 @@ def record(directory):
     )
     state["review"] = review
     state["usage"] = json.loads((directory / "usage.json").read_text())
+    state["actual_usd"] = settle_checker_cost(state["context"], state["usage"])
     (directory / "prepared.json").write_text(json.dumps(state))
+
+
+def settle_checker_cost(context, usage_record):
+    """Settle the checker's reservation with its real cost, best effort.
+
+    ``reserve`` records only the $0.08 reservation, before credentials exist.
+    The provider returned usage, so the real cost is now known; one settle line
+    replaces that reservation in the ledger totals. Any failure (unpriced or
+    malformed usage, ledger write error) leaves the conservative reservation
+    standing and never fails the record phase.
+    """
+    from scripts.swarm_anthropic_direct import _actual_cost_usd
+    from scripts.swarm_governor_github_ledger import append_settlement
+
+    try:
+        actual = _actual_cost_usd(MODEL, (usage_record or {}).get("usage") or {})
+        if actual is None:
+            return None
+        written = append_settlement(
+            context["repository"],
+            1330,
+            run_id=str(context["completion_run"]),
+            provider="anthropic-checker",
+            actual_usd=actual,
+        )
+        return actual if written else None
+    except Exception:  # noqa: BLE001 - the reservation already covers the run
+        return None
 
 
 def decide(state, current_material, current_validation, assignment, evidence):

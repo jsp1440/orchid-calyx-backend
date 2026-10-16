@@ -16,6 +16,18 @@ RECEIPT_RE = re.compile(
     r".*?date=(?P<date>\d{4}-\d{2}-\d{2}).*?month=(?P<month>\d{4}-\d{2})"
 )
 USD_RE = re.compile(r"\d+(?:\.\d+)?")
+RUN_PROVIDER_RE = re.compile(
+    r"\brun_id=(?P<run>\d+)\b.*?\bprovider=(?P<provider>[\w-]+)"
+)
+# A receipt written before a provider call can only hold the reservation (the
+# hosted checker reserves before credentials initialize). Once the call has
+# returned, one settle line per (run, provider) records the real cost; it
+# replaces that run's reservation in the totals and is never counted alone.
+SETTLE_TAG = "[OC-GOVERNOR-COST-SETTLE]"
+SETTLE_RE = re.compile(
+    r"^\[OC-GOVERNOR-COST-SETTLE\] run_id=(?P<run>\d+) provider=(?P<provider>[\w-]+) "
+    r"actual_usd=(?P<actual>\S+)$"
+)
 
 
 def _usd(value: str | None) -> Decimal | None:
@@ -28,22 +40,43 @@ def _usd(value: str | None) -> Decimal | None:
         return None
 
 
-def receipt_spend(line: str) -> tuple[Decimal, str, str] | None:
+def receipt_spend(
+    line: str, settled: dict[tuple[str, str], Decimal] | None = None
+) -> tuple[Decimal, str, str] | None:
     """Spend counted for one receipt: the recorded actual cost when known.
 
     The reservation is the pre-run estimate. When the run recorded its real
-    provider cost, that is what the budget counts; otherwise (provider failure,
-    unpriced model, older receipts) the reservation stands.
+    provider cost, on the receipt itself or in a later settle line for the
+    same run and provider, that is what the budget counts; otherwise (provider
+    failure, unpriced model, older receipts) the reservation stands.
     """
     match = RECEIPT_RE.search(line)
     if not match:
         return None
     value = _usd(match.group("actual"))
+    if value is None and settled:
+        key = RUN_PROVIDER_RE.search(line)
+        if key:
+            value = settled.get((key.group("run"), key.group("provider")))
     if value is None:
         value = _usd(match.group("reserved"))
     if value is None:
         return None
     return value, match.group("date"), match.group("month")
+
+
+def settlements(lines: list[str]) -> dict[tuple[str, str], Decimal]:
+    """Settled actual cost per (run_id, provider); the first valid line wins."""
+    found: dict[tuple[str, str], Decimal] = {}
+    for line in lines:
+        match = SETTLE_RE.match(line.strip())
+        if not match:
+            continue
+        value = _usd(match.group("actual"))
+        key = (match.group("run"), match.group("provider"))
+        if value is not None and key not in found:
+            found[key] = value
+    return found
 
 
 def _gh(*args: str) -> str:
@@ -72,8 +105,10 @@ def snapshot(repo: str, ledger_issue: int) -> tuple[Decimal, Decimal]:
     month = now.strftime("%Y-%m")
     daily = Decimal(0)
     monthly = Decimal(0)
-    for line in raw.splitlines():
-        spend = receipt_spend(line)
+    lines = raw.splitlines()
+    settled = settlements(lines)
+    for line in lines:
+        spend = receipt_spend(line, settled)
         if spend is None:
             continue
         value, date, receipt_month = spend
@@ -110,6 +145,22 @@ def append_receipt(
         "--body",
         body,
     )
+
+
+def append_settlement(
+    repo: str, ledger_issue: int, *, run_id: str, provider: str, actual_usd: str
+) -> bool:
+    """Record a run's real provider cost; False (and no write) if not a decimal."""
+    value = _usd(actual_usd)
+    if (
+        value is None
+        or not str(run_id).isdigit()
+        or not re.fullmatch(r"[\w-]+", provider)
+    ):
+        return False
+    body = f"{SETTLE_TAG} run_id={run_id} provider={provider} actual_usd={value}"
+    _gh("issue", "comment", str(ledger_issue), "--repo", repo, "--body", body)
+    return True
 
 
 def main() -> int:
