@@ -236,6 +236,33 @@ def _is_settlement(body: str) -> bool:
     return bool(_RELEASE.search(body)) or body.startswith(_SETTLEMENT_PREFIXES)
 
 
+# oc_swarm_settlement's worker disposition names the lease it settles. Unlike
+# the prefixes above it closes only that claim, so a receipt for one claim never
+# hides another (#1396: two runs claimed one packet, only one was released).
+# Before this, #1736 and #1732 read as orphaned though their worker settled them.
+_BOUND_RELEASE = re.compile(
+    r"^\[OC-SWARM-V4\] Worker result validated; requested lease disposition: `(\{[^\n]+\})`"
+)
+
+
+def _bound_release_matches(comment: dict, claim: dict, repository: str, number: int) -> bool:
+    """A bot receipt naming this claim's exact comment id and lease id."""
+    claimed = claim["comment"]
+    if any((c.get("user") or {}).get("login") != "github-actions[bot]" for c in (comment, claimed)):
+        return False
+    try:
+        release = json.loads(_BOUND_RELEASE.match(comment["body"])[1])
+        lease_id = json.loads(re.search(r"`(\{[^\n]+\})`", claimed["body"])[1]).get("lease_id")
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (isinstance(release, dict)
+            and type(claimed.get("id")) is int
+            and release.get("lease_comment_id") == claimed["id"]
+            and isinstance(lease_id, str)
+            and re.fullmatch(re.escape(repository) + r":[1-9]\d*:[1-9]\d*:" + str(number), lease_id) is not None
+            and release.get("lease_id") == lease_id)
+
+
 def _denied_release_matches(comment: dict, claim: dict, repository: str, number: int) -> bool:
     """Recognize only an authenticated denial bound to this exact claimed work."""
     if (comment.get("user") or {}).get("login") != "github-actions[bot]":
@@ -408,6 +435,10 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
                     claims.remove(matched[0])
                 else:
                     errors.append({"source": f"comments:{number}", "reason": "governor_release_unconfirmed"})
+            elif _BOUND_RELEASE.match(body):
+                # A receipt that names no open claim releases nothing.
+                claims = [claim for claim in claims
+                          if not _bound_release_matches(comment, claim, repository, number)]
             elif _is_settlement(body):
                 claims = []
             elif _CLAIM.search(body):
