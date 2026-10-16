@@ -91,3 +91,41 @@ def test_histogram_chart_spec_filters_non_numeric_values():
 def test_chart_spec_rejects_missing_axis():
     with pytest.raises(ValueError, match="requires y"):
         chart_spec({"x": [1]}, chart_type="scatter", x="x")
+
+
+def test_normalize_headers_handles_suffix_collision():
+    """Test that duplicate headers with existing suffixed names produce unique names."""
+    parsed = parse_tabular_file(
+        b"a,a,a_2\n1,2,3\n",
+        "d.csv",
+    )
+    assert parsed["column_count"] == 3
+    assert list(parsed["columns"].keys()) == ["a", "a_2", "a_2_2"]
+    assert parsed["columns"]["a"] == [1]
+    assert parsed["columns"]["a_2"] == [2]
+    assert parsed["columns"]["a_2_2"] == [3]
+
+
+def test_normalize_headers_handles_triple_duplicate():
+    """Test that triple duplicates get unique suffixes."""
+    parsed = parse_tabular_file(
+        b"x,x,x\n1,2,3\n",
+        "d.csv",
+    )
+    assert parsed["column_count"] == 3
+    assert list(parsed["columns"].keys()) == ["x", "x_2", "x_3"]
+    assert parsed["columns"]["x"] == [1]
+    assert parsed["columns"]["x_2"] == [2]
+    assert parsed["columns"]["x_3"] == [3]
+
+
+def test_normalize_headers_preserves_existing_expectation():
+    """Test that the existing test case still works as expected."""
+    parsed = parse_tabular_file(
+        b"species,temp,temp\nA,10,11\nB,12.5,13\n",
+        "orchids.csv",
+    )
+    assert parsed["row_count"] == 2
+    assert list(parsed["columns"]) == ["species", "temp", "temp_2"]
+    assert parsed["columns"]["temp"] == [10, 12.5]
+    assert parsed["columns"]["temp_2"] == [11, 13]
