@@ -16,7 +16,7 @@ import subprocess
 import sys
 import time
 from dataclasses import asdict
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from urllib import request
 
@@ -40,20 +40,15 @@ from scripts.swarm_anthropic_direct import _parse_allowed_paths
 
 BRANCH = "oc-autonomous-integration"
 AUTH_TAG = "OC-HOSTED-FACTORY-AUTHORIZATION-V1"
-# One owner comment on the standing-authorization issue can enroll a bounded
-# range of owner-opened issues, instead of one per-issue record each.
+# One owner grant covering a range of issues, so the owner signs once per
+# batch instead of once per issue. It lives on its own issue, never the hub,
+# and must be typed by the owner directly: a comment posted through an app (an
+# agent acting with the owner's token) carries performed_via_github_app and
+# never counts, so the maker cannot authorize its own work.
 STANDING_TAG = "OC-HOSTED-STANDING-AUTHORIZATION-V1"
 STANDING_ISSUE = 1924
-STANDING_FIELDS = {
-    "repository",
-    "target",
-    "risk",
-    "first_issue",
-    "last_issue",
-    "expires_at",
-}
-STANDING_MAX_ISSUES = 50
 STANDING_MAX_DAYS = 31
+STANDING_MAX_ISSUES = 50
 ATTEMPT_TAG = "OC-HOSTED-CHECKER-ATTEMPT-V1"
 MODEL = "claude-haiku-4-5"
 RESERVATION = "0.08"
@@ -233,20 +228,13 @@ def parse_tag(body, tag):
     return json.loads(matches[0])
 
 
-def _owner_typed(record, repository):
-    """The owner typed this comment directly and never edited it.
-
-    Comments an agent posts with the owner's token carry the owner's login but
-    name the app in ``performed_via_github_app``; only a null value counts.
-    """
+def _owner_record(record, repository):
+    """The owner's own unedited comment, never one posted through an app."""
     require(
         record["user"]["login"] == repository.split("/")[0]
-        and record.get("author_association") == "OWNER",
+        and record.get("author_association") == "OWNER"
+        and record.get("performed_via_github_app") is None,
         "authorization_not_owner",
-    )
-    require(
-        record.get("performed_via_github_app") is None,
-        "authorization_posted_by_app",
     )
     require(
         record.get("created_at")
@@ -255,7 +243,7 @@ def _owner_typed(record, repository):
     )
 
 
-def _parse_time(value):
+def _expiry(value):
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
@@ -276,18 +264,18 @@ def _safe_allowed_paths(allowed):
     )
 
 
-def authorization(issue, comments, repository, now=None, standing_comments=None):
+def authorization(issue, comments, repository, now=None, standing=None):
     """A scoped owner record enrolls work; maker-authored PR markers cannot.
 
-    A per-issue record, when present, decides alone. Otherwise the single
-    owner standing grant on #1924 (``standing_comments``) may enroll the issue.
+    A per-issue record, when present, decides alone. Without one, ``standing``
+    (the comments of ``STANDING_ISSUE``) may supply the owner's standing grant.
     """
     records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
-    if not records and standing_comments is not None:
-        return standing_authorization(issue, standing_comments, repository, now)
+    if not records and standing is not None:
+        return standing_authorization(issue, standing, repository, now)
     require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
     record = records[0]
-    _owner_typed(record, repository)
+    _owner_record(record, repository)
     grant = parse_tag(record["body"], AUTH_TAG)
     require(
         grant.get("repository") == repository
@@ -299,67 +287,73 @@ def authorization(issue, comments, repository, now=None, standing_comments=None)
         and grant.get("risk") in {"low", "moderate"},
         "authorization_binding_invalid",
     )
-    expiry = _parse_time(grant["expires_at"])
+    expiry = _expiry(grant["expires_at"])
     require(expiry > (now or datetime.now(UTC)), "authorization_expired")
     _safe_allowed_paths(grant.get("allowed_paths"))
     return {**grant, "comment_id": record["id"], "digest": digest(grant)}
 
 
-def standing_authorization(issue, standing_comments, repository, now=None):
-    """Enroll an owner-opened issue under the one standing grant on #1924.
+def standing_authorization(issue, standing, repository, now=None):
+    """Admit one issue under the owner's standing grant.
 
-    The grant is low risk only, covers at most 50 issues and 31 days, and the
-    issue's own "Allowed paths:" declaration supplies the write scope. The
-    returned grant is pinned to the issue's current material and carries the
-    standing comment's id, so each issue still spends exactly one checker call.
+    The grant names an issue range, so it cannot bind to text written later.
+    Instead the issue must be opened by the owner account, and its material is
+    pinned when the grant is read: every later phase compares the returned
+    grant, so an edit mid-cycle fails closed. Allowed paths come from the issue
+    body through the executor's own parser. Low risk only, at most
+    ``STANDING_MAX_ISSUES`` issues, expiring at most ``STANDING_MAX_DAYS`` after
+    the grant was posted. One checker call per issue still holds, because each
+    attempt record binds to the grant comment on that issue.
     """
-    records = [c for c in standing_comments if STANDING_TAG in (c.get("body") or "")]
-    require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
+    records = [c for c in standing if STANDING_TAG in (c.get("body") or "")]
+    require(len(records) == 1, "standing_authorization_missing_or_ambiguous")
     record = records[0]
-    _owner_typed(record, repository)
-    standing = parse_tag(record["body"], STANDING_TAG)
-    require(isinstance(standing, dict), "standing_authorization_invalid")
-    first, last = standing.get("first_issue"), standing.get("last_issue")
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], STANDING_TAG)
+    require(isinstance(grant, dict), "standing_authorization_invalid")
+    first, last = grant.get("first_issue"), grant.get("last_issue")
+    fields = {"repository", "target", "risk", "first_issue", "last_issue", "expires_at"}
     require(
-        set(standing) == STANDING_FIELDS
-        and standing["repository"] == repository
-        and standing["target"] == BRANCH
-        and standing["risk"] == "low"
+        set(grant) == fields
+        and grant["repository"] == repository
+        and grant["target"] == BRANCH
+        and grant["risk"] == "low"
         and type(first) is int
         and type(last) is int
-        and 0 < first <= last
-        and last - first < STANDING_MAX_ISSUES
-        and isinstance(standing["expires_at"], str),
+        and 0 < first <= last < first + STANDING_MAX_ISSUES,
         "standing_authorization_invalid",
     )
-    expiry = _parse_time(standing["expires_at"])
-    posted = _parse_time(record["created_at"])
+    expiry = _expiry(grant["expires_at"])
+    lifetime = expiry - _expiry(record["created_at"])
     require(
-        expiry <= posted + timedelta(days=STANDING_MAX_DAYS),
-        "standing_authorization_too_long",
+        lifetime.total_seconds() <= STANDING_MAX_DAYS * 86400,
+        "standing_authorization_invalid",
     )
     require(expiry > (now or datetime.now(UTC)), "authorization_expired")
-    require(issue.get("state") == "open", "issue_not_open")
-    require(first <= issue["number"] <= last, "issue_outside_standing_range")
+    require(first <= issue["number"] <= last, "issue_outside_standing_authorization")
     require(
-        (issue.get("user") or {}).get("login") == repository.split("/")[0]
-        and issue.get("author_association") == "OWNER",
-        "issue_not_opened_by_owner",
+        (issue.get("user") or {}).get("login") == repository.split("/")[0],
+        "issue_not_owner_opened",
     )
-    declared = _parse_allowed_paths(issue.get("body") or "")
-    allowed = sorted(declared) if declared else None
+    allowed = sorted(_parse_allowed_paths(issue.get("body") or "") or ())
     _safe_allowed_paths(allowed)
-    grant = {
+    return {
         "repository": repository,
         "issue": issue["number"],
         "issue_material": issue_material(issue),
         "target": BRANCH,
         "checker_calls": 1,
         "risk": "low",
+        "expires_at": grant["expires_at"],
         "allowed_paths": allowed,
-        "expires_at": standing["expires_at"],
+        "standing": True,
+        "comment_id": record["id"],
+        "digest": digest(grant),
     }
-    return {**grant, "comment_id": record["id"], "digest": digest(grant)}
+
+
+def standing_comments(repository):
+    return pages(repository, f"issues/{STANDING_ISSUE}/comments")
 
 
 def checker_attempt_reserved(grant, comments):
@@ -508,8 +502,7 @@ def inspect(context):
     repo, number = context["repository"], context["issue"]
     issue = api(repo, f"issues/{number}")
     comments = pages(repo, f"issues/{number}/comments")
-    standing = pages(repo, f"issues/{STANDING_ISSUE}/comments")
-    grant = authorization(issue, comments, repo, standing_comments=standing)
+    grant = authorization(issue, comments, repo, standing=standing_comments(repo))
     pr = api(repo, f"pulls/{context['pr']}")
     lease = api(repo, f"issues/comments/{context['lease']}")
     files = pages(repo, f"pulls/{context['pr']}/files")

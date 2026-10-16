@@ -8,7 +8,7 @@ when a budget variable changed. This gate closes that gap at the last point
 before a provider call. A worker may call a paid provider only for an issue
 that carries exactly one valid owner ``OC-HOSTED-FACTORY-AUTHORIZATION-V1``
 record bound to the issue's current material, unexpired, low/moderate risk,
-or that falls inside the owner's single standing grant on #1924.
+or, without one, falls inside the owner's standing grant on issue #1924.
 
 The check is the same ``authorization()`` the hosted checker already enforces,
 so a task that could never be integrated also cannot be paid for. It makes no
@@ -40,11 +40,7 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
         if issue.get("pull_request") or issue.get("state") != "open":
             raise ValueError("issue_not_open")
         grant = hosted.authorization(
-            issue,
-            comments,
-            repository,
-            now,
-            standing_comments=standing[0] if standing else None,
+            issue, comments, repository, now, standing[0] if standing else None
         )
     except Exception as exc:  # noqa: BLE001 - every failure is a refusal
         return {
@@ -59,6 +55,7 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
         "detail": "owner_authorization_valid",
         "issue": issue_number,
         "authorization_comment": grant["comment_id"],
+        "standing": bool(grant.get("standing")),
         "expires_at": grant["expires_at"],
     }
 
@@ -66,8 +63,7 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
 def _fetch(repository: str, issue_number: int):
     issue = hosted.api(repository, f"issues/{issue_number}")
     comments = hosted.pages(repository, f"issues/{issue_number}/comments")
-    standing = hosted.pages(repository, f"issues/{hosted.STANDING_ISSUE}/comments")
-    return issue, comments, standing
+    return issue, comments, hosted.standing_comments(repository)
 
 
 def main() -> int:
