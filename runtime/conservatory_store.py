@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import unquote
 from uuid import uuid4
 
-_ACCESSION_RE = re.compile(r"^OC-(\d{4})-(\d{4})$")
+_ACCESSION_RE = re.compile(r"^OC-(\d{4})-(\d{4,})$")
 
 
 @dataclass(frozen=True)
