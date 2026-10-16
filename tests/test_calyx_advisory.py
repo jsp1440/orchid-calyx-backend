@@ -307,3 +307,37 @@ def test_acceptance_pipeline_preserves_no_action_for_a_complete_module_record():
     assert [finding["kind"] for finding in result["advisory"]["findings"]] == ["no_action"]
     assert result["candidates"] == []
     assert result["receipt"]["passed"] is True
+
+
+# ---- finding_id uniqueness with evidence -----------------------------------------------
+
+
+def test_finding_id_includes_evidence_to_ensure_uniqueness(artifact):
+    """Verify that finding_id is unique per finding by including evidence in the checksum.
+
+    A contested claim with one surface and media can generate multiple findings
+    with the same kind and targets but different evidence. Each must have a distinct id.
+    """
+    advisory = evaluate(artifact)
+    findings = advisory["findings"]
+
+    # Verify all finding ids are unique
+    finding_ids = [f["finding_id"] for f in findings]
+    assert len(finding_ids) == len(set(finding_ids)), (
+        f"Duplicate finding_ids found: {finding_ids}"
+    )
+
+
+def test_finding_ids_are_stable_across_repeated_calls(artifact):
+    """Verify that finding_ids are deterministic and identical across repeated evaluations."""
+    first_advisory = evaluate(artifact)
+    second_advisory = evaluate(copy.deepcopy(artifact))
+    third_advisory = evaluate(copy.deepcopy(artifact))
+
+    first_ids = [f["finding_id"] for f in first_advisory["findings"]]
+    second_ids = [f["finding_id"] for f in second_advisory["findings"]]
+    third_ids = [f["finding_id"] for f in third_advisory["findings"]]
+
+    assert first_ids == second_ids == third_ids, (
+        f"Finding ids not stable: {first_ids} vs {second_ids} vs {third_ids}"
+    )

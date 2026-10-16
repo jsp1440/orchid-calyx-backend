@@ -24,7 +24,7 @@ MAX_UNDISCLOSED_ITEMS = 7
 
 def _finding(kind, severity, competency, targets, rationale, evidence, recommendation, artifact_id):
     return {
-        "finding_id": checksum([kind, artifact_id, sorted(targets)])[:12],
+        "finding_id": checksum([kind, artifact_id, sorted(targets), evidence])[:12],
         "kind": kind,
         "severity": severity,
         "competency": competency,
