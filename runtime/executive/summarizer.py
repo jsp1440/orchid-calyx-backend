@@ -12,8 +12,13 @@ def executive_summary(state: dict[str, Any]) -> dict[str, Any]:
     confidence_values = [float(item.get("confidence") or 0) for item in subsystems]
     confidence = round(sum(confidence_values) / len(confidence_values), 2) if confidence_values else 0
     top = priorities[0] if priorities else None
+
+    # Use singular verbs for counts of exactly 1
+    blocked_verb = "has" if len(blocked) == 1 else "have"
+    owner_verb = "needs" if len(owner) == 1 else "need"
+
     return {
-        "executive_summary": f"{len(healthy)}/{len(subsystems)} executive subsystems are healthy. {len(blocked)} have blockers and {len(owner)} need owner attention.",
+        "executive_summary": f"{len(healthy)}/{len(subsystems)} executive subsystems are healthy. {len(blocked)} {blocked_verb} blockers and {len(owner)} {owner_verb} owner attention.",
         "system_health": {
             "healthy": len(healthy),
             "blocked": len(blocked),
