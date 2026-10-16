@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from fastapi import FastAPI
@@ -61,7 +61,7 @@ def test_artifact_requires_matching_manifest_lineage() -> None:
         storage_uri="fixture://artifacts/atlas-fixture-001.svg",
         checksum="e" * 64,
         source_manifest_checksum=manifest.manifest_checksum,
-        created_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        created_at=datetime(2026, 8, 6, tzinfo=UTC),
     )
     registry.register_artifact(artifact)
     assert registry.status()["artifacts"] == 1

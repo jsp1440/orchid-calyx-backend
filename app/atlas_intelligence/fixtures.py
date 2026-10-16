@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from .assembler import (
     assemble_brain_records,
@@ -24,7 +24,7 @@ def _lineage(source_id: str, checksum_char: str, license_name: str = "CC BY 4.0"
         source_uri=f"fixture://{source_id}",
         license=license_name,
         attribution=f"Fixture attribution for {source_id}",
-        acquired_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        acquired_at=datetime(2026, 8, 6, tzinfo=UTC),
         checksum=checksum_char * 64,
     )
 
@@ -32,8 +32,8 @@ def _lineage(source_id: str, checksum_char: str, license_name: str = "CC BY 4.0"
 def build_vertical_slice() -> dict[str, object]:
     extent = SpatialExtent(west=-80, south=-15, east=-65, north=2)
     temporal = TemporalExtent(
-        start=datetime(1990, 1, 1, tzinfo=timezone.utc),
-        end=datetime(2026, 8, 1, tzinfo=timezone.utc),
+        start=datetime(1990, 1, 1, tzinfo=UTC),
+        end=datetime(2026, 8, 1, tzinfo=UTC),
     )
     datasets = [
         SpatialDataset(

@@ -1,0 +1,266 @@
+{
+  "schema": "oc.atlas-locality-policy-vectors.v1",
+  "description": "Parity vectors for the Atlas locality-safety policy. Generated from orchid-continuum-frontend src/lib/atlasLocalitySafety.ts (resolveAtlasLocation); the backend port app/atlas_intelligence/locality.py must reproduce every expected value. Coordinates are synthetic open-ocean test inputs chosen to exercise each rule; they are not observations of any organism.",
+  "vectors": [
+    {
+      "name": "precise not threatened",
+      "access": "public",
+      "input": {
+        "lat": -30.2295,
+        "lng": -20.5243,
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": -30.2295,
+        "lng": -20.5243,
+        "generalised": false,
+        "cell_deg": 0,
+        "reason": "none",
+        "locality_text_allowed": true,
+        "notice": ""
+      }
+    },
+    {
+      "name": "CR by code",
+      "access": "public",
+      "input": {
+        "lat": -33.98765,
+        "lng": -19.20456,
+        "iucnCode": "CR",
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": -33.5,
+        "lng": -19.5,
+        "generalised": true,
+        "cell_deg": 1,
+        "reason": "iucn-threatened",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 111 km because this taxon is assessed as threatened (CR); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "EN by code",
+      "access": "public",
+      "input": {
+        "lat": 20.1234,
+        "lng": -44.5678,
+        "iucnCode": "en",
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": 20.25,
+        "lng": -44.75,
+        "generalised": true,
+        "cell_deg": 0.5,
+        "reason": "iucn-threatened",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 56 km because this taxon is assessed as threatened (EN); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "VU by status text",
+      "access": "public",
+      "input": {
+        "lat": 14.711,
+        "lng": -34.0721,
+        "conservationStatus": "Vulnerable",
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": 14.625,
+        "lng": -34.125,
+        "generalised": true,
+        "cell_deg": 0.25,
+        "reason": "conservation-status",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 28 km because this taxon is assessed as threatened (VU); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "critically endangered text",
+      "access": "public",
+      "input": {
+        "lat": -38.9,
+        "lng": 77.52,
+        "conservationStatus": "Critically Endangered"
+      },
+      "expected": {
+        "lat": -38.5,
+        "lng": 77.5,
+        "generalised": true,
+        "cell_deg": 1,
+        "reason": "conservation-status",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 111 km because this taxon is assessed as threatened (CR); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "unresolved assessment",
+      "access": "public",
+      "input": {
+        "lat": -11.3521,
+        "lng": -123.8198,
+        "assessmentResolved": false
+      },
+      "expected": {
+        "lat": -11.375,
+        "lng": -123.82499999999999,
+        "generalised": true,
+        "cell_deg": 0.05,
+        "reason": "unresolved-assessment",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 6 km because the Continuum could not resolve a conservation assessment for this name. This precaution is not a claim that the taxon is threatened."
+      }
+    },
+    {
+      "name": "uncertainty 5 km",
+      "access": "public",
+      "input": {
+        "lat": 26.2442,
+        "lng": -35.5812,
+        "coordinateUncertaintyM": 5000,
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": 26.25,
+        "lng": -35.55000000000001,
+        "generalised": true,
+        "cell_deg": 0.1,
+        "reason": "coordinate-uncertainty",
+        "locality_text_allowed": true,
+        "notice": "Shown as an area of about 11 km because the source record states 5000 m coordinate uncertainty."
+      }
+    },
+    {
+      "name": "uncertainty 50 km",
+      "access": "public",
+      "input": {
+        "lat": -43.45,
+        "lng": -100.66,
+        "coordinateUncertaintyM": 50000,
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": -43.25,
+        "lng": -100.75,
+        "generalised": true,
+        "cell_deg": 0.5,
+        "reason": "coordinate-uncertainty",
+        "locality_text_allowed": true,
+        "notice": "Shown as an area of about 56 km because the source record states 50000 m coordinate uncertainty."
+      }
+    },
+    {
+      "name": "uncertainty 1 km (below floor)",
+      "access": "public",
+      "input": {
+        "lat": 9.43,
+        "lng": -129.13,
+        "coordinateUncertaintyM": 1000,
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": 9.43,
+        "lng": -129.13,
+        "generalised": false,
+        "cell_deg": 0,
+        "reason": "none",
+        "locality_text_allowed": true,
+        "notice": ""
+      }
+    },
+    {
+      "name": "unresolved with 20 km uncertainty",
+      "access": "public",
+      "input": {
+        "lat": 30.68,
+        "lng": 159.69,
+        "coordinateUncertaintyM": 20000,
+        "assessmentResolved": false
+      },
+      "expected": {
+        "lat": 30.625,
+        "lng": 159.625,
+        "generalised": true,
+        "cell_deg": 0.25,
+        "reason": "coordinate-uncertainty",
+        "locality_text_allowed": false,
+        "notice": "Shown as an area of about 28 km because the source record states 20000 m coordinate uncertainty."
+      }
+    },
+    {
+      "name": "negative longitude near antimeridian CR",
+      "access": "public",
+      "input": {
+        "lat": -40.71,
+        "lng": -179.95,
+        "iucnCode": "CR"
+      },
+      "expected": {
+        "lat": -40.5,
+        "lng": -179.5,
+        "generalised": true,
+        "cell_deg": 1,
+        "reason": "iucn-threatened",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 111 km because this taxon is assessed as threatened (CR); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "positive longitude near antimeridian EN",
+      "access": "public",
+      "input": {
+        "lat": -40.71,
+        "lng": 179.95,
+        "iucnCode": "EN"
+      },
+      "expected": {
+        "lat": -40.75,
+        "lng": 179.75,
+        "generalised": true,
+        "cell_deg": 0.5,
+        "reason": "iucn-threatened",
+        "locality_text_allowed": false,
+        "notice": "Location generalised to about 56 km because this taxon is assessed as threatened (EN); precise sites are withheld to reduce collection risk."
+      }
+    },
+    {
+      "name": "LC code is not threatened",
+      "access": "public",
+      "input": {
+        "lat": -52.5,
+        "lng": 99.9,
+        "iucnCode": "LC",
+        "assessmentResolved": true
+      },
+      "expected": {
+        "lat": -52.5,
+        "lng": 99.9,
+        "generalised": false,
+        "cell_deg": 0,
+        "reason": "none",
+        "locality_text_allowed": true,
+        "notice": ""
+      }
+    },
+    {
+      "name": "research access sees threatened precisely",
+      "access": "research",
+      "input": {
+        "lat": -33.98765,
+        "lng": -19.20456,
+        "iucnCode": "CR"
+      },
+      "expected": {
+        "lat": -33.98765,
+        "lng": -19.20456,
+        "generalised": false,
+        "cell_deg": 0,
+        "reason": "none",
+        "locality_text_allowed": true,
+        "notice": ""
+      }
+    }
+  ]
+}

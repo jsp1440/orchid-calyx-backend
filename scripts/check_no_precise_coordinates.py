@@ -112,7 +112,13 @@ MAX_ARCHIVE_DEPTH = 3
 # fixtures under ``tests/`` whose coordinates are synthetic may be listed.
 # An entry that no longer produces a hit is reported as stale and fails, so
 # the list cannot silently outlive the fixture it excused.
-ALLOWLIST: dict[str, str] = {}
+ALLOWLIST: dict[str, str] = {
+    "tests/fixtures/atlas_locality_policy_vectors_v1.json": (
+        "Synthetic open-ocean inputs and their snapped outputs, generated from the "
+        "frontend locality policy to prove the backend port generalises identically; "
+        "no organism observations."
+    ),
+}
 ALLOWLIST_PREFIX = "tests/"
 ALLOWLIST_MAX_BYTES = 64 * 1024
 # Existing adversarial source tests deliberately contain synthetic locality
