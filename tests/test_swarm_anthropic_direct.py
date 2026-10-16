@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1246,16 +1247,27 @@ def test_lint_problems_runs_ruff_on_written_python_files_only(
     monkeypatch.setattr(direct, "RETAINED", set())
     monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
     assert direct._lint_problems() == expected
-    assert seen == [
-        [
-            direct.sys.executable,
-            "-m",
-            "ruff",
-            "check",
-            "--output-format=concise",
-            "--",
-            "app/a.py",
-        ]
+    fix, report = seen
+    assert fix == [
+        direct.sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--fix",
+        "--extend-select",
+        "I001",
+        "--quiet",
+        "--",
+        "app/a.py",
+    ]
+    assert report == [
+        direct.sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--output-format=concise",
+        "--",
+        "app/a.py",
     ]
 
 
@@ -1291,8 +1303,9 @@ def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
     monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
     monkeypatch.setattr(direct, "WRITTEN", set())
     monkeypatch.setattr(direct, "RETAINED", set())
-    direct._tool_write_file({"path": "app/a.py", "content": "import os\n"})
-    assert "F401" in direct._lint_problems()
+    # An undefined name has no safe auto-fix, so it is reported.
+    direct._tool_write_file({"path": "app/a.py", "content": "x = undefined_name\n"})
+    assert "F821" in direct._lint_problems()
     direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})
     assert direct._lint_problems() == ""
 
@@ -1483,3 +1496,49 @@ def test_write_file_names_a_missing_argument(tmp_path, monkeypatch):
     assert direct.WRITTEN == set()
     direct._tool_write_file({"path": "a.py", "old_text": "x = 1\n", "content": ""})
     assert (tmp_path / "a.py").read_text() == ""
+
+
+def test_safe_ruff_fixes_are_applied_to_written_files(tmp_path, monkeypatch):
+    """#1866: unsorted imports and an unused import failed validation twice."""
+    pytest.importorskip("ruff")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    (tmp_path / "untouched.py").write_text("import sys\nimport os\n")
+    direct._tool_write_file(
+        {"path": "app/a.py", "content": "import sys\nimport os\n\nprint(os, sys)\n"}
+    )
+    assert direct._lint_problems() == ""
+    assert (tmp_path / "app/a.py").read_text().startswith("import os\nimport sys\n")
+    # Only written files are touched.
+    assert (tmp_path / "untouched.py").read_text() == "import sys\nimport os\n"
+
+
+def test_autofix_runs_before_the_whitespace_probe_and_is_logged(
+    tmp_path, monkeypatch, capsys
+):
+    """Removing a trailing unused import leaves a blank line at EOF."""
+    pytest.importorskip("ruff")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    direct._tool_write_file({"path": "a.py", "content": "x = 1\n\nimport os\n"})
+    problems = direct._finish_problems()
+    assert "[git diff --check]" in problems
+    assert "blank line at EOF" in problems
+    assert '[OC-DIRECT-AUTOFIX] {"files": ["a.py"]}' in capsys.readouterr().out
+
+
+def test_autofix_is_best_effort(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"a.py"})
+    (tmp_path / "a.py").write_text("x = 1\n")
+
+    def boom(*args, **kwargs):
+        raise subprocess.TimeoutExpired("ruff", 180)
+
+    monkeypatch.setattr(direct, "_run", boom)
+    direct._autofix_written()  # does not raise
