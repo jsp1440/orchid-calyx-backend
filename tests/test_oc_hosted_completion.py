@@ -1277,6 +1277,66 @@ def test_an_unparseable_answer_fails_closed_and_is_kept_for_diagnosis(
     logged = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
     assert logged["checker_output"]["chars"] == len(text)
     assert logged["checker_output"]["stop_reason"] == "end_turn"
+    assert set(logged["checker_output"]) == {"stop_reason", "blocks", "chars"}
+
+
+def _run_check_response(monkeypatch, tmp_path, reply):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps(reply).encode()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", lambda req, timeout: Reply())
+    hosted.check(tmp_path)
+
+
+USAGE = {"input_tokens": 10, "output_tokens": 20}
+
+
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
+def test_an_unfinished_answer_never_passes_even_if_it_parses(
+    monkeypatch, tmp_path, stop_reason
+):
+    reply = {
+        "model": hosted.MODEL,
+        "stop_reason": stop_reason,
+        "content": [{"type": "text", "text": json.dumps(review())}],
+        "usage": USAGE,
+    }
+    with pytest.raises(ValueError, match="^checker_did_not_finish$"):
+        _run_check_response(monkeypatch, tmp_path, reply)
+    assert not (tmp_path / "review.json").exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        [],
+        [{"type": "tool_use", "id": "x"}],
+        [{"type": "text", "text": None}],
+        [{"type": "text", "text": "{}"}, {"type": "text", "text": "{}"}],
+    ],
+)
+def test_non_text_answers_fail_closed_through_check(monkeypatch, tmp_path, content):
+    reply = {
+        "model": hosted.MODEL,
+        "stop_reason": "end_turn",
+        "content": content,
+        "usage": USAGE,
+    }
+    with pytest.raises(ValueError, match="^checker_"):
+        _run_check_response(monkeypatch, tmp_path, reply)
+    assert not (tmp_path / "review.json").exists()
+    assert (tmp_path / "checker_output.txt").exists()
 
 
 def test_the_checker_model_supports_structured_outputs():

@@ -736,8 +736,8 @@ def _record_unparsed(directory, response):
     """Keep what a failed checker answer looked like, without its verdict use.
 
     Two failures (#1858, #1888) could not be diagnosed: only the reason code
-    survived. The bounded text goes to the evidence directory and a short
-    shape summary to the log.
+    survived. The bounded text goes to the evidence directory only; the log
+    gets its shape, never its content.
     """
     content = response.get("content")
     text = ""
@@ -751,8 +751,6 @@ def _record_unparsed(directory, response):
                     "stop_reason": response.get("stop_reason"),
                     "blocks": len(content) if isinstance(content, list) else None,
                     "chars": len(text),
-                    "head": text[:80],
-                    "tail": text[-80:],
                 }
             }
         ),
@@ -795,7 +793,7 @@ def check(directory):
         "test weakening and scope expansion. CI success alone is not acceptance. If context is insufficient use "
         "inconclusive. Do not assume unseen code is safe. No tools, execution or writes are available. "
         "Return ONLY a JSON object with exactly: verdict (pass/fail/inconclusive), reason (concise evidence-based "
-        "findings, not private reasoning), risk (low/moderate/high/owner_gated), reversible (boolean), "
+        "findings, not private reasoning, under 1500 characters), risk (low/moderate/high/owner_gated), reversible (boolean), "
         + ", ".join(RISK_FIELDS)
         + " (each boolean). Mark all applicable governed boundaries accurately. "
         + BOUNDARY_DEFINITIONS
