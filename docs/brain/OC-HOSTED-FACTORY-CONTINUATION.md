@@ -38,6 +38,18 @@ allowlist, budget and global paid concurrency controls all still apply. There is
 one capped request, at most 48,000 review bytes and 1,800 output tokens; no fallback
 or automatic paid retry. A consumed uncertain attempt stays consumed.
 
+Without a per-issue record, one OC-HOSTED-STANDING-AUTHORIZATION-V1 comment on
+issue #1924 may enroll a batch instead. Its JSON has exactly repository, target,
+risk ("low" only), first_issue, last_issue (at most 50 issues) and expires_at (at
+most 31 days after the comment was posted). It covers only open issues in that
+range opened by the owner account. Allowed paths come from each issue body through
+the executor's parser and must be unprotected. The issue material is pinned when
+the grant is read, so an edit mid-cycle fails closed, and each issue still gets one
+checker call. A per-issue record, when present, always decides alone. Both kinds
+of record count only when typed by the owner directly: a comment posted through
+an app (performed_via_github_app, as an agent using the owner's token produces)
+never counts, so the maker cannot authorize its own work.
+
 A separate privileged job rereads all mutable authority and the exact checker
 comments produced by this run, invokes the existing factory gate, and uses the
 GitHub merge API's expected-head SHA fence. The actual merged PR and both merge
