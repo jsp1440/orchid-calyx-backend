@@ -33,6 +33,16 @@ def assemble_map_manifest(
     if len(dataset_by_id) != len(datasets):
         raise ValueError("duplicate dataset IDs are not allowed")
 
+    # Check for duplicate layer references in the request
+    seen = set()
+    duplicates = set()
+    for layer_id in request.layer_ids:
+        if layer_id in seen:
+            duplicates.add(layer_id)
+        seen.add(layer_id)
+    if duplicates:
+        raise ValueError(f"duplicate layer references: {sorted(duplicates)}")
+
     missing_layers = [layer_id for layer_id in request.layer_ids if layer_id not in layer_by_id]
     if missing_layers:
         raise ValueError(f"unknown layer references: {sorted(missing_layers)}")
