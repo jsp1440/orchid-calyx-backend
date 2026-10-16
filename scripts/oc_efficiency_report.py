@@ -25,6 +25,8 @@ from typing import Any
 BOT = "github-actions[bot]"
 LEDGER_ISSUE = 1330
 CONTROLLER = "orchid-swarm-controller.yml"
+INTEGRATION_BRANCH = "oc-autonomous-integration"
+SHA40 = re.compile(r"[0-9a-f]{40}")
 RECEIPT = re.compile(
     r"^\[OC-GOVERNOR-COST\] run_id=(?P<run>\d+) issue=(?P<issue>\d+) "
     r"provider=(?P<provider>[\w-]+) reserved_usd=(?P<reserved>\d+(?:\.\d+)?)"
@@ -72,6 +74,62 @@ def paged(path: str, budget: int = 30) -> list[dict]:
         if len(batch) < 100:
             break
     return rows
+
+
+def verify_settlement(repository: str, number: int, data: dict, api=gh) -> dict | None:
+    context = data.get("context")
+    if not isinstance(context, dict):
+        return None
+    receipt_repository = context.get("repository")
+    pr_number = context.get("pr")
+    head_sha = context.get("head")
+    merge_sha = data.get("merge_sha")
+    if (
+        not isinstance(receipt_repository, str)
+        or receipt_repository.lower() != repository.lower()
+        or type(context.get("issue")) is not int
+        or context["issue"] != number
+        or type(pr_number) is not int
+        or pr_number < 1
+        or not isinstance(head_sha, str)
+        or not SHA40.fullmatch(head_sha)
+        or not isinstance(merge_sha, str)
+        or not SHA40.fullmatch(merge_sha)
+        or merge_sha == head_sha
+    ):
+        return None
+
+    pr = api(f"repos/{repository}/pulls/{pr_number}")
+    if not isinstance(pr, dict):
+        return None
+    body_lines = (pr.get("body") or "").splitlines()
+    if (
+        pr.get("number") != pr_number
+        or pr.get("merged") is not True
+        or pr.get("merge_commit_sha") != merge_sha
+        or (pr.get("base") or {}).get("ref") != INTEGRATION_BRANCH
+        or (pr.get("head") or {}).get("sha") != head_sha
+        or f"OC-AUTO-ISSUE: #{number}" not in body_lines
+    ):
+        return None
+
+    commit = api(f"repos/{repository}/git/commits/{merge_sha}")
+    if not isinstance(commit, dict):
+        return None
+    parents = [parent.get("sha") for parent in commit.get("parents") or []]
+    if len(parents) != 2 or head_sha not in parents:
+        return None
+
+    compare = api(f"repos/{repository}/compare/{merge_sha}...{INTEGRATION_BRANCH}")
+    if not isinstance(compare, dict) or compare.get("status") not in {
+        "identical",
+        "ahead",
+    }:
+        return None
+    return {
+        "pull_request": pr.get("html_url"),
+        "merge_commit": commit.get("html_url"),
+    }
 
 
 def ledger_spend(comments: list[dict], start: datetime, end: datetime) -> dict:
@@ -132,11 +190,16 @@ def ledger_spend(comments: list[dict], start: datetime, end: datetime) -> dict:
 
 
 def issue_cycle(
-    number: int, comments: list[dict], start: datetime, end: datetime
+    number: int,
+    comments: list[dict],
+    start: datetime,
+    end: datetime,
+    repository: str = "jsp1440/orchid-calyx-backend",
+    api=gh,
 ) -> dict | None:
     bot = [c for c in comments if (c.get("user") or {}).get("login") == BOT]
     claims = [c for c in bot if CLAIM.match(c.get("body") or "")]
-    settlement = None
+    settlements = []
     for c in bot:
         for m in TAGGED.finditer(c.get("body") or ""):
             if m.group("tag") == "OC-HOSTED-SETTLEMENT-V1":
@@ -144,12 +207,16 @@ def issue_cycle(
                     data = json.loads(m.group("json"))
                 except ValueError:
                     continue
-                if data.get("merge_sha"):
-                    settlement = (c, data)
-    if settlement is None:
+                if isinstance(data, dict):
+                    settlements.append((c, data))
+    if len(settlements) != 1:
         return None
+    settlement = settlements[0]
     settled_at = _time(settlement[0]["created_at"])
     if not start <= settled_at <= end:
+        return None
+    merge_evidence = verify_settlement(repository, number, settlement[1], api=api)
+    if merge_evidence is None:
         return None
     first_claim = min((_time(c["created_at"]) for c in claims), default=None)
     recoveries = [c for c in bot if (c.get("body") or "").startswith(RECOVERY_PREFIX)]
@@ -158,6 +225,8 @@ def issue_cycle(
         "settlement_comment": settlement[0]["id"],
         "merge_sha": settlement[1]["merge_sha"],
         "pr": (settlement[1].get("context") or {}).get("pr"),
+        "pull_request": merge_evidence["pull_request"],
+        "merge_commit": merge_evidence["merge_commit"],
         "claims": len(claims),
         "recoveries": len(recoveries),
         "first_attempt": len(claims) == 1,
@@ -179,7 +248,11 @@ def report(repo: str, start: datetime, end: datetime) -> dict:
     cycles = []
     for number in issues:
         cycle = issue_cycle(
-            number, paged(f"repos/{repo}/issues/{number}/comments"), start, end
+            number,
+            paged(f"repos/{repo}/issues/{number}/comments"),
+            start,
+            end,
+            repository=repo,
         )
         if cycle:
             cycles.append(cycle)
