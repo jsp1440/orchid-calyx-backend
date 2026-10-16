@@ -456,6 +456,48 @@ def test_synthesis_hypothesis_with_two_sources_passes():
     assert len(hyps) == 1
 
 
+def test_synthesis_hypothesis_rejects_duplicate_source_ids():
+    """Hypothesis with duplicate source_ids (same source repeated) should be rejected."""
+    hypothesis = SynthesisItem(
+        item_id="hyp-003",
+        category=SynthesisCategory.TESTABLE_HYPOTHESIS,
+        claim="Platanthera leucophaea associates with Tulasnella",
+        supporting_source_ids=("naocc-home-001", "naocc-home-001"),  # same source twice
+        contradicting_source_ids=(),
+        confidence_notes="Low",
+        limitations="Duplicate source",
+        is_ai_interpretation=True,
+    )
+    with pytest.raises(ValueError, match="≥2 independent supporting sources; has 1"):
+        build_provenance_aware_synthesis(
+            scientific_question="Mycorrhizal associations",
+            records=[_valid_record()],
+            items=[hypothesis],
+        )
+
+
+def test_synthesis_hypothesis_accepts_two_distinct_sources():
+    """Hypothesis with two distinct source_ids should pass and preserve them."""
+    hypothesis = SynthesisItem(
+        item_id="hyp-004",
+        category=SynthesisCategory.TESTABLE_HYPOTHESIS,
+        claim="Platanthera leucophaea associates with Tulasnella",
+        supporting_source_ids=("naocc-home-001", "naocc-iucn-001"),  # 2 distinct sources
+        contradicting_source_ids=(),
+        confidence_notes="Low — requires extraction verification",
+        limitations="Both sources unverified; candidate only",
+        is_ai_interpretation=True,
+    )
+    s = build_provenance_aware_synthesis(
+        scientific_question="Mycorrhizal associations",
+        records=[_valid_record()],
+        items=[hypothesis],
+    )
+    hyps = s.by_category(SynthesisCategory.TESTABLE_HYPOTHESIS)
+    assert len(hyps) == 1
+    assert list(hyps[0].supporting_source_ids) == ["naocc-home-001", "naocc-iucn-001"]
+
+
 def test_synthesis_to_dict_has_required_keys():
     s = build_provenance_aware_synthesis(
         scientific_question="Test",
