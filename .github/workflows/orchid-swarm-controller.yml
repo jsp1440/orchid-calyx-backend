@@ -540,6 +540,29 @@ jobs:
             echo "- production deploy: disabled"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Durable lane telemetry. The homeostasis reason above lives only in this
+      # run's summary; 32 consecutive zero-launch waves left no durable reason.
+      # This keeps one current-status comment on the lane feed issue (#1949)
+      # updated every wave and appends one only when the lane state or reason
+      # changes. Best effort: it never fails or delays the wave.
+      - name: Publish lane status
+        if: always()
+        continue-on-error: true
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -m scripts.oc_lane_status \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/swarm-plan.json" \
+            --lease-recovery "$RUNNER_TEMP/swarm-lease-recovery.json" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "$RUN_URL" \
+            --event "${{ github.event_name }}" \
+            --provider-launch-count "${{ steps.claim.outputs.provider_launch_count || '0' }}" \
+            --provider-free-launch-count "${{ steps.claim.outputs.provider_free_launch_count || '0' }}" \
+            --provider-blocked "${{ steps.no_api.outputs.blocked == 'true' || steps.coding_governor.outputs.authorized != 'true' }}"
+
   workers:
     needs: plan
     if: needs.plan.outputs.provider_launch_count != '0' && needs.plan.outputs.provider_blocked == 'false'
