@@ -67,7 +67,10 @@ _NAVIGATION_NOISE = (
 
 def climate_context_relevant(message: str) -> bool:
     normalized = " ".join(message.casefold().split())
-    return any(term in normalized for term in _CLIMATE_TERMS)
+    return any(
+        re.search(rf"(?<!\w){re.escape(term)}(?!\w)", normalized)
+        for term in _CLIMATE_TERMS
+    )
 
 
 def _html_to_text(value: str) -> str:
