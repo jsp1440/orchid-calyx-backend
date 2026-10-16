@@ -835,3 +835,21 @@ def test_the_controller_workflow_caps_paid_launches_at_the_lane_concurrency():
     lane = Path(".github/workflows/orchid-completion-lane.yml").read_text(encoding="utf-8")
     assert "group: swarm-paid-execution-${{ github.repository }}" in lane
     assert swarm.PAID_LAUNCH_CAPACITY == 1
+
+
+def test_deferred_paid_work_frees_its_slot_and_lock_for_launchable_work():
+    """Review F2: the cap is applied before slots and locks are spent."""
+    free = _row(9, "oc-queued", "oc-p3", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done", writes="shared-x")
+    issues = [_paid(1, "oc-p1"), _row(2, "oc-queued", "oc-p1", body=CODE, writes="shared-x"), free]
+    plan = _plan(issues, coding_executor_available=True, worker_slots=2, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1 and plan["provider_free_launch_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2]
+    assert plan["homeostasis"]["reason"] == "executing"
+
+
+def test_an_unroutable_running_issue_counts_as_paid_instead_of_crashing():
+    """Review F1: an unknown capability on an oc-running row must not stop planning."""
+    running = _row(1, "oc-running", body="OC-SWARM-CAPABILITY: frobnicate-xyz")
+    plan = _plan([running, _paid(2)], coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["paid_active_count"] == 1 and plan["provider_launch_count"] == 0
+    assert plan["paid_capacity_deferred"] == [2]

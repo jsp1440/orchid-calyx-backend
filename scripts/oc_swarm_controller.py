@@ -127,6 +127,21 @@ def is_lane_executable(issue: dict) -> bool:
     return _ROUTING.is_lane_executable(issue)
 
 
+def _is_paid_work(issue: dict) -> bool:
+    """Whether ``issue`` would occupy the paid lane; unroutable counts as paid.
+
+    Treating a row whose capability cannot be resolved as paid is the
+    conservative choice: it can only hold paid work back, never crash the
+    planner or launch a second paid worker.
+    """
+    try:
+        if is_lane_executable(issue):
+            return False
+        return "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities
+    except (_ROUTING.CapabilityUnknown, ValueError):
+        return True
+
+
 def lane_refusal(issue: dict) -> dict:
     """A durable record of deterministic work this lane cannot staff.
 
@@ -809,11 +824,32 @@ def build_swarm_plan(
     if malformed:
         raise RuntimeError("canonical planner returned ranked item without matching issue")
 
-    selected, lock_suppressed = locks.select_with_resource_locks(
-        candidates,
-        active_locks=active_locks,
-        capacity=capacity,
-    )
+    # Paid launch cap, applied before slots and locks are spent: paid work the
+    # paid lane cannot hold is withdrawn from candidacy and selection re-runs,
+    # so its capacity and resource locks go to work that can launch. Withdrawn
+    # paid work stays queued and unleased for a later wave. Paid workers
+    # already running fill the lane.
+    paid_active = sum(1 for issue, _ in active_rows if _is_paid_work(issue))
+    paid_deferred: list[int] = []
+    while True:
+        selected, lock_suppressed = locks.select_with_resource_locks(
+            candidates,
+            active_locks=active_locks,
+            capacity=capacity,
+        )
+        if paid_launch_capacity is None:
+            break
+        room = max(0, int(paid_launch_capacity) - paid_active)
+        paid_selected = [
+            int(item["issue_number"])
+            for item in selected
+            if _is_paid_work(issues[int(item["issue_number"])])
+        ]
+        excess = set(paid_selected[room:])
+        if not excess:
+            break
+        paid_deferred.extend(n for n in paid_selected if n in excess)
+        candidates = [c for c in candidates if int(c[0]["number"]) not in excess]
 
     workers = []
     for ordinal, item in enumerate(selected, start=1):
@@ -844,33 +880,6 @@ def build_swarm_plan(
     # the deterministic worker gets it marked blocked for a missing marker, and
     # sending it to the paid lane is the misrouting the router was repaired to
     # stop. It is recorded instead, so it stays visible as a missing capability.
-    # Paid launch cap. Work beyond what the paid lane can hold is not claimed:
-    # it stays queued and unleased for a later wave instead of being launched
-    # into a cancellation. A paid worker already running fills the lane.
-    paid_active = sum(
-        1
-        for issue, _ in active_rows
-        if not is_lane_executable(issue)
-        and "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities
-    )
-    paid_room = (
-        len(workers)
-        if paid_launch_capacity is None
-        else max(0, int(paid_launch_capacity) - paid_active)
-    )
-    paid_deferred = []
-    kept = []
-    for worker in workers:
-        paid = not worker["lane_executable"] and not worker["acquisition"]
-        if paid and paid_room <= 0:
-            paid_deferred.append(worker["issue_number"])
-            continue
-        if paid:
-            paid_room -= 1
-        kept.append(worker)
-    if paid_deferred:
-        workers = [{**worker, "slot": ordinal} for ordinal, worker in enumerate(kept, start=1)]
-
     provider_free_workers = [worker for worker in workers if worker["lane_executable"]]
     acquisition_workers = [worker for worker in workers if worker["acquisition"]]
     provider_workers = [worker for worker in workers if not worker["lane_executable"] and not worker["acquisition"]]
