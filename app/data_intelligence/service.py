@@ -42,7 +42,11 @@ def _coerce_number(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     try:
-        return float(str(value).strip())
+        result = float(str(value).strip())
+        # Reject non-finite floats (NaN, inf, -inf)
+        if not math.isfinite(result):
+            return None
+        return result
     except (TypeError, ValueError):
         return None
 
