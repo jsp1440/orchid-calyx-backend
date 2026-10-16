@@ -64,7 +64,7 @@ def _cost_benefit(reconstruction: dict[str, Any]) -> dict[str, Any]:
         if isinstance(first, str) and isinstance(last, str):
             try:
                 elapsed = (datetime.fromisoformat(last) - datetime.fromisoformat(first)).total_seconds()
-            except ValueError:
+            except (ValueError, TypeError):
                 elapsed = -1
             if elapsed >= 0:
                 duration = _calculated_metric(elapsed, "seconds", source_ref)
