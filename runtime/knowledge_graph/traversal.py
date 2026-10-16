@@ -9,7 +9,8 @@ yet for this focal node.
 
 from __future__ import annotations
 
-from typing import Any, Iterable
+from collections.abc import Iterable
+from typing import Any
 
 from .models import Edge, Node
 from .repository import GraphRepository
@@ -48,8 +49,9 @@ def traverse(
     collected_edges: dict[int, Edge] = {}
     frontier = [focal.kg_node_id]
     truncated = False
+    first_hop_truncated = False
 
-    for _ in range(depth):
+    for hop_index in range(depth):
         if not frontier:
             break
         edges = repo.get_outgoing_edges(
@@ -60,6 +62,9 @@ def traverse(
         )
         if len(edges) > limit:
             truncated = True
+            # Only track first hop truncation
+            if hop_index == 0:
+                first_hop_truncated = True
             edges = edges[:limit]
 
         next_ids: list[int] = []
@@ -99,7 +104,7 @@ def traverse(
             "limit": limit,
             "offset": requested_offset,
             "truncated": truncated,
-            "next_offset": (requested_offset + limit) if truncated else None,
+            "next_offset": (requested_offset + limit) if first_hop_truncated else None,
         },
         "filters": {
             "node_types": sorted(node_type_filter) if node_type_filter else None,
