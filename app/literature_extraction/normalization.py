@@ -46,7 +46,7 @@ def _classify_domain(claim: Claim) -> str:
         return "cultivation"
     text = _normalized_text(claim.statement)
     for domain, markers in _CLAIM_DOMAIN_RULES:
-        if any(marker in text for marker in markers):
+        if any(re.search(rf"\b{re.escape(marker)}", text) for marker in markers):
             return domain
     return "other"
 
