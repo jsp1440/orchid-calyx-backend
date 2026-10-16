@@ -46,20 +46,37 @@ def issue(number=1, labels=("oc-running", "oc-p4"), state="OPEN"):
 class Transport:
     """In-memory stand-in for the gh transport with fault injection."""
 
-    def __init__(self, issues, *, comments=None, prs=None, labeled=None, runs=None):
+    def __init__(self, issues, *, comments=None, prs=None, labeled=None, runs=None, conclusions=None):
         self.repository = REPO
         self.issues = {i["number"]: i for i in issues}
         self._comments = comments or {}
         self._prs = prs or []
         self._labeled = labeled or {}
         self._runs = runs or {}
+        self._conclusions = conclusions or {}
         self.edits = []
         self.posted = []
+        self.closed = []
         self.fail_edit = False
+        self.fail_close = False
         self.leave_running_after_edit = False
 
     def running_issues(self):
         return [dict(i) for i in self.issues.values() if "oc-running" in i["labels"] and i["state"] == "OPEN"]
+
+    def validating_issues(self):
+        return [dict(i) for i in self.issues.values() if "oc-validating" in i["labels"] and i["state"] == "OPEN"]
+
+    def run_conclusion(self, run_id):
+        return self._conclusions.get(run_id, "unknown")
+
+    def close_pull_request(self, number, body):
+        if self.fail_close:
+            raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
+        self.closed.append((number, body))
+        self._prs = [p for p in self._prs if p["number"] != number] + [
+            {"number": number, "state": "CLOSED", "mergedAt": None, "body": ""}
+        ]
 
     def pull_requests(self):
         return list(self._prs)
@@ -255,3 +272,118 @@ def test_safety_receipt_declares_no_provider_or_time_based_release():
     assert report["safety"]["provider_calls"] is False
     assert report["safety"]["time_alone_releases_lease"] is False
     assert report["running_count"] == 0
+
+
+# --- #1938: an oc-validating issue whose worker run did not succeed ---------
+
+OPEN_PR = {"number": 7, "state": "OPEN", "mergedAt": None, "body": "OC-AUTO-ISSUE: #1\n"}
+
+
+def stranded(conclusion="cancelled", *, prs=(OPEN_PR,), comments=None, status="completed"):
+    return Transport(
+        [issue(labels=("oc-validating", "oc-model-cheap"))],
+        comments={1: comments if comments is not None else [claim_comment()]},
+        prs=list(prs),
+        runs={555: status},
+        conclusions={555: conclusion},
+    )
+
+
+@pytest.mark.parametrize("conclusion", ["cancelled", "failure", "timed_out", "startup_failure"])
+def test_validating_issue_with_unsuccessful_worker_run_is_recovered(conclusion):
+    t = stranded(conclusion)
+    report = run(t)
+    assert report["stranded_recovered_count"] == 1
+    decision = report["stranded_recovered"][0]
+    assert decision["reason"] == recon.STRANDED_REASON
+    assert decision["target"] == "oc-queued" and decision["stranded_pr"] == 7
+    assert decision["run_id"] == 555 and decision["lease_comment_id"] == 900
+    assert decision["run_conclusion"] == conclusion
+    assert [number for number, _ in t.closed] == [7]
+    assert set(t.issues[1]["labels"]) == {"oc-queued", "oc-model-cheap"}
+    number, body = t.posted[-1]
+    payload = json.loads(body[len(recon.RECOVERY_PREFIX):body.index("`.")])
+    assert number == 1 and payload["schema"] == recon.RECOVERY_SCHEMA
+    assert payload["reason"] == recon.STRANDED_REASON
+    assert payload["released_state"] == ["oc-model-cheap", "oc-queued"]
+    assert "oc-running" not in payload["released_state"]
+
+
+@pytest.mark.parametrize("conclusion", ["success", "unknown", "neutral", "skipped", None])
+def test_successful_or_unknown_worker_run_is_left_alone(conclusion):
+    t = stranded(conclusion)
+    report = run(t)
+    assert report["stranded_recovered_count"] == 0
+    assert not t.closed and not t.edits and not t.posted
+
+
+@pytest.mark.parametrize("status", ["in_progress", "queued", "unknown", "missing"])
+def test_worker_run_not_completed_is_left_alone(status):
+    t = stranded(status=status)
+    assert run(t)["stranded_recovered_count"] == 0 and not t.closed and not t.edits
+
+
+def test_merged_integration_pr_is_never_touched():
+    merged = {**OPEN_PR, "state": "MERGED", "mergedAt": "2026-09-16T10:00:00Z"}
+    t = stranded(prs=(merged,))
+    assert run(t)["stranded_recovered_count"] == 0 and not t.closed and not t.edits
+
+
+def test_validating_without_an_authenticated_claim_is_left_alone():
+    t = stranded(comments=[])
+    assert run(t)["stranded_recovered_count"] == 0 and not t.edits
+    forged = stranded(comments=[claim_comment(login={"login": "someone"})])
+    assert run(forged)["stranded_recovered_count"] == 0 and not forged.edits
+
+
+def test_already_closed_pr_still_requeues_without_closing_again():
+    """A previous recovery closed the PR but could not relabel."""
+    t = stranded(prs=())
+    decision = run(t)["stranded_recovered"][0]
+    assert decision["stranded_pr"] is None and not t.closed
+    assert set(t.issues[1]["labels"]) == {"oc-queued", "oc-model-cheap"}
+
+
+def test_stranded_recoveries_share_the_bounded_budget():
+    comments = [recovery_comment(1), recovery_comment(2), claim_comment()]
+    t = stranded(comments=comments)
+    decision = run(t)["stranded_recovered"][0]
+    assert decision["target"] == "oc-blocked"
+    assert decision["reason"] == f"{recon.STRANDED_REASON}:automatic_recoveries_exhausted"
+    assert set(t.issues[1]["labels"]) == {"oc-blocked", "oc-model-cheap"}
+
+
+def test_close_failure_writes_nothing_else():
+    t = stranded()
+    t.fail_close = True
+    report = run(t)
+    assert report["stranded_recovered_count"] == 0 and not t.edits and not t.posted
+    assert report["errors"] == [
+        {"issue": 1, "reason": "stranded_validation_unconfirmed", "error_type": "CalledProcessError"}
+    ]
+
+
+def test_dry_run_closes_and_relabels_nothing():
+    t = stranded()
+    report = run(t, dry_run=True)
+    assert report["stranded_recovered"][0]["dry_run"] is True
+    assert not t.closed and not t.edits and not t.posted
+
+
+def test_running_issues_are_not_also_treated_as_stranded():
+    t = Transport(
+        [issue(labels=("oc-running", "oc-validating"))],
+        comments={1: [claim_comment()]},
+        prs=[OPEN_PR],
+        runs={555: "completed"},
+        conclusions={555: "cancelled"},
+    )
+    report = run(t)
+    assert report["recovered"][0]["reason"] == "running_label_beside_parked_state"
+    assert report["stranded_recovered_count"] == 0 and not t.closed
+
+
+def test_the_acceptance_report_counts_the_stranded_recovery_reason():
+    from scripts import oc_engineering_acceptance_report as acceptance
+
+    assert recon.STRANDED_REASON in acceptance.RECOVER_REASONS
