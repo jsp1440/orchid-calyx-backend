@@ -24,6 +24,7 @@ Do not create one memory file per trivial edit. Persist only rules that material
 - Do not modify working product code in response to a workflow that never executed repository steps.
 - Conversely, once a runner is assigned and repository steps execute, treat a deterministic failing step as a real validation failure until reproduced or explained.
 - Never claim hosted green evidence when no hosted steps ran.
+- Third-party commit statuses are not CI unless branch protection requires them. `recurseml/analysis` (RecurseML) is decommissioned: the owner cancelled the subscription on 2026-10-12, and no repository lists it as a required status check (`contexts: []`, `checks: []`, no rulesets, verified 2026-10-12). Its historical `Error occurred during analysis` status is not a blocker, not a code failure and not evidence. Never re-run, reactivate or purchase it, never hold a PR or push code because of it, and never report a PR as `BLOCKED` on it. Its `RECURSEML_SUMMARY` block in old PR bodies is bot text, not review evidence. The same applies to expired trial review bots (for example Greptile "trial has ended" reviews).
 
 ## Merge integrity
 
