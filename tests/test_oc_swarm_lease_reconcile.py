@@ -58,7 +58,6 @@ class Transport:
         self.posted = []
         self.closed = []
         self.fail_edit = False
-        self.fail_close = False
         self.leave_running_after_edit = False
 
     def running_issues(self):
@@ -71,12 +70,7 @@ class Transport:
         return self._conclusions.get(run_id, "unknown")
 
     def close_pull_request(self, number, body):
-        if self.fail_close:
-            raise subprocess.CalledProcessError(1, "gh", stderr="HTTP 502")
         self.closed.append((number, body))
-        self._prs = [p for p in self._prs if p["number"] != number] + [
-            {"number": number, "state": "CLOSED", "mergedAt": None, "body": ""}
-        ]
 
     def pull_requests(self):
         return list(self._prs)
@@ -279,9 +273,10 @@ def test_safety_receipt_declares_no_provider_or_time_based_release():
 OPEN_PR = {"number": 7, "state": "OPEN", "mergedAt": None, "body": "OC-AUTO-ISSUE: #1\n"}
 
 
-def stranded(conclusion="cancelled", *, prs=(OPEN_PR,), comments=None, status="completed"):
+def stranded(conclusion="cancelled", *, prs=(OPEN_PR,), comments=None, status="completed",
+             labels=("oc-validating", "oc-model-cheap")):
     return Transport(
-        [issue(labels=("oc-validating", "oc-model-cheap"))],
+        [issue(labels=labels)],
         comments={1: comments if comments is not None else [claim_comment()]},
         prs=list(prs),
         runs={555: status},
@@ -290,7 +285,7 @@ def stranded(conclusion="cancelled", *, prs=(OPEN_PR,), comments=None, status="c
 
 
 @pytest.mark.parametrize("conclusion", ["cancelled", "failure", "timed_out", "startup_failure"])
-def test_validating_issue_with_unsuccessful_worker_run_is_recovered(conclusion):
+def test_validating_issue_with_unsuccessful_worker_run_is_requeued(conclusion):
     t = stranded(conclusion)
     report = run(t)
     assert report["stranded_recovered_count"] == 1
@@ -299,14 +294,21 @@ def test_validating_issue_with_unsuccessful_worker_run_is_recovered(conclusion):
     assert decision["target"] == "oc-queued" and decision["stranded_pr"] == 7
     assert decision["run_id"] == 555 and decision["lease_comment_id"] == 900
     assert decision["run_conclusion"] == conclusion
-    assert [number for number, _ in t.closed] == [7]
+    assert t.edits == [(1, ("oc-validating",), ("oc-queued",))]
     assert set(t.issues[1]["labels"]) == {"oc-queued", "oc-model-cheap"}
     number, body = t.posted[-1]
     payload = json.loads(body[len(recon.RECOVERY_PREFIX):body.index("`.")])
     assert number == 1 and payload["schema"] == recon.RECOVERY_SCHEMA
-    assert payload["reason"] == recon.STRANDED_REASON
+    assert payload["reason"] == recon.STRANDED_REASON and payload["stranded_pr"] == 7
     assert payload["released_state"] == ["oc-model-cheap", "oc-queued"]
-    assert "oc-running" not in payload["released_state"]
+
+
+def test_the_stranded_pr_is_never_touched():
+    """The plan job has read-only pull-request access; only the issue is written."""
+    t = stranded()
+    run(t)
+    assert not t.closed
+    assert [number for number, _ in t.posted] == [1]
 
 
 @pytest.mark.parametrize("conclusion", ["success", "unknown", "neutral", "skipped", None])
@@ -314,19 +316,30 @@ def test_successful_or_unknown_worker_run_is_left_alone(conclusion):
     t = stranded(conclusion)
     report = run(t)
     assert report["stranded_recovered_count"] == 0
-    assert not t.closed and not t.edits and not t.posted
+    assert not t.edits and not t.posted
 
 
 @pytest.mark.parametrize("status", ["in_progress", "queued", "unknown", "missing"])
 def test_worker_run_not_completed_is_left_alone(status):
     t = stranded(status=status)
-    assert run(t)["stranded_recovered_count"] == 0 and not t.closed and not t.edits
+    assert run(t)["stranded_recovered_count"] == 0 and not t.edits
 
 
-def test_merged_integration_pr_is_never_touched():
+def test_merged_integration_pr_is_never_requeued():
     merged = {**OPEN_PR, "state": "MERGED", "mergedAt": "2026-09-16T10:00:00Z"}
     t = stranded(prs=(merged,))
-    assert run(t)["stranded_recovered_count"] == 0 and not t.closed and not t.edits
+    assert run(t)["stranded_recovered_count"] == 0 and not t.edits
+
+
+@pytest.mark.parametrize(
+    "extra",
+    ["oc-owner-gate", "oc-scientific-gate", "oc-blocked", "oc-repair", "oc-queued",
+     "oc-done", "oc-runtime-backoff", "oc-repair-backoff"],
+)
+def test_validating_beside_any_other_state_or_gate_is_left_alone(extra):
+    t = stranded(labels=("oc-validating", extra))
+    report = run(t)
+    assert report["stranded_recovered_count"] == 0 and not t.edits and not t.posted
 
 
 def test_validating_without_an_authenticated_claim_is_left_alone():
@@ -336,12 +349,18 @@ def test_validating_without_an_authenticated_claim_is_left_alone():
     assert run(forged)["stranded_recovered_count"] == 0 and not forged.edits
 
 
-def test_already_closed_pr_still_requeues_without_closing_again():
-    """A previous recovery closed the PR but could not relabel."""
+def test_no_open_pr_still_requeues():
     t = stranded(prs=())
     decision = run(t)["stranded_recovered"][0]
-    assert decision["stranded_pr"] is None and not t.closed
+    assert decision["stranded_pr"] is None
     assert set(t.issues[1]["labels"]) == {"oc-queued", "oc-model-cheap"}
+
+
+def test_a_requeued_issue_is_not_recovered_again_on_the_next_pass():
+    t = stranded()
+    assert run(t)["stranded_recovered_count"] == 1
+    assert run(t)["stranded_recovered_count"] == 0
+    assert len(t.posted) == 1
 
 
 def test_stranded_recoveries_share_the_bounded_budget():
@@ -353,21 +372,21 @@ def test_stranded_recoveries_share_the_bounded_budget():
     assert set(t.issues[1]["labels"]) == {"oc-blocked", "oc-model-cheap"}
 
 
-def test_close_failure_writes_nothing_else():
+def test_label_write_failure_writes_no_receipt():
     t = stranded()
-    t.fail_close = True
+    t.fail_edit = True
     report = run(t)
-    assert report["stranded_recovered_count"] == 0 and not t.edits and not t.posted
+    assert report["stranded_recovered_count"] == 0 and not t.posted
     assert report["errors"] == [
-        {"issue": 1, "reason": "stranded_validation_unconfirmed", "error_type": "CalledProcessError"}
+        {"issue": 1, "reason": "stranded_validation_unconfirmed", "error_type": "TimeoutExpired"}
     ]
 
 
-def test_dry_run_closes_and_relabels_nothing():
+def test_dry_run_relabels_nothing():
     t = stranded()
     report = run(t, dry_run=True)
     assert report["stranded_recovered"][0]["dry_run"] is True
-    assert not t.closed and not t.edits and not t.posted
+    assert not t.edits and not t.posted
 
 
 def test_running_issues_are_not_also_treated_as_stranded():
@@ -380,7 +399,7 @@ def test_running_issues_are_not_also_treated_as_stranded():
     )
     report = run(t)
     assert report["recovered"][0]["reason"] == "running_label_beside_parked_state"
-    assert report["stranded_recovered_count"] == 0 and not t.closed
+    assert report["stranded_recovered_count"] == 0
 
 
 def test_the_acceptance_report_counts_the_stranded_recovery_reason():

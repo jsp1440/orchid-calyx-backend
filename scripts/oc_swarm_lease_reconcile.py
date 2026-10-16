@@ -298,11 +298,12 @@ def classify_stranded_validation(
 ) -> dict:
     """Decide, without mutating anything, whether an oc-validating issue is stranded.
 
-    Stranded means all of: the issue is open in oc-validating (not oc-running);
-    its integration PR is open and unmerged; the newest authenticated claim's
-    controller run has completed with a definite unsuccessful conclusion. The
-    hosted checker refuses any worker run that did not succeed, so that PR can
-    never be validated and nothing else would ever move the issue.
+    Stranded means all of: the issue is open and its only state label is
+    oc-validating (no gate, hold or other state, as the hosted checker itself
+    requires); no merged integration PR exists for it; the newest authenticated
+    claim's controller run has completed with a definite unsuccessful
+    conclusion. The hosted checker refuses any worker run that did not succeed,
+    so that PR can never be validated and nothing else would ever move the issue.
     """
     number = int(issue["number"])
     labels = _labels(issue)
@@ -326,9 +327,9 @@ def classify_stranded_validation(
     if (
         str(issue.get("state") or "OPEN").upper() != "OPEN"
         or VALIDATING not in labels
-        or RUNNING in labels
+        or labels & (PARKED | {RUNNING, QUEUED, "oc-repair"}) != {VALIDATING}
     ):
-        decision["reason"] = "not_validating"
+        decision["reason"] = "not_exclusively_validating"
         return decision
     if durable_pr is not None and (
         durable_pr.get("merged") or str(durable_pr.get("state") or "").upper() != "OPEN"
@@ -504,24 +505,6 @@ class GitHubTransport:
             return "unknown"
         return str((run or {}).get("conclusion") or "unknown")
 
-    def close_pull_request(self, number: int, body: str) -> None:
-        saved = self.comment(number, body)
-        if saved.get("body") != body or not saved.get("id"):
-            raise ValueError("stranded pr receipt unconfirmed")
-        closed = self._run(
-            [
-                "api",
-                "--method",
-                "PATCH",
-                f"repos/{self.repository}/pulls/{number}",
-                "--input",
-                "-",
-            ],
-            {"state": "closed"},
-        )
-        if (closed or {}).get("state") != "closed" or (closed or {}).get("merged"):
-            raise ValueError("stranded pr close unconfirmed")
-
     def issue(self, number: int) -> dict:
         return self._run(
             [
@@ -596,18 +579,14 @@ def apply_recovery(
 def apply_stranded_recovery(
     transport: GitHubTransport, decision: dict, *, controller_run_url: str
 ) -> dict:
-    """Close a PR no checker can consume, requeue (or park) its issue, receipt it."""
+    """Requeue (or park) a stranded issue and receipt it on the issue.
+
+    The PR is deliberately left open and only named in the receipt: the plan
+    job that runs this reconciler has read-only pull-request access, and the
+    next worker opens a new PR on its own branch, which the completion lane
+    selects as the newest open PR for the issue. Only issue writes happen here.
+    """
     number = decision["issue_number"]
-    pr = decision["stranded_pr"]
-    if pr is not None:
-        transport.close_pull_request(
-            pr,
-            f"[OC-SWARM-V4] Closed unmerged: the controller run that produced this "
-            f"PR (run {decision['run_id']}) concluded `{decision['run_conclusion']}`, "
-            f"and the hosted checker only validates a successful run, so this PR "
-            f"can never be consumed. Issue #{number} is recovered by "
-            f"{controller_run_url}.",
-        )
     present = set(decision.get("labels") or [VALIDATING])
     remove = [label for label in (VALIDATING, QUEUED) if label in present]
     add = [decision["target"]] if decision["target"] not in present else []
