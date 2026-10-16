@@ -34,6 +34,8 @@ def _finite(value: Any) -> float | None:
         number = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError("TRANSFORM_NON_NUMERIC_VALUE") from exc
+    except OverflowError as exc:
+        raise ValueError("TRANSFORM_NON_FINITE_VALUE") from exc
     if not math.isfinite(number):
         raise ValueError("TRANSFORM_NON_FINITE_VALUE")
     return number
