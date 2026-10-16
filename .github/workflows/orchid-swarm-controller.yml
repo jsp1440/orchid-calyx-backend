@@ -545,9 +545,13 @@ jobs:
       # This keeps one current-status comment on the lane feed issue (#1949)
       # updated every wave and appends one only when the lane state or reason
       # changes. Best effort: it never fails or delays the wave.
+      # Only the canonical integration run publishes: issue/PR-event runs on
+      # main plan provider-free-only with deferred edits, so their reason
+      # describes a different queue and would overwrite the canonical status.
       - name: Publish lane status
-        if: always()
+        if: ${{ !cancelled() && steps.controller_revision.outputs.canonical_integration == 'true' }}
         continue-on-error: true
+        timeout-minutes: 2
         shell: bash
         env:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}

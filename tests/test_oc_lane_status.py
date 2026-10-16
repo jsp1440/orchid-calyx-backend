@@ -239,7 +239,38 @@ def test_the_controller_publishes_lane_status_after_planning_and_never_fails_on_
     steps = [s for s in plan_job["steps"] if s.get("name") == "Publish lane status"]
     assert len(steps) == 1
     step = steps[0]
-    assert step.get("continue-on-error") is True and step.get("if") == "always()"
+    assert step.get("continue-on-error") is True and step.get("timeout-minutes") == 2
+    assert (
+        "!cancelled()" in step["if"] and "canonical_integration == 'true'" in step["if"]
+    )
     assert "scripts.oc_lane_status" in step["run"]
     assert '--plan "$RUNNER_TEMP/swarm-plan.json"' in step["run"]
     assert "swarm-lease-recovery.json" in step["run"]
+
+
+def test_a_selected_wave_that_launched_nothing_is_not_working():
+    rec = record(plan("executing", "executing", [1943]))
+    assert (rec["lane_state"], rec["reason"]) == ("blocked", "selected_not_launched")
+
+
+def test_a_saturated_lane_with_running_workers_stays_working():
+    assert record(plan("capacity_full", "saturated"))["lane_state"] == "working"
+
+
+def test_comment_reads_stop_at_the_page_holding_current(monkeypatch):
+    gh = lanes.GitHub("o/r")
+    pages = {
+        1: [comment(i, record(), tag=lanes.TRANSITION_TAG) for i in range(1, 100)]
+        + [comment(100, record())],
+        2: [comment(200 + i, record(), tag=lanes.TRANSITION_TAG) for i in range(100)],
+    }
+    calls = []
+
+    def api(path, payload=None, method="GET"):
+        page = int(path.rsplit("page=", 1)[1])
+        calls.append(page)
+        return pages.get(page, [])
+
+    monkeypatch.setattr(gh, "_api", api)
+    rows = gh.comments(1949)
+    assert calls == [1] and len(rows) == 100

@@ -79,6 +79,10 @@ def lane_state(
     if provider_blocked and reason in {"executing", "capacity_full"}:
         # Planned paid work that the governor or NO-API mode refused to launch.
         return "blocked", f"provider_blocked:{reason}"
+    if reason == "executing":
+        # The plan selected work but nothing launched (claim failed or confirmed
+        # no claims): never report that as working.
+        return "blocked", "selected_not_launched"
     return _REASON_STATE.get(reason, "blocked"), reason
 
 
@@ -210,13 +214,23 @@ class GitHub:
         return json.loads(result.stdout) if result.stdout.strip() else None
 
     def comments(self, issue: int) -> list[dict]:
+        """Oldest-first comments up to and including the page holding CURRENT.
+
+        CURRENT is created first and then only updated in place, so it sits on
+        the first page; transitions accumulate after it. Stopping at the page
+        that holds it keeps each wave to one read however long history grows.
+        """
         rows: list[dict] = []
         for page in range(1, 11):
             batch = self._api(f"issues/{issue}/comments?per_page=100&page={page}")
             if not isinstance(batch, list):
                 raise TypeError("status_comments_unreadable")
             rows.extend(batch)
-            if len(batch) < 100:
+            if len(batch) < 100 or any(
+                (row.get("user") or {}).get("login") == BOT_LOGIN
+                and parse(row.get("body") or "", CURRENT_TAG) is not None
+                for row in batch
+            ):
                 return rows
         raise ValueError("status_comments_truncated")
 
