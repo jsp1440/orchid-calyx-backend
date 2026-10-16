@@ -449,6 +449,7 @@ jobs:
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \
+            --paid-launch-capacity 1 \
             "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"

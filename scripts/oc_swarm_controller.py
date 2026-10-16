@@ -35,6 +35,15 @@ def _load_routing():
 
 DEFAULT_WORKER_SLOTS = 8
 MAX_WORKER_SLOTS = 12
+#: Every paid lane shares one GitHub concurrency group
+#: (``swarm-paid-execution-<repo>``, PAID_WORKER_CONCURRENCY=1 in
+#: runtime/swarm/policy.py): one job runs, one may wait, and any further job is
+#: cancelled before it starts. Launching more paid workers than that leaves
+#: cancelled matrix jobs whose stale leases each spend one of the issue's
+#: automatic recoveries (runs 38682500061 and 38683462208 launched 8, of which
+#: 6 were cancelled within a second). The controller workflow passes this as
+#: ``--paid-launch-capacity`` so the planner launches no more than the lane holds.
+PAID_LAUNCH_CAPACITY = 1
 # Routing is capability-based; see app/provider_reservoir/routing.py. This module
 # keeps a local import path so the controller runs from a bare checkout.
 _ROUTING = _load_routing()
@@ -470,8 +479,14 @@ def classify_wave_outcome(
     provider_parked: list[int],
     edit_deferred: list[int],
     lane_refusal_reasons: list[dict] | None = None,
+    paid_deferred: list[int] | None = None,
 ) -> dict:
     """Classify one wave against the homeostasis invariant. Pure.
+
+    ``paid_deferred`` is ready paid work the planner withheld because the
+    single paid lane is full (``PAID_LAUNCH_CAPACITY``). It is held, not idle:
+    it never counts as ready-but-unselected, and when nothing else was
+    selected the wave is ``capacity_full``.
 
     Classifies only from data the plan already holds: the ORIGINAL snapshot's
     labels and states, the dependency graph status, the lock selector's
@@ -510,6 +525,7 @@ def classify_wave_outcome(
     }
     selected = {int(n) for n in selected_numbers}
     lock_held = {int(item["issue_number"]) for item in lock_suppressed}
+    paid_held = {int(n) for n in paid_deferred or []}
     lane_refused_set = {int(n) for n in lane_refused}
     provider_parked_set = {int(n) for n in provider_parked}
 
@@ -576,7 +592,9 @@ def classify_wave_outcome(
     waiting = [n for n in queued if n not in selected]
     direct_gated = set(owner_gated) | set(scientific_gated) | provider_parked_set
     ready_unselected = [
-        int(n) for n in ready_numbers if int(n) not in selected and int(n) not in lock_held
+        int(n)
+        for n in ready_numbers
+        if int(n) not in selected and int(n) not in lock_held and int(n) not in paid_held
     ]
     spare = max(0, int(capacity) - len(selected))
 
@@ -584,7 +602,7 @@ def classify_wave_outcome(
         reason = "invariant_violation"
     elif selected:
         reason = "executing"
-    elif int(capacity) <= 0:
+    elif int(capacity) <= 0 or paid_held:
         reason = "capacity_full"
     elif not queued:
         reason = "queue_empty"
@@ -633,6 +651,7 @@ def classify_wave_outcome(
                 key=lambda row: row["issue"],
             ),
             "lock_contended": sorted(lock_held),
+            "paid_capacity_deferred": sorted(paid_held),
         },
         "evidence": {
             "queued_open": len(queued),
@@ -691,8 +710,13 @@ def build_swarm_plan(
     provider_free_only: bool = False,
     defer_edit_mode: bool = False,
     coding_executor_available: bool = False,
+    paid_launch_capacity: int | None = None,
 ) -> dict:
     """Return a dependency- and resource-aware worker matrix.
+
+    ``paid_launch_capacity`` (None = unlimited) caps paid workers per wave,
+    counting paid workers already running; excess paid work stays queued and
+    unleased for a later wave instead of being launched into a cancellation.
 
     ``coding_executor_available`` is true only when providers are authorised for
     this run. Work whose own task is authoring code (declared capabilities, no
@@ -820,6 +844,33 @@ def build_swarm_plan(
     # the deterministic worker gets it marked blocked for a missing marker, and
     # sending it to the paid lane is the misrouting the router was repaired to
     # stop. It is recorded instead, so it stays visible as a missing capability.
+    # Paid launch cap. Work beyond what the paid lane can hold is not claimed:
+    # it stays queued and unleased for a later wave instead of being launched
+    # into a cancellation. A paid worker already running fills the lane.
+    paid_active = sum(
+        1
+        for issue, _ in active_rows
+        if not is_lane_executable(issue)
+        and "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities
+    )
+    paid_room = (
+        len(workers)
+        if paid_launch_capacity is None
+        else max(0, int(paid_launch_capacity) - paid_active)
+    )
+    paid_deferred = []
+    kept = []
+    for worker in workers:
+        paid = not worker["lane_executable"] and not worker["acquisition"]
+        if paid and paid_room <= 0:
+            paid_deferred.append(worker["issue_number"])
+            continue
+        if paid:
+            paid_room -= 1
+        kept.append(worker)
+    if paid_deferred:
+        workers = [{**worker, "slot": ordinal} for ordinal, worker in enumerate(kept, start=1)]
+
     provider_free_workers = [worker for worker in workers if worker["lane_executable"]]
     acquisition_workers = [worker for worker in workers if worker["acquisition"]]
     provider_workers = [worker for worker in workers if not worker["lane_executable"] and not worker["acquisition"]]
@@ -836,7 +887,11 @@ def build_swarm_plan(
     # Every dependency-ready candidate not selected remains live work for a
     # later wave. ``select_with_resource_locks`` stops once capacity is full,
     # so its suppression list alone cannot account for compatible overflow.
-    waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
+    waiting_count = (
+        len(dependency_suppressed)
+        + max(0, len(candidates) - len(selected))
+        + len(paid_deferred)
+    )
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
     # Provider-free-only mode withdraws non-executable work before the unstaffed
@@ -894,6 +949,7 @@ def build_swarm_plan(
         provider_parked=provider_parked_numbers(snapshot) if provider_free_only else [],
         edit_deferred=sorted(deferred_edit),
         lane_refusal_reasons=lane_refusal_reasons,
+        paid_deferred=paid_deferred,
     )
 
     # The refusal above says no deterministic executor exists. For work that is
@@ -922,6 +978,9 @@ def build_swarm_plan(
         "provider_matrix": {"include": provider_workers},
         "provider_free_launch_count": len(provider_free_workers),
         "provider_launch_count": len(provider_workers),
+        "paid_launch_capacity": paid_launch_capacity,
+        "paid_active_count": paid_active,
+        "paid_capacity_deferred": paid_deferred,
         "unstaffed_numbers": sorted(unstaffed),
         "lane_refusals": lane_refusals,
         "unstaffed_count": len(unstaffed),
@@ -998,6 +1057,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="JSON snapshot path, or - for stdin")
     parser.add_argument("--worker-slots", type=int, default=DEFAULT_WORKER_SLOTS)
+    parser.add_argument(
+        "--paid-launch-capacity",
+        type=int,
+        default=None,
+        help="Cap paid workers per wave (the paid lane's concurrency); default unlimited.",
+    )
     parser.add_argument("--provider-free-only", action="store_true")
     parser.add_argument(
         "--defer-edit-mode",
@@ -1024,6 +1089,7 @@ def main(argv: list[str] | None = None) -> int:
         provider_free_only=args.provider_free_only,
         defer_edit_mode=args.defer_edit_mode,
         coding_executor_available=args.coding_executor,
+        paid_launch_capacity=args.paid_launch_capacity,
     )
     if args.github_output:
         _write_github_output(args.github_output, plan)
