@@ -158,7 +158,14 @@ def stage_literature_batch(
             for span in (record.get("evidence_spans") or [])
             if isinstance(span, Mapping)
         )
-        authors = tuple(str(author) for author in (record.get("authors") or []) if author)
+        authors_value = record.get("authors") or []
+        if isinstance(authors_value, str):
+            # Handle string authors: keep whole string if non-empty
+            stripped = authors_value.strip()
+            authors = (stripped,) if stripped else ()
+        else:
+            # Handle list/iterable of authors: filter out empty entries
+            authors = tuple(str(author).strip() for author in authors_value if author and str(author).strip())
         publication_year = record.get("publication_year")
         if publication_year is not None:
             try:
