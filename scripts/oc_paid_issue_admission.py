@@ -7,7 +7,8 @@ on ten issues nobody authorized, after blocked reconciliation re-queued them
 when a budget variable changed. This gate closes that gap at the last point
 before a provider call. A worker may call a paid provider only for an issue
 that carries exactly one valid owner ``OC-HOSTED-FACTORY-AUTHORIZATION-V1``
-record bound to the issue's current material, unexpired, low/moderate risk.
+record bound to the issue's current material, unexpired, low/moderate risk,
+or that falls inside the owner's single standing grant on #1924.
 
 The check is the same ``authorization()`` the hosted checker already enforces,
 so a task that could never be integrated also cannot be paid for. It makes no
@@ -35,10 +36,16 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
     """Return the admission decision; never raises for an ordinary refusal."""
     fetch = fetch or _fetch
     try:
-        issue, comments = fetch(repository, issue_number)
+        issue, comments, *standing = fetch(repository, issue_number)
         if issue.get("pull_request") or issue.get("state") != "open":
             raise ValueError("issue_not_open")
-        grant = hosted.authorization(issue, comments, repository, now)
+        grant = hosted.authorization(
+            issue,
+            comments,
+            repository,
+            now,
+            standing_comments=standing[0] if standing else None,
+        )
     except Exception as exc:  # noqa: BLE001 - every failure is a refusal
         return {
             "authorized": False,
@@ -59,7 +66,8 @@ def admit(repository: str, issue_number: int, *, fetch=None, now=None) -> dict:
 def _fetch(repository: str, issue_number: int):
     issue = hosted.api(repository, f"issues/{issue_number}")
     comments = hosted.pages(repository, f"issues/{issue_number}/comments")
-    return issue, comments
+    standing = hosted.pages(repository, f"issues/{hosted.STANDING_ISSUE}/comments")
+    return issue, comments, standing
 
 
 def main() -> int:
