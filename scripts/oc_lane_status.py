@@ -13,7 +13,9 @@ could read. This writes it to the lane-status feed issue (#1949):
   wave.
 
 Lane states are ``working``, ``idle``, ``blocked``, ``failed`` and
-``recovering``. Only the workflow bot's own comments are read back. Nothing here
+``recovering``. Each module lane (the plan's ``module_lanes`` report) also gets
+a state of its own under ``modules``; see ``module_states`` for the single
+precedence order. Only the workflow bot's own comments are read back. Nothing here
 calls a provider or writes a repository file, and publishing is best effort: a
 failure is reported in the output, never raised into the wave.
 """
@@ -25,6 +27,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -35,6 +38,25 @@ CURRENT_TAG = "OC-LANE-STATUS-CURRENT-V1"
 TRANSITION_TAG = "OC-LANE-STATUS-TRANSITION-V1"
 BOT_LOGIN = "github-actions[bot]"
 LANE_STATES = ("working", "idle", "blocked", "failed", "recovering")
+#: A module lane additionally reports ``unknown`` when a planned issue's state
+#: after claiming could not be observed and nothing stronger decides the lane.
+MODULE_STATES = LANE_STATES + ("unknown",)
+#: Planned issues re-observed per wave; the rest stay unresolved (fail closed).
+MAX_OBSERVED = 25
+#: Shared wall-clock budget for all post-claim reads, and the cap on any one read, so
+#: stalled API calls cannot outlast the workflow step before the record publishes.
+OBSERVE_BUDGET_SECONDS = 20.0
+OBSERVE_CALL_TIMEOUT = 8
+
+#: oc.module-lanes.v1 state -> lane state when no stronger evidence applies.
+_MODULE_BASE_STATE = {
+    "executing": "working",
+    "validating": "working",
+    "replenishable": "idle",
+    "empty": "idle",
+    "gated": "blocked",
+    "capability_gap": "blocked",
+}
 
 #: Planner homeostasis reason -> lane state (oc_swarm_controller.HOMEOSTASIS_STATUS).
 _REASON_STATE = {
@@ -56,6 +78,25 @@ def _int(value: Any) -> int:
     except (TypeError, ValueError):
         return 0
     return max(number, 0)
+
+
+def _issue_no(value: Any) -> int | None:
+    """One rule for issue numbers: a positive int. bool, str, float, 0 and < 0 are not."""
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value
+
+
+def _issue_set(values: Any, *keys: str) -> set[int]:
+    """Valid issue numbers from a list of ints or of dicts carrying one of ``keys``."""
+    found: set[int] = set()
+    for item in values if isinstance(values, list) else []:
+        if isinstance(item, dict):
+            item = next((item[k] for k in keys if k in item), None)
+        number = _issue_no(item)
+        if number is not None:
+            found.add(number)
+    return found
 
 
 def _held_count(homeostasis: dict) -> int:
@@ -97,6 +138,116 @@ def lane_state(
     return _REASON_STATE.get(reason, "blocked"), reason
 
 
+def observe_planned(
+    planned: set[int],
+    observe: Any,
+    *,
+    budget: float = OBSERVE_BUDGET_SECONDS,
+    clock: Any = time.monotonic,
+) -> tuple[set[int], set[int]]:
+    """(running, unresolved) among ``planned`` after claiming.
+
+    ``observe(issue)`` returns the issue's current label names or raises. Only
+    ``oc-running`` is lease evidence. Failed reads, issues beyond
+    ``MAX_OBSERVED`` and issues reached after ``budget`` seconds are unresolved, never assumed running or idle.
+    """
+    running: set[int] = set()
+    unresolved: set[int] = set()
+    deadline = clock() + budget
+    for position, number in enumerate(sorted(planned)):
+        if observe is None or position >= MAX_OBSERVED or clock() >= deadline:
+            unresolved.add(number)
+            continue
+        try:
+            labels = observe(number)
+            if "oc-running" in {str(label) for label in labels}:
+                running.add(number)
+        except Exception:  # noqa: BLE001 - observation is best effort telemetry
+            unresolved.add(number)
+    return running, unresolved
+
+
+def _lane_issues(lane: dict) -> set[int]:
+    members: set[int] = set()
+    for key in ("running", "replenishable", "capability_gap", "validating", "planned"):
+        members |= _issue_set(lane.get(key))
+    for numbers in (
+        (lane.get("gates") or {}).values()
+        if isinstance(lane.get("gates"), dict)
+        else []
+    ):
+        members |= _issue_set(numbers)
+    return members
+
+
+def module_states(
+    module_lanes: Any,
+    recovery: dict,
+    *,
+    observe: Any = None,
+    budget: float = OBSERVE_BUDGET_SECONDS,
+    clock: Any = time.monotonic,
+) -> dict:
+    """State per module lane. Precedence, strongest first:
+
+    1. lease evidence: a reconcile error on a lane's issue -> ``failed``; a
+       recovered or stranded lease -> ``recovering``;
+    2. running evidence: ``oc-running`` in the plan snapshot or re-observed on a
+       planned issue after claiming, or issues in ``oc-validating`` -> ``working``;
+    3. a planned issue whose post-claim state is unresolved -> ``unknown``;
+    4. the lane's ``oc.module-lanes.v1`` state mapped by ``_MODULE_BASE_STATE``.
+
+    One lane's malformed data never affects another lane or the global record.
+    """
+    lanes = module_lanes.get("lanes") if isinstance(module_lanes, dict) else None
+    if not isinstance(lanes, dict):
+        return {}
+    end = clock() + budget
+
+    def deadline_left() -> float:
+        return max(end - clock(), 0.0)
+
+    errored = _issue_set(recovery.get("errors"), "issue", "issue_number")
+    recovered: set[int] = set()
+    # Parked-lease receipts leave labels unchanged, so they are not recovery.
+    for key in ("recovered", "stranded_recovered"):
+        recovered |= _issue_set(recovery.get(key), "issue_number", "issue")
+    out: dict[str, dict] = {}
+    for key, lane in lanes.items():
+        if not isinstance(key, str) or not isinstance(lane, dict):
+            continue
+        try:
+            members = _lane_issues(lane)
+            planned = _issue_set(lane.get("planned"))
+            observed_running, unresolved = observe_planned(
+                planned, observe, budget=deadline_left(), clock=clock
+            )
+            if members & errored:
+                state, reason = "failed", "lease_reconcile_errors"
+            elif members & recovered:
+                state, reason = "recovering", "lease_recovered"
+            elif observed_running or _issue_set(lane.get("running")):
+                state, reason = "working", "running"
+            elif _issue_set(lane.get("validating")):
+                state, reason = "working", "validating"
+            elif unresolved:
+                state, reason = "unknown", "planned_state_unobserved"
+            else:
+                base = str(lane.get("state"))
+                state = _MODULE_BASE_STATE.get(base, "unknown")
+                reason = base if base in _MODULE_BASE_STATE else "unmapped_state"
+            out[key] = {
+                "state": state,
+                "reason": reason,
+                "module_state": lane.get("state"),
+                "planned": sorted(planned),
+                "unresolved": sorted(unresolved),
+            }
+        except Exception:  # noqa: BLE001 - isolate a malformed lane
+            out[key] = {"state": "unknown", "reason": "lane_data_invalid"}
+    return out
+
+
 def build_record(
     plan: dict | None,
     recovery: dict | None,
@@ -108,6 +259,7 @@ def build_record(
     provider_free_launch_count: Any,
     provider_blocked: bool,
     now: datetime | None = None,
+    observe: Any = None,
 ) -> dict:
     plan = plan if isinstance(plan, dict) else {}
     recovery = recovery if isinstance(recovery, dict) else {}
@@ -129,8 +281,13 @@ def build_record(
     evidence = (
         (homeostasis or {}).get("evidence") if isinstance(homeostasis, dict) else None
     )
+    try:
+        modules = module_states(plan.get("module_lanes"), recovery, observe=observe)
+    except Exception:  # noqa: BLE001 - the global record always publishes
+        modules = {}
     return {
         "schema": SCHEMA,
+        "modules": modules,
         "lane_state": state,
         "reason": reason,
         "homeostasis_status": (homeostasis or {}).get("status")
@@ -210,7 +367,13 @@ class GitHub:
             raise ValueError("invalid repository")
         self.repository = repository
 
-    def _api(self, path: str, payload: dict | None = None, method: str = "GET") -> Any:
+    def _api(
+        self,
+        path: str,
+        payload: dict | None = None,
+        method: str = "GET",
+        timeout: int = 45,
+    ) -> Any:
         args = ["gh", "api", "--method", method, f"repos/{self.repository}/{path}"]
         if payload is not None:
             args += ["--input", "-"]
@@ -219,10 +382,19 @@ class GitHub:
             input=json.dumps(payload) if payload is not None else None,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=timeout,
             check=True,
         )
         return json.loads(result.stdout) if result.stdout.strip() else None
+
+    def labels(self, issue: int) -> list[str]:
+        data = self._api(f"issues/{issue}", timeout=OBSERVE_CALL_TIMEOUT)
+        if not isinstance(data, dict) or not isinstance(data.get("labels"), list):
+            raise TypeError("issue_labels_unreadable")
+        return [
+            label if isinstance(label, str) else str(label.get("name"))
+            for label in data["labels"]
+        ]
 
     def comments(self, issue: int) -> list[dict]:
         """Oldest-first comments up to and including the page holding CURRENT.
@@ -298,6 +470,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--status-issue", type=int, default=STATUS_ISSUE)
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    try:
+        github = GitHub(args.repository)
+    except ValueError:
+        github = None
     record = build_record(
         _load(args.plan),
         _load(args.lease_recovery),
@@ -307,10 +483,14 @@ def main(argv: list[str] | None = None) -> int:
         provider_launch_count=args.provider_launch_count,
         provider_free_launch_count=args.provider_free_launch_count,
         provider_blocked=str(args.provider_blocked).lower() == "true",
+        observe=github.labels if github else None,
     )
     try:
         report = publish(
-            GitHub(args.repository), args.status_issue, record, dry_run=args.dry_run
+            github or GitHub(args.repository),
+            args.status_issue,
+            record,
+            dry_run=args.dry_run,
         )
     except (
         OSError,
