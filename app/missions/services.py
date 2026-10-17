@@ -176,6 +176,9 @@ class MissionService:
             result = get_import_service().import_batch(registry_ids, "mission_control", mission_id=mission["mission_id"])
             return {**result, "semantic_extraction_performed": False, "ontology_mutated": False,
                     "embeddings_created": False, "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "literature_ingestion_review":
+            from .literature_review import build_literature_ingestion_review
+            return build_literature_ingestion_review(mission.get("input_manifest") or {})
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 
