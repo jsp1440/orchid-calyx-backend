@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import subprocess
 import sys
@@ -393,15 +394,46 @@ def test_calyx_failure_blocks_only_calyx_and_preserves_brain_materialization(
     assert refusal["errors"] == product["errors"]
 
 
-def test_mission_gap_observer_uses_only_explicit_safe_blocks():
+def test_mission_gap_observer_uses_only_explicit_safe_blocks(monkeypatch):
+    # Real registry: a gap is reported exactly for the mapped mission types
+    # still registered with the safe block. Handlers that have landed
+    # (#1730, #1731, #1732) must not be reported.
+    expected = {
+        f"[Brain] implement {key.replace('_', ' ')}"
+        for key in brain_pulse.MISSION_GAP_LANES
+        if brain_pulse.MISSION_TYPES[key].handler == "not_implemented_safe_block"
+    }
+    real_titles = {candidate["title"] for candidate in mission_gap_candidates()}
+    assert real_titles == expected
+    for implemented in (
+        "source registry refresh",
+        "literature ingestion review",
+        "evidence readiness evaluation",
+    ):
+        assert not any(implemented in title for title in real_titles)
+
+    # Test-scoped registry view in which every mapped type is safe-blocked, so
+    # the observer is still exercised as real gaps disappear.
+    monkeypatch.setattr(
+        brain_pulse,
+        "MISSION_TYPES",
+        {
+            **brain_pulse.MISSION_TYPES,
+            **{
+                key: dataclasses.replace(
+                    brain_pulse.MISSION_TYPES[key],
+                    handler="not_implemented_safe_block",
+                )
+                for key in brain_pulse.MISSION_GAP_LANES
+            },
+        },
+    )
     candidates = mission_gap_candidates()
-    assert candidates
+    assert len(candidates) == len(brain_pulse.MISSION_GAP_LANES)
     assert {candidate["source"] for candidate in candidates} == {MISSION_SOURCE}
     titles = {candidate["title"] for candidate in candidates}
     assert any("source registry refresh" in title for title in titles)
     assert any("ontology resolution" in title for title in titles)
-    # literature_ingestion_review now has a deterministic handler (#1731).
-    assert not any("literature ingestion review" in title for title in titles)
     for candidate in candidates:
         assert "not_implemented_safe_block" in candidate["summary"]
         assert candidate["validation_command"] == ""
