@@ -23,6 +23,11 @@ from collections.abc import Mapping
 from typing import Any
 
 MAX_RECORDS = 100
+MAX_STRING_LENGTH = 2000
+MAX_AUTHORS = 200
+MAX_EVIDENCE_SPANS = 50
+MAX_EVIDENCE_SPAN_LENGTH = 4000
+STRING_FIELDS = ("source_record_id", "doi", "title", "taxon_name")
 ALLOWED_MANIFEST_KEYS = frozenset({"source", "records"})
 ALLOWED_RECORD_KEYS = frozenset(
     {
@@ -53,6 +58,8 @@ def validate_literature_review_manifest(
     source = manifest.get("source")
     if not isinstance(source, str) or not source.strip():
         raise _invalid("source_required")
+    if len(source) > MAX_STRING_LENGTH:
+        raise _invalid(f"source_too_long>{MAX_STRING_LENGTH}")
     records = manifest.get("records")
     if not isinstance(records, list) or not records:
         raise _invalid("records_required")
@@ -67,14 +74,70 @@ def validate_literature_review_manifest(
             raise _invalid(
                 f"record_{index}_unknown_fields={','.join(map(str, unknown_fields))}"
             )
-        spans = record.get("evidence_spans")
-        if spans is not None and (
-            not isinstance(spans, list)
-            or not all(isinstance(span, Mapping) for span in spans)
-        ):
-            raise _invalid(f"record_{index}_evidence_spans_not_list_of_objects")
+        _validate_record_fields(index, record)
         cleaned.append(dict(record))
     return source.strip(), cleaned
+
+
+def _check_string(index: int, name: str, value: Any) -> None:
+    if not isinstance(value, str):
+        raise _invalid(f"record_{index}_{name}_not_string")
+    if len(value) > MAX_STRING_LENGTH:
+        raise _invalid(f"record_{index}_{name}_too_long>{MAX_STRING_LENGTH}")
+
+
+def _validate_record_fields(index: int, record: Mapping[str, Any]) -> None:
+    for name in STRING_FIELDS:
+        value = record.get(name)
+        if value is not None:
+            _check_string(index, name, value)
+
+    authors = record.get("authors")
+    if isinstance(authors, list):
+        if len(authors) > MAX_AUTHORS:
+            raise _invalid(f"record_{index}_too_many_authors>{MAX_AUTHORS}")
+        for author in authors:
+            _check_string(index, "authors", author)
+    elif authors is not None:
+        _check_string(index, "authors", authors)
+
+    year = record.get("publication_year")
+    # bool is a subclass of int; reject it explicitly.
+    if year is not None and (isinstance(year, bool) or not isinstance(year, int)):
+        raise _invalid(f"record_{index}_publication_year_not_int")
+
+    spans = record.get("evidence_spans")
+    if spans is None:
+        return
+    if not isinstance(spans, list) or not all(
+        isinstance(span, Mapping) for span in spans
+    ):
+        raise _invalid(f"record_{index}_evidence_spans_not_list_of_objects")
+    if len(spans) > MAX_EVIDENCE_SPANS:
+        raise _invalid(f"record_{index}_too_many_evidence_spans>{MAX_EVIDENCE_SPANS}")
+    for span in spans:
+        try:
+            encoded = json.dumps(span, sort_keys=True, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise _invalid(f"record_{index}_evidence_span_not_json") from exc
+        if len(encoded) > MAX_EVIDENCE_SPAN_LENGTH:
+            raise _invalid(
+                f"record_{index}_evidence_span_too_long>{MAX_EVIDENCE_SPAN_LENGTH}"
+            )
+
+
+def _duplicate_source_record_ids(records: list[dict[str, Any]]) -> list[str]:
+    """Ids that ``stage_literature_batch`` drops as in-batch duplicates, in order."""
+    seen: set[str] = set()
+    dropped: list[str] = []
+    for record in records:
+        record_id = str(record.get("source_record_id") or "")
+        if not record_id:
+            continue
+        if record_id in seen:
+            dropped.append(record_id)
+        seen.add(record_id)
+    return dropped
 
 
 def build_literature_ingestion_review(manifest: Any) -> dict[str, Any]:
@@ -87,9 +150,17 @@ def build_literature_ingestion_review(manifest: Any) -> dict[str, Any]:
     result = stage_literature_batch(records, source=source, canonical_lookup=None)
     staged = [record.as_dict() for record in result.staged]
     review_queue = [item.as_dict() for item in result.review_queue]
+    duplicates_dropped = _duplicate_source_record_ids(records)
+    if len(duplicates_dropped) != result.duplicate_skipped:
+        raise ValueError("LITERATURE_REVIEW_DUPLICATE_ACCOUNTING_MISMATCH")
     digest = hashlib.sha256(
         json.dumps(
-            {"source": source, "staged": staged, "review_queue": review_queue},
+            {
+                "source": source,
+                "staged": staged,
+                "review_queue": review_queue,
+                "duplicate_source_record_ids_dropped": duplicates_dropped,
+            },
             sort_keys=True,
             separators=(",", ":"),
             default=str,
@@ -112,5 +183,6 @@ def build_literature_ingestion_review(manifest: Any) -> dict[str, Any]:
         "summary": result.summary(),
         "staged_records": staged,
         "review_queue": review_queue,
+        "duplicate_source_record_ids_dropped": duplicates_dropped,
         "packet_digest": digest,
     }

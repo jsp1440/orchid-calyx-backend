@@ -9,7 +9,11 @@ from typing import Any
 import pytest
 
 from app.missions.literature_review import (
+    MAX_AUTHORS,
+    MAX_EVIDENCE_SPAN_LENGTH,
+    MAX_EVIDENCE_SPANS,
     MAX_RECORDS,
+    MAX_STRING_LENGTH,
     build_literature_ingestion_review,
 )
 from app.missions.registry import MISSION_TYPES
@@ -26,7 +30,7 @@ def manifest(**overrides: Any) -> dict[str, Any]:
                 "doi": "10.1000/fixture.1",
                 "title": "Pollinator observations in a fixture orchid",
                 "authors": ["A. Author", "B. Author"],
-                "publication_year": "2019",
+                "publication_year": 2019,
                 "taxon_name": "Fixture orchid",
                 "evidence_spans": [{"page": 3, "text": "visited by bees"}],
             },
@@ -119,6 +123,7 @@ def test_packet_is_human_review_only_and_never_asserts_canonical_identity():
         "rec-2",
     ]
     assert packet["summary"]["duplicate_skipped"] == 1
+    assert packet["duplicate_source_record_ids_dropped"] == ["rec-1"]
     assert packet["summary"]["no_production_mutation"] is True
 
 
@@ -201,3 +206,91 @@ def test_handler_module_has_no_provider_network_or_db_imports():
         "socket",
     ):
         assert token not in source, token
+
+
+def _one(**fields: Any) -> dict[str, Any]:
+    return {"source": "s", "records": [{"source_record_id": "x", **fields}]}
+
+
+LONG = "a" * (MAX_STRING_LENGTH + 1)
+
+
+@pytest.mark.parametrize(
+    ("bad_manifest", "detail"),
+    [
+        (_one(authors=5), "authors_not_string"),
+        (_one(authors=["ok", 5]), "authors_not_string"),
+        (_one(title={"text": "t"}), "title_not_string"),
+        (_one(doi=["10.1/x"]), "doi_not_string"),
+        (_one(taxon_name=7), "taxon_name_not_string"),
+        (
+            {"source": "s", "records": [{"source_record_id": 9}]},
+            "source_record_id_not_string",
+        ),
+        (_one(publication_year=True), "publication_year_not_int"),
+        (_one(publication_year="2019"), "publication_year_not_int"),
+        (_one(publication_year=2019.0), "publication_year_not_int"),
+        (_one(title=LONG), "title_too_long"),
+        (_one(doi=LONG), "doi_too_long"),
+        (_one(taxon_name=LONG), "taxon_name_too_long"),
+        (_one(authors=LONG), "authors_too_long"),
+        (_one(authors=[LONG]), "authors_too_long"),
+        (_one(authors=["a"] * (MAX_AUTHORS + 1)), "too_many_authors"),
+        (
+            {"source": "s", "records": [{"source_record_id": LONG}]},
+            "source_record_id_too_long",
+        ),
+        ({"source": LONG, "records": [{"source_record_id": "x"}]}, "source_too_long"),
+        (
+            _one(evidence_spans=[{"page": i} for i in range(MAX_EVIDENCE_SPANS + 1)]),
+            "too_many_evidence_spans",
+        ),
+        (
+            _one(evidence_spans=[{"text": "a" * MAX_EVIDENCE_SPAN_LENGTH}]),
+            "evidence_span_too_long",
+        ),
+        (_one(evidence_spans=[{"text": {1, 2}}]), "evidence_span_not_json"),
+    ],
+)
+def test_field_types_and_bounds_fail_closed_with_coded_prefix(
+    bad_manifest: dict[str, Any], detail: str
+):
+    with pytest.raises(
+        ValueError, match=f"LITERATURE_REVIEW_MANIFEST_INVALID:.*{detail}"
+    ):
+        build_literature_ingestion_review(bad_manifest)
+
+
+def test_fields_at_their_bounds_are_accepted():
+    at_limit = "a" * MAX_STRING_LENGTH
+    packet = build_literature_ingestion_review(
+        _one(
+            title=at_limit,
+            doi=None,
+            authors=["a"] * MAX_AUTHORS,
+            publication_year=None,
+            evidence_spans=[{"page": i} for i in range(MAX_EVIDENCE_SPANS)],
+        )
+    )
+    assert packet["staged_records"][0]["title"] == at_limit
+    assert len(packet["staged_records"][0]["evidence_spans"]) == MAX_EVIDENCE_SPANS
+    assert packet["duplicate_source_record_ids_dropped"] == []
+
+
+def test_every_duplicate_drop_is_listed_in_order():
+    packet = build_literature_ingestion_review(
+        {
+            "source": "s",
+            "records": [
+                {"source_record_id": "a"},
+                {"source_record_id": "b"},
+                {"source_record_id": "a"},
+                {"source_record_id": "b"},
+                {"source_record_id": "a"},
+                {"title": "no id"},
+            ],
+        }
+    )
+    assert packet["duplicate_source_record_ids_dropped"] == ["a", "b", "a"]
+    assert packet["summary"]["duplicate_skipped"] == 3
+    assert [r["source_record_id"] for r in packet["staged_records"]] == ["a", "b"]
