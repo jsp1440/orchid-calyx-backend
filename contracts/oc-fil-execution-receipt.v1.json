@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchid-continuum/contracts/oc-fil-execution-receipt.v1.json",
+  "title": "oc.fil.execution-receipt.v1",
+  "description": "FIL-001 dry-run step receipt. Wraps app.calyx_orchestrator.executor.ExecutionReceipt. A BLOCKED receipt always names its failure_reason; no receipt can record a provider call, publication, promotion or production mutation.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "plan_id",
+    "step_index",
+    "capability_id",
+    "capability_version",
+    "operator_class",
+    "registry_capability",
+    "mode",
+    "executor_key",
+    "state",
+    "outcome",
+    "failure_reason",
+    "input_checksum",
+    "output_checksum",
+    "provenance",
+    "established_conditions",
+    "evidence_states",
+    "would_emit",
+    "notes",
+    "provider_calls",
+    "published",
+    "promoted",
+    "production_mutation"
+  ],
+  "properties": {
+    "schema": {
+      "const": "oc.fil.execution-receipt.v1"
+    },
+    "plan_id": {
+      "type": "string",
+      "pattern": "^fil-plan-[a-f0-9]{16}$"
+    },
+    "step_index": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "capability_id": {
+      "type": "string"
+    },
+    "capability_version": {
+      "type": "string"
+    },
+    "operator_class": {
+      "enum": [
+        "receptor",
+        "scanner",
+        "transducer",
+        "enzyme",
+        "transporter",
+        "adaptor",
+        "integrator",
+        "modulator",
+        "switch",
+        "oscillator",
+        "buffer",
+        "amplifier",
+        "validator",
+        "inhibitor",
+        "repair_operator"
+      ]
+    },
+    "registry_capability": {
+      "type": "string"
+    },
+    "mode": {
+      "const": "dry_run"
+    },
+    "executor_key": {
+      "const": "fil_dry_run_v1"
+    },
+    "state": {
+      "enum": [
+        "delivered",
+        "blocked"
+      ]
+    },
+    "outcome": {
+      "enum": [
+        "DELIVERED",
+        "BLOCKED"
+      ]
+    },
+    "failure_reason": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "input_checksum": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "output_checksum": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "provenance": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "established_conditions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "evidence_states": {
+      "type": "array",
+      "items": {
+        "enum": [
+          "ABSENT",
+          "AVAILABLE",
+          "CONTRADICTORY",
+          "PROVISIONAL",
+          "REJECTED",
+          "SUPERSEDED",
+          "UNAVAILABLE",
+          "UNKNOWN",
+          "WITHHELD"
+        ]
+      }
+    },
+    "would_emit": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "notes": {
+      "type": "object"
+    },
+    "provider_calls": {
+      "const": 0
+    },
+    "published": {
+      "const": false
+    },
+    "promoted": {
+      "const": false
+    },
+    "production_mutation": {
+      "const": false
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "delivered"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "DELIVERED"
+          },
+          "failure_reason": {
+            "const": null
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "state": {
+            "const": "blocked"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "const": "BLOCKED"
+          },
+          "failure_reason": {
+            "type": "string",
+            "minLength": 1
+          },
+          "would_emit": {
+            "maxItems": 0
+          }
+        }
+      }
+    }
+  ]
+}

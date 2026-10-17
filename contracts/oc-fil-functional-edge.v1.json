@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orchid-continuum/contracts/oc-fil-functional-edge.v1.json",
+  "title": "oc.fil.functional-edge.v1",
+  "description": "FIL-001 verdict on one producer-output -> consumer-input edge. compatible is true exactly when blocking_reasons is empty. Advisories never block.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "edge_id",
+    "producer",
+    "consumer",
+    "compatible",
+    "blocking_reasons",
+    "advisories",
+    "admitted_evidence_states",
+    "carried_conditions",
+    "requires_human_gate"
+  ],
+  "properties": {
+    "schema": {
+      "const": "oc.fil.functional-edge.v1"
+    },
+    "edge_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "producer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "version",
+        "port",
+        "semantic_type"
+      ],
+      "properties": {
+        "capability_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "semantic_type": {
+          "type": "string",
+          "pattern": "^oc:[A-Z][A-Za-z0-9]*$"
+        }
+      }
+    },
+    "consumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "capability_id",
+        "version",
+        "port",
+        "semantic_type"
+      ],
+      "properties": {
+        "capability_id": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "port": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "semantic_type": {
+          "type": "string",
+          "pattern": "^oc:[A-Z][A-Za-z0-9]*$"
+        }
+      }
+    },
+    "compatible": {
+      "type": "boolean"
+    },
+    "blocking_reasons": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(SEMANTIC_TYPE_MISMATCH|EVIDENCE_STATE_INADMISSIBLE|PRECONDITION_UNSATISFIED:[a-z0-9_]+|PROVENANCE_CHAIN_BROKEN|AUTONOMY_PROHIBITED|PROVIDER_PARKED_NO_API|CAPABILITY_NOT_EXECUTABLE:[A-Z_]+)$"
+      }
+    },
+    "advisories": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^(EVIDENCE_STATES_FILTERED:[A-Z,]+|HUMAN_GATE_REQUIRED|PROPOSAL_ONLY)$"
+      }
+    },
+    "admitted_evidence_states": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "ABSENT",
+          "AVAILABLE",
+          "CONTRADICTORY",
+          "PROVISIONAL",
+          "REJECTED",
+          "SUPERSEDED",
+          "UNAVAILABLE",
+          "UNKNOWN",
+          "VERIFIED",
+          "WITHHELD"
+        ]
+      }
+    },
+    "carried_conditions": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9_]*$"
+      }
+    },
+    "requires_human_gate": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "compatible": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "blocking_reasons": {
+            "maxItems": 0
+          },
+          "admitted_evidence_states": {
+            "minItems": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "compatible": {
+            "const": false
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "blocking_reasons": {
+            "minItems": 1
+          }
+        }
+      }
+    }
+  ]
+}
