@@ -41,6 +41,9 @@ MediaKind = Literal["photo", "video"]
 #: on an ephemeral filesystem, so a client must keep its own original until a
 #: durable copy is declared.
 MediaDurability = Literal["durable", "not_guaranteed"]
+#: State of the off-server archive copy (Google Drive). ``verified`` only after
+#: Drive's md5Checksum and size matched the local original.
+MediaArchiveState = Literal["verified", "pending", "not_configured"]
 
 
 class EpistemicCertaintyLabel(str, Enum):
@@ -188,6 +191,16 @@ class CurationDecisionIn(BaseModel):
         return value
 
 
+class MediaArchiveOut(BaseModel):
+    """Outward view of the archive copy: opaque ids and an error code, never credentials or locality."""
+
+    provider: Literal["google_drive"] = "google_drive"
+    state: MediaArchiveState
+    drive_file_id: str | None = None
+    verified_at: datetime | None = None
+    error_code: str | None = None
+
+
 class PhotoOut(BaseModel):
     id: str
     observation_id: str
@@ -201,9 +214,14 @@ class PhotoOut(BaseModel):
     durability: MediaDurability | None = Field(
         default=None,
         description=(
-            "Set by the original-media upload route only. 'durable' requires the operator to "
-            "declare FIELD_MEDIA_STORAGE_DURABLE=true; otherwise the server copy is 'not_guaranteed'."
+            "Set by the original-media upload route only. 'durable' requires a verified Google "
+            "Drive archive copy, or the operator declaring FIELD_MEDIA_STORAGE_DURABLE=true; "
+            "otherwise the server copy is 'not_guaranteed'."
         ),
+    )
+    archive: MediaArchiveOut | None = Field(
+        default=None,
+        description="Set by the original-media upload route only: the Google Drive archive state.",
     )
 
 
