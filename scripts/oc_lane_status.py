@@ -58,6 +58,13 @@ def _int(value: Any) -> int:
     return max(number, 0)
 
 
+def _held_count(homeostasis: dict) -> int:
+    held = (homeostasis.get("evidence") or {}).get("unfinished_held")
+    if not isinstance(held, dict):
+        return 0
+    return sum(_int(value) for value in held.values())
+
+
 def lane_state(
     homeostasis: dict | None,
     *,
@@ -83,6 +90,10 @@ def lane_state(
         # The plan selected work but nothing launched (claim failed or confirmed
         # no claims): never report that as working.
         return "blocked", "selected_not_launched"
+    if reason == "queue_empty" and _held_count(homeostasis) > 0:
+        # Nothing is queued, but unfinished work exists and every issue of it is
+        # held (repair pending, validating, backoff, gates): that is not idle.
+        return "blocked", "queue_empty_unfinished_held"
     return _REASON_STATE.get(reason, "blocked"), reason
 
 
