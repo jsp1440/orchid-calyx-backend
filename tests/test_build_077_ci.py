@@ -93,6 +93,7 @@ def test_complete_backend_regression_still_runs_and_fails_closed(monkeypatch):
     # complete_backend runs pytest with --ignore flags for pre-existing failure classes
     _complete_backend_cmd = [
         sys.executable, "-m", "pytest", "-q",
+        "-m", "not requires_postgres",
         "--ignore=tests/calyx_certification",
         "--ignore=tests/test_run_live_dispatch_canary.py",
         "--ignore=tests/test_durable_reservoir.py",
@@ -120,6 +121,8 @@ def test_complete_backend_regression_still_runs_and_fails_closed(monkeypatch):
     with pytest.raises(subprocess.CalledProcessError):
         validation.run_regressions()
     assert commands[-1][0] == _complete_backend_cmd
+    # Credential-free: requires_postgres tests would fail closed under CI=true.
+    assert commands[-1][1].get("expose_database_url", False) is False
 
 
 def test_pr_workflow_has_no_path_to_configured_database():
