@@ -69,6 +69,17 @@ def _as_set(value: Any) -> set[str]:
     return {text.casefold()} if text else set()
 
 
+def _is_blank_state(value: Any) -> bool:
+    """True when a candidate state carries no information (missing, not absent)."""
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return not value.strip()
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return not any(str(item).strip() for item in value if item is not None)
+    return False
+
+
 def _numeric_similarity(observed: Any, candidate_state: Any) -> float | None:
     if not isinstance(observed, (int, float)):
         return None
@@ -149,11 +160,11 @@ def rank_candidates(
                     contribution=0.0,
                     status="ignored_unknown_observation",
                 )
-            elif candidate_state is None:
+            elif _is_blank_state(candidate_state):
                 explanation = CharacterExplanation(
                     character=observation.character,
                     observation=observation.value,
-                    candidate_state=None,
+                    candidate_state=candidate_state,
                     certainty=observation.certainty,
                     effective_weight=effective_weight,
                     similarity=None,
