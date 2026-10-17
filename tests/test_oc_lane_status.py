@@ -574,6 +574,7 @@ def test_a_real_module_lane_report_flows_through_end_to_end():
 def claims_doc(confirmed=(), errors=(), skipped=()):
     return {
         "schema": "oc.swarm-claim-handoff.v1",
+        "run_id": 1,
         "launch_count": len(confirmed),
         "skipped": [{"issue": n, "reason": reason} for n, reason in skipped],
         "confirmed": [
@@ -1005,3 +1006,102 @@ def test_a_claim_file_from_another_run_is_not_trusted():
     doc["run_id"] = 1
     ok = claimed_record({"taxonomy": planned_lane(7)}, doc)
     assert ok["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "working"
+
+
+# --- the handoff must carry every key the parser relies on ---------------------
+
+
+def real_handoff():
+    """The exact shape oc_swarm_claim.claim_workers() returns, every key present."""
+    worker = {
+        "issue_number": 7, "reads": [], "writes": ["control-plane"], "dependencies": [],
+        "provider_free": False, "lane_executable": False, "acquisition": False,
+        "lease_comment_id": 100, "material_fingerprint": "abc123",
+    }
+    return {
+        "schema": "oc.swarm-claim-handoff.v1",
+        "run_id": 1,
+        "run_attempt": 2,
+        "healthy": True,
+        "planned_count": 2,
+        "launch_count": 1,
+        "matrix": {"include": [worker]},
+        "confirmed": [worker],
+        "provider_free_matrix": {"include": []},
+        "provider_matrix": {"include": [worker]},
+        "acquisition_matrix": {"include": []},
+        "acquisition_launch_count": 0,
+        "provider_free_launch_count": 0,
+        "provider_launch_count": 1,
+        "skipped": [{"issue": 8, "reason": "not_exclusively_queued"}],
+        "errors": [],
+    }
+
+
+def test_a_real_shaped_handoff_is_accepted_as_ok():
+    evidence = lanes.claim_evidence(real_handoff())
+    assert evidence["status"] == "ok" and evidence["confirmed"] == {7: "provider"}
+    rec = claimed_record(
+        {"taxonomy": planned_lane(7), "literature": planned_lane(8)}, real_handoff())
+    out = rec["module_lanes"]["lanes"]
+    assert out["taxonomy"]["lane_state"] == "working"
+    assert out["literature"]["reason"] == "claim_skipped:not_exclusively_queued"
+    assert rec["module_lanes"]["claims"]["status"] == "ok"
+
+
+def _without(key):
+    doc = real_handoff()
+    del doc[key]
+    return doc
+
+
+def _with(**kw):
+    return {**real_handoff(), **kw}
+
+
+IDENTITY_CASES = [
+    (_without("run_id"), "claims_run_id_missing"),
+    (_with(run_id=""), "claims_run_id_missing"),
+    (_with(run_id="  "), "claims_run_id_missing"),
+    (_with(run_id=None), "claims_run_id_missing"),
+    (_with(run_id=True), "claims_run_id_missing"),
+    (_with(run_id=0), "claims_run_id_missing"),
+    (_with(run_id=99), "claims_run_mismatch"),
+    (_with(schema="oc.swarm-claim-handoff.v2"), "claims_schema_mismatch"),
+    (_without("schema"), "claims_schema_mismatch"),
+    (_without("launch_count"), "claims_launch_count_invalid"),
+    (_with(launch_count=0), "claims_launch_count_invalid"),
+    (_with(launch_count=2), "claims_launch_count_invalid"),
+    (_with(launch_count="1"), "claims_launch_count_invalid"),
+    (_with(launch_count=True), "claims_launch_count_invalid"),
+    (_with(launch_count=1.0), "claims_launch_count_invalid"),
+    (_without("confirmed"), "claims_confirmed_invalid"),
+    (_with(confirmed="x"), "claims_confirmed_invalid"),
+    (_without("skipped"), "claims_skipped_invalid"),
+    (_with(skipped={}), "claims_skipped_invalid"),
+    (_without("errors"), "claims_errors_invalid"),
+    (_with(errors=None), "claims_errors_invalid"),
+    # one issue cannot be confirmed and also skipped/errored, nor confirmed twice
+    (_with(skipped=[{"issue": 7, "reason": "x"}]), "claims_rows_conflict"),
+    (_with(errors=[{"issue": 7, "phase": "p", "reason": "r"}]), "claims_rows_conflict"),
+]
+
+
+@pytest.mark.parametrize(("doc", "reason"), IDENTITY_CASES)
+def test_an_incomplete_or_foreign_handoff_is_malformed_and_never_marks_a_lane_working(doc, reason):
+    rec = claimed_record({"taxonomy": planned_lane(7)}, doc)
+    claims = rec["module_lanes"]["claims"]
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert claims == {"status": "malformed", "reason": reason}
+    assert entry["lane_state"] == "unknown" and entry["lane_state"] != "working"
+
+
+def test_duplicate_confirmed_rows_are_malformed():
+    doc = real_handoff()
+    doc["confirmed"] = doc["confirmed"] * 2
+    doc["launch_count"] = 2
+    assert lanes.claim_evidence(doc) == {"status": "malformed", "reason": "claims_rows_conflict"}
+
+
+def test_a_string_run_id_that_matches_is_accepted():
+    assert lanes.claim_evidence(_with(run_id="1"))["status"] == "ok"

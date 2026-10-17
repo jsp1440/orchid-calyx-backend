@@ -150,6 +150,10 @@ CLAIMS_SCHEMA = "oc.swarm-claim-handoff.v1"
 CLAIMS_FILE = "swarm-claims.json"
 
 
+def _malformed(reason: str) -> dict:
+    return {"status": "malformed", "reason": reason}
+
+
 def claim_evidence(doc: Any) -> dict:
     """Parse the claim step's handoff (``oc.swarm-claim-handoff.v1``).
 
@@ -157,22 +161,37 @@ def claim_evidence(doc: Any) -> dict:
     ``replenishable`` there. The claim result is what proves a launch. ``None`` is
     ``unavailable`` (no file); anything unparseable is ``malformed``, never "nothing
     launched".
+
+    The producer (``oc_swarm_claim.claim_workers``) always writes ``schema``,
+    ``run_id``, ``launch_count`` (= ``len(confirmed)``) and the lists ``confirmed``,
+    ``skipped`` and ``errors``; each is relied on here, so each is required. Every
+    issue lands in exactly one of confirmed/skipped/errors, once.
     """
     if doc is None:
         return {"status": "unavailable", "reason": "claims_missing"}
-    bad = {"status": "malformed", "reason": "claims_malformed"}
-    if (
-        not isinstance(doc, dict)
-        or doc.get("schema") != CLAIMS_SCHEMA
-        or not isinstance(doc.get("confirmed"), list)
-        or not isinstance(doc.get("errors"), list)
-        or not isinstance(doc.get("skipped"), list)
+    if not isinstance(doc, dict):
+        return _malformed("claims_malformed")
+    if doc.get("schema") != CLAIMS_SCHEMA:
+        return _malformed("claims_schema_mismatch")
+    run_id = doc.get("run_id")
+    if not (
+        _issue_no(run_id) is not None or (isinstance(run_id, str) and run_id.strip())
     ):
-        return bad
+        return _malformed("claims_run_id_missing")
+    for field in ("confirmed", "skipped", "errors"):
+        if not isinstance(doc.get(field), list):
+            return _malformed(f"claims_{field}_invalid")
+    launch = doc.get("launch_count")
+    if (
+        not isinstance(launch, int)
+        or isinstance(launch, bool)
+        or launch != len(doc["confirmed"])
+    ):
+        return _malformed("claims_launch_count_invalid")
     confirmed: dict[int, str] = {}
     for row in doc["confirmed"]:
         if not isinstance(row, dict) or _issue_no(row.get("issue_number")) is None:
-            return bad
+            return _malformed("claims_confirmed_invalid")
         kind = (
             "provider_free"
             if row.get("lane_executable") is True
@@ -180,33 +199,34 @@ def claim_evidence(doc: Any) -> dict:
             if row.get("acquisition") is True
             else "provider"
         )
-        confirmed[row["issue_number"]] = kind
-    # launch_count is written as len(confirmed); a mismatch means a corrupt file.
-    launch = doc.get("launch_count")
-    if launch is not None and (_int(launch) != len(doc["confirmed"]) or isinstance(launch, bool)):
-        return bad
-    errors: set[int] = set()
+        confirmed.setdefault(row["issue_number"], kind)
+    errors: list[int] = []
     for row in doc["errors"]:
         if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
-            return bad
-        errors.add(row["issue"])
+            return _malformed("claims_errors_invalid")
+        errors.append(row["issue"])
     # Skipped: selected issues the claim step refused because they no longer match
     # the plan ({issue, reason}). Their pre-claim lane observation is stale.
     skipped: dict[int, str] = {}
+    skipped_rows: list[int] = []
     for row in doc["skipped"]:
         if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
-            return bad
+            return _malformed("claims_skipped_invalid")
         reason = row.get("reason")
+        skipped_rows.append(row["issue"])
         skipped.setdefault(
             row["issue"], reason.strip() if isinstance(reason, str) and reason.strip() else NO_REASON
         )
+    outcomes = [*confirmed, *skipped_rows, *errors]
+    if len(outcomes) != len(set(outcomes)) or len(confirmed) != len(doc["confirmed"]):
+        return _malformed("claims_rows_conflict")
     return {
         "status": "ok",
         "reason": None,
         "confirmed": confirmed,
-        "errors": errors,
+        "errors": set(errors),
         "skipped": skipped,
-        "run_id": doc.get("run_id"),
+        "run_id": run_id,
     }
 
 
@@ -411,8 +431,7 @@ def build_record(
     if (
         isinstance(claims, dict)
         and claims.get("status") == "ok"
-        and claims.get("run_id") is not None
-        and str(claims["run_id"]) != str(run_id)
+        and str(claims["run_id"]).strip() != str(run_id).strip()
     ):
         # A handoff written by another run says nothing about this wave.
         claims = {"status": "malformed", "reason": "claims_run_mismatch"}
