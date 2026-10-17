@@ -729,6 +729,23 @@ def run_lane(
                 issue_number=number,
                 validation_commands=commands,
             )
+        # Absence is only provable by a command that tests the same condition.
+        # An issue filed by a source with a condition validator, but naming any
+        # other command, is refused: #1977 named ``production-runtime-imports``,
+        # which passes while the import is still undeclared, settled done, and
+        # was re-opened by the next discovery pass every cycle.
+        source_match = materialize.DISCOVERY_SOURCE.search(body)
+        required = discovery.CONDITION_VALIDATORS.get(
+            source_match.group("source") if source_match else ""
+        )
+        if required is not None and commands != [required]:
+            return _receipt(
+                outcome="refused",
+                reason="condition_absent_but_command_does_not_test_condition",
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+            )
         result = run_validation(
             commands[0], cwd=str(root), runner=runner, timeout=timeout
         )
@@ -831,9 +848,11 @@ def run_lane(
         after = run_validation(
             command_id, cwd=str(worktree), runner=runner, timeout=timeout
         )
-        # The declaration is the condition for an undeclared-import remedy:
-        # the import check passes before and after (the distribution was
-        # installed all along), so what changed is recorded alongside it.
+        # The declaration is the condition for a declare-distribution remedy,
+        # so whether it changed is recorded alongside the command's verdict
+        # and required below. For an undeclared-import finding the command is
+        # the condition check itself (it fails before and passes after); for a
+        # dependency gap it is the affected tests.
         before = {**before, "declared": declared_before}
         after = {**after, "declared": declared_after}
         ok, why = judge(before, after)

@@ -445,28 +445,38 @@ def discover_failing_tests(report_text: str, root: Path) -> list[Candidate]:
 #: may legitimately import a dev-only distribution.
 RUNTIME_IMPORT_ROOTS = ("app", "runtime")
 
-#: The registered command that proves an undeclared-import remedy: the base
-#: application imports under the installed distributions. Bound only when
-#: every affected file is inside the production trees that command exercises;
-#: a finding elsewhere names no command and stays filed-but-unexecutable.
-PRODUCTION_IMPORTS_COMMAND = "production-runtime-imports"
+#: The registered command that settles an undeclared-import finding: it re-runs
+#: ``discover_undeclared_imports`` against the checkout and fails while any
+#: finding remains. It replaced ``production-runtime-imports``, which proves
+#: the application imports -- a different statement. A lazy import inside a
+#: function never executes under ``import app.main``, and an installed but
+#: undeclared distribution imports either way, so that check passed while the
+#: finding stood; the lane settled "condition absent", the next discovery pass
+#: saw it again, and the issue flapped (#1977).
+UNDECLARED_IMPORTS_COMMAND = "undeclared-imports"
+
+#: Discovery sources whose findings may only be settled by a command that
+#: re-tests the same condition. A provider-free "condition absent" outcome for
+#: one of these sources is refused unless the issue names exactly this command,
+#: and the registry entry must declare that it ``settles`` the source.
+CONDITION_VALIDATORS: dict[str, str] = {
+    "undeclared-import": UNDECLARED_IMPORTS_COMMAND,
+}
 
 
 def import_validation_command(paths: list[str]) -> str:
     """The command that settles an undeclared-import candidate, or "".
 
-    A literally covering command still wins when one exists. Otherwise the
-    production import check applies to files under ``app/`` or ``runtime/``
-    only -- the trees ``import app.main`` can reach -- and to nothing else.
+    Always the condition check, never a "covering" command: a test file that
+    happens to name the affected path proves its own assertions, not that the
+    distribution is declared. Bound only for files under ``app/`` or
+    ``runtime/`` -- the trees this source scans -- and to nothing else.
     """
-    covering = covering_validation_command(paths)
-    if covering:
-        return covering
-    if not paths or PRODUCTION_IMPORTS_COMMAND not in VALIDATION_COMMANDS:
+    if not paths or UNDECLARED_IMPORTS_COMMAND not in VALIDATION_COMMANDS:
         return ""
     roots = tuple(f"{root}/" for root in RUNTIME_IMPORT_ROOTS)
     if all(path.startswith(roots) for path in paths):
-        return PRODUCTION_IMPORTS_COMMAND
+        return UNDECLARED_IMPORTS_COMMAND
     return ""
 
 
@@ -790,6 +800,53 @@ def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
     }
 
 
+CHECK_SCHEMA = "oc.work-discovery-check.v1"
+
+#: Sources ``--check`` can re-test. Each maps to the function that produced the
+#: finding, so the check and the discovery cannot drift apart.
+CHECKABLE_SOURCES = ("undeclared-import",)
+
+
+def check_condition(
+    source: str, root: Path, *, provided_by: dict[str, list[str]] | None = None
+) -> tuple[int, dict[str, Any]]:
+    """Re-run one discovery source and say whether its condition still holds.
+
+    Exit status: 0 when the source finds nothing, 1 while any finding remains,
+    2 when the environment cannot decide. An environment exposing no
+    distribution metadata at all would make ``discover_undeclared_imports``
+    silent -- it fails closed toward *no finding* -- and silence there must not
+    read as "resolved", so it is reported as inconclusive instead.
+    """
+    if source not in CHECKABLE_SOURCES:
+        raise ValueError(f"no condition check for discovery source {source!r}")
+    provides = packages_distributions() if provided_by is None else provided_by
+    record: dict[str, Any] = {
+        "schema": CHECK_SCHEMA,
+        "source": source,
+        "root": str(root),
+        "remaining": [],
+    }
+    if not provides:
+        record.update(
+            passed=False,
+            conclusive=False,
+            reason="the environment exposes no installed distribution metadata",
+        )
+        return 2, record
+    remaining = discover_undeclared_imports(root, provided_by=provides)
+    record["remaining"] = [
+        {
+            "distribution": candidate.remedy.get("distribution"),
+            "fingerprint": candidate.fingerprint,
+            "paths": [item.where for item in candidate.evidence],
+        }
+        for candidate in remaining
+    ]
+    record.update(passed=not remaining, conclusive=True)
+    return (1 if remaining else 0), record
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", default=".", help="repository root to read")
@@ -798,9 +855,23 @@ def main(argv: list[str] | None = None) -> int:
         default="",
         help="path to captured pytest output; omitted means dependency gaps only",
     )
+    parser.add_argument(
+        "--check",
+        choices=CHECKABLE_SOURCES,
+        default="",
+        help=(
+            "re-test one source's condition instead of reporting: exit 0 when "
+            "absent, 1 while any finding remains, 2 when undecidable"
+        ),
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
+    if args.check:
+        status, record = check_condition(args.check, root)
+        json.dump(record, sys.stdout, indent=2, sort_keys=True)
+        sys.stdout.write("\n")
+        return status
     report_text = ""
     if args.pytest_report:
         report_text = _read(Path(args.pytest_report))

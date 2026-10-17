@@ -1090,7 +1090,7 @@ class TestPushFence:
 
 
 class TestUndeclaredImportRemedy:
-    """The starlette-shaped finding: declared where imported, proven by the import check."""
+    """The starlette-shaped finding: declared where imported, proven by the condition check."""
 
     @pytest.fixture()
     def app_repo(self, tiny_repo) -> tuple[Path, Path, str]:
@@ -1119,14 +1119,25 @@ class TestUndeclaredImportRemedy:
         )
         return origin, work, _git(["rev-parse", "HEAD"], work)
 
-    def test_discovery_binds_the_import_check_for_production_paths(self) -> None:
+    def test_discovery_binds_the_condition_check_for_production_paths(self) -> None:
         assert discovery.import_validation_command(
             ["app/main.py", "app/university/learner_auth.py"]
-        ) == ("production-runtime-imports")
+        ) == ("undeclared-imports")
         assert (
             discovery.import_validation_command(["runtime/brain_router.py"])
-            == "production-runtime-imports"
+            == "undeclared-imports"
         )
+
+    def test_the_app_import_check_is_never_bound_to_an_undeclared_import(
+        self,
+    ) -> None:
+        # #1977: ``production-runtime-imports`` passes while a lazily imported
+        # distribution is still undeclared, so it cannot settle this source.
+        for paths in (["app/main.py"], ["runtime/x.py"], ["app/a.py", "runtime/b.py"]):
+            assert (
+                discovery.import_validation_command(paths)
+                != "production-runtime-imports"
+            )
 
     def test_a_path_outside_the_production_trees_names_no_command(self) -> None:
         assert (
@@ -1140,7 +1151,7 @@ class TestUndeclaredImportRemedy:
         cand = discovery.discover_undeclared_imports(
             _production_tree(tmp_path), provided_by={"starlette": ["starlette"]}
         )
-        assert [c.validation_command for c in cand] == ["production-runtime-imports"]
+        assert [c.validation_command for c in cand] == ["undeclared-imports"]
         assert cand[0].remedy["requirements_file"] == "requirements.txt"
 
     def test_a_finding_outside_the_trees_is_refused_by_the_lane(
@@ -1159,7 +1170,7 @@ class TestUndeclaredImportRemedy:
         with pytest.raises(lane.LaneRefusal, match="no_validation_command"):
             lane.derive_edit(cand, tmp_path, version_of=lambda name: "0.46.2")
 
-    def test_the_lane_declares_starlette_and_the_import_check_settles_it(
+    def test_the_lane_declares_starlette_and_the_condition_check_settles_it(
         self, app_repo
     ) -> None:
         pytest.importorskip("starlette")
@@ -1170,21 +1181,8 @@ class TestUndeclaredImportRemedy:
         found = [c for c in report["candidates"] if c["source"] == "undeclared-import"]
         assert [c["remedy"]["distribution"] for c in found] == ["starlette"]
         cand = found[0]
-        assert cand["validation_command"] == "production-runtime-imports"
-
-        def runner(argv, cwd, timeout):
-            argv = [
-                sys.executable if argv[0] in ("python3", "python") else argv[0],
-                *argv[1:],
-            ]
-            return subprocess.run(
-                argv,
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
+        assert cand["validation_command"] == "undeclared-imports"
+        runner = _registered_command_runner
 
         gh = FakeGitHub()
         receipt = lane.run_lane(
@@ -1208,8 +1206,11 @@ class TestUndeclaredImportRemedy:
             "version": version("starlette"),
             "provisioned": False,
         }
-        # The import check passes on both sides; the declaration is what moved.
-        assert receipt["before"]["passed"] and receipt["after"]["passed"]
+        # The condition check fails while starlette is undeclared and passes
+        # once it is declared: the command's verdict moved with the condition.
+        assert receipt["before"]["passed"] is False
+        assert receipt["before"]["exit_code"] == 1
+        assert receipt["after"]["passed"] is True
         assert (
             receipt["before"]["pytest_shaped"] is False
             and receipt["before"]["conclusive"] is True
@@ -1236,6 +1237,26 @@ class TestUndeclaredImportRemedy:
             ok
         )  # judge alone is about the command; the lane adds the declaration check
         assert "passed" in why
+
+
+def _registered_command_runner(argv, cwd, timeout):
+    """Run a registered argv in ``cwd`` with this interpreter.
+
+    ``scripts`` is resolved from this repository via PYTHONPATH, because the
+    throwaway trees these tests build hold only the files under test; ``--root
+    .`` still names the throwaway tree, so the check reads that tree.
+    """
+    argv = [sys.executable if argv[0] in ("python3", "python") else argv[0], *argv[1:]]
+    env = {**os.environ, "PYTHONPATH": str(ROOT)}
+    return subprocess.run(
+        argv,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+        check=False,
+        env=env,
+    )
 
 
 def _production_tree(tmp_path: Path) -> Path:
@@ -1366,3 +1387,180 @@ def test_the_lane_repairs_the_real_pytest_asyncio_gap(tmp_path: Path) -> None:
         provision=provision,
     )
     assert again["outcome"] == "already_open" and len(gh.prs) == 1
+
+
+# -- The condition check settles undeclared imports (#1977) ---------------------
+
+
+def _lazy_import_tree(root: Path, module: str) -> Path:
+    """A production file that imports ``module`` only inside a function.
+
+    The #1977 shape: ``app/field_observation/drive_archive.py`` imports
+    ``httplib2`` inside a method, so importing the application never executes
+    the import and an app-import check cannot see the finding.
+    """
+    (root / "requirements.txt").write_text("fastapi<0.116\n")
+    (root / "app").mkdir()
+    (root / "app" / "__init__.py").write_text("")
+    (root / "app" / "lazy.py").write_text(
+        f"def client():\n    import {module}\n\n    return {module}\n"
+    )
+    return root
+
+
+class TestUndeclaredImportConditionCheck:
+    def test_a_lazy_undeclared_import_fails_until_it_is_declared(
+        self, tmp_path: Path
+    ) -> None:
+        root = _lazy_import_tree(tmp_path, "httplib2")
+        provided = {"httplib2": ["httplib2"]}
+        status, record = discovery.check_condition(
+            "undeclared-import", root, provided_by=provided
+        )
+        assert status == 1 and record["passed"] is False
+        assert [row["distribution"] for row in record["remaining"]] == ["httplib2"]
+        assert record["remaining"][0]["paths"] == ["app/lazy.py"]
+
+        (root / "requirements.txt").write_text("fastapi<0.116\nhttplib2==0.22.0\n")
+        status, record = discovery.check_condition(
+            "undeclared-import", root, provided_by=provided
+        )
+        assert status == 0 and record["passed"] is True and record["remaining"] == []
+
+    def test_no_distribution_metadata_is_inconclusive_not_absent(
+        self, tmp_path: Path
+    ) -> None:
+        # Discovery is silent when nothing is installed; that silence must not
+        # read as "the condition is gone".
+        root = _lazy_import_tree(tmp_path, "httplib2")
+        status, record = discovery.check_condition(
+            "undeclared-import", root, provided_by={}
+        )
+        assert status == 2
+        assert record["passed"] is False and record["conclusive"] is False
+
+    def test_an_unknown_source_has_no_check(self, tmp_path: Path) -> None:
+        with pytest.raises(ValueError, match="no condition check"):
+            discovery.check_condition("failing-test", tmp_path)
+
+    def test_the_registered_argv_fails_where_the_app_import_check_passes(
+        self, tmp_path: Path
+    ) -> None:
+        """The real registered command against a real installed distribution.
+
+        ``starlette`` is installed and undeclared in this tree and imported
+        lazily. Importing the module (what ``production-runtime-imports``
+        does for ``app.main``) succeeds; the condition check fails; declaring
+        the distribution makes the condition check pass.
+        """
+        pytest.importorskip("starlette")
+        from scripts.oc_validation_commands import VALIDATION_COMMANDS
+
+        root = _lazy_import_tree(tmp_path, "starlette")
+        app_import = _registered_command_runner(
+            ("python3", "-c", "import app.lazy"), str(root), 60
+        )
+        assert app_import.returncode == 0, app_import.stderr
+
+        command = VALIDATION_COMMANDS["undeclared-imports"]
+        before = _registered_command_runner(command.argv, str(root), 120)
+        assert before.returncode == 1, before.stdout + before.stderr
+        assert json.loads(before.stdout)["remaining"][0]["distribution"] == "starlette"
+
+        (root / "requirements.txt").write_text("fastapi<0.116\nstarlette\n")
+        after = _registered_command_runner(command.argv, str(root), 120)
+        assert after.returncode == 0, after.stdout + after.stderr
+        assert json.loads(after.stdout)["passed"] is True
+
+    def test_run_validation_reads_the_check_as_conclusive_without_a_summary(
+        self,
+    ) -> None:
+        result = lane.run_validation(
+            "undeclared-imports",
+            cwd=".",
+            runner=lambda argv, cwd, timeout: completed(argv, 1, "{}"),
+        )
+        assert result["pytest_shaped"] is False and result["conclusive"] is True
+        assert result["passed"] is False
+
+
+class TestConditionAbsentNeedsTheConditionCheck:
+    def run(self, tiny_repo, cand, runner):
+        _origin, work, base = tiny_repo
+        gh = FakeGitHub()
+        receipt = lane.run_lane(
+            issue_for(cand),
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=gh,
+            git_call=lane.git,
+            runner=runner,
+            version_of=lambda name: "0.22.0",
+            provision=None,
+            discover=lambda root: {"candidates": []},
+            worktree_root=work.parent,
+        )
+        return receipt, gh
+
+    def test_an_app_import_check_cannot_settle_an_undeclared_import_absent(
+        self, tiny_repo
+    ) -> None:
+        """The live #1977 receipt, replayed: it must now refuse, not settle done."""
+        ran: list[tuple] = []
+
+        def runner(argv, cwd, timeout):
+            ran.append(tuple(argv))
+            return completed(argv, 0, "")
+
+        cand = candidate(
+            source="undeclared-import",
+            distribution="httplib2",
+            command="production-runtime-imports",
+        )
+        receipt, gh = self.run(tiny_repo, cand, runner)
+        assert receipt["outcome"] == "refused"
+        assert (
+            receipt["reason"] == "condition_absent_but_command_does_not_test_condition"
+        )
+        assert (
+            receipt["disposition"] == "blocked"
+            and receipt["validation_passed"] is False
+        )
+        assert ran == [] and gh.prs == []
+
+    def test_the_condition_check_settles_absent_from_its_own_exit_code(
+        self, tiny_repo
+    ) -> None:
+        cand = candidate(
+            source="undeclared-import",
+            distribution="httplib2",
+            command="undeclared-imports",
+        )
+        receipt, _ = self.run(
+            tiny_repo, cand, lambda argv, cwd, timeout: completed(argv, 1, "{}")
+        )
+        assert receipt["outcome"] == "validation_failed"
+        assert receipt["disposition"] == "blocked"
+
+        receipt, _ = self.run(
+            tiny_repo, cand, lambda argv, cwd, timeout: completed(argv, 0, "{}")
+        )
+        assert receipt["outcome"] == "condition_absent_validated"
+        assert receipt["disposition"] == "done"
+        assert receipt["after"]["argv"][-2:] == ["--check", "undeclared-import"]
+
+    def test_the_settled_receipt_is_accepted_by_the_worker(self, tiny_repo) -> None:
+        cand = candidate(
+            source="undeclared-import",
+            distribution="httplib2",
+            command="undeclared-imports",
+        )
+        receipt, _ = self.run(
+            tiny_repo, cand, lambda argv, cwd, timeout: completed(argv, 0, "{}")
+        )
+        assert worker._edit_disposition("done", receipt, ["undeclared-imports"]) == (
+            "done",
+            None,
+        )

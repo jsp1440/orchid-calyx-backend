@@ -71,6 +71,15 @@ class ValidationCommand:
     #: tests proves those tests pass on this revision, not that the control
     #: plane is healthy in production.
     proves: str
+    #: Discovery sources whose *condition* this command's exit code decides.
+    #: Empty for every command that proves something adjacent to a condition
+    #: rather than the condition itself. The distinction is what lets a
+    #: provider-free lane settle "the condition is gone" honestly: an import
+    #: check passes while a lazily imported distribution is still undeclared,
+    #: so it can prove the application imports but never that an
+    #: undeclared-import finding was resolved. See
+    #: ``oc_work_discovery.CONDITION_VALIDATORS``.
+    settles: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not COMMAND_ID.fullmatch(self.command_id):
@@ -177,15 +186,40 @@ _COMMANDS = (
     ValidationCommand(
         command_id="production-runtime-imports",
         # The same statement validate-python-runtime makes in CI: the base
-        # application imports under the pinned runtime. It is the check that
-        # proves a requirements.txt declaration did not break what it declares
-        # for, which is what an undeclared-import remedy needs settled.
+        # application imports under the pinned runtime. It does NOT settle an
+        # undeclared-import finding: an import inside a function body never
+        # runs here, and an installed-but-undeclared distribution imports
+        # either way, so this passes while the finding still stands. That
+        # condition is settled by ``undeclared-imports`` below.
         argv=("python3", "-c", "import app.main; import app.routers.calyx_core"),
         summary="Import the base application and the Calyx core router.",
         proves=(
             "the production import graph resolves on this exact revision under "
             "the runner's installed distributions"
         ),
+    ),
+    ValidationCommand(
+        command_id="undeclared-imports",
+        # Re-runs the exact discovery source that filed the finding, against
+        # the checked-out tree, and exits non-zero while any undeclared direct
+        # import remains (2 when the environment exposes no distribution
+        # metadata to decide with). It tests the condition, not a proxy for it.
+        argv=(
+            "python3",
+            "-m",
+            "scripts.oc_work_discovery",
+            "--root",
+            ".",
+            "--check",
+            "undeclared-import",
+        ),
+        summary="Re-run undeclared-import discovery and fail while any finding remains.",
+        proves=(
+            "no file under app/ or runtime/ on this exact revision directly imports "
+            "a distribution that the runner has installed and no requirements file "
+            "declares; it says nothing about distributions the runner has not installed"
+        ),
+        settles=("undeclared-import",),
     ),
     ValidationCommand(
         command_id="calyx-product-advisory",
