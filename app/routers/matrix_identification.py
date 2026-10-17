@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from app.calyx_conversation.workspace_outputs import matrix_identification_table
+from app.matrix_member_access import owner_or_matrix_member
 from app.security import verify_owner_or_api_key
 from runtime.matrix_identification import Candidate, Observation, rank_candidates
 
@@ -32,7 +33,12 @@ class IdentificationRequest(BaseModel):
     limit: int = Field(default=20, ge=1, le=200)
 
 
-router = APIRouter(prefix="/api/matrix-identification", tags=["matrix-identification"])
+router = APIRouter(
+    prefix="/api/matrix-identification",
+    tags=["matrix-identification"],
+    # Default deny: owner/API key only; a verified member gets 403 OWNER_ACCESS_REQUIRED.
+    dependencies=[Depends(owner_or_matrix_member)],
+)
 
 
 @router.get("/contract")

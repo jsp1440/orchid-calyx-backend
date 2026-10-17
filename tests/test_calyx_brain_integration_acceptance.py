@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -92,7 +92,7 @@ def _provenance(paper, evidence, *, role: str) -> LedgerProvenance:
         source_id=paper.paper_id,
         literature_record_id=evidence.evidence_id,
         content_hash=paper.source.content_hash,
-        retrieved_at=datetime.now(timezone.utc),
+        retrieved_at=datetime.now(UTC),
         extra={
             "resolution_state": "resolved",
             "evidence_id": evidence.evidence_id,

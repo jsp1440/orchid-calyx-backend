@@ -25,7 +25,8 @@ PLAN_SCHEMA = "oc.blocked-release-plan.v1"
 RECEIPT_SCHEMA = "oc.blocked-release-receipt.v1"
 BLOCKED = "oc-blocked"
 QUEUED = "oc-queued"
-OWNER_GATES = frozenset({"oc-owner-gate", "blocked-on-owner"})
+#: Human holds: an owner decision or a scientific/taxonomic review is never auto-released.
+OWNER_GATES = frozenset({"oc-owner-gate", "blocked-on-owner", "oc-scientific-gate"})
 RECEIPT_PREFIX = "[OC-RUNTIME] Blocked work released: `"
 MAX_ACTIONS = 100
 

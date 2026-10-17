@@ -13,7 +13,7 @@ import hashlib
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from types import MappingProxyType
 from typing import Any
@@ -128,9 +128,7 @@ class ConflictDisposition:
             )
         object.__setattr__(self, "rationale", rationale)
         object.__setattr__(self, "actor", actor)
-        object.__setattr__(
-            self, "effective_at", self.effective_at.astimezone(timezone.utc)
-        )
+        object.__setattr__(self, "effective_at", self.effective_at.astimezone(UTC))
 
 
 # ---------------------------------------------------------------------------
@@ -157,7 +155,7 @@ class LedgerProvenance:
     tool_id: str | None = None
     execution_id: str | None = None
     content_hash: str | None = None  # SHA-256 hex of the referenced artifact
-    retrieved_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    retrieved_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     collector: str | None = None
     extra: Mapping[str, Any] = field(default_factory=dict)
 
@@ -172,7 +170,7 @@ class LedgerProvenance:
             raise LedgerValidationError(
                 "provenance retrieved_at must be timezone-aware"
             )
-        retrieved_at = self.retrieved_at.astimezone(timezone.utc)
+        retrieved_at = self.retrieved_at.astimezone(UTC)
         collector = self.collector.strip() if self.collector else None
         object.__setattr__(self, "source_kind", source_kind)
         object.__setattr__(self, "source_id", source_id)
@@ -238,7 +236,7 @@ class LedgerEntry:
     references_entry_ids: tuple[UUID, ...] = field(default_factory=tuple)
     tags: tuple[str, ...] = field(default_factory=tuple)
     attributes: Mapping[str, Any] = field(default_factory=dict)
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     fingerprint: str = field(init=False)
 
     # Explicit exclusion flag — entries where this is True must never be
@@ -287,7 +285,7 @@ class LedgerEntry:
         if len(set(references_entry_ids)) != len(references_entry_ids):
             raise LedgerValidationError("references_entry_ids must be unique")
         tags = tuple(t.strip() for t in self.tags if t.strip())
-        created_at = self.created_at.astimezone(timezone.utc)
+        created_at = self.created_at.astimezone(UTC)
 
         payload = {
             "entry_id": str(self.entry_id),
@@ -333,7 +331,7 @@ class ReviewDecision:
     reviewer: str = ""
     outcome: ReviewOutcome = ReviewOutcome.REQUIRES_REVISION
     rationale: str = ""
-    decided_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    decided_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     ledger_version: int = 1
     reviewed_content_hash: str = ""
 
@@ -358,7 +356,7 @@ class ReviewDecision:
             raise LedgerValidationError(
                 "review decision decided_at must be timezone-aware"
             )
-        decided_at = self.decided_at.astimezone(timezone.utc)
+        decided_at = self.decided_at.astimezone(UTC)
         object.__setattr__(self, "reviewer", reviewer)
         object.__setattr__(self, "rationale", rationale)
         object.__setattr__(self, "decided_at", decided_at)
@@ -401,8 +399,8 @@ class ReasoningLedger:
     # conflict resolution without mutating existing entries.
     resolved_conflict_ids: frozenset[UUID] = field(default_factory=frozenset)
     created_by: str = ""
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    updated_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     ledger_fingerprint: str = field(init=False)
     review_content_hash: str = field(init=False)
 
@@ -478,8 +476,8 @@ class ReasoningLedger:
             raise LedgerValidationError(
                 "conflict disposition cannot be effective after the ledger version"
             )
-        created_at = self.created_at.astimezone(timezone.utc)
-        updated_at = self.updated_at.astimezone(timezone.utc)
+        created_at = self.created_at.astimezone(UTC)
+        updated_at = self.updated_at.astimezone(UTC)
 
         payload = {
             "ledger_id": str(self.ledger_id),
@@ -673,7 +671,7 @@ class ReasoningLedger:
             if self.status is LedgerStatus.APPROVED
             else self.status
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         return ReasoningLedger(
             ledger_id=self.ledger_id,
             tenant_id=self.tenant_id,
@@ -702,7 +700,7 @@ class ReasoningLedger:
         version_bound = dataclasses.replace(
             decision, ledger_version=new_version, reviewed_content_hash=""
         )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         new_status = (
             LedgerStatus.APPROVED
             if version_bound.outcome is ReviewOutcome.APPROVED
@@ -777,7 +775,7 @@ class ReasoningLedger:
             raise LedgerValidationError(
                 f"conflict entry {conflict_entry_id!s} is already resolved or superseded"
             )
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         new_version = self.version + 1
         record = ConflictDisposition(
             conflict_entry_id=conflict_entry_id,

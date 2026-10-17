@@ -3,7 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 from dataclasses import replace
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -63,7 +63,7 @@ PATCH_CONTENT = "print('bounded plan change')\n"
 PATCH_BYTES = PATCH_CONTENT.encode("utf-8")
 PATCH_BEFORE = "b" * 64
 PATCH_AFTER = hashlib.sha256(PATCH_BYTES).hexdigest()
-NOW = datetime(2026, 8, 9, 1, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 9, 1, 0, tzinfo=UTC)
 OWNER = "principal:owner"
 
 

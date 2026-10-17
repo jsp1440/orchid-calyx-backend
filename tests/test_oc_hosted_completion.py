@@ -6,7 +6,7 @@ import base64
 import copy
 import json
 from dataclasses import asdict, replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -26,7 +26,7 @@ HEAD = "a" * 40
 TRUSTED = "b" * 40
 BASE = "c" * 40
 MERGE = "d" * 40
-NOW = datetime(2026, 9, 12, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 12, tzinfo=UTC)
 PATHS = ["scripts/oc_control_plane_health.py", "tests/test_oc_control_plane_health.py"]
 
 
@@ -321,6 +321,37 @@ def test_changed_material_is_rejected_before_any_action(material, change):
         validate(material)
 
 
+def _claim_with_labels(material, labels):
+    packet = build_work_packet(
+        issue_number="1400",
+        title=material["issue"]["title"],
+        body=material["issue"]["body"],
+        labels=labels,
+    )
+    body = material["lease"]["body"]
+    claim = json.loads(body[body.index("`") + 1 : body.rindex("`")])
+    claim["material_fingerprint"] = packet.fingerprint
+    material["lease"]["body"] = (
+        f"[OC-SWARM-V4] Dependency/resource lease claimed: `{json.dumps(claim)}`."
+    )
+
+
+def test_repair_attempt_claimed_with_oc_repair_stays_bound_after_settlement(material):
+    """Settlement removes oc-repair on the way to oc-validating (#1843, attempt 3).
+
+    The claim was taken with oc-repair present; completion must still bind it.
+    """
+    _claim_with_labels(material, {"oc-running", "oc-p4", "oc-repair"})
+    assert validate(material)["passed"] is True
+
+
+@pytest.mark.parametrize("extra", ["oc-p1", "oc-model-deep", "oc-owner-gate"])
+def test_only_the_engine_removed_repair_label_is_tolerated(material, extra):
+    _claim_with_labels(material, {"oc-running", "oc-p4", extra})
+    with pytest.raises(ValueError, match="lease_binding_changed"):
+        validate(material)
+
+
 def test_reopened_dependency_cannot_be_bypassed(material):
     material["issue"]["body"] += "\nOC-SWARM-DEPENDS-ON: #1399"
     material["grant"]["issue_material"] = hosted.issue_material(material["issue"])
@@ -387,6 +418,40 @@ def test_ambiguous_checker_result_stays_closed(change):
     elif change == "unknown_risk":
         value = response(review(risk="safe"))
     with pytest.raises(ValueError):
+        hosted.parse_review(value)
+
+
+@pytest.mark.parametrize(
+    "wrap",
+    [
+        lambda body: f"```json\n{body}\n```",
+        lambda body: f"```\n{body}\n```",
+        lambda body: f"  ```json\n{body}\n```\n",
+    ],
+)
+def test_a_single_markdown_fence_around_the_json_review_is_accepted(wrap):
+    """The first live checker answer (#1843) was valid JSON inside a fence."""
+    value = response(review())
+    value["content"][0]["text"] = wrap(value["content"][0]["text"])
+    assert hosted.parse_review(value) == review()
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Here is my review: {}",
+        "```json\n{}\n```\nI am confident.",
+        "not json",
+        "[]",
+        '"pass"',
+        "```python\n{}\n```",
+        "",
+    ],
+)
+def test_prose_or_non_object_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_"):
         hosted.parse_review(value)
 
 
@@ -918,7 +983,9 @@ def test_hosted_workflow_isolates_candidate_data_and_spending_credentials():
     checker = workflow["jobs"]["checker"]
     assert "vars.NO_API_MODE == 'false'" in checker["if"]
     assert checker["permissions"]["contents"] == "read"
-    assert checker["permissions"]["pull-requests"] == "read"
+    # PR comments carry the assignment and evidence; the provider step below
+    # still receives ANTHROPIC_API_KEY only.
+    assert checker["permissions"]["pull-requests"] == "write"
     steps = checker["steps"]
     provider = next(
         i
@@ -949,3 +1016,347 @@ def test_hosted_workflow_isolates_candidate_data_and_spending_credentials():
     assert "vars.OC_GOVERNOR_AUTO_REFILL == 'true'" in continuation
     assert "needs.factory.result == 'success'" in continuation
     assert "needs.observation.result == 'success'" in continuation
+
+
+def _worker(**changes):
+    run = {
+        "path": ".github/workflows/orchid-swarm-controller.yml",
+        "head_branch": hosted.BRANCH,
+        "event": "workflow_dispatch",
+        "run_attempt": 1,
+        "status": "completed",
+        "conclusion": "success",
+    }
+    run.update(changes)
+    return run
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        _worker(),
+        # GitHub records scheduled runs on the default branch; the controller
+        # checks out the integration head itself (#1848 review, finding B1).
+        _worker(event="schedule", head_branch="main"),
+    ],
+)
+def test_canonical_controller_runs_are_trusted_workers(run):
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "main") is True
+
+
+@pytest.mark.parametrize(
+    "run",
+    [
+        _worker(event="pull_request", head_branch="claude/some-pr-branch"),
+        _worker(event="pull_request", head_branch="main"),
+        _worker(event="pull_request", head_branch=hosted.BRANCH),
+        _worker(event="issues", head_branch="main"),
+        _worker(event="workflow_dispatch", head_branch="main"),
+        _worker(event="schedule", head_branch="feature"),
+        _worker(path=".github/workflows/other.yml"),
+        _worker(run_attempt=2),
+        _worker(status="in_progress"),
+        _worker(conclusion="cancelled"),
+    ],
+)
+def test_non_canonical_or_unfinished_runs_are_never_trusted_workers(run):
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "main") is False
+
+
+def test_a_schedule_run_needs_a_known_default_branch():
+    run = _worker(event="schedule", head_branch="main")
+    assert hosted.worker_run_trusted(run, {"worker_attempt": 1}, "") is False
+
+
+@pytest.mark.parametrize("text", [None, 7, ["{}"], {"verdict": "pass"}])
+def test_non_text_checker_output_fails_closed_with_a_named_reason(text):
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_invalid$"):
+        hosted.parse_review(value)
+
+
+def _attempt(authorization, **overrides):
+    row = {
+        "user": {"login": "github-actions[bot]"},
+        "created_at": "2026-10-15T08:01:33Z",
+        "updated_at": "2026-10-15T08:01:33Z",
+        "body": hosted.tagged(hosted.ATTEMPT_TAG, {"authorization": authorization}),
+    }
+    row.update(overrides)
+    return row
+
+
+def test_a_fresh_owner_authorization_grants_exactly_one_new_checker_call(material):
+    """#1843: the first authorization's one checker call was spent on a parse
+    failure. A new owner record grants one new call; the old attempt stays."""
+    grant = material["grant"]
+    spent = _attempt(6183992365)
+    assert hosted.checker_attempt_reserved({**grant, "comment_id": 6183992365}, [spent])
+    assert not hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent]
+    )
+    again = _attempt(7000000000)
+    assert hosted.checker_attempt_reserved(
+        {**grant, "comment_id": 7000000000}, [spent, again]
+    )
+
+
+@pytest.mark.parametrize(
+    "row",
+    [
+        _attempt(None, body="<!-- OC-HOSTED-CHECKER-ATTEMPT-V1\nnot json\n-->"),
+        _attempt(None, body=hosted.tagged(hosted.ATTEMPT_TAG, {"run": 1001})),
+        _attempt(None),
+        # Not written by the workflow bot, or edited after it was written.
+        _attempt(6183992365, user={"login": "jsp1440"}),
+        _attempt(6183992365, updated_at="2026-10-15T09:00:00Z"),
+        _attempt(6183992365, created_at=None),
+    ],
+)
+def test_an_unattributable_attempt_record_counts_against_every_authorization(
+    material, row
+):
+    assert hosted.checker_attempt_reserved(
+        {**material["grant"], "comment_id": 7000000000}, [row]
+    )
+
+
+def test_every_boundary_flag_has_a_definition_the_checker_receives():
+    """#1843: undefined touches_production owner-gated a plain code change."""
+    for field in hosted.RISK_FIELDS:
+        assert f"{field}:" in hosted.BOUNDARY_DEFINITIONS
+    text = hosted.BOUNDARY_DEFINITIONS
+    # The integration branch is not isolated (#1851 review): migrations and the
+    # control plane run from it, so those are named as touching production.
+    for exception in (
+        "alembic/",
+        "migrations/",
+        "workflow",
+        "control-plane",
+        "app/calyx_orchestrator/",
+    ):
+        assert exception in text
+    assert "FALSE only for" in text
+    assert "tests or scripts that CI runs with production credentials" in text
+    assert "drops or deletes schema" in text
+    assert "weakens or removes their" in text
+    # Ambiguity still fails toward the owner gate.
+    assert "genuinely ambiguous for this diff, set the flag true" in text
+
+
+def test_the_checker_prompt_includes_the_boundary_definitions(monkeypatch, tmp_path):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+    seen = {}
+
+    class Done(Exception):
+        pass
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        raise Done
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", capture)
+    with pytest.raises(Done):
+        hosted.check(tmp_path)
+    assert hosted.BOUNDARY_DEFINITIONS in seen["payload"]["system"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "alembic/versions/abc_add_table.py",
+        "alembic/env.py",
+        "app/calyx_orchestrator/durable_reservoir.py",
+        "app/calyx_orchestrator/durable_reservoir_models.py",
+        "app/calyx_orchestrator/bounded_dispatcher.py",
+        "app/calyx_orchestrator/leaf_worker.py",
+        "app/calyx_orchestrator/owner_authorization_gate.py",
+        ".github/workflows/calyx-durable-autonomy-neon-proof.yml",
+        "migrations/20261015_x.sql",
+        "tests/test_durable_reservoir_postgres.py",
+        "tests/test_durable_e2e_conductor_proof.py",
+        "scripts/prove_real_canonical_matrix_slice.py",
+        "scripts/build_078_postgres_validation.py",
+        "scripts/build_079_postgres_validation.py",
+        "scripts/run_with_postgres_validation_lock.py",
+        "app/publication/gate.py",
+        "app/missions/queue.py",
+        "app/routers/mission_control.py",
+        "app/main.py",
+        "tests/test_build_078_publication_gate.py",
+        "tests/test_build_079_mission_queue.py",
+        "scripts/discover_hassler_release_intake.py",
+        "app/executive_telemetry/service.py",
+        "scripts/smoke_mission_control_telemetry.py",
+        "tests/test_mission_control_telemetry_001f_release_readiness.py",
+    ],
+)
+def test_paths_that_reach_the_production_database_can_never_be_owner_enrolled(
+    material, path
+):
+    """A push to the integration branch runs alembic against production for these."""
+    with pytest.raises(ValueError, match="unsafe_allowed_paths"):
+        authorize(material, allowed_paths=[path, "tests/test_x.py"])
+
+
+def _run_check(monkeypatch, tmp_path, text):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+    seen = {}
+
+    class Reply:
+        def __init__(self, body):
+            self.body = body
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps(self.body).encode()
+
+    def answer(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        return Reply(
+            {
+                "model": hosted.MODEL,
+                "stop_reason": "end_turn",
+                "content": [{"type": "text", "text": text}],
+                "usage": {"input_tokens": 10, "output_tokens": 20},
+            }
+        )
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", answer)
+    hosted.check(tmp_path)
+    return seen["payload"], json.loads((tmp_path / "review.json").read_text())
+
+
+def test_the_checker_answer_is_constrained_by_the_review_schema(monkeypatch, tmp_path):
+    """#1858, #1888: free-form answers failed closed as not JSON."""
+    payload, parsed = _run_check(monkeypatch, tmp_path, json.dumps(review()))
+    assert payload["output_config"] == {
+        "format": {"type": "json_schema", "schema": hosted.REVIEW_SCHEMA}
+    }
+    assert [m["role"] for m in payload["messages"]] == ["user"]  # no prefill
+    assert parsed == review()
+
+
+def test_the_review_schema_matches_what_the_parser_accepts():
+    schema = hosted.REVIEW_SCHEMA
+    assert schema["additionalProperties"] is False
+    assert set(schema["required"]) == set(schema["properties"]) == set(review())
+    props = schema["properties"]
+    assert props["verdict"]["enum"] == ["pass", "fail", "inconclusive"]
+    assert props["risk"]["enum"] == ["low", "moderate", "high", "owner_gated"]
+    for field in (*hosted.RISK_FIELDS, "reversible"):
+        assert props[field] == {"type": "boolean"}
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        json.dumps(review()) + " I am confident.",
+        "```json\n" + json.dumps(review()) + "\n```\nDone.",
+        "",
+        "Here is my review: " + json.dumps(review()),
+    ],
+)
+def test_an_unparseable_answer_fails_closed_and_is_kept_for_diagnosis(
+    monkeypatch, tmp_path, capsys, text
+):
+    with pytest.raises(ValueError, match="^checker_"):
+        _run_check(monkeypatch, tmp_path, text)
+    assert not (tmp_path / "review.json").exists()
+    assert (tmp_path / "checker_output.txt").read_text() == text[:8000]
+    logged = json.loads(capsys.readouterr().err.strip().splitlines()[-1])
+    assert logged["checker_output"]["chars"] == len(text)
+    assert logged["checker_output"]["stop_reason"] == "end_turn"
+    assert set(logged["checker_output"]) == {"stop_reason", "blocks", "chars"}
+
+
+def _run_check_response(monkeypatch, tmp_path, reply):
+    state = {"attempt_comment": 1, "prompt": {"task": {}, "files": []}}
+    (tmp_path / "prepared.json").write_text(json.dumps(state))
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return json.dumps(reply).encode()
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setattr(hosted.request, "urlopen", lambda req, timeout: Reply())
+    hosted.check(tmp_path)
+
+
+USAGE = {"input_tokens": 10, "output_tokens": 20}
+
+
+@pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
+def test_an_unfinished_answer_never_passes_even_if_it_parses(
+    monkeypatch, tmp_path, stop_reason
+):
+    reply = {
+        "model": hosted.MODEL,
+        "stop_reason": stop_reason,
+        "content": [{"type": "text", "text": json.dumps(review())}],
+        "usage": USAGE,
+    }
+    with pytest.raises(ValueError, match="^checker_did_not_finish$"):
+        _run_check_response(monkeypatch, tmp_path, reply)
+    assert not (tmp_path / "review.json").exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        [],
+        [{"type": "tool_use", "id": "x"}],
+        [{"type": "text", "text": None}],
+        [{"type": "text", "text": "{}"}, {"type": "text", "text": "{}"}],
+    ],
+)
+def test_non_text_answers_fail_closed_through_check(monkeypatch, tmp_path, content):
+    reply = {
+        "model": hosted.MODEL,
+        "stop_reason": "end_turn",
+        "content": content,
+        "usage": USAGE,
+    }
+    with pytest.raises(ValueError, match="^checker_"):
+        _run_check_response(monkeypatch, tmp_path, reply)
+    assert not (tmp_path / "review.json").exists()
+    assert (tmp_path / "checker_output.txt").exists()
+
+
+def test_the_checker_model_supports_structured_outputs():
+    """A model change must keep structured outputs or replace the schema."""
+    assert hosted.MODEL in hosted.STRUCTURED_OUTPUT_MODELS
+
+
+def test_a_pretty_printed_answer_is_accepted(monkeypatch, tmp_path):
+    _, parsed = _run_check(monkeypatch, tmp_path, json.dumps(review(), indent=2))
+    assert parsed == review()
+
+
+@pytest.mark.parametrize("where", ["top", "nested"])
+def test_a_repeated_key_in_the_review_fails_closed(where):
+    body = json.dumps(review(verdict="fail"))[:-1]
+    if where == "top":
+        text = body + ', "verdict": "pass"}'
+    else:
+        text = body + ', "extra": {"a": 1, "a": 2}}'
+    value = response(review())
+    value["content"][0]["text"] = text
+    with pytest.raises(ValueError, match="^checker_output_ambiguous$"):
+        hosted.parse_review(value)

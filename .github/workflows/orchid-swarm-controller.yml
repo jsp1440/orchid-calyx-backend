@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       worker_slots:
-        description: Maximum concurrent implementation workers (1-12)
+        description: Maximum concurrent implementation workers (1-12); empty uses vars.OC_SWARM_WORKER_SLOTS
         required: false
-        default: "8"
+        default: ""
         type: string
       wave:
         description: Internal bounded refill wave ordinal
@@ -22,7 +22,7 @@ on:
     inputs:
       worker_slots:
         required: false
-        default: "8"
+        default: ""
         type: string
       wave:
         required: false
@@ -82,7 +82,7 @@ jobs:
       recovered_count: ${{ steps.leases.outputs.recovered_count }}
       selected_numbers: ${{ steps.plan.outputs.selected_numbers }}
       refill_recommended: ${{ steps.plan.outputs.refill_recommended }}
-      provider_blocked: ${{ steps.no_api.outputs.blocked }}
+      provider_blocked: ${{ steps.no_api.outputs.blocked == 'true' || steps.coding_governor.outputs.authorized != 'true' }}
       summary: ${{ steps.plan.outputs.summary }}
       controller_sha: ${{ steps.controller_revision.outputs.sha }}
       canonical_integration_run: ${{ steps.controller_revision.outputs.canonical_integration }}
@@ -91,7 +91,7 @@ jobs:
       REPO: ${{ github.repository }}
       INTEGRATION_BRANCH: oc-autonomous-integration
       CONTROLLER_REF: ${{ github.event_name == 'schedule' && 'oc-autonomous-integration' || github.sha }}
-      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
     steps:
@@ -171,14 +171,35 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m scripts.oc_brain_pulse --output "$RUNNER_TEMP/brain-pulse.json"
+          python3 -m scripts.oc_brain_pulse \
+            --output "$RUNNER_TEMP/brain-pulse.json" \
+            --calyx-product-output "$RUNNER_TEMP/calyx-product-pulse.json"
           echo "candidate_count=$(jq -r '.candidate_count' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
           echo "observer_count=$(jq -r '.observers | length' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
           echo "error_count=$(jq -r '.errors | length' "$RUNNER_TEMP/brain-pulse.json")" >> "$GITHUB_OUTPUT"
           jq '{schema, source, candidate_count, questions_evaluated,
                observers, authority,
+               calyx_product: (.calyx_product |
+                 {status, error, artifact_id, artifact_checksum,
+                  advisory_checksum, finding_kinds, candidate_count, receipt}),
                candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
             "$RUNNER_TEMP/brain-pulse.json"
+
+      - name: Admit Calyx product findings without Brain candidate starvation
+        id: calyx_product_materialize
+        if: steps.brain_pulse.outcome == 'success'
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_work_materialize \
+            --repository "$REPO" \
+            --report "$RUNNER_TEMP/calyx-product-pulse.json" \
+            --max-new 1 \
+            --github-output "$GITHUB_OUTPUT" \
+            --apply \
+            | tee "$RUNNER_TEMP/calyx-product-materialization.json"
+          test "$(jq -r '.errors | length' "$RUNNER_TEMP/calyx-product-materialization.json")" -eq 0
 
       - name: Admit Brain discoveries to the canonical queue
         id: brain_materialize
@@ -247,8 +268,10 @@ jobs:
           set -euo pipefail
           # Swarm v4 needs closed dependency issues as well as the open execution
           # portfolio. The canonical scheduler itself still ignores closed work.
+          # stateReason lets the dependency graph refuse to unlock dependents of
+          # an issue closed as NOT_PLANNED or DUPLICATE.
           gh issue list --repo "$REPO" --state all --limit 1000 \
-            --json number,title,body,labels,createdAt,updatedAt,state > "$RUNNER_TEMP/issues.json"
+            --json number,title,body,labels,createdAt,updatedAt,state,stateReason > "$RUNNER_TEMP/issues.json"
 
           # Blocked-work reconciliation reads machine-readable blocker lineage
           # from issue bodies/comments. Fetch comments only for currently blocked
@@ -345,13 +368,76 @@ jobs:
             "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-budget.json"
           mv "$RUNNER_TEMP/swarm-snapshot.with-budget.json" "$RUNNER_TEMP/swarm-snapshot.json"
 
+      # Homeostasis evidence: the plan may report healthy idle only when this
+      # pass's discovery demonstrably ran and found nothing. A failed or skipped
+      # discovery attaches nothing, so the verdict stays "unknown, not idle".
+      - name: Attach work-discovery evidence
+        if: steps.discovery.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq --slurpfile discovery "$RUNNER_TEMP/work-discovery.json" \
+            '. + {discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}}' \
+            "$RUNNER_TEMP/swarm-snapshot.json" > "$RUNNER_TEMP/swarm-snapshot.with-discovery.json"
+          mv "$RUNNER_TEMP/swarm-snapshot.with-discovery.json" "$RUNNER_TEMP/swarm-snapshot.json"
+
+      - name: Check governor admission before selecting coding work
+        id: coding_governor
+        if: steps.no_api.outputs.blocked == 'false' && steps.budget_ledger.outcome == 'success'
+        continue-on-error: true
+        env:
+          NO_API_MODE: ${{ vars.NO_API_MODE }}
+          OC_GOVERNOR_EMERGENCY_KILL_SWITCH: ${{ vars.OC_GOVERNOR_EMERGENCY_KILL_SWITCH }}
+          OC_GOVERNOR_PAID_EXECUTION_ENABLED: ${{ vars.OC_GOVERNOR_PAID_EXECUTION_ENABLED }}
+          OC_GOVERNOR_PROVIDER: anthropic
+          OC_GOVERNOR_PROVIDER_ALLOWLIST: ${{ vars.OC_GOVERNOR_PROVIDER_ALLOWLIST }}
+          OC_GOVERNOR_RETRY_COUNT: "1"
+          OC_GOVERNOR_MAX_RETRIES: ${{ vars.OC_GOVERNOR_MAX_RETRIES }}
+          OC_GOVERNOR_PER_RUN_BUDGET_USD: ${{ vars.OC_GOVERNOR_PER_RUN_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_BUDGET_USD: ${{ vars.OC_GOVERNOR_DAILY_BUDGET_USD }}
+          OC_GOVERNOR_MONTHLY_BUDGET_USD: ${{ vars.OC_GOVERNOR_MONTHLY_BUDGET_USD }}
+          OC_GOVERNOR_DAILY_SPEND_USD: ${{ steps.budget_ledger.outputs.daily_spend_usd }}
+          OC_GOVERNOR_MONTHLY_SPEND_USD: ${{ steps.budget_ledger.outputs.monthly_spend_usd }}
+          OC_CLAUDE_CHEAP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_CHEAP_ESTIMATED_COST_USD }}
+          OC_CLAUDE_STANDARD_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_STANDARD_ESTIMATED_COST_USD }}
+          OC_CLAUDE_DEEP_ESTIMATED_COST_USD: ${{ vars.OC_CLAUDE_DEEP_ESTIMATED_COST_USD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Before issue selection, conservatively cover every tier and repair.
+          # Per-worker route/ledger checks still run before any provider call.
+          : "${OC_GOVERNOR_DAILY_SPEND_USD:?missing daily spend observation}"
+          : "${OC_GOVERNOR_MONTHLY_SPEND_USD:?missing monthly spend observation}"
+          OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD="$(python3 - <<'PY'
+          import os
+          from decimal import Decimal
+          from scripts.oc_model_router import DEFAULT_ESTIMATED_COST_USD
+          costs = [
+              Decimal(os.environ.get(f"OC_CLAUDE_{tier.upper()}_ESTIMATED_COST_USD") or default)
+              for tier, default in DEFAULT_ESTIMATED_COST_USD.items()
+          ]
+          if any(not cost.is_finite() or cost < 0 for cost in costs):
+              raise ValueError("invalid coding admission cost")
+          print(max(costs))
+          PY
+          )"
+          export OC_GOVERNOR_PER_RUN_ESTIMATED_COST_USD
+          python3 scripts/swarm_governor_precheck.py
+
       - name: Plan dependency-aware resource wave
         id: plan
         shell: bash
         run: |
           set -euo pipefail
           provider_args=()
-          if [[ "${{ steps.no_api.outputs.blocked }}" == "true" ]]; then
+          # Paid coding work is planned only on a run of the integration ref.
+          # Other triggers (a PR closing, an issue event) check out their own
+          # SHA; a paid worker launched there can never be integrated, because
+          # hosted completion trusts only integration-ref runs and schedules
+          # (scripts/oc_controller_trust.py), so the planner applies the same rule.
+          if [[ "${{ steps.no_api.outputs.blocked }}" == "false" && "${{ steps.coding_governor.outputs.authorized }}" == "true" && "${{ steps.controller_revision.outputs.canonical_integration }}" == "true" && ( "${{ github.event_name }}" == "schedule" || "${{ github.ref }}" == "refs/heads/oc-autonomous-integration" ) ]]; then
+            provider_args+=(--coding-executor)
+          else
             provider_args+=(--provider-free-only)
           fi
           # The edit lane executes only on a run of the integration ref (see the
@@ -363,6 +449,7 @@ jobs:
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \
+            --paid-launch-capacity 1 \
             "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"
@@ -443,14 +530,43 @@ jobs:
             # "0 filed" with no indication anything had gone wrong, which is an
             # absent result wearing a passing result's clothes.
             echo "- intake: discovery=${{ steps.discovery.outcome }} materialize=${{ steps.materialize.outcome }}"
+            echo "- Calyx product: status=$(jq -r '.status // \"unavailable\"' "$RUNNER_TEMP/calyx-product-pulse.json" 2>/dev/null || echo unavailable) outcome=$(jq -r '.outcome // \"blocked\"' "$RUNNER_TEMP/calyx-product-pulse.json" 2>/dev/null || echo blocked) reason=$(jq -r '.errors[0].code // .errors[0].error // \"none\"' "$RUNNER_TEMP/calyx-product-pulse.json" 2>/dev/null || echo unavailable) admitted=${{ steps.calyx_product_materialize.outputs.created_count || '0' }} requeued=${{ steps.calyx_product_materialize.outputs.requeued_count || '0' }}"
             echo "- work filed this pass: ${{ steps.materialize.outputs.created_count || '0' }} ${{ steps.materialize.outputs.created_numbers || '[]' }}"
             echo "- recurred work requeued this pass: ${{ steps.materialize.outputs.requeued_count || '0' }} ${{ steps.materialize.outputs.requeued_numbers || '[]' }}"
             echo "- refill recommended: $(jq -r '.refill_recommended' <<<"$PLAN")"
+            echo "- homeostasis: ${{ steps.plan.outputs.homeostasis_status }} (${{ steps.plan.outputs.homeostasis_reason }}) gates=$(jq -c '.homeostasis.gates // {}' <<<"$PLAN")"
             echo "- provider execution blocked: ${{ steps.no_api.outputs.blocked }}"
             echo "- integration target: \`oc-autonomous-integration\`"
             echo "- main merge: disabled"
             echo "- production deploy: disabled"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Durable lane telemetry. The homeostasis reason above lives only in this
+      # run's summary; 32 consecutive zero-launch waves left no durable reason.
+      # This keeps one current-status comment on the lane feed issue (#1949)
+      # updated every wave and appends one only when the lane state or reason
+      # changes. Best effort: it never fails or delays the wave.
+      # Only the canonical integration run publishes: issue/PR-event runs on
+      # main plan provider-free-only with deferred edits, so their reason
+      # describes a different queue and would overwrite the canonical status.
+      - name: Publish lane status
+        if: ${{ !cancelled() && steps.controller_revision.outputs.canonical_integration == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -m scripts.oc_lane_status \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/swarm-plan.json" \
+            --lease-recovery "$RUNNER_TEMP/swarm-lease-recovery.json" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "$RUN_URL" \
+            --event "${{ github.event_name }}" \
+            --provider-launch-count "${{ steps.claim.outputs.provider_launch_count || '0' }}" \
+            --provider-free-launch-count "${{ steps.claim.outputs.provider_free_launch_count || '0' }}" \
+            --provider-blocked "${{ steps.no_api.outputs.blocked == 'true' || steps.coding_governor.outputs.authorized != 'true' }}"
 
   workers:
     needs: plan
@@ -486,6 +602,7 @@ jobs:
     # else, which the pre-push fence below enforces at the git level.
     if: needs.plan.outputs.provider_free_launch_count != '0'
     runs-on: ubuntu-latest
+    timeout-minutes: 70
     permissions:
       contents: write        # the edit lane pushes oc/discovered-<fingerprint> branches
       issues: write
@@ -588,6 +705,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python3 -m scripts.oc_swarm_settlement --verify-only \
+            --min-remaining-seconds 4500 \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
           issue=$(gh issue view "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
             --json number,title,body,state,labels)
           labels=$(jq -r '[.labels[].name] | join(" ")' <<<"$issue")
@@ -675,42 +797,13 @@ jobs:
       - name: Publish durable result and release lease
         if: steps.lease.outputs.execute == 'true'
         shell: bash
-        env:
-          DISPOSITION: ${{ steps.reconcile.outputs.disposition }}
         run: |
           set -euo pipefail
-          result=$(jq -c . "$RUNNER_TEMP/provider-free-result.json")
-          case "$DISPOSITION" in
-            done)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --remove-label oc-owner-gate \
-                --add-label oc-done >/dev/null
-              ;;
-            owner-gate)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-blocked --add-label oc-owner-gate >/dev/null
-              ;;
-            blocked)
-              gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-                --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null
-              # An edit lane that opened a pull request parks the issue on it;
-              # the blocked-work reconciler releases `pr#N` when it merges.
-              blocked_on=$(jq -r '.blocked_on // empty' "$RUNNER_TEMP/provider-free-result.json")
-              if [[ -n "$blocked_on" ]]; then
-                gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-                  --body "[OC-SWARM-V4] Provider-free edit lane opened a pull request for this condition; the issue waits on it. OC-BLOCKED-ON: ${blocked_on}" >/dev/null
-              fi
-              ;;
-            *)
-              echo "Unknown provider-free disposition: $DISPOSITION" >&2
-              exit 2
-              ;;
-          esac
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-SWARM-V4] Provider-free worker completed, actual write set validated, and lease released: \`$result\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null
+          python3 -m scripts.oc_swarm_settlement \
+            --result "$RUNNER_TEMP/provider-free-result.json" \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
 
       # A pull request opened with GITHUB_TOKEN starts no pull_request workflow,
       # so the edit lane's PR would carry no validation checks at all. Dispatch
@@ -783,14 +876,13 @@ jobs:
         if: failure() && steps.lease.outputs.execute == 'true'
         shell: bash
         run: |
-          # Exact failure evidence travels with the release so the observer and
-          # a later repair never have to guess why this lane died.
-          evidence=$(jq -c . "$RUNNER_TEMP/provider-free-result.json" 2>/dev/null || echo '{"error":"worker_result_unavailable"}')
-          gh issue edit "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --remove-label oc-running --remove-label oc-queued --remove-label oc-validating \
-            --remove-label oc-repair --remove-label oc-owner-gate --add-label oc-blocked >/dev/null 2>&1 || true
-          gh issue comment "$ISSUE_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "[OC-SWARM-V4] Provider-free reconciliation failed closed; execution lease released and issue blocked. Worker evidence: \`$evidence\`. Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}." >/dev/null 2>&1 || true
+          set -euo pipefail
+          evidence=$(cat "$RUNNER_TEMP/provider-free-result.json" 2>/dev/null || echo '{"error":"worker_result_unavailable"}')
+          python3 -m scripts.oc_swarm_settlement --disposition blocked \
+            --message "Provider-free reconciliation failed: $evidence" \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
 
   refill:
     needs: [plan, workers, provider_free_workers]
@@ -808,7 +900,7 @@ jobs:
       INTEGRATION_BRANCH: oc-autonomous-integration
       WAVE: ${{ inputs.wave || '1' }}
       MAX_WAVES: ${{ inputs.max_waves || '4' }}
-      WORKER_SLOTS: ${{ inputs.worker_slots || '8' }}
+      WORKER_SLOTS: ${{ inputs.worker_slots || vars.OC_SWARM_WORKER_SLOTS || '8' }}
     steps:
       - name: Dispatch bounded refill wave
         shell: bash

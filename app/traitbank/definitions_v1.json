@@ -1,0 +1,149 @@
+{
+  "definitions_version": "traitbank-definitions-v1",
+  "derived_from": {
+    "repository": "jsp1440/Orchid-Continuum-Brain",
+    "path": "fixtures/traitbank/trait_definitions.json",
+    "commit": "2f5623212b603c3026e23255b39f126a132ea69e",
+    "note": "Brain placeholder predicate aliases (example.org) removed; real dataset predicate URIs must be added here only after verification."
+  },
+  "definitions": [
+    {
+      "trait_id": "oc:trait:spur_length",
+      "label": "Spur length",
+      "domain": "floral",
+      "structure": "spur",
+      "property": "length",
+      "value_kind": "quantitative",
+      "unit": "mm",
+      "oao_character_id": "OAO:0000043",
+      "structure_ontology_ids": [
+        "PO:0025511"
+      ],
+      "methods": [
+        {
+          "method_id": "ruler_fresh_flower",
+          "label": "Ruler, fresh flower",
+          "description": "Straight-line length from spur mouth to tip on a fresh, fully open flower."
+        },
+        {
+          "method_id": "herbarium_rehydrated",
+          "label": "Rehydrated herbarium flower",
+          "description": "Measured after rehydration; shrinkage not corrected."
+        },
+        {
+          "method_id": "image_calibrated",
+          "label": "Calibrated image",
+          "description": "Measured on an image with a scale bar in the focal plane."
+        }
+      ],
+      "aliases": [
+        "nectar spur length",
+        "nectary length"
+      ],
+      "description": "Length of the floral (labellum) spur."
+    },
+    {
+      "trait_id": "oc:trait:spur_presence",
+      "label": "Spur presence",
+      "domain": "floral",
+      "structure": "spur",
+      "property": "presence",
+      "value_kind": "categorical",
+      "oao_character_id": "OAO:0000042",
+      "states": [
+        {
+          "state_id": "present",
+          "label": "present",
+          "oao_id": "OAO:0000046"
+        },
+        {
+          "state_id": "absent",
+          "label": "absent",
+          "oao_id": "OAO:0000045"
+        }
+      ],
+      "aliases": []
+    },
+    {
+      "trait_id": "oc:trait:labellum_margin",
+      "label": "Labellum margin",
+      "domain": "floral",
+      "structure": "labellum margin",
+      "property": "margin form",
+      "value_kind": "categorical",
+      "oao_character_id": "OAO:0000007",
+      "states": [
+        {
+          "state_id": "fimbriate",
+          "label": "fimbriate",
+          "oao_id": "OAO:0000017"
+        },
+        {
+          "state_id": "entire",
+          "label": "entire",
+          "oao_id": null
+        }
+      ],
+      "aliases": []
+    },
+    {
+      "trait_id": "oc:trait:pseudobulb_presence",
+      "label": "Pseudobulb presence",
+      "domain": "vegetative",
+      "structure": "pseudobulb",
+      "property": "presence",
+      "value_kind": "categorical",
+      "oao_character_id": "OAO:0000049",
+      "states": [
+        {
+          "state_id": "present",
+          "label": "present",
+          "oao_id": "OAO:0000051"
+        },
+        {
+          "state_id": "absent",
+          "label": "absent",
+          "oao_id": "OAO:0000050"
+        }
+      ],
+      "aliases": []
+    },
+    {
+      "trait_id": "oc:trait:growth_habit",
+      "label": "Growth habit",
+      "domain": "growth_habit",
+      "structure": "whole plant",
+      "property": "substrate habit",
+      "value_kind": "categorical",
+      "oao_character_id": null,
+      "states": [
+        {
+          "state_id": "epiphytic",
+          "label": "epiphytic"
+        },
+        {
+          "state_id": "lithophytic",
+          "label": "lithophytic"
+        },
+        {
+          "state_id": "terrestrial",
+          "label": "terrestrial"
+        }
+      ],
+      "aliases": [
+        "habit"
+      ]
+    },
+    {
+      "trait_id": "oc:trait:leaf_length",
+      "label": "Leaf length",
+      "domain": "vegetative",
+      "structure": "leaf",
+      "property": "length",
+      "value_kind": "quantitative",
+      "unit": "mm",
+      "oao_character_id": null,
+      "aliases": []
+    }
+  ]
+}

@@ -403,29 +403,30 @@ def test_a_result_reaches_every_task_that_was_waiting_on_it():
 @pytest.mark.parametrize(
     "locality",
     [
-        "seen at -8.1234, -35.6789 on the ridge",
-        "lat=-8.1234 lng=-35.6789",
+        "seen at -4.5678, -25.6789 on the ridge",
+        "lat=-4.5678 lng=-25.6789",
         "8°07'30\"S near the trail",
-        "recorded at latitude: -8.98765",
+        "recorded at latitude: -4.89123",
     ],
+    ids=lambda _case: "case",
 )
 def test_protected_locality_is_redacted_from_a_persisted_intent(locality):
     record = intent(objective=f"Explain the sighting {locality}").to_record()
 
-    assert "-8.1234" not in record["objective"]
-    assert "-35.6789" not in record["objective"]
+    assert "-4.5678" not in record["objective"]
+    assert "-25.6789" not in record["objective"]
     assert "locality withheld" in record["objective"]
 
 
 def test_protected_locality_is_redacted_from_the_provider_payload():
     payload = intent(
-        objective="Explain the sighting at -8.1234, -35.6789",
-        expected_gain="Learner understands the site at lat=-8.1234 lng=-35.6789",
+        objective="Explain the sighting at -4.5678, -25.6789",
+        expected_gain="Learner understands the site at lat=-4.5678 lng=-25.6789",
     ).payload_for_provider()
 
     serialized = str(payload)
-    assert "-8.1234" not in serialized
-    assert "-35.6789" not in serialized
+    assert "-4.5678" not in serialized
+    assert "-25.6789" not in serialized
 
 
 def test_the_provider_payload_carries_no_submitter_or_task_identity():

@@ -25,7 +25,10 @@ Configuration (environment):
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import os
+import secrets
 import threading
 import time
 from collections import deque
@@ -137,3 +140,66 @@ def public_write_rate_limit(family: str) -> Callable[[Request], None]:
 
     dependency.__name__ = f"public_write_rate_limit_{family}"
     return dependency
+
+
+# --- authenticated member writes ----------------------------------------------------
+#
+# Member feedback writes are authenticated, so the brake is keyed on the verified
+# member SUBJECT, never on the client address: a member cannot escape it by changing
+# networks, and members behind one NAT do not share an allowance. The subject is
+# never stored: the key is an HMAC under a random per-process secret, so the
+# limiter's memory holds no member identifier, even a hashable one.
+#
+# Configuration (environment):
+#
+# * ``OC_MEMBER_FEEDBACK_RATE_LIMIT`` -- writes per window per member per route
+#   family (default 20). ``0`` disables the brake.
+# * ``OC_MEMBER_FEEDBACK_RATE_WINDOW_SECONDS`` -- window length (default 600).
+
+MEMBER_WRITE_RATE_LIMIT_ENV = "OC_MEMBER_FEEDBACK_RATE_LIMIT"
+MEMBER_WRITE_RATE_WINDOW_ENV = "OC_MEMBER_FEEDBACK_RATE_WINDOW_SECONDS"
+_SUBJECT_KEY_SECRET = secrets.token_bytes(32)
+
+MEMBER_WRITE_LIMITER = SlidingWindowLimiter()
+
+
+def _int_env(name: str, default: int, *, minimum: int) -> int:
+    raw = os.getenv(name, "").strip()
+    if not raw:
+        return default
+    try:
+        return max(minimum, int(raw))
+    except ValueError:
+        return default
+
+
+def member_write_limit() -> int:
+    return _int_env(MEMBER_WRITE_RATE_LIMIT_ENV, DEFAULT_LIMIT, minimum=0)
+
+
+def member_write_window_seconds() -> int:
+    return _int_env(MEMBER_WRITE_RATE_WINDOW_ENV, DEFAULT_WINDOW_SECONDS, minimum=1)
+
+
+def subject_key(subject: str) -> str:
+    """A non-reversible limiter key for an authenticated subject."""
+    return hmac.new(_SUBJECT_KEY_SECRET, subject.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def enforce_member_write_rate_limit(family: str, subject: str) -> None:
+    """Count one member write for ``family``; 429 with ``Retry-After`` once spent."""
+    limit = member_write_limit()
+    if limit <= 0:
+        return
+    allowed, retry_after = MEMBER_WRITE_LIMITER.check(
+        f"{family}:{subject_key(subject)}", limit=limit, window_seconds=member_write_window_seconds()
+    )
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "MEMBER_RATE_LIMITED",
+                "message": "Too many submissions from this account. Please wait and try again.",
+            },
+            headers={"Retry-After": str(retry_after)},
+        )

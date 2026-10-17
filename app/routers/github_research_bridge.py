@@ -30,7 +30,7 @@ from app.routers.owner_operations import (
     row_list,
     utc_now,
 )
-from app.security import verify_owner_or_api_key
+from app.security import credentials_match, verify_owner_or_api_key
 
 router = APIRouter(
     prefix="/api/integrations/github/research",
@@ -121,7 +121,7 @@ def _verify_signature(raw_body: bytes, signature: str, secret: str) -> None:
     expected = "sha256=" + hmac.new(
         secret.encode("utf-8"), raw_body, hashlib.sha256
     ).hexdigest()
-    if not hmac.compare_digest(signature, expected):
+    if not credentials_match(signature, expected):
         _reject("GITHUB_RESEARCH_SIGNATURE_INVALID", 401)
 
 
@@ -298,7 +298,7 @@ def _send_feedback(
             body=message,
         )
         return {**result, "configured": True}
-    except Exception:
+    except Exception:  # noqa: BLE001 -- status feedback is best-effort; failure is reported, not raised
         return {
             "status": "failed",
             "configured": True,
@@ -321,11 +321,8 @@ def _bridge_rows() -> list[dict[str, Any]]:
     return records
 
 
-@router.get("/readiness")
-def readiness(
-    auth: dict[str, object] = Depends(verify_owner_or_api_key),
-) -> dict[str, Any]:
-    del auth
+@router.get("/readiness", dependencies=[Depends(verify_owner_or_api_key)])
+def readiness() -> dict[str, Any]:
     config = bridge_config()
     rows = _bridge_rows()
     counts: dict[str, int] = {}

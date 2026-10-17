@@ -28,7 +28,7 @@ This module records the approver identity in provenance but does not re-authenti
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .blueprint_run_report import BlueprintRunReport, build_blueprint_run_report
@@ -193,7 +193,7 @@ class OwnerAuthorizationGate:
 
         for decision in decisions:
             key = decision.task_key
-            now_iso = datetime.now(timezone.utc).isoformat()
+            now_iso = datetime.now(UTC).isoformat()
 
             if key not in eligible_keys:
                 # Not an owner-gated task in this report — skip silently.
@@ -281,5 +281,5 @@ class OwnerAuthorizationGate:
             post_dispatch_run=post_run,
             post_report=post_report,
             version=GATE_VERSION,
-            generated_at_utc=datetime.now(timezone.utc).isoformat(),
+            generated_at_utc=datetime.now(UTC).isoformat(),
         )

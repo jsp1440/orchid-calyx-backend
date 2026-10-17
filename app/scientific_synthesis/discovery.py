@@ -1,27 +1,18 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import asdict, dataclass
 from typing import Any, Protocol
 from urllib.parse import quote
 
 import requests
 
+from .identifiers import normalize_doi as _normalize_doi
 from .models import BibliographicRecord, VerificationState
 
 
 def _clean(value: Any) -> str:
     return " ".join(str(value or "").split())
-
-
-def _normalize_doi(value: str | None) -> str | None:
-    if not value:
-        return None
-    normalized = value.strip().lower()
-    normalized = re.sub(r"^https?://(?:dx\.)?doi\.org/", "", normalized)
-    normalized = re.sub(r"^doi:\s*", "", normalized)
-    return normalized or None
 
 
 def _first_text(value: Any) -> str | None:

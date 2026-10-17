@@ -30,7 +30,7 @@ from __future__ import annotations
 import concurrent.futures
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .deep_orchestrate import DeepOrchestrate, TaskLeaf, TaskState
@@ -173,7 +173,7 @@ class BoundedDispatcher:
                         "lease_recoveries": prior + 1,
                         "last_lease_recovery": {
                             "reason": leaf.blocked_reason,
-                            "recovered_at": datetime.now(timezone.utc).isoformat(),
+                            "recovered_at": datetime.now(UTC).isoformat(),
                             "recovered_by": cfg.lease_holder,
                         },
                     },
@@ -263,7 +263,7 @@ class BoundedDispatcher:
 
 def _exception_result(leaf: TaskLeaf, worker: Any, exc: BaseException) -> TaskExecutionResult:
     """Typed blocked result carrying the exact failure evidence of a crashed worker."""
-    now = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(UTC).isoformat()
     reason = f"WORKER_EXCEPTION:{type(exc).__name__}:{exc}"[:_MAX_REASON_LENGTH]
     return TaskExecutionResult(
         task_key=leaf.key,

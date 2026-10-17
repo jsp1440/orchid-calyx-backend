@@ -10,6 +10,7 @@ from .constitution import (
 )
 from .fixtures import build_canonical_brain_fixture
 from .models import BrainObject, BrainSnapshot, SearchHit
+from .producer import PRODUCER_SCHEMA, submit_brain_program
 from .registry import CanonicalBrainRegistry
 
 
@@ -20,6 +21,7 @@ def create_brain_router(
 ) -> APIRouter:
     brain = registry or build_canonical_brain_fixture()
     router = APIRouter(prefix=prefix, tags=["canonical-brain"])
+    router.add_api_route("/builds/submit", submit_brain_program, methods=["POST"])
 
     @router.get("/status")
     def status() -> dict[str, object]:
@@ -28,6 +30,11 @@ def create_brain_router(
             "mode": "read-only-candidate",
             "write_enabled": False,
             "publication_enabled": False,
+            "program_queue_handoff": {
+                "schema": PRODUCER_SCHEMA,
+                "authenticated_owner_required": True,
+                "executor_roles": "explicit-registered-read-only",
+            },
             "constitution_version": CONSTITUTION_VERSION,
             "object_count": len(snapshot.objects),
             "relationship_count": len(snapshot.relationships),
@@ -46,7 +53,9 @@ def create_brain_router(
         return brain.search(q)
 
     @router.get("/objects/{object_id}/related", response_model=list[BrainObject])
-    def related(object_id: str, relationship_type: str | None = None) -> list[BrainObject]:
+    def related(
+        object_id: str, relationship_type: str | None = None
+    ) -> list[BrainObject]:
         if brain.get(object_id) is None:
             raise HTTPException(status_code=404, detail="Brain object not found")
         return brain.related(object_id, relationship_type)

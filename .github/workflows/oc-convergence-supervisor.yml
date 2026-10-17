@@ -62,7 +62,12 @@ jobs:
       contents: read
       actions: read
       issues: write
-      pull-requests: read
+      # The checker assignment and evidence are PR comments by design (settle
+      # verifies their location), and commenting on a PR needs pull-requests:
+      # write. GH_TOKEN goes only to steps running trusted repository code
+      # (prepare, ledger, reserve, record, failure); the provider step gets
+      # ANTHROPIC_API_KEY alone and candidate code is never executed here.
+      pull-requests: write
     steps:
       - uses: actions/checkout@v4
         with:

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from datetime import timedelta
+
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
@@ -7,8 +10,24 @@ from app.calyx_orchestrator.autonomy_policy import (
     ProgramAutonomyPolicy,
     program_autonomy_status,
 )
-from app.calyx_orchestrator.executor_registry import AUTONOMY_PROBE_ROLE
-from app.calyx_orchestrator.program_cycle import run_deterministic_program_cycle
+from app.calyx_orchestrator.engineering_core import TerminalOutcome
+from app.calyx_orchestrator.executor import (
+    ExecutionReceipt,
+    ExecutionState,
+    canonical_checksum,
+)
+from app.calyx_orchestrator.executor_registry import (
+    AUTONOMY_PROBE_ROLE,
+    AuthoritativeExecutorRegistry,
+    AutonomyProbeExecutor,
+    RegisteredExecutor,
+)
+from app.calyx_orchestrator.models import utcnow
+from app.calyx_orchestrator.program_cycle import (
+    ZERO_EXECUTION_CATEGORIES,
+    classify_zero_execution,
+    run_deterministic_program_cycle,
+)
 from app.calyx_orchestrator.program_models import (
     CalyxProgram,
     CalyxProgramDependency,
@@ -19,14 +38,18 @@ from app.calyx_orchestrator.program_repository import (
     ProgramJobSpec,
 )
 from app.database import Base
-from runtime.program_autonomy_worker import run_once
+from runtime.program_autonomy_worker import classify_cycle, run_once
 
 
 def _db() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(
         engine,
-        tables=[CalyxProgram.__table__, CalyxProgramJob.__table__, CalyxProgramDependency.__table__],
+        tables=[
+            CalyxProgram.__table__,
+            CalyxProgramJob.__table__,
+            CalyxProgramDependency.__table__,
+        ],
     )
     return Session(engine)
 
@@ -83,11 +106,18 @@ def test_cycle_runs_registered_authoritative_dependency_chain_without_manual_cla
 
         db.refresh(program)
         assert program.status == "completed"
-        persisted = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == program.program_id).all()
+        persisted = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == program.program_id)
+            .all()
+        )
         assert all(job.status == "completed" for job in persisted)
         assert all(job.outcome == "DELIVERED" for job in persisted)
         assert all(job.lease_token is None for job in persisted)
-        assert all(job.evidence_json and "autonomy_probe_v1" in job.evidence_json for job in persisted)
+        assert all(
+            job.evidence_json and "autonomy_probe_v1" in job.evidence_json
+            for job in persisted
+        )
 
 
 def test_cycle_does_not_claim_unregistered_real_engineering_roles():
@@ -104,7 +134,11 @@ def test_cycle_does_not_claim_unregistered_real_engineering_roles():
         assert result.completed_jobs == 0
         db.refresh(program)
         assert program.status == "running"
-        persisted = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == program.program_id).all()
+        persisted = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == program.program_id)
+            .all()
+        )
         by_key = {job.job_key: job for job in persisted}
         assert by_key["job-0"].status == "queued"
         assert by_key["job-0"].outcome is None
@@ -124,7 +158,9 @@ def test_cycle_enforces_job_budget_and_releases_downstream_probe_for_next_cycle(
         )
         assert first.stop_reason == "budget_exhausted"
         assert first.completed_jobs == 1
-        snapshot = PersistentProgramRepository(db).snapshot(owner="owner", program_id=program.program_id)
+        snapshot = PersistentProgramRepository(db).snapshot(
+            owner="owner", program_id=program.program_id
+        )
         by_key = {job["job_key"]: job for job in snapshot["jobs"]}
         assert by_key["job-0"]["status"] == "completed"
         assert by_key["job-1"]["status"] == "queued"
@@ -151,8 +187,16 @@ def test_cycle_is_owner_scoped_and_does_not_claim_other_owner_programs():
         )
         assert result.completed_jobs == 1
         assert result.jobs[0].program_id == own.program_id
-        own_job = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == own.program_id).one()
-        other_job = db.query(CalyxProgramJob).filter(CalyxProgramJob.program_id == other.program_id).one()
+        own_job = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == own.program_id)
+            .one()
+        )
+        other_job = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == other.program_id)
+            .one()
+        )
         assert own_job.status == "completed"
         assert other_job.status == "queued"
         assert other_job.attempt_count == 0
@@ -214,3 +258,614 @@ def test_autonomous_cycle_route_is_mounted_under_brain_orchestrator():
 
     paths = {route.path for route in app.routes}
     assert "/brain/orchestrator/programs/workers/run-cycle" in paths
+
+
+class _FailingForJobKey:
+    """Probe executor that raises for one job key and delegates otherwise."""
+
+    executor_key = "autonomy_probe_v1"
+
+    def __init__(self, failing_job_key: str) -> None:
+        self.failing_job_key = failing_job_key
+        self.delegate = AutonomyProbeExecutor()
+        self.calls: list[str] = []
+
+    def execute(self, assignment):
+        self.calls.append(assignment.job_key)
+        if assignment.job_key == self.failing_job_key:
+            raise RuntimeError("SYNTHETIC_EXECUTOR_FAILURE")
+        return self.delegate.execute(assignment)
+
+
+def _independent_program(db: Session, *, jobs: int) -> CalyxProgram:
+    repository = PersistentProgramRepository(db)
+    program = repository.create_program(
+        owner="owner",
+        title="Independent probe jobs",
+        objective="Prove one failing job does not abort the cycle.",
+        jobs=[
+            ProgramJobSpec(
+                f"job-{index}",
+                AUTONOMY_PROBE_ROLE,
+                f"Independent job {index}",
+                "jsp1440/orchid-calyx-backend",
+                f"autonomy-{index}",
+                False,
+            )
+            for index in range(jobs)
+        ],
+        dependencies=[],
+    )
+    repository.start(owner="owner", program_id=program.program_id)
+    return program
+
+
+def _registry_failing(
+    job_key: str,
+) -> tuple[AuthoritativeExecutorRegistry, _FailingForJobKey]:
+    registry = AuthoritativeExecutorRegistry()
+    executor = _FailingForJobKey(job_key)
+    registry._by_role[AUTONOMY_PROBE_ROLE] = RegisteredExecutor(
+        role_key=AUTONOMY_PROBE_ROLE,
+        executor=executor,
+        authoritative=True,
+        external_side_effects=False,
+    )
+    return registry, executor
+
+
+def test_one_failing_job_does_not_abort_the_cycle_and_retries_only_after_backoff(
+    monkeypatch,
+):
+    import app.calyx_orchestrator.program_worker as program_worker_module
+
+    with _db() as db:
+        program = _independent_program(db, jobs=3)
+        registry, executor = _registry_failing("job-0")
+        start = utcnow()
+        clock = {"now": start}
+        monkeypatch.setattr(program_worker_module, "utcnow", lambda: clock["now"])
+
+        first = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        # The two good jobs complete in the same cycle as the failure.
+        assert first.stop_reason == "idle"
+        assert first.attempted_jobs == 3
+        assert first.completed_jobs == 2
+        assert sorted(item.job_key for item in first.jobs) == ["job-1", "job-2"]
+        assert first.error is None
+        assert len(first.failures) == 1
+        failure = first.failures[0]
+        assert failure["job_key"] == "job-0"
+        assert failure["code"] == "SYNTHETIC_EXECUTOR_FAILURE"
+        assert failure["disposition"] == "retry_backoff"
+        assert first.as_dict()["failed_jobs"] == 1
+
+        failed = (
+            db.query(CalyxProgramJob).filter(CalyxProgramJob.job_key == "job-0").one()
+        )
+        assert failed.status == "queued"
+        assert failed.lease_token is None
+        assert failed.lease_expires_at is None
+        assert failed.attempt_count == 1
+
+        # Not retried before its backoff elapses.
+        clock["now"] = start + timedelta(seconds=30)
+        waiting = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        assert waiting.attempted_jobs == 0
+        assert executor.calls.count("job-0") == 1
+
+        # Retried after the first backoff (60s), then after the doubled one (120s).
+        clock["now"] = start + timedelta(seconds=61)
+        second = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        assert second.attempted_jobs == 1
+        assert second.failures[0]["disposition"] == "retry_backoff"
+        clock["now"] = start + timedelta(seconds=61 + 119)
+        assert (
+            run_deterministic_program_cycle(
+                db,
+                owner="owner",
+                worker_id="autonomy-worker",
+                max_jobs=10,
+                registry=registry,
+            ).attempted_jobs
+            == 0
+        )
+
+        # The third failure hits the unchanged 3-attempt ceiling: dead letter,
+        # blocked program, and exactly one follow-up repair job.
+        clock["now"] = start + timedelta(seconds=61 + 121)
+        third = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        assert third.attempted_jobs == 1
+        assert third.failures[0]["disposition"] == "dead_letter"
+        assert executor.calls.count("job-0") == 3
+        db.refresh(program)
+        assert program.status == "blocked"
+        repairs = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.job_key.like("dead-letter-repair:%"))
+            .all()
+        )
+        assert len(repairs) == 1
+
+        clock["now"] = start + timedelta(hours=2)
+        after = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        assert after.attempted_jobs == 0
+        assert executor.calls.count("job-0") == 3
+
+
+class _RaisingForJobKey(_FailingForJobKey):
+    def __init__(self, failing_job_key: str, error: BaseException) -> None:
+        super().__init__(failing_job_key)
+        self.error = error
+
+    def execute(self, assignment):
+        self.calls.append(assignment.job_key)
+        if assignment.job_key == self.failing_job_key:
+            raise self.error
+        return self.delegate.execute(assignment)
+
+
+def _registry_raising(
+    job_key: str, error: BaseException
+) -> AuthoritativeExecutorRegistry:
+    registry = AuthoritativeExecutorRegistry()
+    registry._by_role[AUTONOMY_PROBE_ROLE] = RegisteredExecutor(
+        role_key=AUTONOMY_PROBE_ROLE,
+        executor=_RaisingForJobKey(job_key, error),
+        authoritative=True,
+        external_side_effects=False,
+    )
+    return registry
+
+
+def test_non_governance_executor_exception_is_a_job_failure_not_a_crash():
+    # A provider SDK can raise ConnectionError (an OSError), which the cycle
+    # previously did not catch: it escaped run_once and killed the worker.
+    with _db() as db:
+        _independent_program(db, jobs=3)
+        registry = _registry_raising("job-0", ConnectionError("provider reset"))
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=10,
+            registry=registry,
+        )
+        assert result.completed_jobs == 2
+        assert result.error is None
+        assert [f["exception_type"] for f in result.failures] == ["ConnectionError"]
+        assert result.failures[0]["disposition"] == "retry_backoff"
+        failed = (
+            db.query(CalyxProgramJob).filter(CalyxProgramJob.job_key == "job-0").one()
+        )
+        assert failed.status == "queued"
+        assert failed.lease_token is None
+
+
+def test_base_exceptions_still_propagate_out_of_the_cycle():
+    for error in (KeyboardInterrupt(), SystemExit(3)):
+        with _db() as db:
+            _independent_program(db, jobs=1)
+            registry = _registry_raising("job-0", error)
+            with pytest.raises(type(error)):
+                run_deterministic_program_cycle(
+                    db,
+                    owner="owner",
+                    worker_id="autonomy-worker",
+                    max_jobs=2,
+                    registry=registry,
+                )
+
+
+def test_failed_attempt_frees_its_scheduler_slot_immediately():
+    # Role and repository capacity is 2. Before the fix the failed job stayed
+    # `running` until its lease expired, holding one of the two slots, so only
+    # one other job was runnable.
+    from app.calyx_orchestrator.persisted_scheduler import project_persisted_schedule
+
+    with _db() as db:
+        _independent_program(db, jobs=3)
+        registry, _ = _registry_failing("job-0")
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=1,
+            registry=registry,
+        )
+        assert result.stop_reason == "budget_exhausted"
+        assert result.failures[0]["job_key"] == "job-0"
+
+        schedule = project_persisted_schedule(db, owner="owner")
+        assert schedule.snapshot.running_counts["global"] == 0
+        runnable = [
+            schedule.job_keys_by_schedule_key[key]
+            for key in schedule.snapshot.runnable_order
+        ]
+        assert runnable == ["job-1", "job-2"]
+        codes = {
+            schedule.job_keys_by_schedule_key[d.job_key]: d.code
+            for d in schedule.snapshot.decisions
+        }
+        assert codes["job-0"] == "RETRY_BACKOFF"
+
+
+def test_run_forever_survives_a_failed_cycle_and_sleeps_before_the_next(monkeypatch):
+    import runtime.program_autonomy_worker as worker_module
+
+    class _Stop(BaseException):
+        pass
+
+    policy = ProgramAutonomyPolicy.from_environ(
+        {
+            "CALYX_PROGRAM_AUTONOMY_ENABLED": "true",
+            "CALYX_PROGRAM_AUTONOMY_OWNER": "owner",
+            "CALYX_PROGRAM_AUTONOMY_POLL_SECONDS": "30",
+        }
+    )
+    outcomes = iter(
+        [ConnectionError("database reset"), {"executed": True, "cycle": {}}]
+    )
+
+    def fake_run_once(active_policy, **_kwargs):
+        outcome = next(outcomes)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+    sleeps: list[float] = []
+
+    def sleeper(seconds: float) -> None:
+        sleeps.append(seconds)
+        if len(sleeps) == 2:
+            raise _Stop()
+
+    seen: list[dict] = []
+    monkeypatch.setattr(worker_module, "run_once", fake_run_once)
+    with pytest.raises(_Stop):
+        worker_module.run_forever(policy, sleeper=sleeper, on_cycle=seen.append)
+    scheduler = {
+        "worker_id": policy.worker_id,
+        "poll_seconds": policy.poll_seconds,
+        # Neither cycle is a healthy idle, so no backoff applies.
+        "idle_streak": 0,
+        "next_sleep_seconds": policy.poll_seconds,
+    }
+    assert seen[0] == {
+        "executed": False,
+        "reason": "cycle_failed",
+        "error": {"exception_type": "ConnectionError"},
+        # A failed cycle is a scheduler defect, never a productive completion.
+        "classification": {
+            "productive": False,
+            "category": "scheduler_defect",
+            "healthy": False,
+        },
+        "scheduler": {"sequence": 1, **scheduler},
+    }
+    assert seen[1] == {
+        "executed": True,
+        "cycle": {},
+        "scheduler": {"sequence": 2, **scheduler},
+    }
+    assert sleeps == [policy.poll_seconds, policy.poll_seconds]
+
+    # A KeyboardInterrupt from a cycle still stops the worker.
+    def interrupted(active_policy, **_kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(worker_module, "run_once", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        worker_module.run_forever(policy, sleeper=lambda _s: None)
+
+
+def test_zero_execution_reason_absent_when_cycle_completes_work():
+    with _db() as db:
+        _program(db, jobs=1)
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=10
+        )
+        assert result.completed_jobs == 1
+        assert result.zero_execution is None
+        assert result.as_dict()["zero_execution"] is None
+
+
+def test_zero_execution_reason_reports_empty_queue_as_idle_no_candidate():
+    with _db() as db:
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=3
+        )
+        reason = result.as_dict()["zero_execution"]
+        assert reason["stop_reason"] == "idle"
+        assert reason["reason_code"] == "IDLE_NO_CANDIDATE"
+        assert reason["source"] == "claim_diagnostic"
+        assert reason["claim_diagnostic"]["outcome"] == "IDLE_NO_CANDIDATE"
+        assert reason["scheduler_codes"] == {}
+        assert reason["unregistered_runnable_roles"] == []
+
+
+def test_zero_execution_reason_names_unregistered_role_capability_gap_read_only():
+    with _db() as db:
+        program = _program(db, jobs=2, role_key="brain_engineer")
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=10
+        )
+        assert result.stop_reason == "idle"
+        reason = result.zero_execution
+        assert reason is not None
+        assert reason["reason_code"] == "AUTHORITATIVE_EXECUTOR_NOT_REGISTERED"
+        assert reason["source"] == "executor_registry"
+        assert reason["unregistered_runnable_roles"] == ["brain_engineer"]
+        assert "brain_engineer" not in reason["eligible_role_keys"]
+        assert reason["scheduler_codes"] == {"WAITING_FOR_PREREQUISITES": 1}
+        persisted = (
+            db.query(CalyxProgramJob)
+            .filter(CalyxProgramJob.program_id == program.program_id)
+            .all()
+        )
+        assert all(job.attempt_count == 0 for job in persisted)
+        assert all(
+            job.lease_owner is None and job.lease_token is None for job in persisted
+        )
+
+
+def test_zero_execution_reason_reports_admission_rejection_code():
+    with _db() as db:
+        repository = PersistentProgramRepository(db)
+        program = repository.create_program(
+            owner="owner",
+            title="Mutating probe without branch",
+            objective="Admission policy must reject and the cycle must say why.",
+            jobs=[
+                ProgramJobSpec(
+                    "job-0",
+                    AUTONOMY_PROBE_ROLE,
+                    "Mutating",
+                    "jsp1440/orchid-calyx-backend",
+                    None,
+                    True,
+                )
+            ],
+            dependencies=[],
+        )
+        repository.start(owner="owner", program_id=program.program_id)
+        result = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=3
+        )
+        assert result.attempted_jobs == 0
+        reason = result.zero_execution
+        assert reason["source"] == "claim_admission"
+        assert reason["reason_code"] == "MUTATING_JOB_REQUIRES_BRANCH"
+        assert reason["claim_diagnostic"]["outcome"] == "REJECTED_ADMISSION"
+
+
+def test_zero_execution_reason_reports_executor_failure_and_backoff():
+    with _db() as db:
+        _independent_program(db, jobs=1)
+        registry, _ = _registry_failing("job-0")
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=3,
+            registry=registry,
+        )
+        assert result.attempted_jobs == 1
+        assert result.completed_jobs == 0
+        reason = result.as_dict()["zero_execution"]
+        assert reason["source"] == "executor_failure"
+        assert reason["reason_code"] == "SYNTHETIC_EXECUTOR_FAILURE"
+        assert reason["failure_codes"] == ["SYNTHETIC_EXECUTOR_FAILURE"]
+        assert reason["scheduler_codes"] == {"RETRY_BACKOFF": 1}
+
+        waiting = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=3,
+            registry=registry,
+        )
+        assert waiting.attempted_jobs == 0
+        assert waiting.zero_execution["source"] == "scheduler"
+        assert waiting.zero_execution["reason_code"] == "RETRY_BACKOFF"
+
+
+class _BlockedProbe(AutonomyProbeExecutor):
+    """Settles through the real fenced path with a verified BLOCKED receipt."""
+
+    def execute(self, assignment):
+        output = {"status": "blocked", "executed": False, "side_effects": []}
+        receipt = ExecutionReceipt(
+            assignment_id=assignment.assignment_id,
+            program_id=assignment.program_id,
+            job_key=assignment.job_key,
+            executor_key=self.executor_key,
+            state=ExecutionState.BLOCKED,
+            outcome=TerminalOutcome.BLOCKED,
+            input_checksum=assignment.verified_input_checksum(),
+            output_checksum=canonical_checksum(output),
+            output=output,
+            evidence_uris=assignment.evidence_uris,
+        )
+        receipt.verify()
+        return receipt
+
+
+def test_blocked_settlement_is_not_reported_as_productive_execution():
+    """Regression: a settled BLOCKED job used to count as a productive cycle.
+
+    ``completed_jobs`` counts every fenced settlement, so a cycle whose only
+    job came back BLOCKED reported completed_jobs=1 and zero_execution=None.
+    """
+    with _db() as db:
+        _program(db, jobs=1)
+        registry = AuthoritativeExecutorRegistry()
+        registry._by_role[AUTONOMY_PROBE_ROLE] = RegisteredExecutor(
+            role_key=AUTONOMY_PROBE_ROLE,
+            executor=_BlockedProbe(),
+            authoritative=True,
+            external_side_effects=False,
+        )
+        result = run_deterministic_program_cycle(
+            db,
+            owner="owner",
+            worker_id="autonomy-worker",
+            max_jobs=3,
+            registry=registry,
+        )
+        assert result.completed_jobs == 1
+        assert result.productive_jobs == 0
+        payload = result.as_dict()
+        assert payload["jobs"][0]["productive"] is False
+        reason = payload["zero_execution"]
+        assert reason["reason_code"] == "COMPLETED_WITHOUT_DELIVERY"
+        assert reason["source"] == "terminal_outcome"
+        assert reason["category"] == "execution_not_delivered"
+        assert reason["healthy"] is False
+        assert reason["non_delivered_outcomes"] == [
+            {"job_key": "job-0", "outcome": "BLOCKED"}
+        ]
+        assert classify_cycle(payload, None) == {
+            "productive": False,
+            "category": "execution_not_delivered",
+            "healthy": False,
+        }
+
+
+def test_delivered_cycle_is_productive_and_carries_no_zero_reason():
+    with _db() as db:
+        _program(db, jobs=1)
+        payload = run_deterministic_program_cycle(
+            db, owner="owner", worker_id="autonomy-worker", max_jobs=3
+        ).as_dict()
+        assert payload["productive_jobs"] == 1
+        assert payload["jobs"][0]["productive"] is True
+        assert classify_cycle(payload, None)["productive"] is True
+
+
+@pytest.mark.parametrize(
+    ("record", "category"),
+    [
+        (
+            {"source": "claim_diagnostic", "reason_code": "IDLE_NO_CANDIDATE"},
+            "no_eligible_work",
+        ),
+        (
+            {"source": "scheduler", "reason_code": "WAITING_FOR_PREREQUISITES"},
+            "dependency_blocked",
+        ),
+        (
+            {"source": "scheduler", "reason_code": "GLOBAL_CAPACITY_REACHED"},
+            "capacity_exhausted",
+        ),
+        ({"source": "scheduler", "reason_code": "RETRY_BACKOFF"}, "runtime_backoff"),
+        (
+            {
+                "source": "executor_registry",
+                "reason_code": "AUTHORITATIVE_EXECUTOR_NOT_REGISTERED",
+            },
+            "no_executor",
+        ),
+        (
+            {"source": "executor_failure", "reason_code": "PROVIDER_BUDGET_EXHAUSTED"},
+            "provider_budget",
+        ),
+        (
+            {"source": "executor_failure", "reason_code": "SYNTHETIC_EXECUTOR_FAILURE"},
+            "runtime_backoff",
+        ),
+        (
+            {
+                "source": "claim_admission",
+                "reason_code": "MUTATING_JOB_REQUIRES_BRANCH",
+            },
+            "owner_gate",
+        ),
+        (
+            {"source": "cycle_error", "reason_code": "CLAIMED_JOB_LEASE_TOKEN_MISSING"},
+            "scheduler_defect",
+        ),
+        (
+            {"source": "diagnosis", "reason_code": "ZERO_EXECUTION_DIAGNOSIS_FAILED"},
+            "scheduler_defect",
+        ),
+        (
+            {"source": "scheduler", "reason_code": "SOMETHING_UNKNOWN"},
+            "scheduler_defect",
+        ),
+    ],
+)
+def test_zero_execution_category_vocabulary(record, category):
+    assert classify_zero_execution(record) == (
+        category,
+        ZERO_EXECUTION_CATEGORIES[category],
+    )
+
+
+def test_idle_cycle_adopts_the_upstream_replenishment_reason():
+    cycle = {
+        "productive_jobs": 0,
+        "zero_execution": {"category": "no_eligible_work"},
+    }
+    assert classify_cycle(cycle, {"zero_reason": "capacity_exhausted"}) == {
+        "productive": False,
+        "category": "capacity_exhausted",
+        "healthy": True,
+    }
+    assert classify_cycle(cycle, {"zero_reason": "configuration_unavailable"}) == {
+        "productive": False,
+        "category": "configuration_unavailable",
+        "healthy": False,
+    }
+    # A replenishment step that crashed is a defect, not "nothing to do".
+    assert (
+        classify_cycle(cycle, {"error": {"exception_type": "OSError"}})["category"]
+        == "scheduler_defect"
+    )
+    # A specific Calyx-side reason is never overwritten by the upstream one.
+    blocked = {"productive_jobs": 0, "zero_execution": {"category": "no_executor"}}
+    assert (
+        classify_cycle(blocked, {"zero_reason": "capacity_exhausted"})["category"]
+        == "no_executor"
+    )
+
+
+def test_disabled_worker_reports_owner_gate_without_running_replenishment():
+    calls = []
+    result = run_once(
+        ProgramAutonomyPolicy(enabled=False, owner=""),
+        replenish=lambda: calls.append(1) or {},
+    )
+    assert result["executed"] is False
+    assert result["classification"]["category"] == "owner_gate"
+    assert calls == []

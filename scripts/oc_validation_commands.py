@@ -87,6 +87,33 @@ def _pytest(*targets: str) -> tuple[str, ...]:
 
 _COMMANDS = (
     ValidationCommand(
+        command_id="bounded-lane-runtime-tests",
+        argv=_pytest("tests/test_lane_runtime.py"),
+        summary="Run the provider-free bounded lane runtime proof.",
+        proves=(
+            "the deterministic lane runtime tests prove three concurrent lane "
+            "identities, collision prevention, failure release, queue refill, "
+            "bounded capacity, unknown-cost honesty and absence of production "
+            "mutation methods on this exact revision"
+        ),
+    ),
+    ValidationCommand(
+        command_id="autonomy-restart-continuity-tests",
+        argv=_pytest("tests/test_autonomy_process_restart_continuity.py"),
+        summary="Run the provider-free cross-process restart continuity proof.",
+        proves=(
+            "the canonical autonomy engine survives an abrupt interpreter exit, "
+            "recovers an abandoned lease, completes three consecutive cycles, "
+            "and suppresses replayed work across fresh processes on this exact revision"
+        ),
+    ),
+    ValidationCommand(
+        command_id="firecrawl-matrix-fixture",
+        argv=_pytest("tests/test_firecrawl_matrix_acquisition.py"),
+        summary="Run the offline Firecrawl canonical integration fixture.",
+        proves="Mocked Firecrawl acquisition and canonical evidence contracts pass; no live external acquisition proven.",
+    ),
+    ValidationCommand(
         command_id="control-plane-tests",
         argv=_pytest(
             "tests/test_oc_blocked_reconcile.py",
@@ -158,6 +185,16 @@ _COMMANDS = (
         proves=(
             "the production import graph resolves on this exact revision under "
             "the runner's installed distributions"
+        ),
+    ),
+    ValidationCommand(
+        command_id="calyx-product-advisory",
+        argv=("python3", "-m", "scripts.oc_brain_pulse", "--verify-calyx-product"),
+        summary="Re-evaluate the real University module with the deterministic Calyx advisory pipeline.",
+        proves=(
+            "the University module artifact produces a passing Calyx maker-side receipt "
+            "and either an actionable human-review-gated advisory or an explicit no-action "
+            "result on this exact revision"
         ),
     ),
     ValidationCommand(

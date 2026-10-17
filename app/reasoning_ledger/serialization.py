@@ -7,7 +7,7 @@ identical JSON bytes (sort_keys=True, no trailing whitespace, UTC datetimes).
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -145,13 +145,12 @@ def ledger_to_canonical_json(ledger: ReasoningLedger) -> str:
 
 def dict_to_provenance(d: dict[str, Any]) -> LedgerProvenance:
     from datetime import datetime as _dt_cls
-    from datetime import timezone
 
     retrieved_at_raw = d.get("retrieved_at")
     retrieved_at = (
-        _dt_cls.fromisoformat(retrieved_at_raw).astimezone(timezone.utc)
+        _dt_cls.fromisoformat(retrieved_at_raw).astimezone(UTC)
         if retrieved_at_raw
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
     return LedgerProvenance(
         source_kind=d["source_kind"],
@@ -180,13 +179,12 @@ def dict_to_uncertainty(d: dict[str, Any]) -> UncertaintyMarker:
 
 def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
     from datetime import datetime as _dt_cls
-    from datetime import timezone
 
     created_at_raw = d.get("created_at")
     created_at = (
-        _dt_cls.fromisoformat(created_at_raw).astimezone(timezone.utc)
+        _dt_cls.fromisoformat(created_at_raw).astimezone(UTC)
         if created_at_raw
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
     provenance = dict_to_provenance(d["provenance"]) if d.get("provenance") else None
     uncertainty = (
@@ -215,13 +213,12 @@ def dict_to_entry(d: dict[str, Any]) -> LedgerEntry:
 
 def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
     from datetime import datetime as _dt_cls
-    from datetime import timezone
 
     decided_at_raw = d.get("decided_at")
     decided_at = (
-        _dt_cls.fromisoformat(decided_at_raw).astimezone(timezone.utc)
+        _dt_cls.fromisoformat(decided_at_raw).astimezone(UTC)
         if decided_at_raw
-        else datetime.now(timezone.utc)
+        else datetime.now(UTC)
     )
     return ReviewDecision(
         decision_id=UUID(d["decision_id"]),
@@ -236,24 +233,22 @@ def dict_to_review_decision(d: dict[str, Any]) -> ReviewDecision:
 
 def dict_to_conflict_disposition(d: dict[str, Any]) -> ConflictDisposition:
     from datetime import datetime as _dt_cls
-    from datetime import timezone
 
     return ConflictDisposition(
         conflict_entry_id=UUID(d["conflict_entry_id"]),
         disposition=ConflictDispositionType(d["disposition"]),
         rationale=d["rationale"],
         actor=d["actor"],
-        effective_at=_dt_cls.fromisoformat(d["effective_at"]).astimezone(timezone.utc),
+        effective_at=_dt_cls.fromisoformat(d["effective_at"]).astimezone(UTC),
         effective_ledger_version=int(d["effective_ledger_version"]),
     )
 
 
 def dict_to_ledger(d: dict[str, Any]) -> ReasoningLedger:
     from datetime import datetime as _dt_cls
-    from datetime import timezone
 
-    created_at = _dt_cls.fromisoformat(d["created_at"]).astimezone(timezone.utc)
-    updated_at = _dt_cls.fromisoformat(d["updated_at"]).astimezone(timezone.utc)
+    created_at = _dt_cls.fromisoformat(d["created_at"]).astimezone(UTC)
+    updated_at = _dt_cls.fromisoformat(d["updated_at"]).astimezone(UTC)
     return ReasoningLedger(
         ledger_id=UUID(d["ledger_id"]),
         tenant_id=d["tenant_id"],

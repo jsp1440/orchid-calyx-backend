@@ -32,7 +32,7 @@ from __future__ import annotations
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from decimal import Decimal, InvalidOperation
 
 
@@ -105,7 +105,7 @@ def main() -> None:
         print(f"[OC-GOVERNOR-POSTRUN] Cost {actual_cost!s} <= 0; skipping.", flush=True)
         return
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today_str = now.strftime("%Y-%m-%d")
     month_str = now.strftime("%Y-%m")
 

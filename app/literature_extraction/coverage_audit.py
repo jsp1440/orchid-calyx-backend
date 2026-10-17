@@ -228,3 +228,111 @@ def audit_literature_extraction_coverage(
         "interpretation": "Discovered corpus and extracted evidence are different populations and are reported separately.",
         "publication_note": "Publication eligibility is not a publication action; this audit performs no graph mutation.",
     }
+
+
+def matrix_acquisition_gaps(taxonomy, covered_taxon_ids: set[int]) -> list[dict[str, Any]]:
+    """Genus-first source acquisition from known canonical taxa and stored claims.
+
+    Covered means an acquired candidate exists, not that its claim is true or
+    scientifically reviewed. An unavailable population is an error, not 30,000
+    presumed gaps. One task covers a genus, irrespective of its species count.
+    """
+    if taxonomy.canonical_release is None:
+        raise ValueError("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    grouped: dict[str, list[int]] = {}
+    for taxon in taxonomy.accepted():
+        if taxon.rank == "species" and taxon.canonical_id not in covered_taxon_ids:
+            genus = taxon.canonical_name.split()[0]
+            grouped.setdefault(genus, []).append(taxon.canonical_id)
+    covered_genera = {
+        taxon.canonical_name.split()[0] for taxon in taxonomy.accepted()
+        if taxon.canonical_id in covered_taxon_ids and taxon.rank == "species"
+    }
+    gaps = []
+    for genus, ids in sorted(grouped.items()):
+        targeted = genus in covered_genera and len(ids) <= 5
+        gap = {
+            "genus": genus, "missing_taxon_ids": sorted(ids),
+            "taxonomy_snapshot": taxonomy.canonical_release.snapshot_id,
+            "strategy": "targeted-species-gap" if targeted else "genus-source-first",
+        }
+        if targeted:
+            gap["target_taxon_names"] = sorted(taxonomy.taxa[ident].canonical_name for ident in ids)
+        gaps.append(gap)
+    return gaps
+
+
+def export_matrix_acquisition_coverage(
+    taxonomy, aggregation_repository, *, pilot_mode: bool = True,
+    pilot_genus: str = "Paphiopedilum", max_genera: int = 3, required_predicates=(), corpus_audits=None,
+) -> dict[str, Any]:
+    """Export acquisition coverage from persisted, completed aggregation inputs.
+
+    This measures source acquisition, not scientific consensus or publication.
+    Only anchored morphology on the current snapshot suppresses further work.
+    Review-pending and conflicting measurements remain in the evidence store.
+    """
+    import re
+    from datetime import datetime, timezone
+
+    if not 1 <= max_genera <= 25 or not re.fullmatch(r"[A-Z][a-z]{2,40}", pilot_genus):
+        raise ValueError("INVALID_ACQUISITION_COVERAGE_BOUND")
+    release = taxonomy.canonical_release
+    if release is None:
+        raise ValueError("CANONICAL_TAXONOMY_RELEASE_REQUIRED")
+    predicates = tuple(sorted(set(required_predicates)))
+    if not predicates:
+        return {
+            "schema": "oc.matrix-acquisition-coverage.v1", "available": False,
+            "generated_at": datetime.now(timezone.utc).isoformat(), "gaps": [],
+            "reason": "MATRIX_PREDICATE_REQUIREMENTS_UNCONFIGURED",
+        }
+    if len(predicates) > 32 or any(not isinstance(value, str) or not re.fullmatch(r"[a-z][a-z0-9_]{1,63}", value) for value in predicates):
+        raise ValueError("INVALID_MATRIX_PREDICATE_REQUIREMENTS")
+    aggregation_repository.refresh()
+    identities = {
+        f"local:{taxon.provenance.get('identity_namespace', 'world_plants')}:{taxon.canonical_id}": taxon.canonical_id
+        for taxon in taxonomy.accepted()
+    }
+    observed: dict[int, set[str]] = {}
+    for run_id, items in aggregation_repository.items.items():
+        if aggregation_repository.runs[run_id]["state"] != "COMPLETED":
+            continue
+        for item in items:
+            for candidate in item.get("candidates", []):
+                if candidate.metadata.get("taxonomy_snapshot") != release.snapshot_id:
+                    continue
+                if candidate.predicate not in predicates:
+                    continue
+                if not candidate.source_anchor_ids or not candidate.document_hash:
+                    continue
+                ident = identities.get(candidate.normalized_subject)
+                if ident is not None:
+                    observed.setdefault(ident, set()).add(candidate.predicate)
+    covered = {ident for ident, values in observed.items() if set(predicates) <= values}
+    gaps = matrix_acquisition_gaps(taxonomy, covered)
+    for gap in gaps:
+        missing = {
+            str(ident): sorted(set(predicates) - observed.get(ident, set()))
+            for ident in gap["missing_taxon_ids"]
+        }
+        gap["missing_predicates_by_taxon"] = missing
+        gap["required_predicates"] = sorted({value for values in missing.values() for value in values})
+        audit = (corpus_audits or {}).get(gap["genus"], {})
+        if audit.get("available") and audit.get("audit_complete"):
+            gap["held_sources_ready_for_reuse"] = sum(bool(row.get("loadable")) for row in audit.get("documents", []))
+            gap["existing_corpus_audit_complete"] = bool(audit.get("complete"))
+    if pilot_mode:
+        gaps = [gap for gap in gaps if gap["genus"] == pilot_genus]
+    # Largest missing genus first, not an alphabetical per-species crawler.
+    gaps.sort(key=lambda gap: (-bool(gap.get("held_sources_ready_for_reuse")), -len(gap["missing_taxon_ids"]), gap["genus"]))
+    return {
+        "schema": "oc.matrix-acquisition-coverage.v1", "available": True,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "taxonomy_snapshot": release.snapshot_id,
+        "coverage_kind": "explicit_predicate_acquisition_review_pending",
+        "required_predicates": list(predicates),
+        "covered_taxa": len(covered), "gaps": gaps[:max_genera],
+        "remaining_genus_gaps": max(0, len(gaps) - max_genera),
+        "scientific_publication": False,
+    }

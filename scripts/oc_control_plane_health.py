@@ -9,7 +9,7 @@ import re
 import subprocess
 import sys
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from scripts.oc_health_contract import evaluate as evaluate_health_contract
@@ -120,7 +120,7 @@ def build_contract_snapshot(snapshot: dict) -> dict:
     return {
         "schema": "oc.completion-health-snapshot.v1",
         "generated_at": snapshot.get("generated_at")
-        or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "issues": [] if raw_issues is None else issues,
         "leases": [] if raw_leases is None else leases,
         "dispatch_fingerprints": (
@@ -184,7 +184,7 @@ def build_health(snapshot: dict) -> dict:
         "healthy": contract["report"]["healthy"] and not observation_errors,
         "observation_complete": not bool(observation_errors),
         "observation_errors": observation_errors,
-        "generated_at": snapshot.get("generated_at") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "generated_at": snapshot.get("generated_at") or datetime.now(UTC).isoformat().replace("+00:00", "Z"),
         "scheduler_heartbeat": snapshot.get("scheduler_heartbeat", UNKNOWN),
         "last_dispatch_time": snapshot.get("last_dispatch_time", UNKNOWN),
         "current_running_lease": (running[0].get("number") if len(running) == 1 else (None if not running else UNKNOWN)) if issues_available else UNKNOWN,
@@ -234,6 +234,33 @@ _SETTLEMENT_PREFIXES = (
 
 def _is_settlement(body: str) -> bool:
     return bool(_RELEASE.search(body)) or body.startswith(_SETTLEMENT_PREFIXES)
+
+
+# oc_swarm_settlement's worker disposition names the lease it settles. Unlike
+# the prefixes above it closes only that claim, so a receipt for one claim never
+# hides another (#1396: two runs claimed one packet, only one was released).
+# Before this, #1736 and #1732 read as orphaned though their worker settled them.
+_BOUND_RELEASE = re.compile(
+    r"^\[OC-SWARM-V4\] Worker result validated; requested lease disposition: `(\{[^\n]+\})`"
+)
+
+
+def _bound_release_matches(comment: dict, claim: dict, repository: str, number: int) -> bool:
+    """A bot receipt naming this claim's exact comment id and lease id."""
+    claimed = claim["comment"]
+    if any((c.get("user") or {}).get("login") != "github-actions[bot]" for c in (comment, claimed)):
+        return False
+    try:
+        release = json.loads(_BOUND_RELEASE.match(comment["body"])[1])
+        lease_id = json.loads(re.search(r"`(\{[^\n]+\})`", claimed["body"])[1]).get("lease_id")
+    except (KeyError, TypeError, ValueError):
+        return False
+    return (isinstance(release, dict)
+            and type(claimed.get("id")) is int
+            and release.get("lease_comment_id") == claimed["id"]
+            and isinstance(lease_id, str)
+            and re.fullmatch(re.escape(repository) + r":[1-9]\d*:[1-9]\d*:" + str(number), lease_id) is not None
+            and release.get("lease_id") == lease_id)
 
 
 def _denied_release_matches(comment: dict, claim: dict, repository: str, number: int) -> bool:
@@ -295,7 +322,7 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
 
     if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or run_id < 1:
         raise ValueError("a repository and positive workflow run ID are required")
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     prefix = f"repos/{repository}/"
     errors: list[dict] = []
     reads = 0
@@ -408,6 +435,10 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
                     claims.remove(matched[0])
                 else:
                     errors.append({"source": f"comments:{number}", "reason": "governor_release_unconfirmed"})
+            elif _BOUND_RELEASE.match(body):
+                # A receipt that names no open claim releases nothing.
+                claims = [claim for claim in claims
+                          if not _bound_release_matches(comment, claim, repository, number)]
             elif _is_settlement(body):
                 claims = []
             elif _CLAIM.search(body):
@@ -422,7 +453,8 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
         for claim in claims:
             comment = claim["comment"]
             try:
-                claimed_at = datetime.fromisoformat(comment["created_at"].replace("Z", "+00:00"))
+                created_at = comment["created_at"].replace("Z", "+00:00")
+                claimed_at = datetime.fromisoformat(created_at)
                 age = max(0, int((now - claimed_at).total_seconds()))
             except (KeyError, TypeError, ValueError):
                 errors.append({"source": f"comments:{number}", "reason": "lease_time_unavailable"})
@@ -448,7 +480,15 @@ def collect_github_snapshot(repository: str, run_id: int, *, read_json=_github_g
     run = run if isinstance(run, dict) else {}
     if run.get("id") != run_id or (run.get("repository") or {}).get("full_name") != repository:
         errors.append({"source": "scheduler_run", "reason": "run_identity_unavailable"})
-    if run.get("head_branch") != "oc-autonomous-integration" or run.get("path") not in {
+    from scripts.oc_controller_trust import on_trusted_controller_ref
+
+    default_branch = None
+    if run.get("event") == "schedule":
+        try:
+            default_branch = (read_json(f"repos/{repository}") or {}).get("default_branch")
+        except (OSError, subprocess.SubprocessError, ValueError, KeyError, TypeError):
+            errors.append({"source": "repository", "reason": "evidence_unavailable"})
+    if not on_trusted_controller_ref(run, default_branch, repository=repository) or run.get("path") not in {
         ".github/workflows/orchid-swarm-controller.yml",
         ".github/workflows/orchid-continuous-completion.yml",
     }:

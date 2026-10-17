@@ -1,0 +1,94 @@
+{
+ "assertions": [
+  {
+   "assertion_id": "tb:lit:darwin-1862-fertilisation-of-orchids:m-nectary-length",
+   "confidence": 0.95,
+   "contract_version": "oc-traitbank-v1",
+   "derived_from": [],
+   "evidence_state": "PROVISIONAL",
+   "habitats": [],
+   "level": "specimen",
+   "life_stage": null,
+   "links": [],
+   "method_id": null,
+   "notes": "",
+   "provenance": {
+    "citation": "Charles Darwin (1862). On the Various Contrivances by which British and Foreign Orchids are Fertilised by Insects. John Murray.",
+    "contributor": null,
+    "evidence_type": "literature_reported",
+    "extraction_method": "human_annotated",
+    "fixture_status": null,
+    "license": "public domain",
+    "locator": "section chapter-angraecum",
+    "original_record_id": "m-nectary-length",
+    "original_text": "nectaries eleven and a half inches long",
+    "retrieved_at": null,
+    "review_status": "unreviewed",
+    "source_id": "paper:darwin-1862-fertilisation-of-orchids",
+    "source_kind": "publication",
+    "source_url": null
+   },
+   "scope_basis": "direct",
+   "scope_justification": null,
+   "subject": {
+    "observation_id": null,
+    "population_id": null,
+    "specimen_id": "darwin-1862:flowers-examined",
+    "taxon_id": "990000002",
+    "verbatim_taxon_name": "Angraecum sesquipedale"
+   },
+   "trait_id": "oc:trait:spur_length",
+   "value": {
+    "kind": "quantitative",
+    "maximum": null,
+    "minimum": null,
+    "missing_reason": null,
+    "n": null,
+    "numeric": 292.1,
+    "sd": null,
+    "state_id": null,
+    "statistic": "single",
+    "uncertainty": null,
+    "unit": "mm",
+    "verbatim": "eleven and a half inches"
+   }
+  }
+ ],
+ "batch_key": "literature_extraction:d86cfdbb36529361d7d593e05b5cf730",
+ "contract_version": "oc-traitbank-v1",
+ "environment_relations": [
+  {
+   "claim_kind": "proposed_hypothesis",
+   "direction": null,
+   "effect_size": null,
+   "environment_variable": "pollinator proboscis length (biotic)",
+   "hypothesis_scope": "adaptive",
+   "n": null,
+   "provenance": {
+    "citation": "Charles Darwin (1862). On the Various Contrivances by which British and Foreign Orchids are Fertilised by Insects. John Murray.",
+    "contributor": null,
+    "evidence_type": "literature_reported",
+    "extraction_method": "human_annotated",
+    "fixture_status": null,
+    "license": "public domain",
+    "locator": "section chapter-angraecum",
+    "original_record_id": "c-moth-prediction",
+    "original_text": "in Madagascar there must be moths with proboscides capable of extension to a length of between ten and eleven inches",
+    "retrieved_at": null,
+    "review_status": "unreviewed",
+    "source_id": "paper:darwin-1862-fertilisation-of-orchids",
+    "source_kind": "publication",
+    "source_url": null
+   },
+   "relation_id": "tb:rel:darwin-1862-fertilisation-of-orchids:c-moth-prediction",
+   "statement": "Darwin inferred from the nectary length that a moth with a proboscis of ten to eleven inches must exist in Madagascar.",
+   "taxon_scope": [
+    "990000002"
+   ],
+   "test_design": null,
+   "test_outcome": null,
+   "trait_id": "oc:trait:spur_length"
+  }
+ ],
+ "producer": "literature_extraction"
+}

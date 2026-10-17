@@ -9,6 +9,7 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.orm import Session
 
 from app.calyx_orchestrator.models import CalyxJob, utcnow
+from app.security import credentials_match
 
 from .completion_loop import CompletionState, GovernedAutonomousCompletionLoop
 from .github import GitHubEngineeringClient
@@ -285,7 +286,14 @@ class EngineeringCompletionScheduler:
     def advance_claimed(self, job: CalyxJob, *, worker_id: str, lease_token: str) -> CalyxJob:
         if job.job_type != ENGINEERING_COMPLETION_JOB_TYPE:
             raise ValueError("ENGINEERING_COMPLETION_JOB_TYPE_REQUIRED")
-        if job.lease_owner != worker_id or job.lease_token != lease_token:
+        # The lease token is a bearer secret: constant-time compare, and a cleared
+        # (None) or empty token never matches.
+        if (
+            job.lease_owner != worker_id
+            or not job.lease_token
+            or not lease_token
+            or not credentials_match(lease_token, job.lease_token)
+        ):
             raise PermissionError("STALE_ENGINEERING_COMPLETION_LEASE")
 
         payload = json.loads(job.request_text)

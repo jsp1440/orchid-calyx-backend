@@ -37,10 +37,29 @@ def test_plan_reconciles_stale_leases_before_building_the_snapshot():
 
 
 def test_controller_pins_trusted_code_to_the_event_revision():
+    # #1726: scheduled runs check out the integration head; every other trigger
+    # its own event revision. Workers run exactly the SHA the planner recorded.
     jobs = _doc()["jobs"]
-    for job in ("plan", "provider_free_workers"):
-        checkout = next(s for s in jobs[job]["steps"] if str(s.get("uses", "")).startswith("actions/checkout"))
-        assert checkout["with"]["ref"] == "${{ github.sha }}"
+    assert jobs["plan"]["env"]["CONTROLLER_REF"] == (
+        "${{ github.event_name == 'schedule' && 'oc-autonomous-integration' || github.sha }}"
+    )
+
+    def checkout(job):
+        return next(
+            s
+            for s in jobs[job]["steps"]
+            if str(s.get("uses", "")).startswith("actions/checkout")
+        )
+
+    assert checkout("plan")["with"]["ref"] == "${{ env.CONTROLLER_REF }}"
+    assert (
+        checkout("provider_free_workers")["with"]["ref"]
+        == "${{ needs.plan.outputs.controller_sha }}"
+    )
+    record = next(
+        s for s in jobs["plan"]["steps"] if s.get("id") == "controller_revision"
+    )
+    assert 'integration_sha=$(git rev-parse "origin/$INTEGRATION_BRANCH")' in record["run"]
 
 
 def test_provider_free_and_paid_lanes_are_split_by_confirmed_claim_matrices():
@@ -94,9 +113,11 @@ def test_failed_provider_free_lane_releases_lease_with_exact_evidence():
     step = next(s for s in free["steps"] if s.get("name", "").startswith("Fail closed and release lease"))
     assert step["if"] == "failure() && steps.lease.outputs.execute == 'true'"
     assert "provider-free-result.json" in step["run"]
-    assert "--remove-label oc-running" in step["run"]
-    assert "--add-label oc-blocked" in step["run"]
-    assert "Worker evidence:" in step["run"]
+    # #1795: the release goes through the verified settlement (which removes
+    # oc-running and applies oc-blocked) and carries the worker evidence.
+    assert "python3 -m scripts.oc_swarm_settlement --disposition blocked" in step["run"]
+    assert '--message "Provider-free reconciliation failed: $evidence"' in step["run"]
+    assert "gh issue edit" not in step["run"]
 
 
 def test_refill_follows_completion_for_provider_free_waves_and_stays_on_the_same_revision():
@@ -121,3 +142,32 @@ def test_summary_reports_lane_counts_and_recoveries():
     assert "provider_free_launch_count:" in text
     assert "provider_launch_count:" in text
     assert "stale leases recovered:" in text
+
+
+def test_summary_reports_the_homeostasis_verdict():
+    """Every wave publishes its invariant outcome, including a zero-launch wave."""
+    text = WORKFLOW.read_text(encoding="utf-8")
+    assert "steps.plan.outputs.homeostasis_status" in text
+    assert "steps.plan.outputs.homeostasis_reason" in text
+    assert ".homeostasis.gates" in text
+
+
+def test_snapshot_fetches_state_reason_for_dependency_unlocks():
+    """A NOT_PLANNED closure must be visible to the dependency graph."""
+    step = next(
+        s for s in _doc()["jobs"]["plan"]["steps"]
+        if s.get("name") == "Build repository snapshot"
+    )
+    assert re.search(r"--json [a-zA-Z,]*\bstateReason\b", step["run"])
+
+
+def test_plan_receives_discovery_evidence_only_when_discovery_succeeded():
+    """Healthy idle needs proof this pass's discovery ran; a failed discovery attaches nothing."""
+    plan = _doc()["jobs"]["plan"]
+    names = [s.get("name") for s in plan["steps"]]
+    attach = names.index("Attach work-discovery evidence")
+    assert names.index("Discover product work from repository evidence") < attach
+    assert names.index("Build repository snapshot") < attach < names.index("Plan dependency-aware resource wave")
+    step = plan["steps"][attach]
+    assert step["if"] == "steps.discovery.outcome == 'success'"
+    assert "discovery: {ran: true, candidate_count: ($discovery[0].candidate_count)}" in step["run"]

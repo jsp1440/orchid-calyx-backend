@@ -25,7 +25,7 @@ accumulator only; it never calls any external API.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from .bounded_dispatcher import DispatchRun
@@ -192,7 +192,7 @@ def build_blueprint_run_report(
         active=tuple(active),
         ready=tuple(ready),
         dispatch_summary=run.summary(),
-        generated_at_utc=datetime.now(timezone.utc).isoformat(),
+        generated_at_utc=datetime.now(UTC).isoformat(),
         version=REPORT_VERSION,
     )
 

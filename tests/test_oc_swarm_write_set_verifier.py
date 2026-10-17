@@ -146,3 +146,33 @@ def test_write_claim_dominates_duplicate_read_claim():
         "reads": [],
         "writes": ["literature"],
     }
+
+
+def test_calyx_heartbeat_runtime_uses_the_control_plane_lease():
+    """The lease inferer maps scheduler work to control-plane; the verifier agrees.
+
+    The first governed cycle (#1843) failed validation because the claim held
+    control-plane while runtime/bottlenecks.py fell through to repo-global.
+    """
+    result = verifier.verify_write_set(
+        [
+            "runtime/bottlenecks.py",
+            "runtime/scheduler.py",
+            "tests/test_runtime_bottlenecks.py",
+        ],
+        lease(writes=["control-plane"]),
+    )
+    assert result["passed"] is True
+    assert [row["classification"] for row in result["checked"]] == [
+        "classified",
+        "classified",
+        "ancillary-test",
+    ]
+
+
+def test_other_runtime_modules_still_fail_closed_to_repo_global():
+    result = verifier.verify_write_set(
+        ["runtime/goals.py"], lease(writes=["control-plane"])
+    )
+    assert result["passed"] is False
+    assert result["violations"][0]["missing_writes"] == ["repo-global"]

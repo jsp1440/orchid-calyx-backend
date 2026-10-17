@@ -13,6 +13,12 @@ the product endpoints." Scope is strictly read-only. This module provides:
   of those routes gets 403 ``OWNER_ACCESS_REQUIRED`` (anonymous/invalid stay 401).
 * Responses served to members on candidate-knowledge and evidence-aggregation routes
   have caller-supplied locality/prose removed (``app.member_redaction``).
+* ``owner_or_member_write`` / ``@member_writable`` -- the explicit, default-deny member
+  WRITE path (owner decision "Members submit, owner reviews"). A verified member is
+  admitted only to a POST endpoint marked ``@member_writable`` (or a GET/HEAD endpoint
+  marked ``@member_readable`` on the same router), and only while BOTH
+  ``OC_MEMBER_READS_ENABLED`` and ``OC_MEMBER_FEEDBACK_ENABLED`` are on. Every other
+  request keeps the owner session / API key path.
 
 Environment:
 
@@ -21,13 +27,14 @@ Environment:
 * ``OC_SUPABASE_URL`` / ``OC_SUPABASE_ANON_KEY`` -- Supabase project used to verify
   member sessions; fall back to the University learner variables
   ``OCU_SUPABASE_URL`` / ``OCU_SUPABASE_ANON_KEY`` (same project).
+* ``OC_MEMBER_FEEDBACK_ENABLED`` -- kill switch for member writes, default OFF. Only
+  ``1/true/yes/on`` enables it; unset or any other value fails closed.
 """
 
 from __future__ import annotations
 
 import base64
 import hashlib
-import hmac
 import json
 import os
 import re
@@ -44,14 +51,19 @@ from app.security import (
     OWNER_SESSION_COOKIE,
     _decode_owner_token,
     api_key_header,
+    credentials_match,
     get_api_key,
     verify_owner_or_api_key,
+    verify_owner_session,
 )
 from app.university.learner_auth import resolve_supabase_actor
 
 MEMBER_READS_ENV = "OC_MEMBER_READS_ENABLED"
 READ_METHODS = frozenset({"GET", "HEAD"})
 MEMBER_READABLE_ATTR = "__oc_member_readable__"
+MEMBER_FEEDBACK_ENV = "OC_MEMBER_FEEDBACK_ENABLED"
+MEMBER_WRITE_METHODS = frozenset({"POST"})
+MEMBER_WRITABLE_ATTR = "__oc_member_writable__"
 
 MEMBER_TOKEN_CACHE_TTL_SECONDS = 60.0
 MEMBER_TOKEN_CACHE_MAX_ENTRIES = 1024
@@ -69,6 +81,14 @@ def member_reads_enabled() -> bool:
     value = os.getenv(MEMBER_READS_ENV)
     if value is None:
         return True
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def member_feedback_enabled() -> bool:
+    """The member-write kill switch. Default OFF: unset means disabled."""
+    value = os.getenv(MEMBER_FEEDBACK_ENV)
+    if value is None:
+        return False
     return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
@@ -99,14 +119,33 @@ def member_readable(endpoint: F) -> F:
     return endpoint
 
 
+def member_writable(endpoint: F) -> F:
+    """Mark a POST endpoint as writable by a verified member session.
+
+    Apply *below* the ``@router.post`` decorator, on a router guarded by
+    ``owner_or_member_write``. The marker admits POST only; it has no effect on any
+    other method, and ``owner_or_member_read`` ignores it entirely.
+    """
+    setattr(endpoint, MEMBER_WRITABLE_ATTR, True)
+    return endpoint
+
+
 # --- verified member token cache -------------------------------------------------
 
 _cache_lock = threading.Lock()
 _member_cache: OrderedDict[str, tuple[float, dict[str, object]]] = OrderedDict()
 
 
-def _cache_key(token: str) -> str:
-    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+def _cache_key(token: str, *, base_url: str | None = None, anon_key: str | None = None) -> str:
+    """Return a non-reversible cache identity bound to the verifier configuration.
+
+    A bearer accepted by one Supabase project must never remain authenticated after
+    the process is pointed at a different project or anonymous key.  Hashing the
+    configuration with the token keeps all three values out of cache keys while
+    making a configuration change an immediate cache miss.
+    """
+    material = "\0".join((base_url or "", anon_key or "", token))
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _unverified_jwt_exp(token: str) -> float | None:
@@ -122,8 +161,10 @@ def _unverified_jwt_exp(token: str) -> float | None:
         return None
 
 
-def _cache_get(token: str) -> dict[str, object] | None:
-    key = _cache_key(token)
+def _cache_get(
+    token: str, *, base_url: str, anon_key: str
+) -> dict[str, object] | None:
+    key = _cache_key(token, base_url=base_url, anon_key=anon_key)
     now = time.monotonic()
     with _cache_lock:
         entry = _member_cache.get(key)
@@ -136,14 +177,20 @@ def _cache_get(token: str) -> dict[str, object] | None:
         return dict(principal)
 
 
-def _cache_put(token: str, principal: dict[str, object]) -> None:
+def _cache_put(
+    token: str,
+    principal: dict[str, object],
+    *,
+    base_url: str,
+    anon_key: str,
+) -> None:
     ttl = MEMBER_TOKEN_CACHE_TTL_SECONDS
     exp = _unverified_jwt_exp(token)
     if exp is not None:
         ttl = min(ttl, exp - time.time())
     if ttl <= 0:
         return
-    key = _cache_key(token)
+    key = _cache_key(token, base_url=base_url, anon_key=anon_key)
     now = time.monotonic()
     with _cache_lock:
         _member_cache[key] = (now + ttl, dict(principal))
@@ -170,7 +217,7 @@ def verify_member_access_token(token: str) -> dict[str, object]:
     base_url = member_supabase_url()
     anon_key = member_supabase_anon_key()
     if base_url and anon_key:
-        cached = _cache_get(token)
+        cached = _cache_get(token, base_url=base_url, anon_key=anon_key)
         if cached is not None:
             return cached
     identity = resolve_supabase_actor(
@@ -188,7 +235,13 @@ def verify_member_access_token(token: str) -> dict[str, object]:
         "auth_type": "supabase_member",
         "role": "member",
     }
-    _cache_put(token, principal)
+    if base_url and anon_key:
+        _cache_put(
+            token,
+            principal,
+            base_url=base_url,
+            anon_key=anon_key,
+        )
     return principal
 
 
@@ -216,7 +269,7 @@ async def verify_member_or_owner_read(
         expected_key = get_api_key()
         if not expected_key:
             raise HTTPException(status_code=401, detail="API key authentication is not configured")
-        if hmac.compare_digest(api_key, expected_key):
+        if credentials_match(api_key, expected_key):
             return {"actor": "backend_api_key", "auth_type": "api_key", "role": "api_key"}
         raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
@@ -288,3 +341,128 @@ async def owner_or_member_read(
         if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
             raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
         raise
+
+
+OWNER_SESSION_REQUIRED = {
+    "code": "OWNER_SESSION_REQUIRED",
+    "message": "This action requires the owner session; the backend API key is not accepted",
+}
+
+
+async def owner_session_only(
+    request: Request, api_key: str | None = Security(api_key_header)
+) -> dict[str, object]:
+    """Router-level dependency for owner-session-only routes (owner review).
+
+    Stricter than ``verify_owner_or_api_key``: the backend API key is a
+    service credential, not the owner, so a request carrying only a valid key
+    gets 403 ``OWNER_SESSION_REQUIRED`` (an invalid key stays 401). A verified
+    member gets 403 ``OWNER_ACCESS_REQUIRED`` exactly as on other owner-only
+    routes; anonymous and invalid tokens stay 401. It runs before path/body
+    validation and before any lookup, so a 403 never reveals whether a
+    resource exists.
+    """
+    if request.cookies.get(OWNER_SESSION_COOKIE) or request.headers.get("authorization"):
+        try:
+            return _record(request, {**await verify_owner_session(request), "role": "owner"})
+        except HTTPException as exc:
+            if exc.status_code in {401, 503} and await _verified_member_or_none(request, api_key) is not None:
+                raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
+            raise
+    if api_key:
+        expected_key = get_api_key()
+        if expected_key and credentials_match(api_key, expected_key):
+            raise HTTPException(status_code=403, detail=dict(OWNER_SESSION_REQUIRED))
+        raise HTTPException(status_code=401, detail="Invalid or missing API key")
+    raise HTTPException(status_code=401, detail="Owner session is required")
+
+
+MEMBER_FEEDBACK_DISABLED = {
+    "code": "MEMBER_FEEDBACK_DISABLED",
+    "message": "Member feedback submission is not enabled",
+}
+
+
+def principal_role(principal: dict[str, object]) -> str:
+    """``owner``, ``api_key`` or ``member`` for a principal from these dependencies."""
+    role = principal.get("role")
+    if role in {"owner", "api_key", "member"}:
+        return str(role)
+    auth_type = principal.get("auth_type")
+    if auth_type == "owner_session":
+        return "owner"
+    if auth_type == "api_key":
+        return "api_key"
+    return "unknown"
+
+
+async def _verified_member_bearer(request: Request, api_key: str | None) -> dict[str, object] | None:
+    """The member principal for a VALID member bearer, whatever the switches say.
+
+    Used only after the owner path has rejected the request, so a verified member on a
+    disabled member route is told the feature is off (403) instead of being mistaken
+    for an anonymous caller. Owner-shaped bearers are never forwarded to Supabase; an
+    unverifiable token yields ``None`` and the caller keeps the owner path's 401.
+    """
+    if api_key:
+        return None
+    _, bearer = _bearer(request)
+    if not bearer or _OWNER_TOKEN_SHAPE.fullmatch(bearer):
+        return None
+    try:
+        principal = await run_in_threadpool(verify_member_access_token, bearer)
+    except HTTPException:
+        return None
+    return principal if principal.get("role") == "member" else None
+
+
+def _member_route(request: Request) -> bool:
+    endpoint = request.scope.get("endpoint")
+    method = request.method.upper()
+    if method in MEMBER_WRITE_METHODS:
+        return bool(getattr(endpoint, MEMBER_WRITABLE_ATTR, False))
+    if method in READ_METHODS:
+        return bool(getattr(endpoint, MEMBER_READABLE_ATTR, False))
+    return False
+
+
+async def owner_or_member_write(
+    request: Request, api_key: str | None = Security(api_key_header)
+) -> dict[str, object]:
+    """Router-level, default-deny dependency for the member write surface.
+
+    The owner session / API key path runs first, exactly as ``verify_owner_or_api_key``.
+    Only when it rejects the request (401/503) is a member bearer considered:
+
+    * a verified member on a POST marked ``@member_writable`` (or a GET/HEAD marked
+      ``@member_readable``) is admitted while ``OC_MEMBER_READS_ENABLED`` and
+      ``OC_MEMBER_FEEDBACK_ENABLED`` are both on. With either off, the switches are
+      checked BEFORE any Supabase call: a member-shaped bearer gets 403
+      ``MEMBER_FEEDBACK_DISABLED`` without being verified (the answer is a
+      statement about the feature, not about the token), and no bearer stays 401;
+    * a verified member on any other route gets 403 ``OWNER_ACCESS_REQUIRED`` (401
+      while member reads are off, as on every other owner-only route);
+    * anonymous and unverifiable tokens keep the owner path's 401.
+
+    It runs before path/body validation and before any lookup, so a 403 never reveals
+    whether a resource exists.
+    """
+    try:
+        principal = await verify_owner_or_api_key(request, api_key)
+    except HTTPException as exc:
+        if exc.status_code not in {401, 503}:
+            raise
+        if not _member_route(request):
+            if await _verified_member_or_none(request, api_key) is not None:
+                raise HTTPException(status_code=403, detail=dict(OWNER_ACCESS_REQUIRED)) from None
+            raise
+        if not (member_reads_enabled() and member_feedback_enabled()):
+            _, bearer = _bearer(request)
+            if api_key or not bearer or _OWNER_TOKEN_SHAPE.fullmatch(bearer):
+                raise
+            raise HTTPException(status_code=403, detail=dict(MEMBER_FEEDBACK_DISABLED)) from None
+        member = await _verified_member_bearer(request, api_key)
+        if member is None:
+            raise
+        return _record(request, member)
+    return _record(request, {**principal, "role": principal_role(principal)})

@@ -1,0 +1,85 @@
+{
+  "schema_version": "1.0.0",
+  "paper_id": "darwin-1862-fertilisation-of-orchids",
+  "source": {
+    "content_hash": "darwin1862orchids0000",
+    "media_type": "text/plain",
+    "original_filename": "darwin_1862_orchids.txt",
+    "rights_status": "public_domain",
+    "redistribution_allowed": true
+  },
+  "metadata": {
+    "title": "On the Various Contrivances by which British and Foreign Orchids are Fertilised by Insects",
+    "authors": ["Charles Darwin"],
+    "publisher": "John Murray",
+    "publication_year": 1862
+  },
+  "entities": [
+    {
+      "entity_id": "ent-angraecum",
+      "entity_type": "taxon",
+      "name": "Angraecum sesquipedale",
+      "attributes": {"specimen_id": "darwin-1862:flowers-examined"},
+      "provenance": {"method": "human_annotated", "confidence": 0.95}
+    },
+    {
+      "entity_id": "ent-spur-length",
+      "entity_type": "trait",
+      "name": "nectary length",
+      "attributes": {"trait": "Spur length", "taxon_scope": ["Angraecum sesquipedale"]},
+      "provenance": {"method": "human_annotated", "confidence": 0.9}
+    },
+    {
+      "entity_id": "ent-proboscis",
+      "entity_type": "environmental_factor",
+      "name": "pollinator proboscis length (biotic)",
+      "provenance": {"method": "human_annotated", "confidence": 0.9}
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "ev-nectary",
+      "excerpt": "nectaries eleven and a half inches long",
+      "span": {"section_id": "chapter-angraecum"},
+      "evidence_type": "text"
+    },
+    {
+      "evidence_id": "ev-moth",
+      "excerpt": "in Madagascar there must be moths with proboscides capable of extension to a length of between ten and eleven inches",
+      "span": {"section_id": "chapter-angraecum"},
+      "evidence_type": "text"
+    }
+  ],
+  "measurements": [
+    {
+      "measurement_id": "m-nectary-length",
+      "subject_id": "ent-angraecum",
+      "property": "nectary length",
+      "value": 11.5,
+      "value_text": "eleven and a half inches",
+      "unit": "in",
+      "evidence_ids": ["ev-nectary"],
+      "provenance": {"method": "human_annotated", "confidence": 0.95, "review_status": "unreviewed"}
+    }
+  ],
+  "claims": [
+    {
+      "claim_id": "c-moth-prediction",
+      "statement": "Darwin inferred from the nectary length that a moth with a proboscis of ten to eleven inches must exist in Madagascar.",
+      "claim_type": "hypothesis",
+      "subject_ids": ["ent-spur-length"],
+      "predicate": "hypothesized_adaptation_to",
+      "object_ids": ["ent-proboscis"],
+      "evidence_ids": ["ev-moth"],
+      "polarity": "positive",
+      "provenance": {"method": "human_annotated", "confidence": 0.9}
+    }
+  ],
+  "analysis_manifest": {
+    "analysis_id": "traitbank-darwin-1862",
+    "analysis_version": 1,
+    "created_at": "2026-10-11T00:00:00Z",
+    "pipeline_version": "manual-annotation",
+    "status": "completed"
+  }
+}

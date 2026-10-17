@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Literal
 
@@ -32,7 +32,7 @@ class CertificationGate(BaseModel):
     observed_evidence: str
     blocker: str | None = None
     smallest_next_action: str | None = None
-    evidence_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    evidence_timestamp: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class CertificationReport(BaseModel):
@@ -53,4 +53,4 @@ class CertificationReport(BaseModel):
     accessibility_status: GateStatus
     publish_ready: Literal["YES", "NO", "UNVERIFIED"]
     exact_blockers: list[str] = Field(default_factory=list)
-    last_verified_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    last_verified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

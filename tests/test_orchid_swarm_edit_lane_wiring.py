@@ -58,7 +58,9 @@ def test_checkout_has_history_and_a_pushable_remote():
 def test_the_edit_lane_runs_only_on_a_run_of_the_integration_ref():
     run = _step("Execute deterministic provider-free work")["run"]
     edit_block = run.split('if [[ "$mode" == "edit" ]]; then', maxsplit=1)[1]
-    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then'
+    # Canonical-head guard (#1726): the planner records whether the checked-out
+    # controller SHA is exactly the integration branch head.
+    guard = 'if [[ "$CANONICAL_INTEGRATION_RUN" != "true" ]]; then'
     assert guard in edit_block
     # The guard fails the step (the fail-closed release parks the issue with
     # evidence) before the lane can create a worktree, push or open a PR.
@@ -105,14 +107,27 @@ def test_execute_step_runs_the_edit_lane_and_hands_its_receipt_to_the_worker():
 
 
 def test_blocked_case_records_the_pull_request_the_issue_waits_on():
+    # #1795 moved the result disposition out of inline shell: the step hands
+    # the worker result to the verified settlement, which applies the
+    # canonical label and records OC-BLOCKED-ON for a blocked result.
     run = _step("Publish durable result and release lease")["run"]
-    blocked = run.split("blocked)", maxsplit=1)[1].split("*)", maxsplit=1)[0]
-    assert "--add-label oc-blocked" in blocked
-    assert "blocked_on=$(jq -r '.blocked_on // empty'" in blocked
-    assert "OC-BLOCKED-ON: ${blocked_on}" in blocked
-    # done / owner-gate branches are unchanged.
-    assert "--add-label oc-done" in run
-    assert "--add-label oc-owner-gate" in run
+    assert "python3 -m scripts.oc_swarm_settlement" in run
+    assert '--result "$RUNNER_TEMP/provider-free-result.json"' in run
+    assert "gh issue edit" not in run
+
+    from scripts.oc_swarm_settlement import settle_worker
+    from tests.test_oc_swarm_acquisition_worker import claimed
+
+    transport, identity = claimed()
+    settle_worker(
+        result={"disposition": "blocked", "blocked_on": "pr#77"},
+        call=transport,
+        **identity,
+    )
+    assert "oc-blocked" in transport.issue["labels"]
+    assert "oc-running" not in transport.issue["labels"]
+    receipt = list(transport.comments.values())[-1]["body"]
+    assert receipt.endswith("\nOC-BLOCKED-ON: pr#77")
 
 
 def test_edit_receipt_is_retained_as_evidence():
@@ -279,7 +294,10 @@ def test_runs_off_the_integration_ref_defer_edit_mode_in_the_planner():
     assert plan_job["env"]["INTEGRATION_BRANCH"] == "oc-autonomous-integration"
     step = next(s for s in plan_job["steps"] if s.get("name") == "Plan dependency-aware resource wave")
     run = step["run"]
-    guard = 'if [[ "$GITHUB_REF" != "refs/heads/$INTEGRATION_BRANCH" ]]; then\n  provider_args+=(--defer-edit-mode)'
+    guard = (
+        'if [[ "${{ steps.controller_revision.outputs.canonical_integration }}" '
+        '!= "true" ]]; then\n  provider_args+=(--defer-edit-mode)'
+    )
     assert guard in run
     assert run.index("--defer-edit-mode") < run.index("scripts/oc_swarm_controller.py")
 

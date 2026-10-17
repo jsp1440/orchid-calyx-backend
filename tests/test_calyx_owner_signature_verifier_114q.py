@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -21,7 +21,7 @@ from app.calyx_orchestrator.owner_signature_verifier import (
     owner_grant_signing_bytes,
 )
 
-NOW = datetime(2026, 8, 8, 23, 30, tzinfo=timezone.utc)
+NOW = datetime(2026, 8, 8, 23, 30, tzinfo=UTC)
 OWNER = "principal:owner"
 BASE_REF = "main"
 

@@ -35,10 +35,41 @@ def _load_routing():
 
 DEFAULT_WORKER_SLOTS = 8
 MAX_WORKER_SLOTS = 12
+#: Every paid lane shares one GitHub concurrency group
+#: (``swarm-paid-execution-<repo>``, PAID_WORKER_CONCURRENCY=1 in
+#: runtime/swarm/policy.py): one job runs, one may wait, and any further job is
+#: cancelled before it starts. Launching more paid workers than that leaves
+#: cancelled matrix jobs whose stale leases each spend one of the issue's
+#: automatic recoveries (runs 38682500061 and 38683462208 launched 8, of which
+#: 6 were cancelled within a second). The controller workflow passes this as
+#: ``--paid-launch-capacity`` so the planner launches no more than the lane holds.
+PAID_LAUNCH_CAPACITY = 1
 # Routing is capability-based; see app/provider_reservoir/routing.py. This module
 # keeps a local import path so the controller runs from a bare checkout.
 _ROUTING = _load_routing()
 PROVIDER_FREE_MARKER = _ROUTING.PROVIDER_FREE_MARKER
+
+
+def _load_module_lanes():
+    """Import the pure module-lane registry (read-only reporting layer)."""
+    _load_routing()  # puts the repository root on sys.path
+    from app.autonomy import module_lanes
+
+    return module_lanes
+
+
+_MODULE_LANES = _load_module_lanes()
+
+
+def _load_coding_executor():
+    """Import the coding-executor decision layer (pure; no provider calls)."""
+    _load_routing()  # puts the repository root on sys.path
+    from app.autonomy import coding_executor
+
+    return coding_executor
+
+
+_CODING = _load_coding_executor()
 
 
 def _load_sibling(module_name: str, filename: str):
@@ -94,6 +125,21 @@ def is_lane_executable(issue: dict) -> bool:
     build it.
     """
     return _ROUTING.is_lane_executable(issue)
+
+
+def _is_paid_work(issue: dict) -> bool:
+    """Whether ``issue`` would occupy the paid lane; unroutable counts as paid.
+
+    Treating a row whose capability cannot be resolved as paid is the
+    conservative choice: it can only hold paid work back, never crash the
+    planner or launch a second paid worker.
+    """
+    try:
+        if is_lane_executable(issue):
+            return False
+        return "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities
+    except (_ROUTING.CapabilityUnknown, ValueError):
+        return True
 
 
 def lane_refusal(issue: dict) -> dict:
@@ -197,8 +243,48 @@ def blocked_reconciliation_report(snapshot: dict) -> dict:
         budget_fingerprint=str(snapshot.get("budget_fingerprint") or "") or None,
     )
     results = _BLOCKED_RECONCILER.reconcile(issues, world)
-    observations = _BLOCKED_RECONCILER.observation_requests(issues, results, world)
-    return _BLOCKED_RECONCILER.to_report(results, observations=observations)
+
+    # A historical provider-budget denial must not remain a permanent blocker
+    # after the issue's current machine-readable contract proves that the work
+    # is provider-free. Budget state governs provider calls, not deterministic
+    # work. Releasing the stale budget hold does NOT assert that an executor
+    # exists: the normal unstaffed/lane-refusal path below still withdraws
+    # provider-free work that no deterministic worker can execute, preventing
+    # accidental fallback to a paid provider.
+    issue_by_number = {
+        int(issue["number"]): issue
+        for issue in issues
+        if issue.get("number") is not None
+    }
+    repaired_results = []
+    for result in results:
+        issue = issue_by_number.get(result.issue_number)
+        is_budget_hold = (
+            result.disposition is _BLOCKED_RECONCILER.Disposition.HOLD
+            and str(result.blocker or "").lower().startswith("budget:")
+        )
+        if issue is not None and is_budget_hold and is_provider_free(issue):
+            repaired_results.append(
+                _BLOCKED_RECONCILER.Reconciliation(
+                    result.issue_number,
+                    _BLOCKED_RECONCILER.Disposition.RELEASE,
+                    (
+                        "the recorded provider-budget blocker no longer applies: "
+                        "the current task contract is provider-free; executor "
+                        "availability is evaluated separately"
+                    ),
+                    blocker=result.blocker,
+                )
+            )
+        else:
+            repaired_results.append(result)
+
+    observations = _BLOCKED_RECONCILER.observation_requests(
+        issues, repaired_results, world
+    )
+    return _BLOCKED_RECONCILER.to_report(
+        repaired_results, observations=observations
+    )
 
 
 def _strip_queue_label(issue: dict) -> dict:
@@ -219,9 +305,10 @@ def _strip_queue_label(issue: dict) -> dict:
 
 
 def unstaffed_numbers(snapshot: dict) -> list[int]:
-    """Open queued issues that need no provider and that no executor implements.
+    """Open queued issues that neither lane can execute under their contract.
 
-    These are the ones that belong to neither lane. Leaving them in candidacy
+    An unsupported named deterministic executor cannot fall back to a provider,
+    even if other declared capabilities require one. Leaving it in candidacy
     is not harmless: they sort by priority like anything else, and a resource
     claim they can never use is still exclusive. A P0 task nothing can run will
     take the lane and the ``control-plane`` lock and hold both against a P4 task
@@ -238,9 +325,13 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
         }
         if "oc-queued" not in names:
             continue
-        if is_lane_executable(issue):
+        try:
+            routing = route_task(issue)
+        except _ROUTING.CapabilityUnknown:
             continue
-        if not is_provider_free(issue):
+        if routing.lane_executable:
+            continue
+        if not routing.provider_free and not routing.provider_free_task:
             # Genuinely needs a provider: the governed completion lane owns it.
             continue
         if issue.get("number") is not None:
@@ -248,18 +339,21 @@ def unstaffed_numbers(snapshot: dict) -> list[int]:
     return numbers
 
 
-_EDIT_MODE = re.compile(
-    r"^OC-SWARM-PROVIDER-FREE:\s*edit\s*$", re.IGNORECASE | re.MULTILINE
+_PROVIDER_FREE_MODE = re.compile(
+    r"^OC-SWARM-PROVIDER-FREE:\s*(\S+)\s*$", re.IGNORECASE | re.MULTILINE
 )
 
 
 def is_edit_mode(issue: dict) -> bool:
     """True when the issue asks for the provider-free edit lane.
 
-    Read with the same marker the worker parses (``OC-SWARM-PROVIDER-FREE:``),
-    so the planner and the worker cannot disagree about which issues edit.
+    Read exactly as the worker reads it (``oc_swarm_provider_free_worker.MODE``):
+    the FIRST ``OC-SWARM-PROVIDER-FREE:`` line decides the mode. Matching any
+    line that says ``edit`` deferred a body whose first marker was ``validate``,
+    which the worker would have run as validate.
     """
-    return bool(_EDIT_MODE.search(str(issue.get("body") or "")))
+    match = _PROVIDER_FREE_MODE.search(str(issue.get("body") or ""))
+    return bool(match) and match.group(1).lower() == "edit"
 
 
 def edit_deferred_numbers(snapshot: dict) -> list[int]:
@@ -296,9 +390,14 @@ def _provider_free_snapshot(snapshot: dict) -> dict:
     issues = []
     for original in snapshot.get("issues") or []:
         issue = dict(original)
+        routing = route_task(issue)
+        held_corpus_audit = (
+            "firecrawl-acquisition" in routing.blocking_provider_capabilities
+        )
         if (
             str(issue.get("state") or "").upper() == "OPEN"
             and not is_lane_executable(issue)
+            and not held_corpus_audit
         ):
             labels = []
             for label in issue.get("labels") or []:
@@ -311,18 +410,376 @@ def _provider_free_snapshot(snapshot: dict) -> dict:
     return filtered
 
 
+# --------------------------------------------------------------------------
+# Homeostasis invariant
+#
+# Every wave must end in exactly one honest, machine-readable outcome. A wave
+# that launches nothing is never silently "fine": it is either saturated,
+# out of work (replenish), held by named gates, waiting on named upstream work,
+# missing an executor, contending for a lock -- or it is a violation of the
+# work-conservation invariant, which is never healthy.
+# --------------------------------------------------------------------------
+
+#: Mirrors oc_portfolio_scheduler.OWNER_GATE plus the legacy owner hold that
+#: oc_blocked_reconcile and oc_blocked_release_apply also honour.
+OWNER_GATE_LABELS = frozenset({"oc-owner-gate", "blocked-on-owner"})
+#: Mirrors oc_portfolio_scheduler.SCIENTIFIC_GATE.
+SCIENTIFIC_GATE_LABELS = frozenset({"oc-scientific-gate"})
+#: Labels that mark an open issue as unfinished portfolio work.
+_PORTFOLIO_LABELS = frozenset(
+    {
+        "oc-queued",
+        "oc-running",
+        "oc-validating",
+        "oc-repair",
+        "oc-blocked",
+        "oc-runtime-backoff",
+        "oc-repair-backoff",
+    }
+) | OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS
+
+#: Reason -> status. Reasons are mutually exclusive; see classify_wave_outcome.
+HOMEOSTASIS_STATUS = {
+    "invariant_violation": "violation",
+    "executing": "executing",
+    "capacity_full": "saturated",
+    "queue_empty": "replenish",
+    "gated_only": "gated",
+    "dependency_blocked": "waiting",
+    "lane_refused": "capability_gap",
+    "lock_contended": "waiting",
+    "held_other": "waiting",
+}
+
+
+def _names(issue: dict) -> set[str]:
+    return {
+        label if isinstance(label, str) else str(label.get("name"))
+        for label in issue.get("labels") or []
+    }
+
+
+def _is_open(issue: dict) -> bool:
+    return str(issue.get("state") or "OPEN").upper() == "OPEN"
+
+
+def _discovery_evidence(snapshot: dict) -> tuple[bool | None, int | None]:
+    """Read optional discovery evidence; absent evidence is unknown, never "ran".
+
+    A caller that ran work discovery for this pass may attach
+    ``{"discovery": {"ran": true, "candidate_count": <int>}}`` to the snapshot.
+    Without it the plan cannot know discovery ran and never reports healthy
+    idle.
+    """
+    raw = snapshot.get("discovery")
+    if not isinstance(raw, dict) or raw.get("ran") is not True:
+        return None, None
+    count = raw.get("candidate_count")
+    if isinstance(count, bool) or not isinstance(count, int) or count < 0:
+        return None, None
+    return True, count
+
+
+#: Hold class of an open unfinished issue that is not ``oc-queued``, first match
+#: wins. ``queue_empty`` only says the immediate queue is empty; these say why
+#: each unfinished issue is outside it, so a zero-launch wave names its
+#: exclusions instead of leaving them to be reconstructed from labels.
+_HOLD_CLASSES = (
+    ("owner_gate", OWNER_GATE_LABELS),
+    ("scientific_gate", SCIENTIFIC_GATE_LABELS),
+    ("running", frozenset({"oc-running"})),
+    ("validating", frozenset({"oc-validating"})),
+    ("blocked", frozenset({"oc-blocked"})),
+    ("repair_backoff", frozenset({"oc-repair-backoff"})),
+    ("runtime_backoff", frozenset({"oc-runtime-backoff"})),
+    # A worker disposition of ``repair`` without ``repair_queued`` leaves
+    # oc-repair alone: a human-assisted or bounded retry that no wave claims.
+    ("repair_pending", frozenset({"oc-repair"})),
+)
+
+
+def unfinished_holds(open_issues: dict[int, dict]) -> dict[str, list[int]]:
+    """Unfinished, not-queued open issues grouped by the label that holds them."""
+    holds: dict[str, list[int]] = {name: [] for name, _ in _HOLD_CLASSES}
+    for number in sorted(open_issues):
+        names = _names(open_issues[number])
+        if "oc-queued" in names or not names & _PORTFOLIO_LABELS:
+            continue
+        for name, labels in _HOLD_CLASSES:
+            if names & labels:
+                holds[name].append(number)
+                break
+    return holds
+
+
+def classify_wave_outcome(
+    snapshot: dict,
+    *,
+    selected_numbers: list[int],
+    capacity: int,
+    active_count: int,
+    ready_numbers: list[int],
+    dependency_suppressed: list[dict],
+    dependency_status: dict,
+    lock_suppressed: list[dict],
+    lane_refused: list[int],
+    provider_parked: list[int],
+    edit_deferred: list[int],
+    lane_refusal_reasons: list[dict] | None = None,
+    paid_deferred: list[int] | None = None,
+) -> dict:
+    """Classify one wave against the homeostasis invariant. Pure.
+
+    ``paid_deferred`` is ready paid work the planner withheld because the
+    single paid lane is full (``PAID_LAUNCH_CAPACITY``). It is held, not idle:
+    it never counts as ready-but-unselected, and when nothing else was
+    selected the wave is ``capacity_full``.
+
+    Classifies only from data the plan already holds: the ORIGINAL snapshot's
+    labels and states, the dependency graph status, the lock selector's
+    suppression list, and the issues this pass withdrew from candidacy.
+
+    Precedence (first match wins):
+
+    1. ``invariant_violation`` -- capacity remained after selection while a
+       dependency-ready, lane-executable candidate the lock selector did not
+       refuse went unselected. Checked first because work conservation is the
+       invariant; a partially filled wave that strands admissible work is as
+       much a violation as an empty one, and must never be masked by
+       ``executing``.
+    2. ``executing`` -- at least one worker was selected.
+    3. ``capacity_full`` -- no capacity: active workers are the reason nothing
+       launched, which is healthy saturation.
+    4. ``queue_empty`` -- no open ``oc-queued`` issue at all. The immediate queue
+       is empty, so discovery must replenish it; gated work, if any, is still
+       recorded under ``gates``. Healthy idle only when there is no unfinished
+       portfolio work AND discovery evidence says it ran and found nothing.
+    5. ``gated_only`` -- every waiting queued issue is held by an owner,
+       scientific or provider gate, directly or through a dependency chain
+       whose every unsatisfied root is so gated.
+    6. ``dependency_blocked`` / 7. ``lane_refused`` / 8. ``lock_contended`` --
+       ordered by how far upstream the hold sits: a dependency holds the work
+       itself, a lane refusal holds its executor, a lock conflict holds only
+       this instant's schedule.
+    9. ``held_other`` -- queued work held only by durable-PR lineage,
+       stabilization, edit-lane deferral or a contradictory parked label. Named
+       honestly rather than forced into a reason that is not true.
+    """
+    issues = {
+        int(issue["number"]): issue
+        for issue in snapshot.get("issues") or []
+        if issue.get("number") is not None
+    }
+    selected = {int(n) for n in selected_numbers}
+    lock_held = {int(item["issue_number"]) for item in lock_suppressed}
+    paid_held = {int(n) for n in paid_deferred or []}
+    lane_refused_set = {int(n) for n in lane_refused}
+    provider_parked_set = {int(n) for n in provider_parked}
+
+    open_issues = {n: i for n, i in issues.items() if _is_open(i)}
+    queued = sorted(n for n, i in open_issues.items() if "oc-queued" in _names(i))
+    owner_gated = sorted(
+        n for n, i in open_issues.items() if _names(i) & OWNER_GATE_LABELS
+    )
+    scientific_gated = sorted(
+        n for n, i in open_issues.items() if _names(i) & SCIENTIFIC_GATE_LABELS
+    )
+    unfinished = sorted(
+        n for n, i in open_issues.items() if _names(i) & _PORTFOLIO_LABELS
+    )
+    gate_roots = set(owner_gated) | set(scientific_gated) | provider_parked_set
+
+    def roots(number: int, seen: frozenset[int] = frozenset()) -> tuple[set[int], bool]:
+        """Unsatisfied root dependencies of ``number``; flag False if any is ungated."""
+        row = dependency_status.get(number) or dependency_status.get(str(number)) or {}
+        if row.get("cycle") or row.get("missing") or row.get("error"):
+            return set(), False
+        found: set[int] = set()
+        all_gated = True
+        for dep in row.get("unsatisfied") or []:
+            dep = int(dep)
+            if dep in gate_roots:
+                found.add(dep)
+                continue
+            if dep in seen:
+                return found, False
+            dep_row = dependency_status.get(dep) or dependency_status.get(str(dep)) or {}
+            if dep_row.get("unsatisfied") and not (
+                dep_row.get("missing") or dep_row.get("cycle")
+            ):
+                sub, gated = roots(dep, seen | {number})
+                found |= sub
+                all_gated = all_gated and gated
+            else:
+                # Open ungated work, a closed-not-completed issue, or unknown.
+                found.add(dep)
+                all_gated = False
+        return found, all_gated and bool(found)
+
+    dependency_blocked = []
+    dep_gate_held: set[int] = set()
+    dep_ungated: set[int] = set()
+    for item in dependency_suppressed:
+        number = int(item["issue_number"])
+        blocked_by = sorted(
+            {int(n) for n in item.get("unsatisfied") or []}
+            | {int(n) for n in item.get("missing") or []}
+        )
+        record: dict[str, Any] = {"issue": number, "blocked_by": blocked_by}
+        if item.get("reason") == "dependency-cycle":
+            record["cycle"] = True
+        if item.get("reason") == "dependency-status-missing":
+            record["status_missing"] = True
+        root_set, gated = roots(number)
+        record["roots"] = sorted(root_set)
+        record["gated"] = gated
+        dependency_blocked.append(record)
+        (dep_gate_held if gated else dep_ungated).add(number)
+
+    waiting = [n for n in queued if n not in selected]
+    direct_gated = set(owner_gated) | set(scientific_gated) | provider_parked_set
+    ready_unselected = [
+        int(n)
+        for n in ready_numbers
+        if int(n) not in selected and int(n) not in lock_held and int(n) not in paid_held
+    ]
+    spare = max(0, int(capacity) - len(selected))
+
+    if spare > 0 and ready_unselected:
+        reason = "invariant_violation"
+    elif selected:
+        reason = "executing"
+    elif int(capacity) <= 0 or paid_held:
+        reason = "capacity_full"
+    elif not queued:
+        reason = "queue_empty"
+    elif all(n in direct_gated or n in dep_gate_held for n in waiting):
+        reason = "gated_only"
+    elif dep_ungated:
+        reason = "dependency_blocked"
+    elif lane_refused_set & set(waiting):
+        reason = "lane_refused"
+    elif lock_held:
+        reason = "lock_contended"
+    else:
+        reason = "held_other"
+
+    holds = unfinished_holds(open_issues)
+    discovery_ran, discovery_count = _discovery_evidence(snapshot)
+    healthy_idle = (
+        reason == "queue_empty"
+        and not unfinished
+        and active_count == 0
+        and discovery_ran is True
+        and discovery_count == 0
+    )
+    status = "idle" if healthy_idle else HOMEOSTASIS_STATUS[reason]
+    discovery_required = (
+        reason in {"queue_empty", "gated_only", "lane_refused"} and not healthy_idle
+    )
+
+    return {
+        "schema": "oc.swarm-homeostasis.v1",
+        "status": status,
+        "reason": reason,
+        "healthy_idle": healthy_idle,
+        "discovery_required": discovery_required,
+        "gates": {
+            "owner_gated": owner_gated,
+            "provider_parked": sorted(provider_parked_set),
+            "scientific_gated": scientific_gated,
+            "dependency_blocked": dependency_blocked,
+            "lane_refused": sorted(lane_refused_set),
+            "lane_refusal_reasons": sorted(
+                (
+                    {"issue": int(row["issue"]), "reason": str(row["reason"])}
+                    for row in lane_refusal_reasons or []
+                    if int(row["issue"]) in lane_refused_set
+                ),
+                key=lambda row: row["issue"],
+            ),
+            "lock_contended": sorted(lock_held),
+            "paid_capacity_deferred": sorted(paid_held),
+            "unfinished_holds": holds,
+        },
+        "evidence": {
+            "queued_open": len(queued),
+            "waiting": len(waiting),
+            "selected": len(selected),
+            "capacity": int(capacity),
+            "spare_capacity": spare,
+            "active_workers": int(active_count),
+            "ready_unselected_lock_free": sorted(ready_unselected),
+            "unfinished_open": len(unfinished),
+            "unfinished_held": {name: len(numbers) for name, numbers in holds.items()},
+            "owner_gated": len(owner_gated),
+            "scientific_gated": len(scientific_gated),
+            "provider_parked": len(provider_parked_set),
+            "dependency_blocked": len(dependency_blocked),
+            "dependency_gate_held": len(dep_gate_held),
+            "lane_refused": len(lane_refused_set),
+            "lock_contended": len(lock_held),
+            "edit_deferred": len(edit_deferred),
+            "discovery_ran": discovery_ran,
+            "discovery_candidate_count": discovery_count,
+        },
+    }
+
+
+def provider_parked_numbers(snapshot: dict) -> list[int]:
+    """Queued issues provider-free-only mode withdraws because they need a provider.
+
+    Same predicate as ``_provider_free_snapshot`` (the planning view), restricted
+    to work that was otherwise eligible: open, ``oc-queued``, carrying no label
+    that already holds it outside the portfolio, and not provider-free (provider
+    free work nothing can execute is a lane refusal, not a provider park).
+    """
+    held = {"oc-blocked", "oc-done", "oc-runtime-backoff", "oc-repair-backoff"}
+    held |= OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS
+    numbers = []
+    for issue in snapshot.get("issues") or []:
+        if issue.get("number") is None or str(issue.get("state") or "").upper() != "OPEN":
+            continue
+        names = _names(issue)
+        if "oc-queued" not in names or names & held:
+            continue
+        if is_lane_executable(issue):
+            continue
+        if "firecrawl-acquisition" in route_task(issue).blocking_provider_capabilities:
+            continue
+        if is_provider_free(issue):
+            continue
+        numbers.append(int(issue["number"]))
+    return sorted(numbers)
+
+
 def build_swarm_plan(
     snapshot: dict,
     *,
     worker_slots: int = DEFAULT_WORKER_SLOTS,
     provider_free_only: bool = False,
     defer_edit_mode: bool = False,
+    coding_executor_available: bool = False,
+    paid_launch_capacity: int | None = None,
 ) -> dict:
     """Return a dependency- and resource-aware worker matrix.
+
+    ``paid_launch_capacity`` (None = unlimited) caps paid workers per wave,
+    counting paid workers already running; excess paid work stays queued and
+    unleased for a later wave instead of being launched into a cancellation.
+
+    ``coding_executor_available`` is true only when providers are authorised for
+    this run. Work whose own task is authoring code (declared capabilities, no
+    named deterministic executor) is then routed to the governed completion lane
+    instead of being withdrawn as ``lane_refused``. It is never true in
+    ``provider_free_only`` mode; that combination is rejected, not guessed at.
+    Unsupported named executors remain capability gaps in either mode.
 
     ``defer_edit_mode`` is set by runs that are not on the integration ref: the
     edit lane cannot execute there, so its issues stay queued for a run that can.
     """
+    if coding_executor_available and provider_free_only:
+        raise ValueError("coding executor cannot be available in provider-free-only mode")
     slots = _bounded_slots(worker_slots)
     scheduler = _load_sibling("oc_portfolio_scheduler", "oc_portfolio_scheduler.py")
     locks = _load_sibling("oc_swarm_resource_locks", "oc_swarm_resource_locks.py")
@@ -344,6 +801,16 @@ def build_swarm_plan(
     # Work nothing can execute is withdrawn from candidacy before selection, so
     # it cannot take a lane or hold a resource lock away from work that can run.
     unstaffed = set(unstaffed_numbers(planning_snapshot))
+    # Authorisation supplies a code-authoring lane, not a missing deterministic
+    # executor. Only work that actually needs code authoring can be rerouted.
+    coding_routed = {
+        int(issue["number"])
+        for issue in planning_snapshot.get("issues") or []
+        if coding_executor_available
+        and int(issue.get("number") or 0) in unstaffed
+        and _CODING.needs_coding_executor(route_task(issue))
+    }
+    unstaffed -= coding_routed
     if unstaffed:
         planning_snapshot = dict(planning_snapshot)
         planning_snapshot["issues"] = [
@@ -392,11 +859,32 @@ def build_swarm_plan(
     if malformed:
         raise RuntimeError("canonical planner returned ranked item without matching issue")
 
-    selected, lock_suppressed = locks.select_with_resource_locks(
-        candidates,
-        active_locks=active_locks,
-        capacity=capacity,
-    )
+    # Paid launch cap, applied before slots and locks are spent: paid work the
+    # paid lane cannot hold is withdrawn from candidacy and selection re-runs,
+    # so its capacity and resource locks go to work that can launch. Withdrawn
+    # paid work stays queued and unleased for a later wave. Paid workers
+    # already running fill the lane.
+    paid_active = sum(1 for issue, _ in active_rows if _is_paid_work(issue))
+    paid_deferred: list[int] = []
+    while True:
+        selected, lock_suppressed = locks.select_with_resource_locks(
+            candidates,
+            active_locks=active_locks,
+            capacity=capacity,
+        )
+        if paid_launch_capacity is None:
+            break
+        room = max(0, int(paid_launch_capacity) - paid_active)
+        paid_selected = [
+            int(item["issue_number"])
+            for item in selected
+            if _is_paid_work(issues[int(item["issue_number"])])
+        ]
+        excess = set(paid_selected[room:])
+        if not excess:
+            break
+        paid_deferred.extend(n for n in paid_selected if n in excess)
+        candidates = [c for c in candidates if int(c[0]["number"]) not in excess]
 
     workers = []
     for ordinal, item in enumerate(selected, start=1):
@@ -414,6 +902,7 @@ def build_swarm_plan(
                 "writes": list(item.get("writes") or []),
                 "dependencies": list(dep_status.get("dependencies") or []),
                 "provider_free": is_provider_free(issues[issue_number]),
+                "acquisition": "firecrawl-acquisition" in route_task(issues[issue_number]).blocking_provider_capabilities,
                 "lane_executable": is_lane_executable(issues[issue_number]),
             }
         )
@@ -427,7 +916,8 @@ def build_swarm_plan(
     # sending it to the paid lane is the misrouting the router was repaired to
     # stop. It is recorded instead, so it stays visible as a missing capability.
     provider_free_workers = [worker for worker in workers if worker["lane_executable"]]
-    provider_workers = [worker for worker in workers if not worker["lane_executable"]]
+    acquisition_workers = [worker for worker in workers if worker["acquisition"]]
+    provider_workers = [worker for worker in workers if not worker["lane_executable"] and not worker["acquisition"]]
     # Recorded from the withdrawn set rather than from the selected workers:
     # they are withdrawn precisely so they never become workers, and a refusal
     # nobody writes down is how the 01:04 diagnosis got lost the first time.
@@ -441,10 +931,81 @@ def build_swarm_plan(
     # Every dependency-ready candidate not selected remains live work for a
     # later wave. ``select_with_resource_locks`` stops once capacity is full,
     # so its suppression list alone cannot account for compatible overflow.
-    waiting_count = len(dependency_suppressed) + max(0, len(candidates) - len(selected))
+    waiting_count = (
+        len(dependency_suppressed)
+        + max(0, len(candidates) - len(selected))
+        + len(paid_deferred)
+    )
     refill_recommended = bool(active_count or workers) and waiting_count > 0
 
-    return {
+    # Provider-free-only mode withdraws non-executable work before the unstaffed
+    # pass sees it, so lane refusals are re-derived from the original snapshot
+    # for the invariant record. ``unstaffed_numbers`` in the plan keeps its
+    # existing meaning.
+    homeostasis_lane_refused = (
+        set(unstaffed) | (set(unstaffed_numbers(snapshot)) - deferred_edit)
+    ) - coding_routed
+    original_index = _issue_index(snapshot)
+    lane_refusal_reasons = [
+        {"issue": number, "reason": lane_refusal(original_index[number])["reason"]}
+        for number in sorted(homeostasis_lane_refused)
+        if number in original_index
+    ]
+    dependency_blocked_numbers = {
+        int(row["issue_number"]) for row in dependency_suppressed if "issue_number" in row
+    }
+    coding_dispatch = []
+    for number in sorted(original_index):
+        original = original_index[number]
+        if str(original.get("state") or "").upper() != "OPEN":
+            continue
+        if "oc-queued" not in _names(original) and not (
+            _names(original) & (OWNER_GATE_LABELS | SCIENTIFIC_GATE_LABELS)
+        ):
+            continue
+        try:
+            routing = route_task(original)
+        except _ROUTING.CapabilityUnknown:
+            routing = None
+        if routing is None:
+            continue
+        unsupported_executor = bool(routing.provider_free_task) and not routing.lane_executable
+        if not _CODING.needs_coding_executor(routing) and not unsupported_executor:
+            continue
+        coding_dispatch.append(
+            _CODING.coding_dispatch_record(
+                original,
+                routing,
+                provider_blocked=not coding_executor_available,
+                dependency_blocked=number in dependency_blocked_numbers,
+            )
+        )
+    homeostasis = classify_wave_outcome(
+        snapshot,
+        selected_numbers=[worker["issue_number"] for worker in workers],
+        capacity=capacity,
+        active_count=active_count,
+        ready_numbers=[int(issue["number"]) for issue, _, _ in candidates],
+        dependency_suppressed=dependency_suppressed,
+        dependency_status=graph.get("status") or {},
+        lock_suppressed=lock_suppressed,
+        lane_refused=sorted(homeostasis_lane_refused),
+        provider_parked=provider_parked_numbers(snapshot) if provider_free_only else [],
+        edit_deferred=sorted(deferred_edit),
+        lane_refusal_reasons=lane_refusal_reasons,
+        paid_deferred=paid_deferred,
+    )
+
+    # The refusal above says no deterministic executor exists. For work that is
+    # code authoring, name the actual gate: there is no authorised coding
+    # executor this run, which is a provider gate, not a gap in the factory.
+    provider_gated_coding = sorted(
+        row["issue_number"] for row in coding_dispatch if row["state"] == "provider_blocked"
+    )
+    if provider_gated_coding:
+        homeostasis["gates"]["coding_executor_blocked"] = provider_gated_coding
+
+    result = {
         "schema": "oc.swarm-plan.v4",
         "requested_worker_slots": int(worker_slots),
         "effective_worker_slots": slots,
@@ -455,10 +1016,15 @@ def build_swarm_plan(
         "matrix": {"include": workers},
         "provider_free_workers": provider_free_workers,
         "provider_workers": provider_workers,
+        "acquisition_matrix": {"include": acquisition_workers},
+        "acquisition_launch_count": len(acquisition_workers),
         "provider_free_matrix": {"include": provider_free_workers},
         "provider_matrix": {"include": provider_workers},
         "provider_free_launch_count": len(provider_free_workers),
         "provider_launch_count": len(provider_workers),
+        "paid_launch_capacity": paid_launch_capacity,
+        "paid_active_count": paid_active,
+        "paid_capacity_deferred": paid_deferred,
         "unstaffed_numbers": sorted(unstaffed),
         "lane_refusals": lane_refusals,
         "unstaffed_count": len(unstaffed),
@@ -475,6 +1041,9 @@ def build_swarm_plan(
         "eligible_count": int(plan.get("eligible_count") or 0),
         "waiting_count": waiting_count,
         "refill_recommended": refill_recommended,
+        "homeostasis": homeostasis,
+        "coding_executor_available": bool(coding_executor_available),
+        "coding_dispatch": coding_dispatch,
         "edit_mode_deferred_numbers": sorted(deferred_edit),
         "generated_at": plan.get("generated_at"),
         "safety": {
@@ -496,6 +1065,8 @@ def build_swarm_plan(
             "blocked_reconciliation_mutates": False,
         },
     }
+    result["module_lanes"] = _MODULE_LANES.report_from_plan(snapshot, result)
+    return result
 
 
 def _write_github_output(path: str, plan: dict) -> None:
@@ -503,6 +1074,8 @@ def _write_github_output(path: str, plan: dict) -> None:
     summary = json.dumps(plan, separators=(",", ":"))
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(f"matrix={matrix}\n")
+        handle.write("acquisition_matrix=" + json.dumps(plan["acquisition_matrix"], separators=(",", ":")) + "\n")
+        handle.write(f"acquisition_launch_count={plan['acquisition_launch_count']}\n")
         handle.write(f"launch_count={plan['launch_count']}\n")
         handle.write(
             "provider_free_matrix="
@@ -518,6 +1091,9 @@ def _write_github_output(path: str, plan: dict) -> None:
         handle.write(f"provider_launch_count={plan['provider_launch_count']}\n")
         handle.write(f"selected_numbers={json.dumps(plan['selected_numbers'], separators=(',', ':'))}\n")
         handle.write(f"refill_recommended={str(plan['refill_recommended']).lower()}\n")
+        homeostasis = plan.get("homeostasis") or {}
+        handle.write(f"homeostasis_status={homeostasis.get('status', 'unknown')}\n")
+        handle.write(f"homeostasis_reason={homeostasis.get('reason', 'unknown')}\n")
         handle.write(f"summary={summary}\n")
 
 
@@ -525,11 +1101,22 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True, help="JSON snapshot path, or - for stdin")
     parser.add_argument("--worker-slots", type=int, default=DEFAULT_WORKER_SLOTS)
+    parser.add_argument(
+        "--paid-launch-capacity",
+        type=int,
+        default=None,
+        help="Cap paid workers per wave (the paid lane's concurrency); default unlimited.",
+    )
     parser.add_argument("--provider-free-only", action="store_true")
     parser.add_argument(
         "--defer-edit-mode",
         action="store_true",
         help="leave edit-mode issues queued (runs not on the integration ref)",
+    )
+    parser.add_argument(
+        "--coding-executor",
+        action="store_true",
+        help="providers are authorised: route code-authoring work to the completion lane",
     )
     parser.add_argument("--github-output", help="optional GITHUB_OUTPUT path")
     args = parser.parse_args(argv)
@@ -545,6 +1132,8 @@ def main(argv: list[str] | None = None) -> int:
         worker_slots=args.worker_slots,
         provider_free_only=args.provider_free_only,
         defer_edit_mode=args.defer_edit_mode,
+        coding_executor_available=args.coding_executor,
+        paid_launch_capacity=args.paid_launch_capacity,
     )
     if args.github_output:
         _write_github_output(args.github_output, plan)

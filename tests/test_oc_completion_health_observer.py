@@ -360,3 +360,148 @@ def test_workflow_observes_swarm_with_read_only_authority_and_persists_failed_re
     assert subprocess.run(["bash", "-n"], input=run, text=True, capture_output=True, check=False).returncode == 0
     artifact = next(s for s in steps if "upload-artifact" in s.get("uses", ""))
     assert artifact["if"] == "always()"
+
+
+
+def _observe_with_repository(data, default_branch="main"):
+    def read(endpoint):
+        if endpoint == f"repos/{REPO}":
+            return {"default_branch": default_branch}
+        assert endpoint.startswith(PREFIX)
+        return copy.deepcopy(data[endpoint.removeprefix(PREFIX)])
+
+    return health.collect_github_snapshot(REPO, 42, read_json=read, now=NOW)
+
+
+def test_a_scheduled_controller_run_on_the_default_branch_is_an_integration_run():
+    """Hosted completion trusts schedule runs; the observer must agree (#1848 B2)."""
+    data = evidence()
+    data["actions/runs/42"].update(head_branch="main", event="schedule")
+    receipt = health.build_health(_observe_with_repository(data))
+    assert {
+        "source": "scheduler_run",
+        "reason": "not_an_integration_controller_run",
+    } not in receipt["observation_errors"]
+
+
+@pytest.mark.parametrize("event", ["pull_request", "issues", "workflow_dispatch"])
+def test_other_triggers_on_the_default_branch_are_still_rejected(event):
+    data = evidence()
+    data["actions/runs/42"].update(head_branch="main", event=event)
+    receipt = health.build_health(_observe_with_repository(data))
+    assert {
+        "source": "scheduler_run",
+        "reason": "not_an_integration_controller_run",
+    } in receipt["observation_errors"]
+
+
+BOT = {"login": "github-actions[bot]"}
+
+
+def lease_claim(comment_id, number, run, created="2026-09-12T01:00:00Z"):
+    payload = {
+        "dependencies": [], "issue_number": number,
+        "lease_id": f"{REPO}:{run}:1:{number}",
+        "material_fingerprint": FINGERPRINT, "reads": ["control-plane"],
+        "schema": "oc.swarm-claim.v1", "writes": [],
+    }
+    return {
+        "id": comment_id, "created_at": created, "user": BOT,
+        "body": "[OC-SWARM-V4] Dependency/resource lease claimed: `"
+        + json.dumps(payload, sort_keys=True, separators=(",", ":"))
+        + f"`. packet={FINGERPRINT}. Controller run: https://github.com/{REPO}/actions/runs/{run}.",
+    }
+
+
+def disposition(comment_id, number, run, user=BOT, **overrides):
+    """oc_swarm_settlement's receipt, as written on #1736 (comment 6184568706)."""
+    receipt = {
+        "disposition": "runtime-backoff", "lease_comment_id": comment_id,
+        "lease_id": f"{REPO}:{run}:1:{number}", "message": "Parked in oc-runtime-backoff.",
+        "replenishment_signal": "canonical-controller-refill",
+    }
+    receipt.update(overrides)
+    return {
+        "id": comment_id + 1000, "created_at": "2026-09-12T01:05:00Z", "user": user,
+        "body": "[OC-SWARM-V4] Worker result validated; requested lease disposition: `"
+        + json.dumps(receipt, sort_keys=True) + "`.",
+    }
+
+
+def recovered(comment_id, number, run):
+    """oc_swarm_lease_reconcile's receipt for a released stale lease."""
+    receipt = {
+        "issue_number": number, "lease_comment_id": comment_id,
+        "lease_id": f"{REPO}:{run}:1:{number}", "reason": "manual_lease_expired",
+        "released_state": ["oc-queued"], "schema": "oc.swarm-lease-recovery.v1",
+    }
+    return {
+        "id": comment_id + 2000, "created_at": "2026-09-12T02:00:00Z", "user": BOT,
+        "body": "[OC-SWARM-V4] Stale lease recovered: `"
+        + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+        + f"`. Controller run: https://github.com/{REPO}/actions/runs/{run}.",
+    }
+
+
+def lease_violations(receipt):
+    return [v for v in receipt["contract_health"]["violations"]
+            if v["type"] in {"orphan_active_lease", "stale_lease"}]
+
+
+@pytest.mark.parametrize("settle", [disposition, recovered])
+def test_a_receipt_naming_the_lease_settles_it(settle):
+    """#1736 and #1732 were reported orphaned though their worker released them.
+
+    A reconcile recovery already settled through the generic release pattern;
+    it stays here so binding the disposition receipt cannot regress it.
+    """
+    data = evidence()
+    add_issue(data, issue(1736, ["oc-runtime-backoff"]),
+              [lease_claim(6184549580, 1736, 38682500061), started(),
+               settle(6184549580, 1736, 38682500061)])
+    receipt = health.build_health(observe(data))
+    assert receipt["observation_complete"] is True
+    assert receipt["contract_snapshot"]["leases"] == []
+    assert receipt["healthy"] is True
+
+
+def test_a_receipt_for_one_claim_leaves_the_other_claim_open():
+    """#1396: two runs claimed one packet; only the second lease was released."""
+    data = evidence()
+    add_issue(data, issue(1396, ["oc-blocked"]),
+              [lease_claim(5649481701, 1396, 34726302243),
+               lease_claim(5649482913, 1396, 34726307759), started(),
+               disposition(5649482913, 1396, 34726307759, disposition="blocked")])
+    receipt = health.build_health(observe(data))
+    assert [lease["id"] for lease in receipt["contract_snapshot"]["leases"]] == [5649481701]
+    assert {"type": "orphan_active_lease", "issue": 1396, "lease": 5649481701} in lease_violations(receipt)
+    assert receipt["healthy"] is False
+
+
+@pytest.mark.parametrize(
+    "forge",
+    [
+        lambda: disposition(6184549580, 1736, 38682500061, user={"login": "jsp1440"}),
+        lambda: disposition(6184549581, 1736, 38682500061),
+        lambda: disposition(6184549580, 1736, 99999999999),
+        lambda: disposition(6184549580, 1736, 38682500061, lease_comment_id="6184549580"),
+        lambda: disposition(6184549580, 1736, 38682500061, lease_id="other/repo:38682500061:1:1736"),
+    ],
+    ids=["not-bot", "other-comment", "other-run", "string-id", "other-repo"],
+)
+def test_a_receipt_that_does_not_name_this_lease_releases_nothing(forge):
+    data = evidence()
+    add_issue(data, issue(1736, ["oc-runtime-backoff"]),
+              [lease_claim(6184549580, 1736, 38682500061), started(), forge()])
+    receipt = health.build_health(observe(data))
+    assert [lease["id"] for lease in receipt["contract_snapshot"]["leases"]] == [6184549580]
+    assert {"type": "orphan_active_lease", "issue": 1736, "lease": 6184549580} in lease_violations(receipt)
+
+
+def test_a_claim_without_a_lease_id_cannot_be_released_by_a_bound_receipt():
+    data = evidence()
+    unbound = claim(6184549580)
+    unbound["user"] = BOT
+    add_issue(data, issue(1736, ["oc-runtime-backoff"]),
+              [unbound, started(), disposition(6184549580, 1736, 38682500061)])
+    assert len(observe(data)["leases"]) == 1

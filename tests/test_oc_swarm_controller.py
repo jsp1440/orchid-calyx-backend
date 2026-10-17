@@ -3,6 +3,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location(
     "oc_swarm_controller", ROOT / "scripts" / "oc_swarm_controller.py"
@@ -298,6 +300,45 @@ def test_blocked_reconciliation_holds_unknown_and_owner_gated_work():
     assert by_number[201]["release_authorized"] is False
 
 
+def test_provider_free_task_is_released_from_stale_provider_budget_hold():
+    fingerprint = "a" * 24
+    snapshot = {
+        "issues": [
+            {
+                "number": 1742,
+                "state": "OPEN",
+                "labels": ["oc-blocked", "oc-p0"],
+                "body": (
+                    "OC-SWARM-CAPABILITY: taxonomy-resolution\n"
+                    "OC-SWARM-CAPABILITY: geospatial-context\n"
+                    "OC-SWARM-CAPABILITY: locality-redaction\n"
+                    "OC-SWARM-CAPABILITY: provenance-assembly\n"
+                    "OC-SWARM-CAPABILITY: schema-validation\n"
+                    "OC-SWARM-CAPABILITY: test-execution"
+                ),
+                "comments": [{"body": "OC-BLOCKED-ON: budget:" + fingerprint}],
+            }
+        ],
+        "budget_fingerprints": {"1742": fingerprint},
+    }
+
+    report = swarm.blocked_reconciliation_report(snapshot)
+    row = report["results"][0]
+    assert row["issue_number"] == 1742
+    assert row["disposition"] == "release"
+    assert row["release_authorized"] is True
+    assert report["release_numbers"] == [1742]
+
+    # Releasing a provider budget hold does not invent an executor. Once the
+    # release applier changes oc-blocked -> oc-queued, this task is deliberately
+    # unstaffed and cannot fall through to the paid lane.
+    queued = dict(snapshot)
+    queued["issues"] = [dict(snapshot["issues"][0], labels=["oc-queued", "oc-p0"])]
+    assert swarm.is_provider_free(queued["issues"][0]) is True
+    assert swarm.is_lane_executable(queued["issues"][0]) is False
+    assert swarm.unstaffed_numbers(queued) == [1742]
+
+
 def test_blocked_budget_observations_are_scoped_by_issue_number():
     snapshot = {
         "issues": [
@@ -448,3 +489,406 @@ def test_edit_mode_marker_matches_the_worker_parser():
     assert swarm.is_edit_mode({"body": "OC-SWARM-PROVIDER-FREE: reconcile"}) is False
     assert swarm.is_edit_mode({"body": "text OC-SWARM-PROVIDER-FREE: edit"}) is False
     assert swarm.is_edit_mode({"body": None}) is False
+    # The first marker decides, exactly as the worker's MODE.search does.
+    validate_first = "OC-SWARM-PROVIDER-FREE: validate\nOC-SWARM-PROVIDER-FREE: edit"
+    edit_first = "OC-SWARM-PROVIDER-FREE: edit\nOC-SWARM-PROVIDER-FREE: validate"
+    assert swarm.is_edit_mode({"body": validate_first}) is False
+    assert swarm.is_edit_mode({"body": edit_first}) is True
+    worker = importlib.util.spec_from_file_location(
+        "oc_swarm_provider_free_worker", ROOT / "scripts" / "oc_swarm_provider_free_worker.py"
+    )
+    module = importlib.util.module_from_spec(worker)
+    worker.loader.exec_module(module)
+    for body in (validate_first, edit_first, "OC-SWARM-PROVIDER-FREE: EDIT"):
+        planned = module.execution_plan({"number": 1, "body": body})["mode"]
+        assert swarm.is_edit_mode({"body": body}) is (planned == "edit")
+
+
+# ---------------------------------------------------------------------------
+# Homeostasis invariant. These use the REAL scheduler, dependency graph and
+# lock selector so the verdict is classified from the data the live plan has.
+# ---------------------------------------------------------------------------
+
+EXECUTABLE = "OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"
+UNSTAFFED = "OC-SWARM-CAPABILITY: taxonomy-resolution"
+
+
+def _row(number, *labels, body=EXECUTABLE, writes=None, state="OPEN", **extra):
+    resource = writes or f"module-{number}"
+    return {
+        "number": number,
+        "title": f"P2 bounded work {number}",
+        "body": f"{body}\nOC-SWARM-WRITES: {resource}",
+        "labels": list(labels),
+        "state": state,
+        "createdAt": "2026-09-01T00:00:00Z",
+        **extra,
+    }
+
+
+def _plan(issues, **kwargs):
+    snapshot = {"issues": issues, "now": "2026-10-01T00:00:00Z"}
+    snapshot.update(kwargs.pop("extra", {}))
+    return swarm.build_swarm_plan(snapshot, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "options", [{"coding_executor_available": True}, {"provider_free_only": True}],
+)
+@pytest.mark.parametrize(
+    "capabilities", ["", UNSTAFFED],
+)
+def test_unsupported_executor_never_spends_a_slot_or_routes_to_a_provider(
+    options, capabilities,
+):
+    body = "OC-SWARM-PROVIDER-FREE: rebuild-the-graph"
+    if capabilities:
+        body += "\n" + capabilities
+    unsupported = _row(10, "oc-queued", "oc-p0", body=body, writes="shared")
+    supported = _row(11, "oc-queued", "oc-p4", writes="shared")
+    plan = _plan([unsupported, supported], worker_slots=1, **options)
+    assert plan["selected_numbers"] == [11]
+    assert plan["launch_count"] == plan["provider_free_launch_count"] == 1
+    assert plan["provider_launch_count"] == 0
+    assert plan["provider_matrix"] == {"include": []}
+    assert [worker["issue_number"] for worker in plan["provider_free_workers"]] == [11]
+    [record] = plan["coding_dispatch"]
+    assert record["issue_number"] == 10
+    assert record["state"] == "capability_gap"
+    assert record["gate"] == "unsupported-deterministic-executor"
+    assert record["declared_executor"] == "rebuild-the-graph"
+    assert record["needs_coding_executor"] is False
+    assert record["dispatchable"] is False
+    assert record["provider_called"] is False
+    assert record["executor"] is None
+    assert plan["homeostasis"]["gates"]["lane_refused"] == [10]
+    assert "rebuild-the-graph" in plan["homeostasis"]["gates"]["lane_refusal_reasons"][0]["reason"]
+    assert plan["homeostasis"]["healthy_idle"] is False
+    assert plan["safety"]["provider_calls_in_planner"] is False
+
+
+@pytest.mark.parametrize(
+    "options", [{"coding_executor_available": True}, {"provider_free_only": True}],
+)
+def test_open_ended_code_authoring_keeps_its_provider_gate(options):
+    issue = _row(10, "oc-queued", body="OC-SWARM-CAPABILITY: open-ended-code-authoring")
+    plan = _plan([issue], **options)
+    authorised = options.get("coding_executor_available", False)
+    assert plan["provider_free_launch_count"] == 0
+    assert plan["provider_launch_count"] == int(authorised)
+    [record] = plan["coding_dispatch"]
+    assert record["state"] == ("queued" if authorised else "provider_blocked")
+    assert record["capability"] == "open-ended-code-authoring"
+    assert record["dispatchable"] is authorised
+    assert record["provider_called"] is False
+
+
+@pytest.mark.parametrize(
+    "options", [{}, {"coding_executor_available": True}, {"provider_free_only": True}],
+)
+def test_explicit_code_authoring_is_not_suppressed_by_unsupported_executor(options):
+    body = (
+        "OC-SWARM-PROVIDER-FREE: rebuild-the-graph\n"
+        "OC-SWARM-CAPABILITY: open-ended-code-authoring"
+    )
+    issue = _row(10, "oc-queued", "oc-p0", body=body, writes="shared")
+    supported = _row(11, "oc-queued", "oc-p4", writes="shared")
+    plan = _plan([issue, supported], worker_slots=1, **options)
+    authorised = options.get("coding_executor_available", False)
+    assert plan["selected_numbers"] == ([10] if authorised else [11])
+    assert plan["provider_launch_count"] == int(authorised)
+    assert plan["provider_free_launch_count"] == int(not authorised)
+    assert [row["issue_number"] for row in plan["provider_matrix"]["include"]] == (
+        [10] if authorised else []
+    )
+    assert all(row["issue_number"] != 10 for row in plan["provider_free_workers"])
+    [record] = plan["coding_dispatch"]
+    assert record["needs_coding_executor"] is True
+    assert record["state"] == ("queued" if authorised else "provider_blocked")
+    assert record["gate"] == (None if authorised else "no-authorised-coding-executor")
+    assert record["dispatchable"] is authorised
+    assert record["executor"] == ("orchid-completion-lane" if authorised else None)
+    assert record["provider_called"] is False
+    assert plan["homeostasis"]["healthy_idle"] is False
+    assert plan["safety"]["provider_calls_in_planner"] is False
+
+
+def test_empty_queue_is_replenish_never_healthy_idle():
+    plan = _plan([_row(1, "oc-done", state="CLOSED")])
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["status"] == "replenish"
+    assert verdict["healthy_idle"] is False
+    assert verdict["discovery_required"] is True
+    # Discovery evidence is absent, so the plan cannot claim discovery ran.
+    assert verdict["evidence"]["discovery_ran"] is None
+
+
+def test_healthy_idle_requires_no_unfinished_work_and_empty_discovery():
+    ran_empty = {"discovery": {"ran": True, "candidate_count": 0}}
+    verdict = _plan([_row(1, "oc-done", state="CLOSED")], extra=ran_empty)["homeostasis"]
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["healthy_idle"] is True
+    assert verdict["status"] == "idle"
+    assert verdict["discovery_required"] is False
+
+    # Discovery found candidates: not idle, they still have to be filed.
+    found = {"discovery": {"ran": True, "candidate_count": 2}}
+    verdict = _plan([], extra=found)["homeostasis"]
+    assert verdict["healthy_idle"] is False and verdict["status"] == "replenish"
+
+    # Unfinished gated work exists: an empty immediate queue is not idle.
+    verdict = _plan([_row(5, "oc-owner-gate")], extra=ran_empty)["homeostasis"]
+    assert verdict["healthy_idle"] is False
+    assert verdict["gates"]["owner_gated"] == [5]
+
+
+def test_work_blocked_only_behind_an_owner_gate_is_gated_and_recorded():
+    issues = [
+        _row(10, "oc-owner-gate"),
+        _row(20, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #10"),
+        # Transitively held: 30 -> 20 -> 10 (owner gate).
+        _row(30, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #20"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "gated_only"
+    assert verdict["status"] == "gated"
+    assert verdict["healthy_idle"] is False
+    assert verdict["discovery_required"] is True
+    assert verdict["gates"]["owner_gated"] == [10]
+    blocked = {row["issue"]: row for row in verdict["gates"]["dependency_blocked"]}
+    assert blocked[20]["blocked_by"] == [10] and blocked[20]["gated"] is True
+    assert blocked[30]["blocked_by"] == [20] and blocked[30]["roots"] == [10]
+    assert blocked[30]["gated"] is True
+
+
+def test_provider_only_queue_under_no_api_mode_records_provider_parks():
+    issues = [
+        _row(40, "oc-queued", body="Needs a model provider."),
+        _row(41, "oc-queued", body="Also needs a model provider."),
+    ]
+    plan = _plan(issues, provider_free_only=True)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["gates"]["provider_parked"] == [40, 41]
+    assert verdict["reason"] == "gated_only"
+    assert verdict["status"] == "gated"
+    # With providers available the same work is not parked at all.
+    assert _plan(issues)["homeostasis"]["gates"]["provider_parked"] == []
+
+
+def test_one_blocked_module_does_not_stall_a_free_module():
+    issues = [
+        _row(10, "oc-owner-gate"),
+        _row(20, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #10"),
+        _row(21, "oc-queued"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["selected_numbers"] == [21]
+    assert verdict["reason"] == "executing"
+    assert verdict["status"] == "executing"
+    assert [row["issue"] for row in verdict["gates"]["dependency_blocked"]] == [20]
+
+
+def test_scientific_gate_is_never_admitted_and_never_stalls_others():
+    issues = [
+        # Highest priority and writing the same module: if it were admitted it
+        # would take the slot and the lock away from #51.
+        _row(50, "oc-queued", "oc-scientific-gate", "oc-p0", writes="taxonomy"),
+        _row(51, "oc-queued", "oc-p3", writes="taxonomy"),
+    ]
+    plan = _plan(issues, worker_slots=1)
+    verdict = plan["homeostasis"]
+    assert plan["selected_numbers"] == [51]
+    assert 50 not in plan["selected_numbers"]
+    assert verdict["gates"]["scientific_gated"] == [50]
+    assert verdict["reason"] == "executing"
+
+    alone = _plan([issues[0]])
+    assert alone["launch_count"] == 0
+    assert alone["homeostasis"]["reason"] == "gated_only"
+    assert alone["homeostasis"]["gates"]["scientific_gated"] == [50]
+
+
+def test_admissible_work_left_unselected_is_an_invariant_violation(monkeypatch):
+    real = swarm._load_sibling
+
+    class SelectNothing:
+        held_locks = staticmethod(lambda rows: [])
+
+        @staticmethod
+        def select_with_resource_locks(candidates, *, active_locks, capacity):
+            list(candidates)
+            return [], []
+
+    def loader(name, filename):
+        if filename == "oc_swarm_resource_locks.py":
+            return SelectNothing
+        return real(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = _plan([_row(60, "oc-queued")])
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "invariant_violation"
+    assert verdict["status"] == "violation"
+    assert verdict["healthy_idle"] is False
+    assert verdict["evidence"]["ready_unselected_lock_free"] == [60]
+
+
+def test_not_planned_dependency_keeps_dependents_blocked_in_the_plan():
+    issues = [
+        _row(70, state="CLOSED", stateReason="NOT_PLANNED"),
+        _row(71, "oc-queued", body=EXECUTABLE + "\nOC-SWARM-DEPENDS-ON: #70"),
+    ]
+    plan = _plan(issues)
+    verdict = plan["homeostasis"]
+    assert plan["launch_count"] == 0
+    assert verdict["reason"] == "dependency_blocked"
+    assert verdict["status"] == "waiting"
+    row = verdict["gates"]["dependency_blocked"][0]
+    assert row["issue"] == 71 and row["blocked_by"] == [70] and row["gated"] is False
+
+    issues[0]["stateReason"] = "COMPLETED"
+    assert _plan(issues)["selected_numbers"] == [71]
+
+
+def test_saturation_lock_contention_and_lane_refusal_are_named():
+    running = _row(80, "oc-running", writes="atlas")
+    waiting = _row(81, "oc-queued", writes="atlas")
+    assert _plan([running, waiting], worker_slots=1)["homeostasis"]["reason"] == "capacity_full"
+
+    verdict = _plan([running, waiting], worker_slots=4)["homeostasis"]
+    assert verdict["reason"] == "lock_contended"
+    assert verdict["gates"]["lock_contended"] == [81]
+
+    unstaffed = _row(82, "oc-queued", body=UNSTAFFED)
+    for mode in (False, True):
+        verdict = _plan([unstaffed], provider_free_only=mode)["homeostasis"]
+        assert verdict["reason"] == "lane_refused", mode
+        assert verdict["status"] == "capability_gap"
+        assert verdict["gates"]["lane_refused"] == [82]
+        assert verdict["discovery_required"] is True
+
+
+def test_github_output_carries_the_homeostasis_verdict(tmp_path):
+    plan = _plan([])
+    output = tmp_path / "output"
+    swarm._write_github_output(str(output), plan)
+    text = output.read_text(encoding="utf-8")
+    assert "homeostasis_status=replenish\n" in text
+    assert "homeostasis_reason=queue_empty\n" in text
+
+
+# --- Paid launch cap: one GitHub concurrency group holds one running paid job --
+
+CODE = "OC-SWARM-CAPABILITY: open-ended-code-authoring"
+
+
+def _paid(number, *labels):
+    return _row(number, "oc-queued", *labels, body=CODE)
+
+
+def test_paid_launches_are_capped_and_excess_stays_queued_unleased():
+    issues = [_paid(1, "oc-p1"), _paid(2, "oc-p2"), _paid(3, "oc-p3")]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1
+    assert [w["issue_number"] for w in plan["provider_matrix"]["include"]] == [1]
+    assert plan["paid_capacity_deferred"] == [2, 3]
+    assert plan["selected_numbers"] == [1]
+    assert [w["slot"] for w in plan["workers"]] == [1]
+    # Deferred paid work is held, not ready-but-idle: no invariant violation.
+    assert plan["homeostasis"]["reason"] == "executing"
+    assert plan["homeostasis"]["gates"]["paid_capacity_deferred"] == [2, 3]
+    assert plan["refill_recommended"] is True
+
+
+def test_a_running_paid_worker_fills_the_paid_lane():
+    issues = [_row(1, "oc-running", body=CODE), _paid(2), _paid(3)]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 0 and plan["paid_active_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2, 3]
+    assert plan["homeostasis"]["reason"] == "capacity_full"
+
+
+def test_provider_free_work_is_never_held_by_the_paid_cap():
+    free = _row(9, "oc-queued", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")
+    issues = [_paid(1), _paid(2), free]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1 and plan["provider_free_launch_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2]
+
+
+def test_without_a_cap_the_planner_behaves_as_before():
+    issues = [_paid(1), _paid(2), _paid(3)]
+    plan = _plan(issues, coding_executor_available=True)
+    assert plan["provider_launch_count"] == 3 and plan["paid_capacity_deferred"] == []
+
+
+def test_the_controller_workflow_caps_paid_launches_at_the_lane_concurrency():
+    text = Path(".github/workflows/orchid-swarm-controller.yml").read_text(encoding="utf-8")
+    assert "--paid-launch-capacity 1" in text
+    lane = Path(".github/workflows/orchid-completion-lane.yml").read_text(encoding="utf-8")
+    assert "group: swarm-paid-execution-${{ github.repository }}" in lane
+    assert swarm.PAID_LAUNCH_CAPACITY == 1
+
+
+def test_deferred_paid_work_frees_its_slot_and_lock_for_launchable_work():
+    """Review F2: the cap is applied before slots and locks are spent."""
+    free = _row(9, "oc-queued", "oc-p3", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done", writes="shared-x")
+    issues = [_paid(1, "oc-p1"), _row(2, "oc-queued", "oc-p1", body=CODE, writes="shared-x"), free]
+    plan = _plan(issues, coding_executor_available=True, worker_slots=2, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1 and plan["provider_free_launch_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2]
+    assert plan["homeostasis"]["reason"] == "executing"
+
+
+def test_an_unroutable_running_issue_counts_as_paid_instead_of_crashing():
+    """Review F1: an unknown capability on an oc-running row must not stop planning."""
+    running = _row(1, "oc-running", body="OC-SWARM-CAPABILITY: frobnicate-xyz")
+    plan = _plan([running, _paid(2)], coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["paid_active_count"] == 1 and plan["provider_launch_count"] == 0
+    assert plan["paid_capacity_deferred"] == [2]
+
+
+def test_empty_queue_names_the_hold_of_every_unfinished_issue():
+    # The 2026-10-17 zero-launch waves: 54 unfinished issues, none queued, and
+    # the verdict said only queue_empty. Each unfinished issue is now recorded
+    # under the label class that holds it outside the queue.
+    issues = [
+        _row(1, "oc-repair", "oc-discovered"),
+        _row(2, "oc-validating"),
+        _row(3, "oc-blocked", "oc-repair"),
+        _row(4, "oc-runtime-backoff"),
+        _row(5, "oc-repair-backoff"),
+        _row(6, "oc-owner-gate", "oc-discovered"),
+        _row(7, "oc-scientific-gate"),
+        _row(8, "oc-done", "oc-r1-controlled-test"),
+        _row(9, "enhancement"),
+        _row(10, "oc-repair", state="CLOSED"),
+    ]
+    verdict = _plan(issues)["homeostasis"]
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["gates"]["unfinished_holds"] == {
+        "owner_gate": [6],
+        "scientific_gate": [7],
+        "running": [],
+        "validating": [2],
+        "blocked": [3],
+        "repair_backoff": [5],
+        "runtime_backoff": [4],
+        "repair_pending": [1],
+    }
+    held = verdict["evidence"]["unfinished_held"]
+    assert held["repair_pending"] == 1 and sum(held.values()) == 7
+    assert verdict["evidence"]["unfinished_open"] == 7
+
+
+def test_queued_repair_is_queued_work_not_a_hold():
+    issues = [_row(1, "oc-queued", "oc-repair")]
+    holds = _plan(issues)["homeostasis"]["gates"]["unfinished_holds"]
+    assert all(numbers == [] for numbers in holds.values())

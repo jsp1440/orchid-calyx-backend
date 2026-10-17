@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -117,6 +119,7 @@ def test_resume_real_git_retains_partial_work_and_new_control_plane(
     )
     assert (worker / "app/example.py").read_text() == "VALUE = 2\n"
     assert (worker / "current-control-plane.txt").read_text() == "repaired executor\n"
+    assert direct.RETAINED == {"app/example.py"}
     git(worker, "merge-base", "--is-ancestor", partial, "HEAD")
     git(worker, "merge-base", "--is-ancestor", current, "HEAD")
 
@@ -561,22 +564,28 @@ def test_direct_executor_salvages_partial_changes_on_max_turns(
         class FakeResult:
             returncode = 0
             stdout = (
-                "M app/partial.py\n" if cmd == ["git", "status", "--porcelain"] else ""
+                "app/partial.py\n"
+                if cmd == ["git", "diff", "--cached", "--name-only"]
+                else ""
             )
             stderr = ""
 
         return FakeResult()
 
+    turns = {"n": 0}
+
     def tool_response(**kwargs):
+        turns["n"] += 1
+        call = (
+            {
+                "name": "write_file",
+                "input": {"path": "app/partial.py", "content": "x = 1\n"},
+            }
+            if turns["n"] == 1
+            else {"name": "list_files", "input": {"pattern": "*.py"}}
+        )
         return {
-            "content": [
-                {
-                    "type": "tool_use",
-                    "id": "tool-loop",
-                    "name": "list_files",
-                    "input": {"pattern": "*.py"},
-                }
-            ],
+            "content": [{"type": "tool_use", "id": f"tool-{turns['n']}", **call}],
             "usage": {"input_tokens": 3, "output_tokens": 2},
         }
 
@@ -615,13 +624,10 @@ def test_direct_executor_salvages_partial_changes_on_max_turns(
     cmd_names = [c[0] if c else "" for c in salvage_calls]
     assert "git" in cmd_names
 
-    status_calls = [c for c in salvage_calls if c == ["git", "status", "--porcelain"]]
-    assert len(status_calls) >= 1, (
-        "git status --porcelain must be called during salvage"
-    )
-
     add_calls = [c for c in salvage_calls if c[:2] == ["git", "add"]]
-    assert add_calls, "git add must be called when dirty working tree is found"
+    assert add_calls == [["git", "add", "--", "app/partial.py"]], (
+        "salvage must stage only the files the model wrote"
+    )
 
     commit_calls = [c for c in salvage_calls if c[:2] == ["git", "commit"]]
     assert commit_calls, "git commit must be called during salvage"
@@ -846,3 +852,693 @@ def test_durable_execution_summary_excludes_model_text_and_retains_usage(
     receipt = json.loads(output.split("[OC-DIRECT-RECEIPT] ")[1])
     assert receipt["modelUsage"] == payload["modelUsage"]
     assert receipt["error"] == "max_turns" and receipt["num_turns"] == 2
+
+
+def test_turn_budget_notice_counts_down_and_asks_to_finish_near_the_limit() -> None:
+    early = direct._turn_budget_notice(5, 24)
+    assert "5 of 24 turns used; 19 remaining" in early
+    assert "Finish now" not in early
+    for turn in (21, 22, 23, 24):
+        notice = direct._turn_budget_notice(turn, 24)
+        assert f"{24 - turn} remaining" in notice
+        assert "Finish now" in notice
+    assert "0 remaining" in direct._turn_budget_notice(30, 24)
+
+
+def test_every_tool_result_carries_the_turn_budget_and_the_prompt_states_it(
+    tmp_path, monkeypatch
+) -> None:
+    """The model sees its ceiling and the stop condition, then finishing opens a PR.
+
+    Regression for the first live cheap-tier run: the change and tests were done
+    by turn 15, the model kept re-verifying without knowing the limit, and
+    max_turns discarded the draft PR.
+    """
+    packet = tmp_path / "packet.md"
+    packet.write_text("Small two-file change.\n")
+    execution_file = tmp_path / "execution.json"
+    seen: list[list[dict]] = []
+
+    def provider(**kwargs):
+        seen.append(kwargs["messages"])
+        last = kwargs["messages"][-1]["content"]
+        if isinstance(last, list) and "Finish now" in last[-1].get("text", ""):
+            return {
+                "content": [{"type": "text", "text": "Done; tests pass."}],
+                "usage": {"input_tokens": 1, "output_tokens": 1},
+            }
+        return {
+            "content": [
+                {
+                    "type": "tool_use",
+                    "id": f"tool-{len(seen)}",
+                    "name": "list_files",
+                    "input": {"pattern": "*.py"},
+                }
+            ],
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "1002")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "_prepare_branch", lambda *a, **k: "dryrun/1002")
+    monkeypatch.setattr(direct, "_anthropic_message", provider)
+    monkeypatch.setattr(
+        direct, "_open_draft_pr", lambda *a, **k: "https://example.invalid/pr/1"
+    )
+    monkeypatch.setattr(
+        direct.sys,
+        "argv",
+        [
+            "swarm_anthropic_direct.py",
+            "--issue-number",
+            "1843",
+            "--title",
+            "Budget-aware finish",
+            "--packet-file",
+            str(packet),
+            "--model",
+            "claude-haiku-4-5",
+            "--max-turns",
+            "24",
+            "--execution-file",
+            str(execution_file),
+        ],
+    )
+
+    assert direct.main() == 0
+    result = json.loads(execution_file.read_text())
+    assert result["pr_url"] == "https://example.invalid/pr/1"
+    # Turn 21 is the first notice with three or fewer turns left, so the model
+    # finishes on turn 22 instead of exhausting the budget.
+    assert result["num_turns"] == 22
+
+    prompt = seen[0][0]["content"]
+    assert "at most 24 model turns" in prompt
+    assert "do not re-run passing checks" in prompt
+    final_messages = seen[-1]
+    tool_turns = [
+        m["content"]
+        for m in final_messages
+        if m["role"] == "user" and isinstance(m["content"], list)
+    ]
+    assert len(tool_turns) == 21
+    for index, content in enumerate(tool_turns, start=1):
+        assert content[0]["type"] == "tool_result"
+        assert content[-1] == {
+            "type": "text",
+            "text": direct._turn_budget_notice(index, 24),
+        }
+
+
+@pytest.mark.parametrize(
+    ("packet", "expected"),
+    [
+        (
+            "Allowed paths: `runtime/a.py` and a new `tests/test_a.py`. Do not...",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Scope\nAllowed paths:\n- `runtime/a.py`\n- `tests/test_a.py`\nDo not change x",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        ("No declaration here.", None),
+        ("Allowed paths: `a.py`\nAllowed paths: `b.py`", set()),
+        (
+            "Allowed paths: runtime/a.py, tests/test_a.py.",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Allowed paths:\n- `runtime/a.py` (new)\n- tests/test_a.py\nDone",
+            {"runtime/a.py", "tests/test_a.py"},
+        ),
+        (
+            "Allowed paths: runtime/a.py only; do not change runtime/health.py.",
+            {"runtime/a.py"},
+        ),
+        ("Allowed paths: runtime/a.py; see README.md", {"runtime/a.py"}),
+        (
+            "Allowed paths:\n- runtime/a.py\n- runtime/health.py must stay unchanged",
+            {"runtime/a.py"},
+        ),
+    ],
+)
+def test_allowed_paths_are_read_inline_or_as_a_list(packet, expected):
+    assert direct._parse_allowed_paths(packet) == expected
+
+
+def test_writes_outside_the_allowed_paths_are_refused(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", {"runtime/a.py"})
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    ok = direct._tool_write_file({"path": "runtime/a.py", "content": "a = 1\n"})
+    assert ok.startswith("WROTE runtime/a.py")
+    refused = direct._tool_write_file(
+        {"path": "test_verify_changes.py", "content": "x"}
+    )
+    assert refused.startswith("ERROR: test_verify_changes.py is outside")
+    assert not (tmp_path / "test_verify_changes.py").exists()
+    assert direct.WRITTEN == {"runtime/a.py"}
+
+
+def test_only_written_files_are_staged_never_test_side_effects(tmp_path, monkeypatch):
+    """PR #1855 carried calyx_runtime_journal.jsonl and runtime/discovery_registry.json,
+    which the test suite rewrites; git add -A committed them."""
+    calls = []
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        calls.append(cmd)
+
+        class Result:
+            returncode = 0
+            stdout = "runtime/a.py\n" if cmd[:3] == ["git", "diff", "--cached"] else ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(direct, "_run", fake_run)
+    monkeypatch.setattr(direct, "WRITTEN", {"runtime/a.py"})
+    assert direct._stage_written_files() is True
+    adds = [c for c in calls if c[:2] == ["git", "add"]]
+    assert adds == [["git", "add", "--", "runtime/a.py"]]
+    assert ["git", "add", "-A"] not in calls
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    calls.clear()
+
+    def nothing_staged(cmd, *, timeout=120, check=False):
+        calls.append(cmd)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(direct, "_run", nothing_staged)
+    assert direct._stage_written_files() is False
+    assert not [c for c in calls if c[:2] == ["git", "add"]]
+
+
+def test_no_git_add_all_remains_in_the_executor():
+    assert '"add", "-A"' not in SCRIPT.read_text()
+
+
+def _run_executor(tmp_path, monkeypatch, replies, check_results, max_turns="6"):
+    packet = tmp_path / "packet.md"
+    packet.write_text("Allowed paths:\n- `app/a.py`\n")
+    execution_file = tmp_path / "execution.json"
+    sent: list[list[dict]] = []
+    checks = iter(check_results)
+
+    def fake_run(cmd, *, timeout=120, check=False):
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        result = Result()
+        if cmd == ["git", "diff", "--cached", "--name-only"]:
+            result.stdout = "app/a.py\n"
+        elif cmd == ["git", "diff", "--cached", "--check"]:
+            result.returncode, result.stdout = next(checks)
+        return result
+
+    def model(**kwargs):
+        sent.append(copy.deepcopy(kwargs["messages"]))
+        reply = replies.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        return reply
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-key")
+    monkeypatch.setenv("GITHUB_RUN_ID", "3000")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "_prepare_branch", lambda *a, **k: "dryrun/3000")
+    monkeypatch.setattr(direct, "_anthropic_message", model)
+    monkeypatch.setattr(direct, "_open_draft_pr", lambda *a, **k: "https://pr/1")
+    monkeypatch.setattr(direct, "_run", fake_run)
+    monkeypatch.setattr(
+        direct.sys,
+        "argv",
+        [
+            "swarm_anthropic_direct.py",
+            "--issue-number",
+            "1861",
+            "--title",
+            "Whitespace feedback",
+            "--packet-file",
+            str(packet),
+            "--model",
+            "claude-haiku-4-5",
+            "--max-turns",
+            max_turns,
+            "--execution-file",
+            str(execution_file),
+        ],
+    )
+    code = direct.main()
+    return code, json.loads(execution_file.read_text()), sent
+
+
+def _write(n, content):
+    return {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": f"w{n}",
+                "name": "write_file",
+                "input": {"path": "app/a.py", "content": content},
+            }
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+
+
+DONE = {
+    "content": [{"type": "text", "text": "Done."}],
+    "usage": {"input_tokens": 3, "output_tokens": 2},
+}
+
+
+def test_whitespace_errors_go_back_to_the_model_instead_of_failing_the_run(
+    tmp_path, monkeypatch
+):
+    """#1861: finished work died on `git diff --cached --check` at commit time."""
+    report = "app/a.py:1: trailing whitespace.\n+x = 1"
+    code, result, sent = _run_executor(
+        tmp_path,
+        monkeypatch,
+        [_write(1, "x = 1  \n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)],
+        [(2, report), (0, "")],
+    )
+    assert code == 0
+    assert result["subtype"] == "success"
+    feedback = sent[2][-1]
+    assert feedback["role"] == "user"
+    assert "git diff --check" in feedback["content"]
+    assert report in feedback["content"]
+    assert len(sent) == 4
+
+
+def test_clean_changes_finish_without_an_extra_turn(tmp_path, monkeypatch):
+    code, _, sent = _run_executor(
+        tmp_path, monkeypatch, [_write(1, "x = 1\n"), dict(DONE)], [(0, "")]
+    )
+    assert code == 0
+    assert len(sent) == 2
+
+
+def test_no_whitespace_turn_is_taken_on_the_last_allowed_turn(tmp_path, monkeypatch):
+    code, _, sent = _run_executor(
+        tmp_path,
+        monkeypatch,
+        [_write(1, "x = 1  \n"), dict(DONE)],
+        [],
+        max_turns="3",
+    )
+    assert len(sent) == 2
+    assert code == 0
+
+
+def test_whitespace_problems_reads_a_real_index(tmp_path, monkeypatch):
+    import subprocess
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    direct._tool_write_file({"path": "app/new.py", "content": "x = 1  \n"})
+    assert "trailing whitespace" in direct._whitespace_problems()
+    direct._tool_write_file({"path": "app/new.py", "content": "x = 1\n"})
+    assert direct._whitespace_problems() == ""
+    staged = subprocess.run(
+        ["git", "diff", "--cached", "--name-only"],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert staged.stdout == "", "the probe must leave the index as it found it"
+
+
+def test_a_model_that_never_fixes_stays_within_the_turn_limit(tmp_path, monkeypatch):
+    report = (2, "app/a.py:1: trailing whitespace.")
+    replies = [_write(1, "x = 1  \n")] + [dict(DONE) for _ in range(5)]
+    code, _, sent = _run_executor(
+        tmp_path, monkeypatch, replies, [report] * 5, max_turns="4"
+    )
+    assert len(sent) == 3, "feedback only while a write and a finish still fit"
+    assert "[turn budget] 2 of 4 turns used; 2 remaining." in sent[2][-1]["content"]
+    assert "no tool call" not in sent[2][-1]["content"]
+    assert code == 0  # the mocked commit; the real commit check stays authoritative
+
+
+def test_lint_findings_go_back_to_the_model(tmp_path, monkeypatch):
+    """#1860/#1862: tests passed, but `ruff check` in PR validation did not."""
+    lint = "app/a.py:1:8: F401 `os` imported but unused\nFound 1 error."
+    findings = iter([lint, ""])
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: next(findings))
+    monkeypatch.setattr(direct, "RETAINED", set())
+    replies = [_write(1, "import os\n"), dict(DONE), _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    feedback = sent[2][-1]["content"]
+    assert "ruff check" in feedback
+    assert lint in feedback
+    assert len(sent) == 4
+
+
+def _lint_run(returncode, stdout, seen):
+    def fake_run(cmd, *, timeout=120, check=False):
+        seen.append(cmd)
+
+        class Result:
+            pass
+
+        result = Result()
+        result.returncode, result.stdout, result.stderr = returncode, stdout, ""
+        return result
+
+    return fake_run
+
+
+@pytest.mark.parametrize(
+    ("returncode", "stdout", "expected"),
+    [
+        (1, "app/a.py:1:8: F401 unused", "app/a.py:1:8: F401 unused"),
+        (0, "All checks passed!", ""),
+        (2, "error: ruff crashed", ""),  # not actionable by the model
+        (1, "", ""),  # ruff missing: exit 1, message only on stderr
+    ],
+)
+def test_lint_problems_runs_ruff_on_written_python_files_only(
+    tmp_path, monkeypatch, returncode, stdout, expected
+):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.py").write_text("import os\n")
+    (tmp_path / "notes.md").write_text("x\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"app/a.py", "notes.md", "gone.py"})
+    monkeypatch.setattr(direct, "RETAINED", set())
+    monkeypatch.setattr(direct, "_run", _lint_run(returncode, stdout, seen))
+    assert direct._lint_problems() == expected
+    fix, report = seen
+    assert fix == [
+        direct.sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--fix",
+        "--extend-select",
+        "I001",
+        "--quiet",
+        "--",
+        "app/a.py",
+    ]
+    assert report == [
+        direct.sys.executable,
+        "-m",
+        "ruff",
+        "check",
+        "--output-format=concise",
+        "--",
+        "app/a.py",
+    ]
+
+
+def test_lint_problems_is_silent_without_written_python(tmp_path, monkeypatch):
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"notes.md"})
+    monkeypatch.setattr(direct, "RETAINED", set())
+    monkeypatch.setattr(direct, "_run", _lint_run(1, "x", seen))
+    assert direct._lint_problems() == ""
+    assert seen == []
+
+
+def test_lint_problems_includes_retained_partial_branch_files(tmp_path, monkeypatch):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "retained.py").write_text("import os\n")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", {"app/retained.py"})
+    monkeypatch.setattr(
+        direct,
+        "_run",
+        _lint_run(1, "app/retained.py:1:8: F401 unused", seen),
+    )
+    assert "F401" in direct._lint_problems()
+    assert seen[0][-1] == "app/retained.py"
+
+
+def test_lint_problems_with_the_real_ruff(tmp_path, monkeypatch):
+    pytest.importorskip("ruff")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    # An undefined name has no safe auto-fix, so it is reported.
+    direct._tool_write_file({"path": "app/a.py", "content": "x = undefined_name\n"})
+    assert "F821" in direct._lint_problems()
+    direct._tool_write_file({"path": "app/a.py", "content": "x = 1\n"})
+    assert direct._lint_problems() == ""
+
+
+def test_finish_problems_labels_each_report(monkeypatch):
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "a.py:1: trailing")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "a.py:1:8: F401")
+    assert direct._finish_problems() == (
+        "[git diff --check]\na.py:1: trailing\n[ruff check]\na.py:1:8: F401"
+    )
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    assert direct._finish_problems() == "[ruff check]\na.py:1:8: F401"
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "")
+    assert direct._finish_problems() == ""
+
+
+def test_old_text_errors_say_whether_it_was_missing_or_ambiguous(tmp_path, monkeypatch):
+    """#1863: eleven failed writes; the model was only told to read again."""
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    (tmp_path / "a.py").write_text("x = '\u2014'\ny = 1\ny = 1\n")
+    with pytest.raises(ValueError, match="not found.*em dash"):
+        direct._tool_write_file(
+            {"path": "a.py", "old_text": "x = '-'", "content": "x = 2"}
+        )
+    with pytest.raises(ValueError, match="matches 2 times"):
+        direct._tool_write_file({"path": "a.py", "old_text": "y = 1", "content": "y"})
+    assert direct.WRITTEN == set()
+
+
+def test_tool_errors_are_logged_with_their_reason(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(direct, "_whitespace_problems", lambda: "")
+    monkeypatch.setattr(direct, "_lint_problems", lambda: "")
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "a.py").write_text("x = 1\n")
+    bad = {
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "bad",
+                "name": "write_file",
+                "input": {"path": "app/a.py", "old_text": "nope", "content": "y"},
+            }
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    _run_executor(tmp_path, monkeypatch, [bad, _write(2, "x = 2\n"), dict(DONE)], [])
+    lines = [
+        json.loads(line.split(" ", 1)[1])
+        for line in capsys.readouterr().out.splitlines()
+        if line.startswith("[OC-DIRECT-TOOL]")
+    ]
+    assert lines[0]["input_error"] is True
+    assert lines[0]["error"].startswith("ERROR: ValueError: old_text was not found")
+    assert "error" not in lines[1]
+
+
+def test_actual_cost_prices_every_usage_kind():
+    usage = {
+        "input_tokens": 1_000_000,
+        "output_tokens": 100_000,
+        "cache_creation_input_tokens": 200_000,
+        "cache_read_input_tokens": 2_000_000,
+    }
+    # 1.00 + 0.50 + 0.25 + 0.20
+    assert direct._actual_cost_usd("claude-haiku-4-5", usage) == "1.9500"
+    assert direct._actual_cost_usd("claude-haiku-4-5", {}) is None
+    assert direct._actual_cost_usd("some-unpriced-model", usage) is None
+
+
+def test_missing_provider_usage_does_not_report_zero_actual_cost(tmp_path, monkeypatch):
+    done_without_usage = dict(DONE)
+    del done_without_usage["usage"]
+    replies = [_write(1, "x = 1\n"), done_without_usage]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    assert result["total_cost_usd"] is None
+
+
+def test_requests_enable_automatic_prompt_caching(monkeypatch):
+    seen = {}
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def read(self):
+            return b'{"content": []}'
+
+    def capture(req, timeout):
+        seen["payload"] = json.loads(req.data)
+        return Reply()
+
+    monkeypatch.setattr(direct.urlrequest, "urlopen", capture)
+    direct._anthropic_message(
+        api_key="k", model="claude-haiku-4-5", messages=[], max_tokens=10, timeout=5
+    )
+    assert seen["payload"]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_the_result_records_cache_usage_and_actual_cost(tmp_path, monkeypatch):
+    def with_usage(reply, **usage):
+        return {**reply, "usage": {"input_tokens": 100, "output_tokens": 10, **usage}}
+
+    replies = [
+        with_usage(_write(1, "x = 1\n"), cache_creation_input_tokens=5000),
+        with_usage(dict(DONE), cache_read_input_tokens=5000),
+    ]
+    code, result, _ = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    usage = result["modelUsage"]["claude-haiku-4-5"]
+    assert usage["cacheCreationInputTokens"] == 5000
+    assert usage["cacheReadInputTokens"] == 5000
+    # 200 in * 1.00 + 20 out * 5.00 + 5000 * 1.25 + 5000 * 0.10, per million
+    assert result["total_cost_usd"] == "0.0071"  # 0.00705 rounded up
+
+
+@pytest.mark.parametrize(
+    ("failure", "cost"),
+    [
+        (TimeoutError("read timed out"), None),  # may be billed: keep reservation
+        (direct.AnthropicHTTPError(529, {"error": {"type": "overloaded"}}), "0.0002"),
+    ],
+)
+def test_a_call_lost_in_transport_reports_no_actual_cost(
+    tmp_path, monkeypatch, failure, cost
+):
+    first = {
+        **_write(1, "x = 1\n"),
+        "usage": {"input_tokens": 100, "output_tokens": 10},
+    }
+    code, result, _ = _run_executor(tmp_path, monkeypatch, [first, failure], [])
+    assert code == 1
+    # 100 * $1 + 10 * $5 per million = 0.00015, rounded up
+    assert result["total_cost_usd"] == cost
+
+
+def test_a_tool_call_cut_off_at_the_output_limit_is_not_run(
+    tmp_path, monkeypatch, capsys
+):
+    """#1863: truncated write_file calls arrived without their content."""
+    truncated = {
+        "stop_reason": "max_tokens",
+        "content": [
+            {
+                "type": "tool_use",
+                "id": "ok",
+                "name": "list_files",
+                "input": {"pattern": "*.py"},
+            },
+            {
+                "type": "tool_use",
+                "id": "cut",
+                "name": "write_file",
+                "input": {"path": "app/a.py"},
+            },
+        ],
+        "usage": {"input_tokens": 3, "output_tokens": 2},
+    }
+    replies = [truncated, _write(2, "x = 1\n"), dict(DONE)]
+    code, _, sent = _run_executor(tmp_path, monkeypatch, replies, [(0, "")])
+    assert code == 0
+    results = {r["tool_use_id"]: r["content"] for r in sent[1][-1]["content"][:-1]}
+    assert results["cut"].startswith("ERROR: your reply reached the")
+    assert "output limit" in results["cut"]
+    assert not results["ok"].startswith("ERROR")  # complete calls still run
+
+
+def test_write_file_names_a_missing_argument(tmp_path, monkeypatch):
+    """#1862: five turns were lost to a bare KeyError: 'content'."""
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    (tmp_path / "a.py").write_text("x = 1\n")
+    with pytest.raises(ValueError, match="missing 'content'.*replacement text"):
+        direct._tool_write_file({"path": "a.py", "old_text": "x = 1"})
+    with pytest.raises(
+        ValueError, match=r"received arguments: \['new_text', 'old_text', 'path'\]"
+    ):
+        direct._tool_write_file({"path": "a.py", "old_text": "x", "new_text": "y"})
+    with pytest.raises(ValueError, match="missing 'path' and 'content'"):
+        direct._tool_write_file({})
+    assert (tmp_path / "a.py").read_text() == "x = 1\n"
+    assert direct.WRITTEN == set()
+    direct._tool_write_file({"path": "a.py", "old_text": "x = 1\n", "content": ""})
+    assert (tmp_path / "a.py").read_text() == ""
+
+
+def test_safe_ruff_fixes_are_applied_to_written_files(tmp_path, monkeypatch):
+    """#1866: unsorted imports and an unused import failed validation twice."""
+    pytest.importorskip("ruff")
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    (tmp_path / "untouched.py").write_text("import sys\nimport os\n")
+    direct._tool_write_file(
+        {"path": "app/a.py", "content": "import sys\nimport os\n\nprint(os, sys)\n"}
+    )
+    assert direct._lint_problems() == ""
+    assert (tmp_path / "app/a.py").read_text().startswith("import os\nimport sys\n")
+    # Only written files are touched.
+    assert (tmp_path / "untouched.py").read_text() == "import sys\nimport os\n"
+
+
+def test_autofix_runs_before_the_whitespace_probe_and_is_logged(
+    tmp_path, monkeypatch, capsys
+):
+    """Removing a trailing unused import leaves a blank line at EOF."""
+    pytest.importorskip("ruff")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "ALLOWED_PATHS", None)
+    monkeypatch.setattr(direct, "WRITTEN", set())
+    monkeypatch.setattr(direct, "RETAINED", set())
+    direct._tool_write_file({"path": "a.py", "content": "x = 1\n\nimport os\n"})
+    problems = direct._finish_problems()
+    assert "[git diff --check]" in problems
+    assert "blank line at EOF" in problems
+    assert '[OC-DIRECT-AUTOFIX] {"files": ["a.py"]}' in capsys.readouterr().out
+
+
+def test_autofix_is_best_effort(tmp_path, monkeypatch):
+    monkeypatch.setattr(direct, "REPO_ROOT", tmp_path)
+    monkeypatch.setattr(direct, "WRITTEN", {"a.py"})
+    (tmp_path / "a.py").write_text("x = 1\n")
+
+    def boom(*args, **kwargs):
+        raise subprocess.TimeoutExpired("ruff", 180)
+
+    monkeypatch.setattr(direct, "_run", boom)
+    direct._autofix_written()  # does not raise

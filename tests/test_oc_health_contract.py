@@ -272,3 +272,67 @@ def test_protected_provider_restoration_interrupts_only_when_work_is_depleted():
     )["exception_decision"]
     assert continuing["exception_class"] == "engineering_exception"
     assert continuing["should_interrupt_owner"] is False
+
+
+# --- Brain #206: lease evidence that was never observed -----------------------
+
+
+def test_default_snapshot_stays_strict_about_running_lease_cardinality():
+    report = evaluate(snapshot(issues=[issue(797, "oc-running")]))
+    assert report["healthy"] is False
+    assert [v["type"] for v in report["violations"]] == ["running_lease_cardinality"]
+    assert "unobserved" not in report
+
+
+def test_only_an_explicit_false_marks_lease_evidence_unobserved():
+    for value in (None, 0, "false", True):
+        report = evaluate(
+            snapshot(issues=[issue(797, "oc-running")], lease_evidence_observed=value)
+        )
+        assert any(v["type"] == "running_lease_cardinality" for v in report["violations"]), value
+
+
+def test_unobserved_lease_evidence_is_reported_not_asserted_or_hidden():
+    report = evaluate(
+        snapshot(
+            issues=[issue(797, "oc-running"), issue(5, "oc-queued")],
+            lease_evidence_observed=False,
+        )
+    )
+    assert report["healthy"] is True
+    assert report["violations"] == []
+    assert report["unobserved"] == [
+        {"type": "running_lease_evidence_not_observed", "issues": [797]}
+    ]
+
+
+def test_unobserved_lease_evidence_does_not_relax_any_other_invariant():
+    conflicted = evaluate(
+        snapshot(
+            issues=[issue(797, "oc-running", "oc-runtime-backoff")],
+            lease_evidence_observed=False,
+        )
+    )
+    assert [v["type"] for v in conflicted["violations"]] == ["executable_parked_conflict"]
+    assert conflicted["unobserved"][0]["issues"] == [797]
+
+    double = evaluate(
+        snapshot(
+            issues=[issue(2, "oc-queued", "oc-running")],
+            lease_evidence_observed=False,
+        )
+    )
+    assert any(v["type"] == "multiple_executable_states" for v in double["violations"])
+
+    # A lease that IS supplied is still validated even when others are unobserved.
+    bad_lease = evaluate(
+        snapshot(
+            issues=[issue(3, "oc-running")],
+            leases=[{"id": "x", "issue": 3, "active": True}],
+            lease_evidence_observed=False,
+        )
+    )
+    assert {v["type"] for v in bad_lease["violations"]} >= {
+        "lease_without_owner",
+        "lease_without_material_fingerprint",
+    }

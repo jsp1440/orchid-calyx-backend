@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -12,7 +12,7 @@ def assignment(status: str = "running") -> BuildAssignment:
         build_id="BUILD-BRAIN-108",
         agent_id="agent:brain-engineer",
         architecture_id="architecture:brain",
-        assigned_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+        assigned_at=datetime(2026, 8, 6, tzinfo=UTC),
         status=status,
     )
 
@@ -24,7 +24,7 @@ def test_dry_run_executor_is_deterministic_non_authoritative_preflight() -> None
         capability="brain.executor.dry-run",
         input_payload={"b": 2, "a": 1},
         evidence_uris=["brain://builds/108", "brain://builds/108"],
-        recorded_at=datetime(2026, 8, 6, 19, 30, tzinfo=timezone.utc),
+        recorded_at=datetime(2026, 8, 6, 19, 30, tzinfo=UTC),
     )
     first = executor.execute(request)
     second = executor.execute(request)
@@ -49,7 +49,7 @@ def test_executor_rejects_unsupported_capability() -> None:
                 capability="shell.execute",
                 input_payload={},
                 evidence_uris=["brain://builds/108"],
-                recorded_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+                recorded_at=datetime(2026, 8, 6, tzinfo=UTC),
             )
         )
 
@@ -63,6 +63,6 @@ def test_executor_requires_running_assignment() -> None:
                 capability="brain.executor.dry-run",
                 input_payload={},
                 evidence_uris=["brain://builds/108"],
-                recorded_at=datetime(2026, 8, 6, tzinfo=timezone.utc),
+                recorded_at=datetime(2026, 8, 6, tzinfo=UTC),
             )
         )

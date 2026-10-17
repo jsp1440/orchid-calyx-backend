@@ -81,6 +81,13 @@ def test_validating_is_waiting_validation():
     assert manifest["summary"]["validating"] == 1
 
 
+def test_scientific_gate_waits_externally_and_is_never_ready():
+    issues = [_issue(6, "taxonomy activation review", ["oc-scientific-gate"])]
+    summary = build_lane_manifest(issues)["summary"]
+    assert summary["ready"] == 0 and summary["active"] == 0
+    assert summary["complete"] == 0 and summary["blocked"] == 0
+
+
 def test_done_is_complete():
     issues = [_issue(5, "completed work", ["oc-done"])]
     manifest = build_lane_manifest(issues)

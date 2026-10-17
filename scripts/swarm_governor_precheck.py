@@ -137,7 +137,11 @@ def main() -> None:
         block("BLOCKED_NO_PROVIDER_ALLOWLIST")
         return
 
-    if provider and provider not in allowlist:
+    if not provider:
+        block("BLOCKED_MISSING_PROVIDER")
+        return
+
+    if provider not in allowlist:
         block("BLOCKED_PROVIDER_NOT_ALLOWED")
         return
 

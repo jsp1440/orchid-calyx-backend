@@ -32,6 +32,10 @@ PATH_RULES: tuple[tuple[str, tuple[str, ...]], ...] = (
             "scripts/oc_lane_",
             "scripts/oc_model_router",
             "scripts/oc_no_api_",
+            # The Calyx heartbeat runtime: the lease inferer already maps
+            # scheduler work to control-plane, so the verifier must agree.
+            "runtime/scheduler.py",
+            "runtime/bottlenecks.py",
         ),
     ),
     ("source-federation", ("app/source_federation/",)),

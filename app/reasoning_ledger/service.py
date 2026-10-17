@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import threading
 from collections import defaultdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from . import gate as publication_gate
@@ -250,7 +250,7 @@ class InMemoryReasoningLedgerService(ReasoningLedgerService):
             # conflicts, and conclusion confidence inside the locked region so
             # no concurrent append can slip through between the check and write.
             publication_gate.assert_publishable(current)
-            now = datetime.now(timezone.utc)
+            now = datetime.now(UTC)
             published = ReasoningLedger(
                 ledger_id=current.ledger_id,
                 tenant_id=current.tenant_id,

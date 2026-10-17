@@ -13,9 +13,10 @@ import json
 import os
 import re
 import subprocess
+import sys
 import time
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from urllib import request
 
@@ -35,9 +36,22 @@ from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_control_plane_health import build_health, collect_github_snapshot
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 from scripts.oc_swarm_write_set_verifier import parse_lease_claim, verify_write_set
+from scripts.swarm_anthropic_direct import _parse_allowed_paths
 
 BRANCH = "oc-autonomous-integration"
 AUTH_TAG = "OC-HOSTED-FACTORY-AUTHORIZATION-V1"
+# One owner grant covering a batch of issues, so the owner signs once per
+# batch instead of once per issue. It lists each issue with the digest of its
+# title and body, so it covers exactly the text the owner saw: an issue opened
+# or edited afterwards (an agent with the owner's token can do both) is not
+# covered. It lives on its own issue, never the hub, and must be typed by the
+# owner directly: a comment posted through an app carries
+# performed_via_github_app and never counts, so the maker cannot authorize its
+# own work.
+STANDING_TAG = "OC-HOSTED-STANDING-AUTHORIZATION-V1"
+STANDING_ISSUE = 1924
+STANDING_MAX_DAYS = 31
+STANDING_MAX_ISSUES = 50
 ATTEMPT_TAG = "OC-HOSTED-CHECKER-ATTEMPT-V1"
 MODEL = "claude-haiku-4-5"
 RESERVATION = "0.08"
@@ -53,6 +67,39 @@ STATE_LABELS = {
     "oc-runtime-backoff",
     "oc-repair-backoff",
 }
+# What each boundary flag means for the checker. Without definitions the
+# first live checker (#1843, run 38714227054) read touches_production as "code
+# that will eventually run in production" and owner-gated a plain runtime fix.
+# The integration branch is not isolated, though (#1851 review): migrations run
+# against the production database from it and the control plane executes it,
+# so those areas are named as touching production.
+BOUNDARY_DEFINITIONS = (
+    "Judge each boundary by what merging this change into the integration "
+    "branch oc-autonomous-integration does. That branch is not deployed to the "
+    "Render services, but it is not isolated either: database migrations run "
+    "against the production database from it, and the control plane (the swarm "
+    "controller, completion lane, checker and their scripts and workflows) "
+    "executes code from it with live credentials. touches_production: TRUE "
+    "when the change adds or alters database migrations, schema or the models "
+    "and tables migrations act on (alembic/, migrations/, ORM models, DDL); "
+    "any workflow, CI, deploy or infrastructure configuration; control-plane, "
+    "orchestration, scheduler, provider or governor code under scripts/ or "
+    "app/calyx_orchestrator/; or code that directly reads or mutates production "
+    "data or live external services when it runs, including tests or scripts "
+    "that CI runs with production credentials. It is FALSE only for "
+    "application code, tests and docs outside those areas that would reach "
+    "the deployed services after a separate owner-gated promotion to main. "
+    "changes_credentials: the change adds, rotates, exposes or alters handling "
+    "of secrets, tokens or keys. changes_scientific_authority: the change "
+    "publishes, activates or alters governed scientific records, taxonomy or "
+    "provenance rules. exposes_sensitive_locality: the change can reveal "
+    "protected species localities or coordinates, or weakens or removes their "
+    "redaction or generalization. spends_money: the change itself triggers or "
+    "raises paid usage (not this separately authorized review call). "
+    "destructive: the change drops or deletes schema, data, branches or "
+    "history, or irreversibly overwrites them. When a definition is genuinely "
+    "ambiguous for this diff, set the flag true and explain why in reason."
+)
 RISK_FIELDS = (
     "touches_production",
     "changes_credentials",
@@ -81,6 +128,34 @@ PROTECTED = (
     "docs/AGENT",
     "docs/SOFTWARE-FACTORY",
     "migrations/",
+    # Changes here run DDL against the production database on push to the
+    # integration branch (calyx-durable-autonomy-neon-proof.yml), so they are
+    # never auto-integrated.
+    "alembic/",
+    "app/calyx_orchestrator/durable_reservoir",
+    "app/calyx_orchestrator/bounded_dispatcher",
+    "app/calyx_orchestrator/leaf_worker",
+    "app/calyx_orchestrator/owner_authorization_gate",
+    # CI runs these with the production DATABASE_URL (the durable proof on
+    # integration pushes; the canonical matrix proof at pull_request time).
+    "tests/test_durable_reservoir_postgres",
+    "tests/test_durable_e2e_conductor_proof",
+    "scripts/prove_real_canonical_matrix_slice",
+    # Pull-request workflows run these with production credentials
+    # (DATABASE_URL, CALYX_OWNER_ACCESS_CODE, MISSION_CONTROL_SMOKE_TOKEN).
+    "scripts/build_078_postgres_validation",
+    "scripts/build_079_postgres_validation",
+    "scripts/run_with_postgres_validation_lock",
+    "app/publication/",
+    "app/missions/",
+    "app/routers/mission_control",
+    "app/main.py",
+    "tests/test_build_078_",
+    "tests/test_build_079_",
+    "scripts/discover_hassler_release_intake",
+    "app/executive_telemetry/",
+    "scripts/smoke_mission_control_telemetry",
+    "tests/test_mission_control_telemetry_001f",
     "Dockerfile",
     "render",
 )
@@ -114,6 +189,17 @@ def api(repository, path, payload=None, method="GET"):
     return json.loads(result.stdout) if result.stdout.strip() else None
 
 
+def repository_default_branch(repository):
+    result = subprocess.run(
+        ["gh", "api", f"repos/{repository}", "--jq", ".default_branch"],
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=45,
+    )
+    return result.stdout.strip()
+
+
 def pages(repository, path, field=None):
     rows = []
     for page in range(1, 6):
@@ -145,14 +231,12 @@ def parse_tag(body, tag):
     return json.loads(matches[0])
 
 
-def authorization(issue, comments, repository, now=None):
-    """A scoped owner record enrolls work; maker-authored PR markers cannot."""
-    records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
-    require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
-    record = records[0]
+def _owner_record(record, repository):
+    """The owner's own unedited comment, never one posted through an app."""
     require(
         record["user"]["login"] == repository.split("/")[0]
-        and record.get("author_association") == "OWNER",
+        and record.get("author_association") == "OWNER"
+        and record.get("performed_via_github_app") is None,
         "authorization_not_owner",
     )
     require(
@@ -160,20 +244,19 @@ def authorization(issue, comments, repository, now=None):
         and record.get("created_at") == record.get("updated_at"),
         "authorization_edited",
     )
-    grant = parse_tag(record["body"], AUTH_TAG)
-    require(
-        grant.get("repository") == repository
-        and grant.get("issue") == issue["number"]
-        and grant.get("issue_material") == issue_material(issue)
-        and grant.get("target") == BRANCH
-        and type(grant.get("checker_calls")) is int
-        and grant.get("checker_calls") == 1
-        and grant.get("risk") in {"low", "moderate"},
-        "authorization_binding_invalid",
-    )
-    expiry = datetime.fromisoformat(grant["expires_at"].replace("Z", "+00:00"))
-    require(expiry > (now or datetime.now(timezone.utc)), "authorization_expired")
-    allowed = grant.get("allowed_paths")
+
+
+def _expiry(value):
+    """A timezone-aware timestamp, or a refusal (never a stray TypeError)."""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("authorization_timestamp_invalid") from None
+    require(moment.tzinfo is not None, "authorization_timestamp_invalid")
+    return moment
+
+
+def _safe_allowed_paths(allowed):
     require(
         isinstance(allowed, list)
         and 0 < len(allowed) <= 12
@@ -188,7 +271,158 @@ def authorization(issue, comments, repository, now=None):
         ),
         "unsafe_allowed_paths",
     )
+
+
+def authorization(issue, comments, repository, now=None, standing=None):
+    """A scoped owner record enrolls work; maker-authored PR markers cannot.
+
+    A per-issue record, when present, decides alone. Without one, ``standing``
+    (the comments of ``STANDING_ISSUE``, or a callable returning them, read only
+    then) may supply the owner's standing grant.
+    """
+    records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
+    if not records and standing is not None:
+        rows = standing() if callable(standing) else standing
+        return standing_authorization(issue, rows, repository, now)
+    require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
+    record = records[0]
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], AUTH_TAG)
+    require(
+        grant.get("repository") == repository
+        and grant.get("issue") == issue["number"]
+        and grant.get("issue_material") == issue_material(issue)
+        and grant.get("target") == BRANCH
+        and type(grant.get("checker_calls")) is int
+        and grant.get("checker_calls") == 1
+        and grant.get("risk") in {"low", "moderate"},
+        "authorization_binding_invalid",
+    )
+    expiry = _expiry(grant["expires_at"])
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
+    _safe_allowed_paths(grant.get("allowed_paths"))
     return {**grant, "comment_id": record["id"], "digest": digest(grant)}
+
+
+def standing_authorization(issue, standing, repository, now=None):
+    """Admit one issue under the owner's standing grant.
+
+    The grant lists each covered issue number with the ``issue_material`` digest
+    of its title and body, exactly as the per-issue record binds one issue, so
+    it covers only text that existed when the owner signed: an issue opened or
+    edited afterwards is refused. Every later phase compares the returned grant,
+    so an edit mid-cycle also fails closed. The issue must be open, not a pull
+    request, and opened by the owner account. Allowed paths come from the issue
+    body through the executor's own parser. Low risk only, at most
+    ``STANDING_MAX_ISSUES`` issues, expiring at most ``STANDING_MAX_DAYS`` after
+    the grant was posted. One checker call per issue still holds, because each
+    attempt record binds to the grant comment on that issue.
+
+    Only owner-typed rows are considered, so a stray tagged comment from anyone
+    else cannot make the owner's grant ambiguous; two owner grants still are.
+    """
+    owner = repository.split("/")[0]
+    records = [
+        c
+        for c in standing
+        if STANDING_TAG in (c.get("body") or "")
+        and (c.get("user") or {}).get("login") == owner
+        and c.get("author_association") == "OWNER"
+        and c.get("performed_via_github_app") is None
+    ]
+    require(len(records) == 1, "standing_authorization_missing_or_ambiguous")
+    record = records[0]
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], STANDING_TAG)
+    require(isinstance(grant, dict), "standing_authorization_invalid")
+    covered = grant.get("issues")
+    require(
+        set(grant) == {"repository", "target", "risk", "expires_at", "issues"}
+        and grant["repository"] == repository
+        and grant["target"] == BRANCH
+        and grant["risk"] == "low"
+        and isinstance(covered, dict)
+        and 0 < len(covered) <= STANDING_MAX_ISSUES
+        and all(
+            isinstance(k, str)
+            and k.isdigit()
+            and not k.startswith("0")
+            and isinstance(v, str)
+            and re.fullmatch(r"[0-9a-f]{64}", v)
+            for k, v in covered.items()
+        ),
+        "standing_authorization_invalid",
+    )
+    expiry = _expiry(grant["expires_at"])
+    lifetime = expiry - _expiry(record["created_at"])
+    require(
+        lifetime.total_seconds() <= STANDING_MAX_DAYS * 86400,
+        "standing_authorization_invalid",
+    )
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
+    require(str(issue["number"]) in covered, "issue_outside_standing_authorization")
+    require(
+        covered[str(issue["number"])] == issue_material(issue),
+        "issue_material_changed",
+    )
+    require(
+        issue.get("state") == "open" and not issue.get("pull_request"),
+        "issue_not_open",
+    )
+    require(
+        (issue.get("user") or {}).get("login") == owner,
+        "issue_not_owner_opened",
+    )
+    allowed = sorted(_parse_allowed_paths(issue.get("body") or "") or ())
+    _safe_allowed_paths(allowed)
+    return {
+        "repository": repository,
+        "issue": issue["number"],
+        "issue_material": issue_material(issue),
+        "target": BRANCH,
+        "checker_calls": 1,
+        "risk": "low",
+        "expires_at": grant["expires_at"],
+        "allowed_paths": allowed,
+        "standing": True,
+        "comment_id": record["id"],
+        "digest": digest(grant),
+    }
+
+
+def standing_comments(repository):
+    return pages(repository, f"issues/{STANDING_ISSUE}/comments")
+
+
+def checker_attempt_reserved(grant, comments):
+    """Whether this owner authorization has already spent its checker call.
+
+    ``checker_calls`` is 1 per authorization record, so each attempt record
+    names the authorization it was reserved under. A fresh owner record (a new
+    comment, after the old one is withdrawn) grants exactly one new call; the
+    old attempt stays on the issue as evidence. An attempt record that cannot
+    be attributed to a different authorization -- unparseable, unbound, not
+    written by the workflow bot, or edited -- counts against this one.
+    """
+    for comment_row in comments:
+        body = comment_row.get("body") or ""
+        if ATTEMPT_TAG not in body:
+            continue
+        genuine = (comment_row.get("user") or {}).get(
+            "login"
+        ) == "github-actions[bot]" and (
+            comment_row.get("created_at")
+            and comment_row.get("created_at") == comment_row.get("updated_at")
+        )
+        if not genuine:
+            return True
+        try:
+            bound = parse_tag(body, ATTEMPT_TAG).get("authorization")
+        except (ValueError, AttributeError):
+            return True
+        if bound is None or bound == grant["comment_id"]:
+            return True
+    return False
 
 
 def validate_material(context, issue, pr, lease, files, grant, dependency_issues):
@@ -226,18 +460,26 @@ def validate_material(context, issue, pr, lease, files, grant, dependency_issues
     require(match, "lease_malformed")
     claim = json.loads(match[1])
     # Recompute the original running packet, without mutating current queue state.
-    packet = build_work_packet(
-        issue_number=str(context["issue"]),
-        title=issue["title"],
-        body=issue.get("body") or "",
-        labels=(labels - {"oc-validating"}) | {"oc-running"},
-    )
+    # A repair attempt is claimed while the issue carries oc-repair, and the
+    # worker's own settlement removes that label on the way to oc-validating.
+    # Accept that one engine-removed label and nothing else, so a repair attempt
+    # stays bound to the same issue material instead of failing closed forever.
+    running = (labels - {"oc-validating"}) | {"oc-running"}
+    fingerprints = {
+        build_work_packet(
+            issue_number=str(context["issue"]),
+            title=issue["title"],
+            body=issue.get("body") or "",
+            labels=candidate,
+        ).fingerprint
+        for candidate in (running, running | {"oc-repair"})
+    }
     require(
         claim.get("schema") == "oc.swarm-claim.v1"
         and claim.get("issue_number") == context["issue"]
         and claim.get("lease_id")
         == f"{context['repository']}:{context['worker_run']}:{context['worker_attempt']}:{context['issue']}"
-        and claim.get("material_fingerprint") == packet.fingerprint,
+        and claim.get("material_fingerprint") in fingerprints,
         "lease_binding_changed",
     )
     deps = dependencies(issue)
@@ -271,11 +513,36 @@ def validate_material(context, issue, pr, lease, files, grant, dependency_issues
     return write_set
 
 
+def worker_run_trusted(worker, context, default_branch):
+    """The worker is a completed, successful run of the canonical controller.
+
+    A dispatched wave runs on the integration ref. A scheduled run is recorded
+    on the default branch (GitHub runs schedules from it) and checks out the
+    integration head itself; its planner only takes paid work when that
+    checkout is the integration head. Any other trigger (a PR closing, an
+    issue event) runs from its own SHA and is never a trusted worker.
+    """
+    from scripts.oc_controller_trust import on_trusted_controller_ref
+
+    on_trusted_ref = on_trusted_controller_ref(
+        worker, default_branch, repository=context.get("repository")
+    )
+    return (
+        worker.get("path") == ".github/workflows/orchid-swarm-controller.yml"
+        and on_trusted_ref
+        and worker.get("run_attempt") == context["worker_attempt"]
+        and worker.get("status") == "completed"
+        and worker.get("conclusion") == "success"
+    )
+
+
 def inspect(context):
     repo, number = context["repository"], context["issue"]
     issue = api(repo, f"issues/{number}")
     comments = pages(repo, f"issues/{number}/comments")
-    grant = authorization(issue, comments, repo)
+    grant = authorization(
+        issue, comments, repo, standing=lambda: standing_comments(repo)
+    )
     pr = api(repo, f"pulls/{context['pr']}")
     lease = api(repo, f"issues/comments/{context['lease']}")
     files = pages(repo, f"pulls/{context['pr']}/files")
@@ -288,12 +555,9 @@ def inspect(context):
     trusted = api(repo, f"contents/{path}?ref={context['trusted_sha']}")
     require(candidate["sha"] == trusted["sha"], "validation_definition_changed")
     worker = api(repo, f"actions/runs/{context['worker_run']}")
+    default_branch = repository_default_branch(repo)
     require(
-        worker["path"] == ".github/workflows/orchid-swarm-controller.yml"
-        and worker["head_branch"] == BRANCH
-        and worker["run_attempt"] == context["worker_attempt"]
-        and worker["status"] == "completed"
-        and worker["conclusion"] == "success",
+        worker_run_trusted(worker, context, default_branch),
         "worker_completion_not_proven",
     )
     starts = [
@@ -456,7 +720,7 @@ def prepare(directory):
                 raise
             time.sleep(15)
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     intent = WorkIntent(
@@ -504,7 +768,7 @@ def reserve(directory):
     material = inspect(context)
     require(material["grant"] == state["grant"], "authorization_changed")
     require(
-        not any(ATTEMPT_TAG in c["body"] for c in material["comments"]),
+        not checker_attempt_reserved(material["grant"], material["comments"]),
         "checker_attempt_already_reserved",
     )
     from decimal import Decimal
@@ -543,6 +807,88 @@ def reserve(directory):
     (directory / "prepared.json").write_text(json.dumps(state))
 
 
+_FENCED_JSON = re.compile(r"\A```(?:json)?[ \t]*\n(?P<body>.*)\n```\Z", re.DOTALL)
+
+
+def _review_json(text):
+    """Decode the checker's single JSON object, tolerating one Markdown fence.
+
+    The first live checker call (#1843, run 38702689548) returned 200 with
+    usage but failed to decode: models often wrap a JSON-only answer in a
+    ```json fence. Exactly one surrounding fence is removed; any other prose,
+    a second object or a non-object still fails closed with a named reason.
+    """
+    require(isinstance(text, str), "checker_output_invalid")
+    text = text.strip()
+    fenced = _FENCED_JSON.match(text)
+    if fenced:
+        text = fenced.group("body").strip()
+    try:
+        review = json.loads(text, object_pairs_hook=_unique_keys)
+    except json.JSONDecodeError:
+        raise ValueError("checker_output_not_json") from None
+    require(isinstance(review, dict), "checker_output_not_json")
+    return review
+
+
+def _unique_keys(pairs):
+    """A repeated key (``"verdict": "fail", ..., "verdict": "pass"``) is ambiguous;
+    json.loads would silently keep the last one."""
+    keys = [key for key, _ in pairs]
+    require(len(keys) == len(set(keys)), "checker_output_ambiguous")
+    return dict(pairs)
+
+
+# The checker's answer is constrained to REVIEW_SCHEMA with structured outputs
+# (output_config.format), so the API guarantees a single JSON object.
+# A "{" prefill (#1870) still failed twice as checker_output_not_json (#1858,
+# #1888). The parser below stays strict as a second line of defence.
+# Structured outputs are supported by claude-haiku-4-5;
+# STRUCTURED_OUTPUT_MODELS pins that coupling in tests.
+STRUCTURED_OUTPUT_MODELS = frozenset({"claude-haiku-4-5"})
+REVIEW_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "verdict": {"type": "string", "enum": ["pass", "fail", "inconclusive"]},
+        "reason": {"type": "string"},
+        "risk": {
+            "type": "string",
+            "enum": ["low", "moderate", "high", "owner_gated"],
+        },
+        "reversible": {"type": "boolean"},
+        **{field: {"type": "boolean"} for field in RISK_FIELDS},
+    },
+    "required": ["verdict", "reason", "risk", "reversible", *RISK_FIELDS],
+    "additionalProperties": False,
+}
+
+
+def _record_unparsed(directory, response):
+    """Keep what a failed checker answer looked like, without its verdict use.
+
+    Two failures (#1858, #1888) could not be diagnosed: only the reason code
+    survived. The bounded text goes to the evidence directory only; the log
+    gets its shape, never its content.
+    """
+    content = response.get("content")
+    text = ""
+    if isinstance(content, list) and content and isinstance(content[0], dict):
+        text = content[0].get("text") if isinstance(content[0].get("text"), str) else ""
+    (directory / "checker_output.txt").write_text(text[:8000])
+    print(
+        json.dumps(
+            {
+                "checker_output": {
+                    "stop_reason": response.get("stop_reason"),
+                    "blocks": len(content) if isinstance(content, list) else None,
+                    "chars": len(text),
+                }
+            }
+        ),
+        file=sys.stderr,
+    )
+
+
 def parse_review(response):
     require(response.get("stop_reason") == "end_turn", "checker_did_not_finish")
     content = response.get("content")
@@ -552,7 +898,7 @@ def parse_review(response):
         and content[0]["type"] == "text",
         "checker_output_invalid",
     )
-    review = json.loads(content[0]["text"])
+    review = _review_json(content[0]["text"])
     require(
         set(review) == {"verdict", "reason", "risk", "reversible", *RISK_FIELDS},
         "checker_schema_invalid",
@@ -578,16 +924,17 @@ def check(directory):
         "test weakening and scope expansion. CI success alone is not acceptance. If context is insufficient use "
         "inconclusive. Do not assume unseen code is safe. No tools, execution or writes are available. "
         "Return ONLY a JSON object with exactly: verdict (pass/fail/inconclusive), reason (concise evidence-based "
-        "findings, not private reasoning), risk (low/moderate/high/owner_gated), reversible (boolean), "
+        "findings, not private reasoning, under 1500 characters), risk (low/moderate/high/owner_gated), reversible (boolean), "
         + ", ".join(RISK_FIELDS)
         + " (each boolean). Mark all applicable governed boundaries accurately. "
-        "spends_money describes the proposed code/integration, not this separately authorized review call."
+        + BOUNDARY_DEFINITIONS
     )
     payload = {
         "model": MODEL,
         "max_tokens": 1800,
         "system": system,
         "messages": [{"role": "user", "content": json.dumps(state["prompt"])}],
+        "output_config": {"format": {"type": "json_schema", "schema": REVIEW_SCHEMA}},
     }
     req = request.Request(
         "https://api.anthropic.com/v1/messages",
@@ -614,7 +961,12 @@ def check(directory):
         and usage["output_tokens"] <= 1800,
         "checker_usage_unconfirmed",
     )
-    (directory / "review.json").write_text(json.dumps(parse_review(response)))
+    try:
+        review = parse_review(response)
+    except ValueError:
+        _record_unparsed(directory, response)
+        raise
+    (directory / "review.json").write_text(json.dumps(review))
 
 
 def record(directory):
@@ -639,7 +991,36 @@ def record(directory):
     )
     state["review"] = review
     state["usage"] = json.loads((directory / "usage.json").read_text())
+    state["actual_usd"] = settle_checker_cost(state["context"], state["usage"])
     (directory / "prepared.json").write_text(json.dumps(state))
+
+
+def settle_checker_cost(context, usage_record):
+    """Settle the checker's reservation with its real cost, best effort.
+
+    ``reserve`` records only the $0.08 reservation, before credentials exist.
+    The provider returned usage, so the real cost is now known; one settle line
+    replaces that reservation in the ledger totals. Any failure (unpriced or
+    malformed usage, ledger write error) leaves the conservative reservation
+    standing and never fails the record phase.
+    """
+    from scripts.swarm_anthropic_direct import _actual_cost_usd
+    from scripts.swarm_governor_github_ledger import append_settlement
+
+    try:
+        actual = _actual_cost_usd(MODEL, (usage_record or {}).get("usage") or {})
+        if actual is None:
+            return None
+        written = append_settlement(
+            context["repository"],
+            1330,
+            run_id=str(context["completion_run"]),
+            provider="anthropic-checker",
+            actual_usd=actual,
+        )
+        return actual if written else None
+    except Exception:  # noqa: BLE001 - the reservation already covers the run
+        return None
 
 
 def decide(state, current_material, current_validation, assignment, evidence):

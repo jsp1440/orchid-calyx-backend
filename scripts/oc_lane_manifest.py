@@ -90,6 +90,7 @@ LABEL_STATES = {
     "oc-repair-backoff": "BLOCKED",
     "oc-runtime-backoff": "BLOCKED",
     "oc-owner-gate": "WAITING_EXTERNAL",
+    "oc-scientific-gate": "WAITING_EXTERNAL",
     "oc-done": "COMPLETE",
 }
 
@@ -97,7 +98,7 @@ LABEL_STATES = {
 _LABEL_PRECEDENCE = [
     "oc-running", "oc-validating", "oc-repair", "oc-queued",
     "oc-repair-backoff", "oc-runtime-backoff", "oc-blocked",
-    "oc-owner-gate", "oc-done",
+    "oc-owner-gate", "oc-scientific-gate", "oc-done",
 ]
 
 

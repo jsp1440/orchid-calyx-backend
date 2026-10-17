@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 SUPERVISOR_TOKEN_SHA256_ENV = "CALYX_SANDBOX_SUPERVISOR_TOKEN_SHA256"
@@ -182,7 +182,8 @@ class SupervisorValidationReceipt:
             raise ValueError("SANDBOX_SUPERVISOR_RECEIPT_SUCCESS_CODE_INVALID")
         raw_issued_at = str(value.get("issued_at") or "").strip()
         try:
-            issued_at = datetime.fromisoformat(raw_issued_at.replace("Z", "+00:00"))
+            normalized_issued_at = raw_issued_at.replace("Z", "+00:00")
+            issued_at = datetime.fromisoformat(normalized_issued_at)
         except ValueError as exc:
             raise ValueError("SANDBOX_SUPERVISOR_RECEIPT_TIME_INVALID") from exc
         if issued_at.tzinfo is None:
@@ -196,7 +197,7 @@ class SupervisorValidationReceipt:
             return_code=return_code,
             stdout_sha256=stdout_digest,
             stderr_sha256=stderr_digest,
-            issued_at=issued_at.astimezone(timezone.utc),
+            issued_at=issued_at.astimezone(UTC),
         )
 
     def verify_for(self, request: ValidationRequestEnvelope) -> None:

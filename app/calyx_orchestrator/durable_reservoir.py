@@ -48,7 +48,7 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import exc as sa_exc
@@ -116,14 +116,14 @@ class SettlementResult:
 def _ts_to_dt(ts: float | None) -> datetime | None:
     if ts is None:
         return None
-    return datetime.fromtimestamp(ts, tz=timezone.utc)
+    return datetime.fromtimestamp(ts, tz=UTC)
 
 
 def _dt_to_ts(dt: datetime | None) -> float | None:
     if dt is None:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.timestamp()
 
 
@@ -362,7 +362,7 @@ class DurableOrchestrate:
             completed = self._completed_keys()
             all_rows = self._all_rows()
             ready = [r for r in all_rows if _is_ready_row(r, completed)]
-            ready.sort(key=lambda r: (r.priority, r.created_at or datetime.min.replace(tzinfo=timezone.utc)))
+            ready.sort(key=lambda r: (r.priority, r.created_at or datetime.min.replace(tzinfo=UTC)))
             if limit is not None:
                 ready = ready[:limit]
             return [_row_to_leaf(r) for r in ready]
@@ -773,7 +773,7 @@ class DurableOrchestrate:
         active = [r for r in all_rows if r.state in _ACTIVE]
         ready = sorted(
             [r for r in all_rows if _is_ready_row(r, completed)],
-            key=lambda r: (r.priority, r.created_at or datetime.min.replace(tzinfo=timezone.utc)),
+            key=lambda r: (r.priority, r.created_at or datetime.min.replace(tzinfo=UTC)),
         )
         blocked = [r for r in all_rows if r.state == TaskState.BLOCKED]
         backoff = [r for r in all_rows if r.state == TaskState.REPAIR_BACKOFF]

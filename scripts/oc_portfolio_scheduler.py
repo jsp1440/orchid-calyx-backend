@@ -88,10 +88,16 @@ BLOCKED = "oc-blocked"
 RUNTIME_BACKOFF = "oc-runtime-backoff"
 REPAIR_BACKOFF = "oc-repair-backoff"
 OWNER_GATE = "oc-owner-gate"
+#: Held for human scientific review (scientific authority, taxonomy activation,
+#: governed publication). Distinct from the owner gate so the controller can
+#: report scientific holds separately; like it, never an execution candidate.
+SCIENTIFIC_GATE = "oc-scientific-gate"
 DONE = "oc-done"
 
 #: Labels that hold an issue outside the execution portfolio entirely.
-NON_EXECUTABLE_LABELS = (BLOCKED, OWNER_GATE, DONE, RUNTIME_BACKOFF, REPAIR_BACKOFF)
+NON_EXECUTABLE_LABELS = (
+    BLOCKED, OWNER_GATE, SCIENTIFIC_GATE, DONE, RUNTIME_BACKOFF, REPAIR_BACKOFF
+)
 
 PRIORITY_LABELS = tuple(f"oc-p{level}" for level in range(LOWEST_PRIORITY + 1))
 
@@ -138,11 +144,21 @@ def resolve_priority(issue: dict) -> tuple[int, str]:
 
 
 def durable_pr_index(pull_requests: Iterable[dict]) -> dict[int, int]:
-    """Map issue number -> lowest open durable integration PR number."""
+    """Map issue number -> lowest open durable integration PR number.
+
+    The controller snapshots PRs with ``--state all`` (blocked reconciliation
+    needs merged state), so a PR closed without merging must be skipped here:
+    it is no longer durable work, and counting it suppressed its issue forever.
+    Open and merged PRs, and rows without a state, still count.
+    """
     index: dict[int, int] = {}
     for pr in pull_requests or []:
         number = pr.get("number")
         if number is None:
+            continue
+        state = str(pr.get("state") or "").upper()
+        merged = bool(pr.get("mergedAt") or pr.get("merged_at") or pr.get("merged"))
+        if state == "CLOSED" and not merged:
             continue
         for raw_issue in AUTO_ISSUE_MARKER_RE.findall(str(pr.get("body") or "")):
             issue = int(raw_issue)
