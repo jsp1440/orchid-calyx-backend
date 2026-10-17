@@ -769,6 +769,9 @@ def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
         for item in json.loads(path.read_text(encoding="utf-8"))["candidates"]
         if item["source"] == brain_pulse.MISSION_SOURCE
     ]
+    # Without this, all([]) below would pass if the pulse stopped reporting
+    # mission candidates at all.
+    assert len(reported_brain_candidates) >= 2
     transport = FakeGitHub()
     monkeypatch.setattr(materialize, "github", transport)
     output = tmp_path / "github-output"
