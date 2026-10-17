@@ -521,3 +521,52 @@ def test_lease_evidence_outranks_post_claim_observed_running():
         observe=lambda n: ["oc-running"],
     )["matrix"]
     assert got["state"] == "failed"
+
+
+def test_parked_lease_receipts_do_not_mark_a_gated_lane_recovering():
+    got = mods(
+        modules_plan(atlas=lane("gated", gates={"held": [9]})),
+        {"parked_lease_recovered": [{"issue_number": 9}]},
+    )["atlas"]
+    assert got["state"] == "blocked"
+
+
+class Clock:
+    def __init__(self):
+        self.now = 0.0
+
+    def __call__(self):
+        return self.now
+
+
+def test_observation_stops_when_the_shared_budget_is_spent():
+    clock, seen = Clock(), []
+
+    def slow(n):
+        seen.append(n)
+        clock.now += 8
+        return ["oc-queued"]
+
+    doc = modules_plan(
+        matrix=lane("replenishable", planned=[1, 2, 3, 4, 5]),
+        atlas=lane("replenishable", planned=[6]),
+    )
+    got = lanes.module_states(
+        doc["module_lanes"], {}, observe=slow, budget=20, clock=clock
+    )
+    assert seen == [1, 2, 3]  # budget is shared across lanes, not per lane
+    assert got["matrix"]["unresolved"] == [4, 5]
+    assert got["atlas"]["state"] == "unknown" and got["atlas"]["unresolved"] == [6]
+
+
+def test_label_reads_use_the_short_timeout(monkeypatch):
+    seen = {}
+    gh = lanes.GitHub("o/r")
+
+    def fake(path, payload=None, method="GET", timeout=45):
+        seen["timeout"] = timeout
+        return {"labels": [{"name": "oc-running"}, "x"]}
+
+    monkeypatch.setattr(gh, "_api", fake)
+    assert gh.labels(5) == ["oc-running", "x"]
+    assert seen["timeout"] == lanes.OBSERVE_CALL_TIMEOUT < 45

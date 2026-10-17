@@ -27,6 +27,7 @@ import json
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -42,6 +43,10 @@ LANE_STATES = ("working", "idle", "blocked", "failed", "recovering")
 MODULE_STATES = LANE_STATES + ("unknown",)
 #: Planned issues re-observed per wave; the rest stay unresolved (fail closed).
 MAX_OBSERVED = 25
+#: Shared wall-clock budget for all post-claim reads, and the cap on any one read, so
+#: stalled API calls cannot outlast the workflow step before the record publishes.
+OBSERVE_BUDGET_SECONDS = 20.0
+OBSERVE_CALL_TIMEOUT = 8
 
 #: oc.module-lanes.v1 state -> lane state when no stronger evidence applies.
 _MODULE_BASE_STATE = {
@@ -133,17 +138,24 @@ def lane_state(
     return _REASON_STATE.get(reason, "blocked"), reason
 
 
-def observe_planned(planned: set[int], observe: Any) -> tuple[set[int], set[int]]:
+def observe_planned(
+    planned: set[int],
+    observe: Any,
+    *,
+    budget: float = OBSERVE_BUDGET_SECONDS,
+    clock: Any = time.monotonic,
+) -> tuple[set[int], set[int]]:
     """(running, unresolved) among ``planned`` after claiming.
 
     ``observe(issue)`` returns the issue's current label names or raises. Only
-    ``oc-running`` is lease evidence. Failed reads and issues beyond
-    ``MAX_OBSERVED`` are unresolved, never assumed running or idle.
+    ``oc-running`` is lease evidence. Failed reads, issues beyond
+    ``MAX_OBSERVED`` and issues reached after ``budget`` seconds are unresolved, never assumed running or idle.
     """
     running: set[int] = set()
     unresolved: set[int] = set()
+    deadline = clock() + budget
     for position, number in enumerate(sorted(planned)):
-        if observe is None or position >= MAX_OBSERVED:
+        if observe is None or position >= MAX_OBSERVED or clock() >= deadline:
             unresolved.add(number)
             continue
         try:
@@ -173,6 +185,8 @@ def module_states(
     recovery: dict,
     *,
     observe: Any = None,
+    budget: float = OBSERVE_BUDGET_SECONDS,
+    clock: Any = time.monotonic,
 ) -> dict:
     """State per module lane. Precedence, strongest first:
 
@@ -188,9 +202,15 @@ def module_states(
     lanes = module_lanes.get("lanes") if isinstance(module_lanes, dict) else None
     if not isinstance(lanes, dict):
         return {}
+    end = clock() + budget
+
+    def deadline_left() -> float:
+        return max(end - clock(), 0.0)
+
     errored = _issue_set(recovery.get("errors"), "issue", "issue_number")
     recovered: set[int] = set()
-    for key in ("recovered", "stranded_recovered", "parked_lease_recovered"):
+    # Parked-lease receipts leave labels unchanged, so they are not recovery.
+    for key in ("recovered", "stranded_recovered"):
         recovered |= _issue_set(recovery.get(key), "issue_number", "issue")
     out: dict[str, dict] = {}
     for key, lane in lanes.items():
@@ -199,7 +219,9 @@ def module_states(
         try:
             members = _lane_issues(lane)
             planned = _issue_set(lane.get("planned"))
-            observed_running, unresolved = observe_planned(planned, observe)
+            observed_running, unresolved = observe_planned(
+                planned, observe, budget=deadline_left(), clock=clock
+            )
             if members & errored:
                 state, reason = "failed", "lease_reconcile_errors"
             elif members & recovered:
@@ -345,7 +367,13 @@ class GitHub:
             raise ValueError("invalid repository")
         self.repository = repository
 
-    def _api(self, path: str, payload: dict | None = None, method: str = "GET") -> Any:
+    def _api(
+        self,
+        path: str,
+        payload: dict | None = None,
+        method: str = "GET",
+        timeout: int = 45,
+    ) -> Any:
         args = ["gh", "api", "--method", method, f"repos/{self.repository}/{path}"]
         if payload is not None:
             args += ["--input", "-"]
@@ -354,13 +382,13 @@ class GitHub:
             input=json.dumps(payload) if payload is not None else None,
             capture_output=True,
             text=True,
-            timeout=45,
+            timeout=timeout,
             check=True,
         )
         return json.loads(result.stdout) if result.stdout.strip() else None
 
     def labels(self, issue: int) -> list[str]:
-        data = self._api(f"issues/{issue}")
+        data = self._api(f"issues/{issue}", timeout=OBSERVE_CALL_TIMEOUT)
         if not isinstance(data, dict) or not isinstance(data.get("labels"), list):
             raise TypeError("issue_labels_unreadable")
         return [
