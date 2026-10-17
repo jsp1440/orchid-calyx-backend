@@ -23,6 +23,9 @@ from app.canonical_brain.api import create_brain_router
 from app.database import get_db
 from app.security import verify_owner_or_api_key
 
+# Every test here needs the disposable database named by TEST_DATABASE_URL.
+pytestmark = pytest.mark.requires_postgres("TEST_DATABASE_URL")
+
 
 @pytest.fixture
 def engine():
