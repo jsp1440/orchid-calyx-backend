@@ -465,7 +465,7 @@ def _is_legacy_claim(comment: dict) -> bool:
     Those receipts carry only reads, writes and dependencies: no schema, issue
     number or lease id. No lease id means nothing here can name or release the
     lease, so the parked path leaves them to the health observer instead of
-    failing every wave that scans an old parked issue (#1264 has 60+). A
+    failing every wave that scans an old parked issue (#1264 has 12). A
     receipt that claims the current schema but is malformed still fails closed.
     """
     if (comment.get("user") or {}).get("login") != BOT_LOGIN:
