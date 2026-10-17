@@ -15,9 +15,12 @@ observation returned here names its own ``hypotheses_path``.
 from __future__ import annotations
 
 import os
+import re
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
+from urllib.parse import quote
 
 from fastapi import (
     APIRouter,
@@ -126,7 +129,64 @@ def _parse_captured_at(value: str | None) -> datetime | None:
         raise HTTPException(status_code=422, detail="captured_at must be an ISO-8601 datetime") from exc
 
 
+#: Content types an original may be served back as. Camera originals are raster
+#: images or video; anything else (notably ``image/svg+xml``, which a browser
+#: executes as a document) is served as an opaque download.
+SERVABLE_ORIGINAL_TYPES = frozenset(
+    {
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp",
+        "image/heic",
+        "image/heif",
+        "image/avif",
+        "image/tiff",
+        "image/bmp",
+        "video/mp4",
+        "video/quicktime",
+        "video/webm",
+        "video/3gpp",
+        "video/x-m4v",
+        "video/mpeg",
+        "video/ogg",
+    }
+)
+MEDIA_GONE_DETAIL = (
+    "The original is no longer held by the server; the device copy is authoritative. "
+    "Re-upload it from the Field Journal."
+)
+
+
+def _base_content_type(content_type: str | None) -> str:
+    return (content_type or "").split(";", 1)[0].strip().lower()
+
+
+def _served_content_type(stored: str | None) -> str:
+    base = _base_content_type(stored)
+    return base if base in SERVABLE_ORIGINAL_TYPES else "application/octet-stream"
+
+
+def _content_disposition(filename: str) -> str:
+    """RFC 6266/5987 attachment header that survives non-ASCII names.
+
+    Starlette encodes headers as latin-1, so a raw ``orquídea.jpg`` or CJK
+    name raised a 500. Send an ASCII fallback plus the exact UTF-8 name.
+    """
+    def _ascii(text: str) -> str:
+        folded = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
+        return re.sub(r"[^A-Za-z0-9._ ()\-]+", "_", folded).strip(" ._")
+
+    name = Path(filename)
+    stem = _ascii(name.stem).strip("_") or "original"
+    suffix = _ascii(name.suffix)
+    ascii_name = f"{stem}.{suffix}" if suffix else stem
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(filename, safe='')}"
+
+
 def _media_kind(content_type: str | None, requested: str | None) -> str:
+    if "svg" in _base_content_type(content_type) or _base_content_type(content_type).endswith("+xml"):
+        raise HTTPException(status_code=422, detail="SVG/XML is not accepted as original field media; upload the camera photo or video")
     if content_type and content_type.startswith("image/"):
         derived = "photo"
     elif content_type and content_type.startswith("video/"):
@@ -285,14 +345,20 @@ def download_original_media(
         record = service.photo_record_by_hash(observation_id, content_hash)
     except ObservationNotFound as exc:
         raise HTTPException(status_code=404, detail="Media not found") from exc
-    data = field_media_storage().read(str(record["storage_key"]))
+    try:
+        data = field_media_storage().read(str(record["storage_key"]))
+    except FileNotFoundError as exc:
+        # The record survived (database) but the bytes did not (storage not
+        # declared durable, or a redeploy wiped it). Say so rather than 500.
+        raise HTTPException(status_code=410, detail=MEDIA_GONE_DETAIL) from exc
     provenance = record.get("provenance") or {}
     filename = sanitize_filename(str(provenance.get("original_filename") or content_hash))
     return Response(
         content=data,
-        media_type=str(provenance.get("content_type") or "application/octet-stream"),
+        media_type=_served_content_type(provenance.get("content_type")),
         headers={
-            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Disposition": _content_disposition(filename),
+            "X-Content-Type-Options": "nosniff",
             "Cache-Control": "private, no-store, max-age=0",
             "Pragma": "no-cache",
         },

@@ -250,3 +250,78 @@ def test_stored_records_carry_no_coordinates_or_locality_notes(client):
         observation_id, hashlib.sha256(b"\xff\xd8\xff\xe0exif-gps-may-live-here").hexdigest()
     )
     assert photo["provenance"]["embedded_metadata"] == "original_unmodified_may_include_device_location"
+
+
+# -- readback hardening ----------------------------------------------------------
+
+
+def _upload_named(client, observation_id, headers, filename, content_type, data):
+    return client.post(
+        f"/api/field-observations/{observation_id}/media",
+        headers=headers,
+        files={"file": (filename, data, content_type)},
+        data={"captured_at": "2026-10-17T17:42:10.123Z", "client_media_id": LOCAL_MEDIA_ID},
+    )
+
+
+@pytest.mark.parametrize(
+    ("filename", "ascii_fallback", "encoded"),
+    [
+        ("orquídea.jpg", "orquidea.jpg", "orqu%C3%ADdea.jpg"),
+        ("蘭の花.jpg", "original.jpg", "%E8%98%AD%E3%81%AE%E8%8A%B1.jpg"),
+    ],
+)
+def test_readback_survives_non_ascii_filenames(client, filename, ascii_fallback, encoded):
+    headers = _owner_bearer(client)
+    observation_id = client.post("/api/field-observations", headers=headers, json=FRONTEND_PAYLOAD).json()["id"]
+    data = f"bytes for {filename}".encode()
+    receipt = _upload_named(client, observation_id, headers, filename, "image/jpeg", data)
+    assert receipt.status_code == 201, receipt.text
+    resp = client.get(
+        f"/api/field-observations/{observation_id}/media/{receipt.json()['content_hash']}/original",
+        headers=headers,
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.content == data
+    disposition = resp.headers["content-disposition"]
+    assert f'filename="{ascii_fallback}"' in disposition
+    assert f"filename*=UTF-8''{encoded}" in disposition
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    assert resp.headers["content-type"].startswith("image/jpeg")
+
+
+@pytest.mark.parametrize("content_type", ["image/svg+xml", "image/SVG+XML; charset=utf-8"])
+def test_svg_is_refused_as_original_media(client, content_type):
+    headers = _owner_bearer(client)
+    observation_id = client.post("/api/field-observations", headers=headers, json=FRONTEND_PAYLOAD).json()["id"]
+    resp = _upload_named(client, observation_id, headers, "x.svg", content_type, b"<svg onload='alert(1)'/>")
+    assert resp.status_code == 422, resp.text
+    assert client.get(f"/api/field-observations/{observation_id}/photos", headers=headers).json() == []
+
+
+def test_unlisted_stored_type_is_served_as_octet_stream(client):
+    headers = _owner_bearer(client)
+    observation_id = client.post("/api/field-observations", headers=headers, json=FRONTEND_PAYLOAD).json()["id"]
+    receipt = _upload_named(client, observation_id, headers, "scan.jxl", "image/x-unlisted", b"raster?")
+    assert receipt.status_code == 201, receipt.text
+    resp = client.get(
+        f"/api/field-observations/{observation_id}/media/{receipt.json()['content_hash']}/original",
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/octet-stream"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_missing_original_bytes_return_410_not_500(client, tmp_path):
+    headers = _owner_bearer(client)
+    observation_id = client.post("/api/field-observations", headers=headers, json=FRONTEND_PAYLOAD).json()["id"]
+    receipt = _upload(client, observation_id, headers).json()
+    (tmp_path / "field-media" / receipt["storage_key"]).unlink()  # ephemeral disk wiped by a redeploy
+    resp = client.get(
+        f"/api/field-observations/{observation_id}/media/{receipt['content_hash']}/original",
+        headers=headers,
+    )
+    assert resp.status_code == 410, resp.text
+    assert resp.headers["content-type"].startswith("application/json")
+    assert "device copy is authoritative" in resp.json()["detail"]
