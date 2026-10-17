@@ -61,7 +61,12 @@ from scripts import oc_swarm_write_set_verifier as write_set_verifier
 from scripts import oc_work_discovery as discovery
 from scripts import oc_work_materialize as materialize
 from scripts.oc_swarm_provider_free_worker import declared_validation_commands
-from scripts.oc_validation_commands import VALIDATION_COMMANDS
+from scripts.oc_validation_commands import (
+    PARAMETER_VALUE,
+    VALIDATION_COMMANDS,
+    UnknownValidationCommand,
+    argv_for,
+)
 
 RECEIPT_SCHEMA = "oc.provider-free-edit-result.v1"
 BRANCH_PREFIX = "oc/discovered-"
@@ -324,8 +329,13 @@ def run_validation(
     cwd: str,
     runner: Runner = default_runner,
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
+    scope: str | None = None,
 ) -> dict[str, Any]:
     """Run one registered command and keep the node ids, not only a digest.
+
+    ``scope`` is the one validated value a parameterised command accepts (the
+    finding's distribution for ``undeclared-imports``); ``argv_for`` refuses
+    it for any other command or shape.
 
     ``oc_provider_free_validate`` records a digest and a tail, which is enough
     to settle a validate task and not enough to say *which* tests moved. This
@@ -333,11 +343,12 @@ def run_validation(
     the full output with the same regex discovery uses on pytest reports.
     """
     command = VALIDATION_COMMANDS[command_id]
+    argv = argv_for(command, scope)
     timed_out = False
     exit_code: int | None = None
     output = ""
     try:
-        completed = runner(command.argv, cwd, timeout)
+        completed = runner(argv, cwd, timeout)
         exit_code = int(completed.returncode)
         output = (completed.stdout or "") + (completed.stderr or "")
     except subprocess.TimeoutExpired as exc:
@@ -352,7 +363,8 @@ def run_validation(
     pytest_shaped = "pytest" in command.argv
     return {
         "command_id": command_id,
-        "argv": list(command.argv),
+        "argv": list(argv),
+        "scope": scope,
         "exit_code": exit_code,
         "timed_out": timed_out,
         "passed": exit_code == 0 and not timed_out,
@@ -397,6 +409,37 @@ def judge(before: Mapping[str, Any], after: Mapping[str, Any]) -> tuple[bool, st
 
 
 # -- The lane ------------------------------------------------------------------
+
+
+#: An issue body's evidence line, as ``oc_work_materialize.issue_body`` writes it.
+EVIDENCE_LINE = re.compile(r"^- `(?P<where>[^`\n]+)` — ", re.MULTILINE)
+
+
+def issue_scope(body: str, fingerprint: str, command_id: str) -> tuple[str | None, str]:
+    """The distribution an absent-condition check is scoped to, or why not.
+
+    Returns ``(scope, "")`` when the issue declares a distribution that,
+    together with its evidence paths, reproduces the issue's own fingerprint
+    under discovery's formula -- so an edited marker cannot widen or move the
+    check. Returns ``(None, "")`` when the command takes no parameter or the
+    issue predates the marker: the check then runs unscoped, which is the
+    stricter statement (any remaining finding fails it). Returns
+    ``(None, reason)`` when a marker is present but cannot be trusted.
+    """
+    command = VALIDATION_COMMANDS.get(command_id)
+    if command is None or not command.parameter:
+        return None, ""
+    match = materialize.DISTRIBUTION.search(body)
+    if not match:
+        return None, ""
+    value = match.group("value")
+    if not PARAMETER_VALUE.fullmatch(value):
+        return None, "issue_distribution_invalid"
+    paths = [found.group("where") for found in EVIDENCE_LINE.finditer(body)]
+    key = discovery.undeclared_import_key(value, paths)
+    if not paths or hashlib.sha256(key.encode("utf-8")).hexdigest()[:16] != fingerprint:
+        return None, "issue_distribution_does_not_match_fingerprint"
+    return value, ""
 
 
 def branch_name(fingerprint: str) -> str:
@@ -729,8 +772,34 @@ def run_lane(
                 issue_number=number,
                 validation_commands=commands,
             )
+        # Absence is only provable by a command that tests the same condition.
+        # An issue filed by a source with a condition validator, but naming any
+        # other command, is refused: #1977 named ``production-runtime-imports``,
+        # which passes while the import is still undeclared, settled done, and
+        # was re-opened by the next discovery pass every cycle.
+        source_match = materialize.DISCOVERY_SOURCE.search(body)
+        required = discovery.CONDITION_VALIDATORS.get(
+            source_match.group("source") if source_match else ""
+        )
+        if required is not None and commands != [required]:
+            return _receipt(
+                outcome="refused",
+                reason="condition_absent_but_command_does_not_test_condition",
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+            )
+        scope, why_not = issue_scope(body, fingerprint, commands[0])
+        if why_not:
+            return _receipt(
+                outcome="refused",
+                reason=why_not,
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+            )
         result = run_validation(
-            commands[0], cwd=str(root), runner=runner, timeout=timeout
+            commands[0], cwd=str(root), runner=runner, timeout=timeout, scope=scope
         )
         passed = bool(result["passed"] and result["conclusive"])
         return _receipt(
@@ -768,6 +837,24 @@ def run_lane(
             validation_commands=commands,
         )
 
+    # A parameterised check is scoped to this finding's own distribution, so a
+    # different distribution that is still undeclared (its own issue) cannot
+    # fail this settlement.
+    scope: str | None = None
+    registered = VALIDATION_COMMANDS.get(commands[0])
+    if registered is not None and registered.parameter:
+        scope = str((candidate.get("remedy") or {}).get("distribution") or "")
+        try:
+            argv_for(registered, scope)
+        except UnknownValidationCommand:
+            return _receipt(
+                outcome="refused",
+                reason="invalid_validation_scope",
+                fingerprint=fingerprint,
+                issue_number=number,
+                validation_commands=commands,
+            )
+
     branch = branch_name(fingerprint)
     if git_call(["ls-remote", "--heads", "origin", branch], str(root)).strip():
         return _receipt(
@@ -790,7 +877,7 @@ def run_lane(
         git_call(["checkout", "-B", branch], str(worktree))
         command_id = commands[0]
         before = run_validation(
-            command_id, cwd=str(worktree), runner=runner, timeout=timeout
+            command_id, cwd=str(worktree), runner=runner, timeout=timeout, scope=scope
         )
         provisioned = edit is None
         if provisioned:
@@ -829,11 +916,13 @@ def run_lane(
             )
         declared_after = normalised in discovery.declared_distributions(worktree)
         after = run_validation(
-            command_id, cwd=str(worktree), runner=runner, timeout=timeout
+            command_id, cwd=str(worktree), runner=runner, timeout=timeout, scope=scope
         )
-        # The declaration is the condition for an undeclared-import remedy:
-        # the import check passes before and after (the distribution was
-        # installed all along), so what changed is recorded alongside it.
+        # The declaration is the condition for a declare-distribution remedy,
+        # so whether it changed is recorded alongside the command's verdict
+        # and required below. For an undeclared-import finding the command is
+        # the condition check itself (it fails before and passes after); for a
+        # dependency gap it is the affected tests.
         before = {**before, "declared": declared_before}
         after = {**after, "declared": declared_after}
         ok, why = judge(before, after)

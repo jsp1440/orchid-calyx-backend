@@ -87,6 +87,13 @@ query($owner: String!, $name: String!, $label: String!, $first: Int!, $cursor: S
   }
 }
 """.strip()
+#: The finding's distribution, for a declare-distribution remedy. The edit lane
+#: scopes a parameterised condition check to it, after verifying that it and the
+#: evidence paths reproduce the issue's fingerprint.
+DISTRIBUTION_MARKER = "OC-DISCOVERY-DISTRIBUTION"
+#: The whole rest of the line is captured, so a malformed value is refused by
+#: the lane's validation rather than silently read as "no marker".
+DISTRIBUTION = re.compile(rf"^{DISTRIBUTION_MARKER}:[ \t]*(?P<value>[^\n]*?)[ \t]*$", re.MULTILINE)
 FINGERPRINT = re.compile(rf"^{FINGERPRINT_MARKER}:\s*(?P<value>[a-f0-9]{{16}})\s*$", re.MULTILINE)
 REPOSITORY = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 
@@ -596,8 +603,10 @@ def issue_body(candidate: dict[str, Any]) -> str:
     lines += [
         "OC-SWARM-READS: control-plane",
         "",
-        f"{FINGERPRINT_MARKER}: {candidate['fingerprint']}",
     ]
+    if mechanical:
+        lines.append(f"{DISTRIBUTION_MARKER}: {candidate['remedy']['distribution']}")
+    lines.append(f"{FINGERPRINT_MARKER}: {candidate['fingerprint']}")
     return "\n".join(lines)
 
 
