@@ -1,0 +1,41 @@
+{
+  "package_id": "LANDSCAPE-001",
+  "version": "1.0.0",
+  "prepared_on": "2026-10-11",
+  "evidence_class": "non_scientific_design_guidance",
+  "guidance_file": "LANDSCAPE-001-guidance.md",
+  "guidance_sha256": "a86d9803a8ac32abeca10e66c9047439bc408da9b98abf7f5d2697f5c81d0593",
+  "guidance_record_ids": [
+    "LRI-001",
+    "LRI-002",
+    "LRI-003",
+    "LRI-004",
+    "LRI-005",
+    "LRI-006",
+    "LRI-007",
+    "LRI-008",
+    "LRI-009",
+    "LRI-010",
+    "LRI-011",
+    "LRI-012",
+    "LRI-013",
+    "LRI-014",
+    "LRI-015",
+    "LRI-016",
+    "LRI-017",
+    "LRI-018",
+    "LRI-019",
+    "LRI-020"
+  ],
+  "brain_contract": {
+    "repository": "jsp1440/Orchid-Continuum-Brain",
+    "path": "contracts/landscape_guidance_v1.json",
+    "sha256": "3995fcdcceb3c427e2b661cea68bbab364598734bb9ce8f73f73bdabfa95b6d0"
+  },
+  "source_review_sha256": "1d9f195130f8632d54768cbfe673ee3c4549db9affef9ecd0db7b652b923d2b6",
+  "rights_state": "USER_SUPPLIED_INTERNAL_RESEARCH_ONLY",
+  "publicly_redistributable": false,
+  "review_state_on_import": "PENDING",
+  "publication_on_import": "DRAFT",
+  "auto_review_or_publish": false
+}

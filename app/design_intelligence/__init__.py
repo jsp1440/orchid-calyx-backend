@@ -10,6 +10,7 @@ from .knowledge import (
     SemanticUnitType,
     SourceLocation,
 )
+from .landscape import LandscapeGuidanceImporter
 from .models import (
     DesignDocument,
     DesignDocumentInput,
@@ -62,6 +63,7 @@ __all__ = [
     "DesignReviewDecision",
     "DesignSearchQuery",
     "EducationalClassification",
+    "LandscapeGuidanceImporter",
     "MemoryDesignCorpusRepository",
     "MemoryDesignKnowledgeRepository",
     "PostgresDesignCorpusRepository",
