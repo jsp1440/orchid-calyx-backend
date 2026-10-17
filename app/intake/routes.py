@@ -1,13 +1,16 @@
 import os
-from typing import Annotated
+from datetime import date
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.routers.health import add_mission_control_cors_headers
 from app.security import verify_owner_or_api_key
 from app.storage import LocalImmutableStorage
 
+from .discovery.profiles import DiscoveryBudget
 from .extractor import content_hash, extract
 from .gmail_collector import GoogleApiGmailGateway, collect_twin_intelligence
 from .intelligence import (
@@ -192,6 +195,55 @@ def intelligence_index(limit: int = Query(default=100, ge=1, le=500)):
 def technology_scout(payload: ScoutBatch):
     """Screen bibliographic leads through the existing authenticated intake."""
     return ingest_scout_batch(payload)
+
+
+class DiscoveryRunRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    mode: Literal["MANUAL", "HISTORICAL"] = "MANUAL"
+    profile_keys: list[str] | None = None
+    since: date | None = None
+    until: date | None = None
+    verify_sources: bool = True
+    budget: DiscoveryBudget = Field(default_factory=DiscoveryBudget)
+
+
+@router.post("/intelligence/discovery/run")
+def native_discovery_run(payload: DiscoveryRunRequest):
+    """Run one bounded native discovery cycle (free registries only, no external contact)."""
+    from .discovery.service import run_discovery_cycle
+
+    historical = None
+    if payload.mode == "HISTORICAL":
+        if payload.since is None or payload.until is None:
+            raise HTTPException(status_code=422, detail={"code": "HISTORICAL_MODE_REQUIRES_WINDOW"})
+        historical = (payload.since, payload.until)
+    try:
+        return run_discovery_cycle(
+            mode=payload.mode,
+            profile_keys=payload.profile_keys,
+            budget=payload.budget,
+            historical_window=historical,
+            verify_sources=payload.verify_sources,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail={"code": str(exc)}) from exc
+
+
+@router.get("/intelligence/discovery/digest")
+def native_discovery_digest(
+    period: Literal["daily", "weekly"] = Query(default="daily"),
+    format: Literal["json", "markdown"] = Query(default="json"),
+):
+    """Read-only daily/weekly digest of native discovery and its integration state."""
+    from .discovery.digest import build_digest, digest_window, render_markdown
+    from .discovery.repository import digest_inputs
+
+    since, until = digest_window(period)
+    digest = build_digest(digest_inputs(since, until), period=period, since=since, until=until)
+    if format == "markdown":
+        return Response(content=render_markdown(digest), media_type="text/markdown")
+    return digest
 
 
 @router.post("/intelligence/propose-task", status_code=201)
