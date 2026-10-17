@@ -33,12 +33,22 @@ concurrency:
   group: swarm-paid-execution-${{ github.repository }}
   cancel-in-progress: false
 
+# Three jobs, split by what each may touch (#1973 review):
+#   execute -- trusted admission. Lease, issue, packet, route, owner
+#              authorization, governor; settles every denial. Runs only
+#              repository code from a fresh checkout of the integration ref.
+#   model   -- the paid model run. Holds NO write credential (contents and
+#              issues read). Model-driven code runs as a separate unprivileged
+#              account that cannot sudo, cannot reach the runner's files or
+#              processes, and gets no token at all. Its only output is a patch,
+#              a manifest and the execution record, as an artifact.
+#   publish -- trusted publication. A fresh checkout of the same revision the
+#              admission ran; never checks out, imports or executes the model's
+#              tree. Verifies the patch against the admitted path scope,
+#              applies it in a side worktree, pushes, opens the draft PR,
+#              records cost and settles.
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  actions: write
-  id-token: write
+  contents: read
 
 jobs:
   execute:
@@ -47,27 +57,40 @@ jobs:
     if: vars.NO_API_MODE == 'false'
     runs-on: ubuntu-latest
     timeout-minutes: 70
+    permissions:
+      contents: read
+      issues: write
     env:
       ISSUE_NUMBER: ${{ inputs.issue_number }}
       LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
       GH_TOKEN: ${{ github.token }}
       INTEGRATION_BRANCH: oc-autonomous-integration
+    outputs:
+      paid: ${{ steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true' }}
+      trusted_sha: ${{ steps.trusted.outputs.sha }}
+      title: ${{ steps.issue.outputs.title }}
+      labels: ${{ steps.issue.outputs.labels }}
+      tier: ${{ steps.route.outputs.tier }}
+      model: ${{ steps.route.outputs.model }}
+      max_turns: ${{ steps.route.outputs.max_turns }}
+      route_reason: ${{ steps.route.outputs.reason }}
+      estimated_cost_usd: ${{ steps.route.outputs.estimated_cost_usd }}
+      packet_fingerprint: ${{ steps.packet.outputs.fingerprint }}
+      packet_estimated_tokens: ${{ steps.packet.outputs.estimated_prompt_tokens }}
+      packet_execution_class: ${{ steps.packet.outputs.execution_class }}
+      allowed_paths: ${{ steps.issue_auth.outputs.allowed_paths }}
     steps:
       - name: Checkout autonomous integration branch
         uses: actions/checkout@v4
         with:
           ref: ${{ env.INTEGRATION_BRANCH }}
           fetch-depth: 0
-          # Model-driven commands run in this checkout. A persisted token in
-          # .git/config would hand them the issues:write credential the
-          # executor withholds from their environment.
           persist-credentials: false
 
-      # Git remote operations authenticate through gh, which reads GH_TOKEN
-      # from the calling process's environment at use time. A process whose
-      # environment was scrubbed has nothing to present.
-      - name: Authenticate git remote operations through GH_TOKEN
-        run: gh auth setup-git
+      # The model and publish jobs use exactly this revision.
+      - name: Record the trusted revision
+        id: trusted
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Verify scheduler lease
         id: lease
@@ -263,6 +286,15 @@ jobs:
             --blocker-fingerprint "$BLOCKER_FINGERPRINT" \
             --denied-provider anthropic
 
+      - name: Hand the admitted work packet to the model job
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oc-packet-${{ inputs.issue_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/swarm-work-packet.md
+          if-no-files-found: error
+          retention-days: 3
+
       - name: Return issue to queue when NO-API mode blocks all providers
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'true'
         env:
@@ -275,15 +307,42 @@ jobs:
             --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT"
 
+  model:
+    needs: execute
+    # The only job that runs the model. Its token can read contents and issues
+    # and nothing else, and no step that runs model-driven code receives even
+    # that: the executor runs as the unprivileged account created below.
+    if: vars.NO_API_MODE == 'false' && needs.execute.outputs.paid == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 70
+    permissions:
+      contents: read
+      issues: read
+    env:
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+      MODEL_USER: oc-model
+      MODEL_HOME: /home/oc-model
+    outputs:
+      claude_outcome: ${{ steps.claude.outcome }}
+      claude_conclusion: ${{ steps.claude.outputs.conclusion }}
+    steps:
+      - name: Checkout the admitted trusted revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.execute.outputs.trusted_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # No dependency cache: a cache saved from this job would be written by a
+      # runner that has executed model-authored code.
       - name: Prepare worker validation Python
-        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: pip
 
       - name: Install worker validation dependencies
-        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
         run: |
           python3 -m pip install -r requirements.txt
           # Pinned so a local lint result means what CI will say (#1501).
@@ -291,46 +350,163 @@ jobs:
           python3 -m pytest --version
           python3 -m ruff --version
 
-      - name: Execute issue with governed direct Anthropic API
-        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
-        id: claude
-        continue-on-error: true
+      - name: Fetch the admitted work packet
+        uses: actions/download-artifact@v4
+        with:
+          name: oc-packet-${{ inputs.issue_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/packet
+
+      # Trusted code, before any model-driven code exists on this runner. The
+      # read-only token is scoped to this step.
+      - name: Verify lease time before paid execution
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           GH_TOKEN: ${{ github.token }}
-          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          CLAUDE_MODEL: ${{ steps.route.outputs.model }}
-          CLAUDE_MAX_TURNS: ${{ steps.route.outputs.max_turns }}
-        shell: bash
         run: |
           set -euo pipefail
-          # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
-          # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
           python3 -m scripts.oc_swarm_settlement --verify-only \
             --min-remaining-seconds 4500 \
             --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
             --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT"
-          # exec: no shell is left holding this step's credentials in an
-          # environment a model-driven child could read; the executor makes
-          # itself non-dumpable and scrubs every child's environment.
-          exec python3 scripts/swarm_anthropic_direct.py \
+
+      # Model-written tests execute arbitrary code. They run as an account
+      # that is not the runner user: it cannot sudo, is in no privileged group
+      # (docker, sudo, adm), cannot read the runner's home (checkout, actions,
+      # runner files) and cannot read or trace runner processes.
+      - name: Isolate model-driven execution in an unprivileged account
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo useradd --create-home --home-dir "$MODEL_HOME" --shell /usr/sbin/nologin "$MODEL_USER"
+          sudo mkdir -p "$MODEL_HOME/repo" "$MODEL_HOME/out"
+          sudo cp -a "$GITHUB_WORKSPACE/." "$MODEL_HOME/repo/"
+          sudo cp "$RUNNER_TEMP/packet/swarm-work-packet.md" "$MODEL_HOME/packet.md"
+          sudo chown -R "$MODEL_USER:$MODEL_USER" "$MODEL_HOME"
+          sudo chmod 0700 "$MODEL_HOME" "$HOME"
+          groups=" $(id -nG "$MODEL_USER") "
+          for privileged in docker sudo adm admin lxd wheel; do
+            [[ "$groups" != *" $privileged "* ]] || { echo "model account in $privileged" >&2; exit 1; }
+          done
+          if sudo -u "$MODEL_USER" sudo -n true 2>/dev/null; then
+            echo "model account can escalate" >&2; exit 1
+          fi
+          if sudo -u "$MODEL_USER" test -r "$GITHUB_WORKSPACE/.git/config"; then
+            echo "model account can read the runner workspace" >&2; exit 1
+          fi
+
+      - name: Execute issue with governed direct Anthropic API
+        id: claude
+        continue-on-error: true
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ISSUE_TITLE: ${{ needs.execute.outputs.title }}
+          CLAUDE_MODEL: ${{ needs.execute.outputs.model }}
+          CLAUDE_MAX_TURNS: ${{ needs.execute.outputs.max_turns }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Never merge to `main`, deploy production, mutate production DB/KG/scientific state,
+          # activate taxonomy, publish science, create/disclose credentials, or bypass governor controls.
+          # Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero
+          # semantics and scientific review boundaries. Never invent science.
+          # The executor gets the provider key and nothing else; `-I` keeps the
+          # model's tree off its import path, and it makes itself non-dumpable
+          # so no model-driven process can read the key from it. It writes a
+          # patch; it cannot push, comment or open a pull request.
+          python_bin=$(command -v python3)
+          cd /
+          set +e
+          sudo -n -H -u "$MODEL_USER" --preserve-env=ANTHROPIC_API_KEY,GITHUB_RUN_ID \
+            "$python_bin" -I "$MODEL_HOME/repo/scripts/swarm_anthropic_direct.py" \
             --issue-number "$ISSUE_NUMBER" \
             --title "$ISSUE_TITLE" \
-            --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
+            --packet-file "$MODEL_HOME/packet.md" \
             --model "$CLAUDE_MODEL" \
             --max-turns "$CLAUDE_MAX_TURNS" \
             --base "$INTEGRATION_BRANCH" \
-            --execution-file "$RUNNER_TEMP/claude-direct-execution.json"
+            --execution-file "$MODEL_HOME/out/execution.json" \
+            --emit-patch-dir "$MODEL_HOME/out" \
+            > "$RUNNER_TEMP/worker-stdout.log"
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/worker-stdout.log"
+          if [[ "$status" -eq 0 ]]; then
+            echo "conclusion=success" >> "$GITHUB_OUTPUT"
+          else
+            echo "conclusion=failure" >> "$GITHUB_OUTPUT"
+          fi
+          exit "$status"
+
+      - name: Collect model output for the trusted publisher
+        if: always() && steps.claude.outcome != 'skipped'
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Nothing the model started outlives the run.
+          sudo pkill -KILL -u "$MODEL_USER" || true
+          python3 -I scripts/oc_patch_publish.py collect \
+            --stdout-log "$RUNNER_TEMP/worker-stdout.log" \
+            --source "$MODEL_HOME/out" \
+            --destination "$RUNNER_TEMP/model-output"
+
+      - name: Hand the model output to the trusted publisher
+        if: always() && steps.claude.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: oc-model-output-${{ inputs.issue_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/model-output
+          if-no-files-found: warn
+          retention-days: 3
+
+  publish:
+    needs: [execute, model]
+    # Runs whenever the model job was admitted, including when it failed, so
+    # cost is recorded and the lease always settles.
+    if: always() && vars.NO_API_MODE == 'false' && needs.execute.outputs.paid == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      actions: write
+    env:
+      ISSUE_NUMBER: ${{ inputs.issue_number }}
+      LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
+      GH_TOKEN: ${{ github.token }}
+      INTEGRATION_BRANCH: oc-autonomous-integration
+    steps:
+      # A fresh runner and a fresh checkout of the revision admission ran.
+      # The model's tree never reaches this job; only its patch, as data.
+      - name: Checkout the admitted trusted revision
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.execute.outputs.trusted_sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      # Git remote operations authenticate through gh, which reads GH_TOKEN
+      # from the calling process's environment at use time.
+      - name: Authenticate git remote operations through GH_TOKEN
+        run: gh auth setup-git
+
+      - name: Receive the model output
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: oc-model-output-${{ inputs.issue_number }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/model-output
 
       - name: Classify Claude terminal state
-        if: always() && steps.lease.outputs.execute == 'true'
+        if: always()
         id: claude_provider
         env:
-          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
-          CLAUDE_CONCLUSION: ${{ steps.claude.outputs.conclusion }}
-          CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}
-          CLAUDE_SESSION_ID: ${{ steps.claude.outputs.session_id }}
+          # Outcome and conclusion come from the model job; the execution
+          # record is the integrity-checked copy from its artifact. All of it
+          # is data to classify, never code to run.
+          CLAUDE_OUTCOME: ${{ needs.model.outputs.claude_outcome }}
+          CLAUDE_CONCLUSION: ${{ needs.model.outputs.claude_conclusion }}
+          CLAUDE_EXECUTION_FILE: ${{ runner.temp }}/model-output/execution.json
         shell: bash
         run: |
           set -euo pipefail
@@ -417,285 +593,74 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 
-      # Economy policy v1: one paid provider per workflow run. Cross-provider
-      # fallback is deliberately disabled to prevent one issue from spending
-      # through multiple providers before durable accounting is refreshed.
-      - name: Execute bounded Gemini fallback
-        if: ${{ false }}
-        id: gemini
-        continue-on-error: true
+      - name: Publish the verified patch
+        id: publish
+        if: always()
         env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
-        shell: bash
+          ISSUE_TITLE: ${{ needs.execute.outputs.title }}
+          ALLOWED_PATHS: ${{ needs.execute.outputs.allowed_paths }}
         run: |
           set -euo pipefail
-          : > "$RUNNER_TEMP/gemini-stderr.log"
-          python3 -m scripts.oc_swarm_settlement --verify-only \
-            --min-remaining-seconds 4500 \
-            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
-            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT"
-          : > "$RUNNER_TEMP/gemini-result.json"
-          if [[ -z "${GEMINI_API_KEY:-}" ]]; then
-            echo "config_missing" > "$RUNNER_TEMP/gemini-status.txt"
-            exit 20
-          fi
+          python3 scripts/oc_patch_publish.py \
+            --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER" \
+            --run-id "$GITHUB_RUN_ID" --title "$ISSUE_TITLE" \
+            --base "$INTEGRATION_BRANCH" \
+            --artifact-dir "$RUNNER_TEMP/model-output" \
+            --worktree "$RUNNER_TEMP/publish-worktree" \
+            --allowed-paths-json "$ALLOWED_PATHS"
 
-          branch="oc-auto-${ISSUE_NUMBER}-gemini-${GITHUB_RUN_ID}"
-          git checkout -B "$branch" "$INTEGRATION_BRANCH"
-          git config user.name "orchid-continuum-orchestrator[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          prompt=$(cat <<EOF
-          ORCHID CONTINUUM — GOVERNED GEMINI FALLBACK
-
-          Claude was safely classified unavailable. Implement the largest safe coherent repository-local slice for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}.
-
-          ${ISSUE_BODY}
-
-          EDIT FILES ONLY. Do not use shell tools. Do not create commits, branches, pull requests, issues, releases, deployments, credentials, or external publications; the workflow owns packaging. Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero semantics, scientific review boundaries, tests, security checks, governance, and owner gates. Never invent science. Do not mutate production data, activate taxonomy, publish science, spend funds, or perform destructive operations.
-          EOF
-          )
-
-          gemini_home="$RUNNER_TEMP/gemini-home"
-          mkdir -p "$gemini_home/.gemini"
-          cat > "$gemini_home/.gemini/settings.json" <<'JSON'
-          {
-            "tools": {
-              "exclude": ["run_shell_command"]
-            }
-          }
-          JSON
-
-          set +e
-          HOME="$gemini_home" env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
-            timeout 35m npx -y @google/gemini-cli@latest \
-            --approval-mode auto_edit --output-format json -p "$prompt" \
-            > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
-          status=$?
-          set -e
-          echo "$status" > "$RUNNER_TEMP/gemini-exit.txt"
-
-          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-            git diff --check
-            git add -A
-            git commit -m "feat(auto): Gemini fallback slice for #${ISSUE_NUMBER}"
-            git push origin "HEAD:$branch"
-            body=$(cat <<EOF
-          Governed Gemini fallback slice after Claude safe-provider failure.
-
-          Provider: Gemini fallback
-          Claude classification: ${{ steps.claude_provider.outputs.kind }}
-          Gemini exit status: ${status}
-
-          Independent exact-head validation remains mandatory. No production mutation, taxonomy activation, scientific publication, sensitive-locality relaxation, credential change, spending action, or destructive operation was authorized.
-
-          OC-AUTO-ISSUE: #${ISSUE_NUMBER}
-          OC-AUTO-REQUEUE: true
-          OC-AUTO-BLOCKED: false
-          EOF
-            )
-            gh pr create --repo "$GITHUB_REPOSITORY" --base "$INTEGRATION_BRANCH" --head "$branch" --draft --title "Gemini fallback: #${ISSUE_NUMBER} ${ISSUE_TITLE}" --body "$body" >/dev/null
-            exit 0
-          fi
-          exit "$status"
-
-      - name: Classify Gemini terminal state
-        if: always() && steps.claude_provider.outputs.fallback_allowed == 'true'
-        id: gemini_provider
-        env:
-          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          kind=healthy
-          fallback=false
-          if [[ "$GEMINI_OUTCOME" != "success" ]]; then
-            if [[ -f "$RUNNER_TEMP/gemini-status.txt" ]] && grep -q 'config_missing' "$RUNNER_TEMP/gemini-status.txt"; then
-              kind=config
-            elif grep -Eqi '401|403|unauthor|forbidden|invalid.?api.?key|authentication|permission' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
-              kind=security
-              # Preserve the hard Gemini credential finding, but do not turn one
-              # provider's configuration failure into a product-wide outage.
-              # OpenAI/Codex has its own authentication and security classifier.
-              fallback=true
-            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection' "$RUNNER_TEMP/gemini-stderr.log" "$RUNNER_TEMP/gemini-result.json" 2>/dev/null; then
-              kind=safe_provider
-              fallback=true
-            elif [[ "$(cat "$RUNNER_TEMP/gemini-exit.txt" 2>/dev/null || true)" == "124" ]]; then
-              kind=safe_provider
-              fallback=true
-            else
-              kind=unknown
-            fi
-          fi
-          {
-            echo "kind=$kind"
-            echo "fallback_allowed=$fallback"
-          } >> "$GITHUB_OUTPUT"
-          echo "Gemini classification: kind=$kind fallback_allowed=$fallback"
-
-      - name: Execute bounded OpenAI fallback
-        if: ${{ false }}
-        id: openai
-        continue-on-error: true
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          ISSUE_TITLE: ${{ steps.issue.outputs.title }}
-          ISSUE_BODY: ${{ steps.packet.outputs.packet }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          : > "$RUNNER_TEMP/openai-stdout.log"
-          python3 -m scripts.oc_swarm_settlement --verify-only \
-            --min-remaining-seconds 4500 \
-            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
-            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
-            --run-attempt "$GITHUB_RUN_ATTEMPT"
-          : > "$RUNNER_TEMP/openai-stderr.log"
-          if [[ -z "${OPENAI_API_KEY:-}" ]]; then
-            echo "config_missing" > "$RUNNER_TEMP/openai-status.txt"
-            exit 20
-          fi
-
-          branch="oc-auto-${ISSUE_NUMBER}-openai-${GITHUB_RUN_ID}"
-          git checkout -B "$branch" "$INTEGRATION_BRANCH"
-          git config user.name "orchid-continuum-orchestrator[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          prompt=$(cat <<EOF
-          ORCHID CONTINUUM — GOVERNED OPENAI SECOND FALLBACK
-
-          Claude and Gemini were both safely classified unavailable for provider-capacity reasons. Implement the largest safe coherent repository-local slice for issue #${ISSUE_NUMBER}: ${ISSUE_TITLE}.
-
-          ${ISSUE_BODY}
-
-          Work only inside the checked-out repository. Do not use git or gh, do not access network resources from model-generated commands, and do not create commits, branches, pull requests, issues, releases, deployments, credentials, or external publications; the workflow owns packaging. Preserve taxonomy, provenance, uncertainty, sensitive-locality protections, unavailable-vs-zero semantics, scientific review boundaries, tests, security checks, governance, and owner gates. Never invent science. Do not mutate production data, activate taxonomy, publish science, spend funds, or perform destructive operations. You may inspect/edit repository files and run local tests within the workspace sandbox.
-          EOF
-          )
-
-          set +e
-          timeout 30s npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
-          env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
-            npx -y @openai/codex@0.151.0 --ask-for-approval never exec \
-            --sandbox workspace-write --skip-git-repo-check --ephemeral -C "$GITHUB_WORKSPACE" "$prompt" \
-            > "$RUNNER_TEMP/openai-stdout.log" 2>> "$RUNNER_TEMP/openai-stderr.log"
-          status=$?
-          set -e
-          echo "$status" > "$RUNNER_TEMP/openai-exit.txt"
-
-          if ! git diff --quiet || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-            git diff --check
-            git add -A
-            git commit -m "feat(auto): OpenAI fallback slice for #${ISSUE_NUMBER}"
-            git push origin "HEAD:$branch"
-            body=$(cat <<EOF
-          Governed OpenAI fallback slice after Claude unavailability and a terminal Gemini classification.
-
-          Provider: OpenAI fallback
-          Claude classification: ${{ steps.claude_provider.outputs.kind }}
-          Gemini classification: ${{ steps.gemini_provider.outputs.kind }}
-          OpenAI CLI exit status: ${status}
-
-          Independent exact-head validation remains mandatory. No production mutation, taxonomy activation, scientific publication, sensitive-locality relaxation, credential change, spending action, or destructive operation was authorized.
-
-          OC-AUTO-ISSUE: #${ISSUE_NUMBER}
-          OC-AUTO-REQUEUE: true
-          OC-AUTO-BLOCKED: false
-          EOF
-            )
-            gh pr create --repo "$GITHUB_REPOSITORY" --base "$INTEGRATION_BRANCH" --head "$branch" --draft --title "OpenAI fallback: #${ISSUE_NUMBER} ${ISSUE_TITLE}" --body "$body" >/dev/null
-            exit 0
-          fi
-          exit "$status"
-
-      - name: Classify OpenAI terminal state
-        if: always() && steps.gemini_provider.outputs.fallback_allowed == 'true'
-        id: openai_provider
-        env:
-          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          kind=healthy
-          stderr_log="$RUNNER_TEMP/openai-stderr.log"
-          exit_code="$(cat "$RUNNER_TEMP/openai-exit.txt" 2>/dev/null || true)"
-          if [[ "$OPENAI_OUTCOME" != "success" ]]; then
-            if [[ -f "$RUNNER_TEMP/openai-status.txt" ]] && grep -q 'config_missing' "$RUNNER_TEMP/openai-status.txt"; then
-              kind=config
-            elif grep -Eqi '(^|[^0-9])(401|403)([^0-9]|$)|unauthori[sz]ed|invalid.?api.?key|authentication (failed|required)|missing scopes?:|insufficient permissions.*operation' "$stderr_log" 2>/dev/null; then
-              kind=security
-            elif grep -Eqi '429|quota|rate.?limit|billing|credit|overloaded|service unavailable|temporarily unavailable|timeout|timed out|connection|websocket.*(reset|closed|failed)' "$stderr_log" 2>/dev/null || [[ "$exit_code" == "124" ]]; then
-              kind=safe_provider
-            elif grep -Eqi 'unknown (argument|option)|unexpected argument|unrecognized option|usage:|config.*(invalid|error)|failed to (load|parse).*config|permission denied|operation not permitted|sandbox.*(denied|permission)|workspace.*trust' "$stderr_log" 2>/dev/null; then
-              kind=runtime_config
-            else
-              kind=unknown
-            fi
-          fi
-          echo "kind=$kind" >> "$GITHUB_OUTPUT"
-          echo "OpenAI classification: kind=$kind exit=${exit_code:-unknown}"
-
-          if [[ "$OPENAI_OUTCOME" != "success" && -f "$stderr_log" ]]; then
-            {
-              echo "### OpenAI fallback diagnostic"
-              echo
-              echo "classification: \`$kind\`"
-              echo "exit: \`${exit_code:-unknown}\`"
-              echo
-              echo '```text'
-              tail -c 4000 "$stderr_log" \
-                | sed -E \
-                    -e 's/sk-[A-Za-z0-9_-]{16,}/[REDACTED_OPENAI_KEY]/g' \
-                    -e 's/(Authorization:[[:space:]]*Bearer)[[:space:]]+[^[:space:]]+/\1 [REDACTED]/Ig' \
-                    -e 's/(OPENAI_API_KEY=)[^[:space:]]+/\1[REDACTED]/g'
-              echo '```'
-            } >> "$GITHUB_STEP_SUMMARY"
-          fi
-
+      # Economy policy v1: one paid provider per workflow run. The Gemini and
+      # OpenAI fallbacks were disabled here and are removed by the job split:
+      # each pushed and opened pull requests from the job that ran the model,
+      # which the split forbids. Re-adding one means running it in the model
+      # job and handing a patch to the publisher, like the primary route.
       - name: Record provider cost reservation and actual cost
-        if: always() && steps.governor.outputs.authorized == 'true' && steps.claude.outcome != 'skipped'
+        # The model job's runner can be lost mid-call, leaving no outputs; the
+        # reservation is then still recorded. Only a provably skipped call is not.
+        if: always() && needs.model.result != 'skipped' && needs.model.outputs.claude_outcome != 'skipped'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           # The executor prices its own token usage; without it the ledger
           # records actual_usd=unknown and the budget counts the reservation.
-          actual=$(jq -r '.total_cost_usd // empty' "$RUNNER_TEMP/claude-direct-execution.json" 2>/dev/null || true)
+          # The execution record reaches this job only through the collector,
+          # which keeps it only if its bytes match the executor's own digest.
+          actual=$(jq -r '.total_cost_usd // empty' "$RUNNER_TEMP/model-output/execution.json" 2>/dev/null || true)
           python3 scripts/swarm_governor_github_ledger.py \
             --append \
             --ledger-issue 1330 \
             --issue-number "$ISSUE_NUMBER" \
             --provider anthropic \
-            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}" \
+            --reserved-usd "${{ needs.execute.outputs.estimated_cost_usd }}" \
             --actual-usd "$actual"
 
       - name: Classify result, dispatch validation, release slot
         id: settlement
-        if: always() && steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized == 'true'
+        if: always()
         env:
-          CLAUDE_OUTCOME: ${{ steps.claude.outcome }}
+          CLAUDE_OUTCOME: ${{ needs.model.outputs.claude_outcome }}
           CLAUDE_KIND: ${{ steps.claude_provider.outputs.kind }}
           CLAUDE_FALLBACK: ${{ steps.claude_provider.outputs.fallback_allowed }}
-          ROUTE_TIER: ${{ steps.route.outputs.tier }}
-          ROUTE_MODEL: ${{ steps.route.outputs.model }}
-          ROUTE_REASON: ${{ steps.route.outputs.reason }}
-          ROUTE_RESERVED_COST: ${{ steps.route.outputs.estimated_cost_usd }}
-          PACKET_FINGERPRINT: ${{ steps.packet.outputs.fingerprint }}
-          PACKET_ESTIMATED_TOKENS: ${{ steps.packet.outputs.estimated_prompt_tokens }}
-          PACKET_EXECUTION_CLASS: ${{ steps.packet.outputs.execution_class }}
-          ISSUE_LABELS: ${{ steps.issue.outputs.labels }}
-          GEMINI_OUTCOME: ${{ steps.gemini.outcome }}
-          GEMINI_KIND: ${{ steps.gemini_provider.outputs.kind }}
-          GEMINI_FALLBACK: ${{ steps.gemini_provider.outputs.fallback_allowed }}
-          OPENAI_OUTCOME: ${{ steps.openai.outcome }}
-          OPENAI_KIND: ${{ steps.openai_provider.outputs.kind }}
+          ROUTE_TIER: ${{ needs.execute.outputs.tier }}
+          ROUTE_MODEL: ${{ needs.execute.outputs.model }}
+          ROUTE_REASON: ${{ needs.execute.outputs.route_reason }}
+          ROUTE_RESERVED_COST: ${{ needs.execute.outputs.estimated_cost_usd }}
+          PACKET_FINGERPRINT: ${{ needs.execute.outputs.packet_fingerprint }}
+          PACKET_ESTIMATED_TOKENS: ${{ needs.execute.outputs.packet_estimated_tokens }}
+          PACKET_EXECUTION_CLASS: ${{ needs.execute.outputs.packet_execution_class }}
+          ISSUE_LABELS: ${{ needs.execute.outputs.labels }}
+          PUBLISH_REASON: ${{ steps.publish.outputs.reason }}
+          # Fallback providers are not run (economy policy v1).
+          GEMINI_OUTCOME: ""
+          GEMINI_KIND: ""
+          GEMINI_FALLBACK: ""
+          OPENAI_OUTCOME: ""
+          OPENAI_KIND: ""
         shell: bash
         run: |
           set -euo pipefail
           marker="OC-AUTO-ISSUE: #${ISSUE_NUMBER}"
-          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}; reserved_cost_usd=${ROUTE_RESERVED_COST:-unknown}; packet=${PACKET_FINGERPRINT:-unknown}; packet_est_tokens=${PACKET_ESTIMATED_TOKENS:-unknown}; execution_class=${PACKET_EXECUTION_CLASS:-unknown}"
+          route_telemetry="tier=${ROUTE_TIER:-unknown}; model=${ROUTE_MODEL:-unknown}; reason=${ROUTE_REASON:-unknown}; reserved_cost_usd=${ROUTE_RESERVED_COST:-unknown}; packet=${PACKET_FINGERPRINT:-unknown}; packet_est_tokens=${PACKET_ESTIMATED_TOKENS:-unknown}; execution_class=${PACKET_EXECUTION_CLASS:-unknown}; publish_refusal=${PUBLISH_REASON:-none}"
           pr=$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --base "$INTEGRATION_BRANCH" --limit 100 --json number,body --jq "[.[] | select(.body != null and (.body | contains(\"$marker\")))][0].number // empty")
           settle() {
             local disposition="$1" message="$2"

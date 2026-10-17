@@ -12,7 +12,9 @@ are performed deterministically by this script after model execution.
 from __future__ import annotations
 
 import argparse
+import ctypes
 import fnmatch
+import hashlib
 import json
 import os
 import re
@@ -61,6 +63,7 @@ PROTECTED_FILES = {
     "scripts/oc_hosted_completion.py",
     "scripts/oc_paid_issue_admission.py",
     "scripts/oc_work_materialize.py",
+    "scripts/oc_patch_publish.py",
 }
 PROTECTED_BASENAMES = {
     ".env",
@@ -258,8 +261,6 @@ def harden_process() -> bool:
     withheld. Linux only; reports whether it took effect.
     """
     try:
-        import ctypes
-
         libc = ctypes.CDLL(None, use_errno=True)
         pr_set_dumpable = 4
         return libc.prctl(pr_set_dumpable, 0, 0, 0, 0) == 0
@@ -706,6 +707,23 @@ def _resume_from_packet(packet: str, issue_number: str) -> tuple[str, str] | Non
     return match.group(1), match.group(2)
 
 
+#: The integration commit the model's work starts from, recorded when the
+#: branch is prepared. A patch is always the difference from this commit.
+BASE_SHA: list[str] = []
+#: sha256 of each file handed to the trusted publisher, computed from the bytes
+#: this process wrote (never re-read) and printed on this process's stdout,
+#: which no model-driven child can write to. The collector refuses any file
+#: whose bytes no longer match, so nothing the model ran can swap them later.
+ARTIFACT_DIGESTS: dict[str, str] = {}
+ARTIFACT_MARKER = "[OC-DIRECT-ARTIFACT]"
+
+
+def _record_artifact(path: Path, text: str) -> None:
+    data = text.encode("utf-8")
+    path.write_bytes(data)
+    ARTIFACT_DIGESTS[path.name] = hashlib.sha256(data).hexdigest()
+
+
 def _prepare_branch(
     issue_number: str,
     run_id: str,
@@ -714,8 +732,12 @@ def _prepare_branch(
     resume: tuple[str, str] | None = None,
 ) -> str:
     RETAINED.clear()
+    BASE_SHA.clear()
     branch = f"claude-direct/issue-{issue_number}-{run_id}"
     _run(["git", "fetch", "origin", base], timeout=120, check=True)
+    BASE_SHA.append(
+        _run(["git", "rev-parse", f"origin/{base}"], check=True).stdout.strip()
+    )
     if resume:
         if base != "oc-autonomous-integration":
             raise DirectExecutorError("resume requires the integration boundary")
@@ -814,8 +836,64 @@ def _open_draft_pr(issue_number: str, branch: str, base: str, title: str) -> str
     return result.stdout.strip()
 
 
+def _emit_patch(directory: Path, issue_number: str, *, partial: bool) -> str:
+    """Hand the work to the trusted publisher instead of pushing it.
+
+    In the split lane this process holds no write credential. It writes the
+    difference from the recorded integration commit as a patch, with a small
+    manifest; the privileged job verifies the patch against the admitted scope
+    and is the only party that commits, pushes or opens a pull request.
+    Returns the patch path, or "" when there is no change.
+    """
+    if not partial:
+        _autofix_written()
+    if not BASE_SHA or not re.fullmatch(r"[0-9a-f]{40}", BASE_SHA[0]):
+        raise DirectExecutorError("integration base commit unknown")
+    _stage_written_files()
+    diff = _run(
+        [
+            "git",
+            "diff",
+            "--cached",
+            "--binary",
+            "--full-index",
+            "--no-renames",
+            "--no-ext-diff",
+            "--no-textconv",
+            BASE_SHA[0],
+        ],
+        timeout=60,
+        check=True,
+    ).stdout
+    if not diff.strip():
+        return ""
+    if not partial:
+        _run(
+            ["git", "diff", "--cached", "--check", BASE_SHA[0]], timeout=60, check=True
+        )
+    directory.mkdir(parents=True, exist_ok=True)
+    patch = directory / "patch.diff"
+    _record_artifact(patch, diff)
+    _record_artifact(
+        directory / "manifest.json",
+        json.dumps(
+            {
+                "schema": "oc.direct-patch.v1",
+                "issue": int(issue_number),
+                "base_sha": BASE_SHA[0],
+                "partial": partial,
+            },
+            sort_keys=True,
+        ),
+    )
+    return str(patch)
+
+
 def _write_result(path: Path, payload: dict[str, Any]) -> None:
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
+    _record_artifact(path, json.dumps(payload, indent=2, sort_keys=True))
+    print(
+        ARTIFACT_MARKER + " " + json.dumps(ARTIFACT_DIGESTS, sort_keys=True), flush=True
+    )
     # Keep execution/usage evidence in the durable job log as well as the
     # runner-local classifier input. Never log model text or raw API errors.
     receipt = {
@@ -875,7 +953,10 @@ def main() -> int:
     parser.add_argument("--max-tokens", type=int, default=3072)
     parser.add_argument("--base", default="oc-autonomous-integration")
     parser.add_argument("--execution-file", required=True)
+    # Split lane: write a patch for the trusted publisher; never push.
+    parser.add_argument("--emit-patch-dir", default="")
     args = parser.parse_args()
+    emit_dir = Path(args.emit_patch_dir) if args.emit_patch_dir else None
 
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
@@ -889,6 +970,7 @@ def main() -> int:
     ALLOWED_PATHS = _parse_allowed_paths(packet)
     WRITTEN.clear()
     RETAINED.clear()
+    ARTIFACT_DIGESTS.clear()
 
     input_tokens = 0
     output_tokens = 0
@@ -1045,12 +1127,15 @@ def main() -> int:
             error_kind = "max_turns"
             raise DirectExecutorError("direct executor reached max turns")
 
-        pr_url = _open_draft_pr(
-            args.issue_number,
-            branch,
-            args.base,
-            f"OC-AUTO #{args.issue_number}: {args.title}",
-        )
+        if emit_dir is not None:
+            pr_url = _emit_patch(emit_dir, args.issue_number, partial=False)
+        else:
+            pr_url = _open_draft_pr(
+                args.issue_number,
+                branch,
+                args.base,
+                f"OC-AUTO #{args.issue_number}: {args.title}",
+            )
         if not pr_url:
             error_kind = "no_durable_change"
             raise DirectExecutorError("model completed without repository changes")
@@ -1074,7 +1159,8 @@ def main() -> int:
                 }
             },
             "result": final_text,
-            "pr_url": pr_url,
+            "pr_url": "" if emit_dir is not None else pr_url,
+            "patch_file": pr_url if emit_dir is not None else None,
             "branch": branch,
         }
         _write_result(execution_path, result)
@@ -1083,7 +1169,7 @@ def main() -> int:
                 "execution_file": execution_path,
                 "conclusion": "success",
                 "session_id": run_id,
-                "pr_url": pr_url,
+                "pr_url": "" if emit_dir is not None else pr_url,
                 "input_tokens": input_tokens,
                 "output_tokens": output_tokens,
             }
@@ -1126,7 +1212,20 @@ def main() -> int:
         # blocking settlement. Authentication failures and billing errors produce
         # no partial work worth salvaging; no_durable_change never writes files.
         partial_branch: str | None = None
-        if branch and error_kind in {"max_turns", "provider_or_executor_error"}:
+        if (
+            emit_dir is not None
+            and branch
+            and error_kind in {"max_turns", "provider_or_executor_error"}
+        ):
+            try:
+                if _emit_patch(emit_dir, args.issue_number, partial=True):
+                    partial_branch = "pending-trusted-publish"
+            except Exception as _salvage_exc:  # noqa: BLE001
+                print(
+                    f"[OC-ANTHROPIC-DIRECT] salvage skipped: {_salvage_exc}",
+                    file=sys.stderr,
+                )
+        elif branch and error_kind in {"max_turns", "provider_or_executor_error"}:
             try:
                 if _stage_written_files():
                     msg = (

@@ -166,6 +166,7 @@ PROTECTED = (
     "scripts/oc_work_discovery",
     "scripts/oc_model_router",
     "scripts/oc_controller_trust",
+    "scripts/oc_patch_publish",
     "scripts/agent_security_guard.py",
     "scripts/oc_swarm",
     "scripts/oc_health_contract.py",

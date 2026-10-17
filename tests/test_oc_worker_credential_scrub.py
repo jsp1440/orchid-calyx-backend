@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 import yaml
@@ -155,7 +156,7 @@ def test_a_hardened_executor_hides_its_environment_from_children():
     results = {}
     for harden in (False, True):
         code = (
-            "import subprocess, sys\n"
+            "import ctypes, subprocess, sys\n"
             + inspect.getsource(direct.harden_process)
             + ("\nassert harden_process()\n" if harden else "\n")
             + f"print(subprocess.run([sys.executable, '-c', {child!r}],"
@@ -182,33 +183,34 @@ def test_a_hardened_executor_hides_its_environment_from_children():
     assert results == {False: "READ", True: "DENIED"}
 
 
-def _job():
+def _jobs():
     with open(WORKFLOW, encoding="utf-8") as handle:
-        workflow = yaml.safe_load(handle)
-    (job,) = workflow["jobs"].values()
-    return job
+        return yaml.safe_load(handle)["jobs"]
 
 
-def test_the_lane_checkout_persists_no_token():
-    steps = _job()["steps"]
-    checkout = steps[0]
-    assert checkout["uses"].startswith("actions/checkout@")
-    assert checkout["with"]["persist-credentials"] is False
-    assert steps[1]["run"].strip() == "gh auth setup-git"
+def test_no_lane_checkout_persists_a_token():
+    for name, job in _jobs().items():
+        checkouts = [
+            s
+            for s in job["steps"]
+            if str(s.get("uses", "")).startswith("actions/checkout@")
+        ]
+        assert len(checkouts) == 1, name
+        assert checkouts[0]["with"]["persist-credentials"] is False, name
+    publish = _jobs()["publish"]["steps"]
+    assert [
+        s["run"].strip() for s in publish if "gh auth setup-git" in str(s.get("run"))
+    ] == ["gh auth setup-git"]
 
 
-def test_the_worker_replaces_its_shell_and_fallback_clis_drop_tokens():
-    steps = _job()["steps"]
-    (worker,) = [s for s in steps if s.get("id") == "claude"]
-    assert "exec python3 scripts/swarm_anthropic_direct.py" in worker["run"]
-    for step in steps:
-        run = str(step.get("run") or "")
-        if "npx -y @" in run and ("gemini-cli" in run or "codex" in run):
-            for line in run.splitlines():
-                if "env -u GH_TOKEN" in line:
-                    for name in (
-                        "GITHUB_TOKEN",
-                        "ACTIONS_ID_TOKEN_REQUEST_TOKEN",
-                        "ACTIONS_ID_TOKEN_REQUEST_URL",
-                    ):
-                        assert f"-u {name}" in line
+def test_no_provider_cli_runs_in_the_lane_other_than_the_executor():
+    text = Path(WORKFLOW).read_text(encoding="utf-8")
+    assert "@google/gemini-cli" not in text
+    assert "@openai/codex" not in text
+    (worker,) = [s for s in _jobs()["model"]["steps"] if s.get("id") == "claude"]
+    assert set(worker["env"]) == {
+        "ANTHROPIC_API_KEY",
+        "ISSUE_TITLE",
+        "CLAUDE_MODEL",
+        "CLAUDE_MAX_TURNS",
+    }

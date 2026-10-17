@@ -109,22 +109,59 @@ other refusal still parks it as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED`.
 Budget, kill switch, NO-API, provider allowlist and paid concurrency all still
 apply, as do one checker call per issue and the factory gate.
 
-The worker runs pytest on model-written tests, so it holds no credential a
-child can use: every subprocess except its own `gh` and git remote steps gets an
-environment with GH_TOKEN, GITHUB_TOKEN, provider keys, `ACTIONS_*` and any
-TOKEN/KEY/SECRET/PASSWORD/CREDENTIAL/PRIVATE name removed, git hooks and
-fsmonitor are disabled, the executor makes itself non-dumpable (a child cannot
-read `/proc/<executor>/environ`) and replaces the step shell with `exec`, and
-the lane checkout no longer persists a token in `.git/config` (`gh auth
-setup-git` authenticates pushes from GH_TOKEN at use time). The fallback CLIs
-also drop GITHUB_TOKEN and the OIDC request variables. Residual, not closed
-here: model-written code still runs as the runner user, which on hosted runners
-has passwordless sudo, so a deliberately hostile test can escalate and reach
-the job's credentials, and can tamper with files that later trusted steps
-execute. Closing that needs model-written code to run in a separate job or
-sandbox that holds no credential. Until then a discovered issue's paid spend is
-bounded by the daily cap, the per-issue ceiling and the governor budgets (whose
-ledger is equally exposed to a token holder).
+### Completion lane job boundary
+
+The worker runs pytest on model-written tests, so model-written code executes
+on the runner. Scrubbing that code's environment was not enough (#1973 review):
+in the job that held GH_TOKEN it could rewrite `.git/config` or `~/.gitconfig`
+(a credential helper, an `ext::` remote), shadow `git` on PATH, or edit modules
+that later trusted steps imported, and so reach the token through the trusted
+steps themselves; runner sudo made every same-job secret reachable. The lane
+(`.github/workflows/orchid-completion-lane.yml`) is therefore three jobs:
+
+* `execute` -- trusted admission from a fresh checkout of the integration ref:
+  lease, issue, packet, route, owner authorization, governor, every denial
+  settlement. It records the revision it ran (`trusted_sha`) and the admitted
+  write scope (`allowed_paths`) as job outputs and uploads the packet.
+* `model` -- the only job that runs the model. Its token can read contents and
+  issues and nothing else, and only a lease-time check that runs before any
+  model-driven code receives it. The executor runs as a separate account
+  (`oc-model`) that cannot sudo, is in no docker/sudo/adm group and cannot
+  read the runner's home, so it cannot reach runner processes, files, actions
+  or tokens; the job fails before the model runs if any of that is not so.
+  The executor gets the provider key alone (`sudo --preserve-env`), runs with
+  `python -I` so the model's tree is never on its import path, is
+  non-dumpable, and scrubs every child's environment. It writes a patch, a
+  manifest and its execution record and prints their sha256 on its own
+  stdout; after killing every `oc-model` process, trusted code copies only
+  files whose bytes still match and uploads them. No dependency cache is
+  saved from this job.
+* `publish` -- trusted publication on a fresh runner from a fresh checkout of
+  `trusted_sha`. It never checks out, installs, imports or executes the
+  model's tree. `scripts/oc_patch_publish.py` admits only additions and
+  modifications of mode-100644 text files at exact paths inside `allowed_paths`
+  (no renames, copies, deletions, mode changes, symlinks, gitlinks, binary
+  hunks, quoted or traversing paths, `.git*`, protected paths), requires the
+  patch base to be an ancestor of the integration branch, applies it in a
+  worktree outside the workspace with hooks disabled, re-derives the changed
+  set from git and requires it to match, commits, pushes a branch name it
+  chooses, opens the draft PR, records cost and settles.
+
+The checker and supervisor flow is unchanged: the PR is still opened by the
+workflow bot in the same controller run, bound to the same lease. Standing and
+per-issue grants use the same split, with the grant's `allowed_paths` as the
+publish scope. The disabled Gemini and OpenAI fallbacks were removed, because
+they pushed from the job that ran the model.
+
+Residual: the provider key is in the model job, held only by the executor
+process; model-driven code under `oc-model` cannot read it short of a kernel
+or runner escape, which would then reach only that key and a read-only token.
+`persist-credentials: false`, the account separation and the cross-job
+artifact handoff are verified by workflow-contract tests and local runs of the
+scripts, not yet by a hosted run of the lane.
+
+A discovery issue whose reservation exceeds the grant ceiling three times in a
+row parks as owner-gated instead of cycling through the queue.
 
 This grant authorizes only a bounded maker run and one checker call whose PR
 targets `oc-autonomous-integration` through the normal independent checker and

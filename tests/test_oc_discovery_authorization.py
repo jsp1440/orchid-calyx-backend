@@ -722,8 +722,7 @@ def _lane_steps():
     import yaml
 
     with open(".github/workflows/orchid-completion-lane.yml", encoding="utf-8") as fh:
-        (job,) = yaml.safe_load(fh)["jobs"].values()
-    return job["steps"]
+        return yaml.safe_load(fh)["jobs"]["execute"]["steps"]
 
 
 def test_the_lane_requeues_deferrals_and_parks_everything_else():
@@ -742,3 +741,54 @@ def test_the_lane_requeues_deferrals_and_parks_everything_else():
     assert "steps.issue_auth.outputs.requeue != 'true'" in park["if"]
     # A crashed admission writes no requeue output, so it parks.
     assert "steps.governor.outputs.authorized != 'true'" in park["if"]
+
+
+def _settlement(reason):
+    return {
+        "user": {"login": "github-actions[bot]"},
+        "body": (
+            "[OC-SWARM-V4] Worker result validated; requested lease disposition: `"
+            '{"message": "Discovery admission deferred (' + reason + "); no provider "
+            'executed."}`.'
+        ),
+    }
+
+
+def _admit_with_history(packet, comments):
+    issue = _issue()
+    return admission.admit(
+        REPO,
+        1968,
+        fetch=lambda *_: (issue, comments, lambda: [_record()], lambda: _history()),
+        now=NOW,
+        reserved_usd="0.75",
+        ledger=Ledger(),
+        run_id="1",
+        packet_file=str(packet),
+    )
+
+
+def test_ceiling_deferrals_requeue_twice_then_park(packet):
+    ceiling = _settlement("DISCOVERY_RESERVATION_ABOVE_GRANT")
+    first = _admit_with_history(packet, [])
+    second = _admit_with_history(packet, [ceiling])
+    third = _admit_with_history(packet, [ceiling, ceiling])
+    assert first["requeue"] is True and second["requeue"] is True
+    assert "requeue" not in third
+    assert third["reason"] == "OWNER_ISSUE_AUTHORIZATION_REQUIRED"
+    assert third["detail"] == "discovery_reservation_exceeds_grant_repeatedly"
+
+
+def test_only_consecutive_ceiling_deferrals_count(packet):
+    ceiling = _settlement("DISCOVERY_RESERVATION_ABOVE_GRANT")
+    other = _settlement("DISCOVERY_DAILY_CAP_REACHED")
+    forged = {**ceiling, "user": {"login": "mallory"}}
+    assert admission.consecutive_ceiling_deferrals([ceiling, other, ceiling]) == 1
+    assert admission.consecutive_ceiling_deferrals([ceiling, ceiling, forged]) == 2
+    decision = _admit_with_history(packet, [ceiling, other, ceiling])
+    assert decision["requeue"] is True
+
+
+def test_an_admission_reports_its_write_scope(packet):
+    decision = _admit(packet)
+    assert decision["allowed_paths"] == sorted(PATHS)

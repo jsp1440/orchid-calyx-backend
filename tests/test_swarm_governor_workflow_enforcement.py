@@ -88,7 +88,7 @@ def test_completion_worker_validation_dependencies_precede_paid_execution() -> N
     assert setup < install < execution
     for index in (setup, install):
         step = steps[index]
-        assert step["if"] == steps[execution]["if"]
+        assert step.get("if") == steps[execution].get("if")
         assert "ANTHROPIC_API_KEY" not in str(step)
     assert "-r requirements.txt" in steps[install]["run"]
     # The linter and test runner are installed here, before paid execution, at
@@ -589,7 +589,11 @@ def test_completion_lane_uses_compact_packet_and_primary_governor() -> None:
     path = WORKFLOWS_DIR / "orchid-completion-lane.yml"
     text = path.read_text()
     assert "swarm_prepare_work_packet.py" in text
-    assert "steps.packet.outputs.packet" in text
+    # The compact packet reaches the model job as the admitted artifact.
+    assert (
+        "name: oc-packet-${{ inputs.issue_number }}-${{ github.run_attempt }}" in text
+    )
+    assert '--packet-file "$MODEL_HOME/packet.md"' in text
     assert "Swarm governor precheck — primary provider" in text
     assert "steps.governor.outputs.authorized == 'true'" in text
 
@@ -597,9 +601,11 @@ def test_completion_lane_uses_compact_packet_and_primary_governor() -> None:
 def test_completion_lane_cross_provider_fallback_is_disabled() -> None:
     wf = load_workflow("orchid-completion-lane.yml")
     steps = all_steps(wf)
-    by_name = {s.get("name"): s for s in steps}
-    assert by_name["Execute bounded Gemini fallback"]["if"] == "${{ false }}"
-    assert by_name["Execute bounded OpenAI fallback"]["if"] == "${{ false }}"
+    names = {s.get("name") for s in steps}
+    assert "Execute bounded Gemini fallback" not in names
+    assert "Execute bounded OpenAI fallback" not in names
+    providers = [s for s in steps if "ANTHROPIC_API_KEY" in str(s.get("env"))]
+    assert [s.get("id") for s in providers] == ["claude"]
 
 
 def test_completion_lane_runs_deterministic_preflight_before_provider() -> None:
@@ -667,12 +673,16 @@ def test_completion_lane_uses_direct_anthropic_executor_after_governor() -> None
     env = claude.get("env", {}) or {}
     assert "scripts/swarm_anthropic_direct.py" in run
     assert env.get("ANTHROPIC_API_KEY") == "${{ secrets.ANTHROPIC_API_KEY }}"
-    assert env.get("GH_TOKEN") == "${{ github.token }}"
+    # The executor writes a patch; it holds no GitHub credential at all.
+    assert "GH_TOKEN" not in env and "GITHUB_TOKEN" not in env
+    assert "--emit-patch-dir" in run
 
 
 def test_completion_lane_classifier_uses_action_execution_file_output() -> None:
     text = (WORKFLOWS_DIR / "orchid-completion-lane.yml").read_text()
-    assert "CLAUDE_EXECUTION_FILE: ${{ steps.claude.outputs.execution_file }}" in text
+    assert (
+        "CLAUDE_EXECUTION_FILE: ${{ runner.temp }}/model-output/execution.json" in text
+    )
     assert "kind=no_execution" in text
     assert "kind=no_model_usage" in text
     assert "kind=workflow_validation_skip" in text

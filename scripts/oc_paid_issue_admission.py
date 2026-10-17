@@ -41,6 +41,7 @@ blocked reconciliation holds ``governor:`` blockers as owner-gated.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import sys
@@ -61,6 +62,12 @@ RECEIPT_AUTHOR = "github-actions[bot]"
 DAILY_CAP = "DISCOVERY_DAILY_CAP_REACHED"
 CEILING = "DISCOVERY_RESERVATION_ABOVE_GRANT"
 UNAVAILABLE = "DISCOVERY_AUTHORITY_UNAVAILABLE"
+#: A reservation ceiling is a property of the route, which does not change
+#: by retrying. After this many consecutive ceiling deferrals the issue parks
+#: (owner-gated) instead of cycling through the queue.
+CEILING_PARK_AFTER = 3
+SETTLEMENT_PREFIX = "[OC-SWARM-V4] Worker result validated"
+DEFERRAL_MARKER = "Discovery admission deferred ("
 RECEIPT = re.compile(
     r"^\[OC-DISCOVERY-ADMISSION\] grant=[0-9]+ issue=[0-9]+ run_id=\S+ "
     r"date=(?P<date>[0-9]{4}-[0-9]{2}-[0-9]{2})$",
@@ -133,20 +140,50 @@ def bind_packet(packet_file, allowed) -> None:
     hosted.require(declared and declared == set(allowed), "discovery_packet_unbound")
 
 
+def consecutive_ceiling_deferrals(comments: list[dict]) -> int:
+    """Ceiling deferrals among this issue's most recent bot settlements."""
+    count = 0
+    for row in reversed(comments):
+        body = row.get("body") or ""
+        if (row.get("user") or {}).get("login") != RECEIPT_AUTHOR:
+            continue
+        if not body.startswith(SETTLEMENT_PREFIX):
+            continue
+        if f"{DEFERRAL_MARKER}{CEILING})" not in body:
+            break
+        count += 1
+    return count
+
+
+def _ceiling(detail: str, comments: list[dict]) -> Exception:
+    if consecutive_ceiling_deferrals(comments) + 1 >= CEILING_PARK_AFTER:
+        return ValueError(f"{detail}_repeatedly")
+    return Deferred(CEILING, detail)
+
+
 def admit_discovery(
-    grant, issue_number, *, reserved_usd, ledger, now, run_id, packet_file
+    grant,
+    issue_number,
+    *,
+    reserved_usd,
+    ledger,
+    now,
+    run_id,
+    packet_file,
+    comments=(),
 ):
     """Ceiling, daily cap and packet scope; then record the durable receipt."""
+    comments = list(comments)
     try:
         reserved = Decimal(str(reserved_usd))
     except InvalidOperation:
-        raise Deferred(CEILING, "discovery_reservation_unknown") from None
+        raise _ceiling("discovery_reservation_unknown", comments) from None
     if not (
         reserved.is_finite()
         and reserved > 0
         and reserved <= Decimal(grant["max_reserved_usd_per_issue"])
     ):
-        raise Deferred(CEILING, "discovery_reservation_exceeds_grant")
+        raise _ceiling("discovery_reservation_exceeds_grant", comments)
     hosted.require(re.fullmatch(r"[0-9]+", run_id or ""), "discovery_run_unknown")
     moment = now or datetime.now(UTC)
     day = moment.date().isoformat()
@@ -203,6 +240,7 @@ def admit(
                 now=now,
                 run_id=run_id if run_id is not None else os.getenv("GITHUB_RUN_ID", ""),
                 packet_file=packet_file,
+                comments=comments,
             )
     except Deferred as exc:
         return _refusal(exc.reason, exc, issue_number, requeue=True)
@@ -219,6 +257,7 @@ def admit(
         "standing": bool(grant.get("standing")),
         "discovery": bool(grant.get("discovery")),
         "expires_at": grant["expires_at"],
+        "allowed_paths": sorted(grant["allowed_paths"]),
     }
 
 
@@ -274,6 +313,11 @@ def main() -> int:
             )
             handle.write(f"reason={decision['reason']}\n")
             handle.write(f"requeue={'true' if decision.get('requeue') else 'false'}\n")
+            # The publish job's write scope: trusted, from the admitting job.
+            scope = json.dumps(
+                decision.get("allowed_paths") or [], separators=(",", ":")
+            )
+            handle.write(f"allowed_paths={scope}\n")
     return 0
 
 
