@@ -9,7 +9,7 @@ from app.member_auth import owner_or_member_read
 from app.member_redaction import MemberRedactingRoute
 from app.security import verify_owner_or_api_key
 
-from .dependencies import _REPOSITORY, _REPOSITORY_ERROR, _SERVICE
+from .dependencies import resolve_components
 from .models import EvidenceInput, SourceAnchor
 
 # Owner decision 2026-09-26 ("Narrow the scope"): no candidate-knowledge route is
@@ -17,10 +17,22 @@ from .models import EvidenceInput, SourceAnchor
 # members get 403 OWNER_ACCESS_REQUIRED from owner_or_member_read. The redacting route
 # class stays as defence in depth.
 router = APIRouter(prefix="/api/candidate-knowledge", tags=["candidate-knowledge"], dependencies=[Depends(owner_or_member_read)], route_class=MemberRedactingRoute)
-REPOSITORY = _REPOSITORY
-REPOSITORY_ERROR = _REPOSITORY_ERROR
-SERVICE = _SERVICE
+# Resolved on first use, not at import (see dependencies.py). A test or caller
+# that assigns REPOSITORY / SERVICE directly keeps exactly what it assigned.
+_UNRESOLVED: Any = object()
+REPOSITORY: Any = _UNRESOLVED
+REPOSITORY_ERROR: str | None = None
+SERVICE: Any = _UNRESOLVED
+def _resolve():
+    global REPOSITORY, SERVICE, REPOSITORY_ERROR
+    if REPOSITORY is _UNRESOLVED or SERVICE is _UNRESOLVED:
+        repository, service, error = resolve_components()
+        if REPOSITORY is _UNRESOLVED:
+            REPOSITORY, REPOSITORY_ERROR = repository, error
+        if SERVICE is _UNRESOLVED:
+            SERVICE = service
 def _available():
+    _resolve()
     if REPOSITORY is None or SERVICE is None:
         raise HTTPException(503, detail={"code": REPOSITORY_ERROR or "CANDIDATE_DATABASE_UNAVAILABLE"})
     return REPOSITORY, SERVICE
