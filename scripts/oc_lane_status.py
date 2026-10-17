@@ -334,46 +334,84 @@ def _module_reason(module_state: str, entry: dict) -> str:
     return f"module_state:{module_state}"
 
 
+def _lane_precedence(
+    entry: dict,
+    module_state: str,
+    claims: dict,
+    recovered: set[int],
+    errored: set[int],
+) -> tuple[str, str, list[int]]:
+    """Mission Control (state, reason, skipped issues) for one valid lane.
+
+    One precedence list, highest first; a rule never discards a higher one:
+
+    a. Lease evidence naming one of the lane's issues: a reconcile error is
+       ``failed``, a recovery is ``recovering`` (error wins). Always applies,
+       whatever the claim handoff says; it wraps the reason of rules b-e.
+    b. Running or validating issues in the snapshot (independent of the claim
+       step): ``working``. A confirmed claim and any unresolved-planned caveat
+       (``claims_unavailable``, ``claims_malformed``, ``claim_skipped:<why>``)
+       are appended to the reason so nothing is hidden.
+    c. A confirmed claim on a lane issue: ``working`` (``claim_confirmed:<kind>``),
+       plus the caveat if another planned issue is unresolved.
+    d. Only when none of a-c apply AND a planned issue is unresolved (no usable
+       handoff, or the claim step skipped it): ``unknown`` with that reason.
+       Fail-closed applies only to a lane whose state depends on the claim.
+    e. Otherwise the base mapping (``MODULE_STATE_MAP``); a planned issue that a
+       good handoff shows was not launched stays idle as ``planned_unconfirmed``.
+
+    A claim error on the lane's issue prefixes the reason (``claim_error:``)
+    without changing the state.
+    """
+    issues = _lane_issues(entry)
+    planned = set(entry.get("planned") or [])
+    status = claims.get("status")
+    unresolved = None
+    skipped: list[int] = []
+    kinds: list[str] = []
+    if status == "ok":
+        kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
+        skipped = sorted(planned & set(claims["skipped"]))
+        if skipped:
+            unresolved = "claim_skipped:" + ",".join(sorted({claims["skipped"][n] for n in skipped}))
+    elif planned:
+        unresolved = "claims_malformed" if status == "malformed" else "claims_unavailable"
+
+    in_flight = bool(entry["running"] or entry["validating"])
+    base_state, base_reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
+    confirmed = f"claim_confirmed:{','.join(kinds)}" if kinds else None
+    if in_flight:  # b
+        state = "working"
+        reason = base_reason if module_state in {"executing", "validating"} else "validating_issues_present"
+        parts = [reason, confirmed, unresolved]
+    elif confirmed:  # c
+        state, parts = "working", [confirmed, unresolved]
+    elif unresolved:  # d
+        state, parts = "unknown", [unresolved]
+    elif planned and base_state == "idle":  # e
+        state, parts = base_state, ["planned_unconfirmed"]
+    else:  # e
+        state, parts = base_state, [base_reason]
+    reason = ";".join(part for part in parts if part)
+    if status == "ok" and issues & claims["errors"]:
+        reason = f"claim_error:{reason}"
+    if issues & errored:  # a
+        state, reason = "failed", f"lease_reconcile_errors:{reason}"
+    elif issues & recovered:  # a
+        state, reason = "recovering", f"lease_recovered:{reason}"
+    return state, reason, skipped
+
+
 def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int]) -> dict:
     if not _lane_valid(entry):
         return {"lane_state": "unknown", "reason": "malformed_lane_entry", "module_state": None}
     module_state = entry["state"]
     if module_state not in MODULE_STATE_MAP:
         return {"lane_state": "unknown", "reason": "unknown_module_state", "module_state": None}
-    state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
-    issues = _lane_issues(entry)
-    planned = set(entry.get("planned") or [])
-    if claims.get("status") in {"malformed", "unavailable"} and planned:
-        # No usable claim evidence: the pre-claim plan is stale for a planned lane
-        # (a step before the claim step may have failed), so never call it idle.
-        why = "claims_malformed" if claims["status"] == "malformed" else "claims_unavailable"
-        return {"lane_state": "unknown", "reason": why, "module_state": module_state}
-    skipped_issues: list[int] = []
-    if claims.get("status") == "ok":
-        kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
-        skipped_issues = sorted(planned & set(claims["skipped"]))
-        skip_text = ",".join(sorted({claims["skipped"][n] for n in skipped_issues}))
-        if kinds:
-            # A launch is a fact about this lane, so it stays working; the skip
-            # of another planned issue is appended so it is not hidden.
-            state, reason = "working", "claim_confirmed:" + ",".join(kinds)
-            if skipped_issues:
-                reason += f";claim_skipped:{skip_text}"
-        elif skipped_issues:
-            # Nothing launched and the plan no longer describes a planned issue:
-            # the observation is stale, so the lane is unknown, never idle.
-            state, reason = "unknown", f"claim_skipped:{skip_text}"
-        elif planned and state == "idle":
-            reason = "planned_unconfirmed"
-        if issues & claims["errors"]:
-            reason = f"claim_error:{reason}"
-    if issues & errored:
-        state, reason = "failed", f"lease_reconcile_errors:{reason}"
-    elif issues & recovered:
-        state, reason = "recovering", f"lease_recovered:{reason}"
+    state, reason, skipped = _lane_precedence(entry, module_state, claims, recovered, errored)
     result = {"lane_state": state, "reason": reason, "module_state": module_state}
-    if skipped_issues:
-        result["skipped_issues"] = skipped_issues
+    if skipped:
+        result["skipped_issues"] = skipped
     return result
 
 

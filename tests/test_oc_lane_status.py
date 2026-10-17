@@ -6,6 +6,7 @@ summary, and 32 consecutive zero-launch waves left no durable reason.
 
 from __future__ import annotations
 
+import itertools
 import json
 import subprocess
 from copy import deepcopy
@@ -1333,3 +1334,105 @@ def test_an_unavailable_claim_file_makes_only_planned_lanes_unknown():
     out = rec["module_lanes"]["lanes"]
     assert out["taxonomy"]["reason"] == "claims_unavailable"
     assert out["literature"]["lane_state"] == "working"
+
+
+# --- precedence model: one table, checked against an independent oracle --------
+
+def _oracle(running, validating, status, outcome, lease):
+    """Plain precedence table for one lane. Rules, highest first:
+    a. lease evidence on a lane issue: error -> failed, recovery -> recovering
+       (always applies, wraps whatever b-e decided).
+    b. running or validating issues in the snapshot: working, whatever the claim
+       handoff says (a caveat naming an unresolved planned issue is appended).
+    c. a confirmed claim on the planned issue: working.
+    d. only otherwise, a planned issue whose outcome is unresolved (no usable
+       handoff, or skipped): unknown.
+    e. otherwise the base mapping: planned but not launched -> idle.
+    A claim error on the lane's issue prefixes the reason without changing state.
+    """
+    planned = outcome != "none"
+    unresolved = None
+    if planned and status == "malformed":
+        unresolved = "claims_malformed"
+    elif planned and status == "unavailable":
+        unresolved = "claims_unavailable"
+    elif planned and outcome == "skipped":
+        unresolved = "claim_skipped:not_exclusively_queued"
+    confirmed = status == "ok" and outcome == "confirmed"
+    if running:                                   # b
+        state, reason = "working", "module_state:executing"
+    elif validating:                              # b
+        state = "working"
+        reason = "validating_issues_present" if planned else "module_state:validating"
+    elif confirmed:                               # c
+        state, reason = "working", "claim_confirmed:provider"
+    elif unresolved:                              # d
+        state, reason = "unknown", unresolved
+    elif planned:                                 # e: good handoff, nothing launched
+        state, reason = "idle", "planned_unconfirmed"
+    else:                                         # e: nothing planned
+        state, reason = "idle", "module_state:empty"
+    if (running or validating) and confirmed:
+        reason += ";claim_confirmed:provider"
+    if (running or validating) and unresolved:
+        reason += ";" + unresolved
+    if status == "ok" and outcome == "errored":
+        reason = "claim_error:" + reason
+    if lease in {"error", "both"}:                # a: error wins over recovery
+        state, reason = "failed", "lease_reconcile_errors:" + reason
+    elif lease == "recovered":                    # a
+        state, reason = "recovering", "lease_recovered:" + reason
+    return state, reason
+
+
+def _claims_for(status, outcome):
+    if status == "unavailable":
+        return None
+    if status == "malformed":
+        return "garbage"
+    return {
+        "confirmed": claims_doc(confirmed=[(7, False)]),
+        "skipped": claims_doc(skipped=[(7, "not_exclusively_queued")]),
+        "errored": claims_doc(errors=[7]),
+    }.get(outcome, claims_doc())
+
+
+PRECEDENCE_CASES = [
+    (running, validating, status, outcome, lease)
+    for running, validating, status, outcome, lease in itertools.product(
+        (False, True),
+        (False, True),
+        ("ok", "malformed", "unavailable"),
+        ("none", "confirmed", "skipped", "errored", "absent"),
+        ("none", "recovered", "error", "both"),
+    )
+    # Outcomes are only distinguishable with a good handoff; without one, a planned
+    # issue is simply planned. A lease needs a lane issue to name.
+    if (status == "ok" or outcome in {"none", "absent"})
+    and (lease == "none" or running or validating or outcome != "none")
+]
+
+
+def test_the_precedence_table_covers_the_whole_cross_product():
+    assert len(PRECEDENCE_CASES) == 135
+
+
+@pytest.mark.parametrize(("running", "validating", "status", "outcome", "lease"), PRECEDENCE_CASES)
+def test_lane_state_follows_the_documented_precedence_model(running, validating, status, outcome, lease):
+    planned = outcome != "none"
+    entry = lane(
+        "executing" if running else "replenishable" if planned else "validating" if validating else "empty",
+        running=[10] if running else [],
+        validating=[11] if validating else [],
+        replenishable=[7] if planned else [],
+    ) | {"planned": [7] if planned else []}
+    number = 10 if running else 11 if validating else 7
+    recovery = {
+        "none": None,
+        "recovered": {"recovered": [{"issue_number": number}]},
+        "error": {"errors": [{"issue": number}]},
+        "both": {"recovered": [{"issue_number": number}], "errors": [{"issue": number}]},
+    }[lease]
+    got = claimed_record({"taxonomy": entry}, _claims_for(status, outcome), recovery)[
+        "module_lanes"]["lanes"]["taxonomy"]
+    assert (got["lane_state"], got["reason"]) == _oracle(running, validating, status, outcome, lease)
