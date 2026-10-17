@@ -142,6 +142,22 @@ def _is_paid_work(issue: dict) -> bool:
         return True
 
 
+def _executor_enforces_declared_paths(issue: dict) -> bool:
+    """Whether the issue's executor refuses writes outside ``Allowed paths:``.
+
+    Only governed paid-lane coding work does (``swarm_anthropic_direct``).
+    Provider-free workers verify changed files against resource categories,
+    not the declared paths, and acquisition workers are a different executor,
+    so neither qualifies. Unroutable work does not qualify either.
+    """
+    try:
+        if is_lane_executable(issue):
+            return False
+        return "firecrawl-acquisition" not in route_task(issue).blocking_provider_capabilities
+    except (_ROUTING.CapabilityUnknown, ValueError):
+        return False
+
+
 def lane_refusal(issue: dict) -> dict:
     """A durable record of deterministic work this lane cannot staff.
 
@@ -878,6 +894,11 @@ def build_swarm_plan(
             continue
         active_rows.append((issues[int(number)], str(item.get("lane_id") or "UNASSIGNED")))
     active_locks = locks.held_locks(active_rows)
+    by_number = {int(issue["number"]): issue for issue, _ in active_rows if issue.get("number") is not None}
+    for record in active_locks:
+        record["path_relaxation_executor"] = _executor_enforces_declared_paths(
+            by_number[int(record["issue_number"])]
+        )
 
     active_count = len(active_rows)
     capacity = max(0, slots - active_count)
@@ -893,7 +914,12 @@ def build_swarm_plan(
             (
                 issues[int(number)],
                 str(ranked.get("lane_id") or "UNASSIGNED"),
-                ranked,
+                {
+                    **ranked,
+                    "path_relaxation_executor": _executor_enforces_declared_paths(
+                        issues[int(number)]
+                    ),
+                },
             )
         )
     if malformed:
@@ -1076,6 +1102,14 @@ def build_swarm_plan(
         "dependency_suppressed": dependency_suppressed,
         "active_resource_locks": active_locks,
         "resource_lock_suppressed": lock_suppressed,
+        # Pairs admitted together only because their declared Allowed paths
+        # are provably disjoint (audit trail; serialized pairs, with the reason
+        # the relaxation did not apply, are in resource_lock_suppressed).
+        "resource_lock_path_disjoint_allowed": [
+            row
+            for item in selected
+            for row in (item.get("path_disjoint_allowed") or [])
+        ],
         "canonical_suppressed": list(plan.get("suppressed") or []),
         "blocked_reconciliation": blocked_report,
         "eligible_count": int(plan.get("eligible_count") or 0),
