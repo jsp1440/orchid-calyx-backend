@@ -308,7 +308,11 @@ def test_brain_pulse_writes_a_separate_calyx_materialization_report(tmp_path, mo
 def test_calyx_failure_blocks_only_calyx_and_preserves_brain_materialization(
     tmp_path, monkeypatch, capsys
 ):
-    brain_candidate = mission_gap_candidates()[0]
+    with monkeypatch.context() as registry_patch:
+        registry_patch.setattr(
+            brain_pulse, "MISSION_TYPES", _all_mapped_missions_safe_blocked()
+        )
+        brain_candidate = mission_gap_candidates()[0]
     pulse_path = tmp_path / "brain-pulse.json"
     product_path = tmp_path / "calyx-product-pulse.json"
     monkeypatch.setattr(brain_pulse, "mission_gap_candidates", lambda: [brain_candidate])
@@ -394,10 +398,28 @@ def test_calyx_failure_blocks_only_calyx_and_preserves_brain_materialization(
     assert refusal["errors"] == product["errors"]
 
 
+def _all_mapped_missions_safe_blocked() -> dict:
+    """Test-scoped registry view in which every mapped type is safe-blocked.
+
+    Real mission gaps disappear as handlers land, so tests that need Brain
+    mission candidates build them with the real observer over this view.
+    """
+    return {
+        **brain_pulse.MISSION_TYPES,
+        **{
+            key: dataclasses.replace(
+                brain_pulse.MISSION_TYPES[key],
+                handler="not_implemented_safe_block",
+            )
+            for key in brain_pulse.MISSION_GAP_LANES
+        },
+    }
+
+
 def test_mission_gap_observer_uses_only_explicit_safe_blocks(monkeypatch):
     # Real registry: a gap is reported exactly for the mapped mission types
     # still registered with the safe block. Handlers that have landed
-    # (#1730, #1731, #1732) must not be reported.
+    # (#1722, #1731, #1732) must not be reported.
     expected = {
         f"[Brain] implement {key.replace('_', ' ')}"
         for key in brain_pulse.MISSION_GAP_LANES
@@ -406,28 +428,14 @@ def test_mission_gap_observer_uses_only_explicit_safe_blocks(monkeypatch):
     real_titles = {candidate["title"] for candidate in mission_gap_candidates()}
     assert real_titles == expected
     for implemented in (
-        "source registry refresh",
+        "ontology resolution",
         "literature ingestion review",
+        "source registry refresh",
         "evidence readiness evaluation",
     ):
         assert not any(implemented in title for title in real_titles)
 
-    # Test-scoped registry view in which every mapped type is safe-blocked, so
-    # the observer is still exercised as real gaps disappear.
-    monkeypatch.setattr(
-        brain_pulse,
-        "MISSION_TYPES",
-        {
-            **brain_pulse.MISSION_TYPES,
-            **{
-                key: dataclasses.replace(
-                    brain_pulse.MISSION_TYPES[key],
-                    handler="not_implemented_safe_block",
-                )
-                for key in brain_pulse.MISSION_GAP_LANES
-            },
-        },
-    )
+    monkeypatch.setattr(brain_pulse, "MISSION_TYPES", _all_mapped_missions_safe_blocked())
     candidates = mission_gap_candidates()
     assert len(candidates) == len(brain_pulse.MISSION_GAP_LANES)
     assert {candidate["source"] for candidate in candidates} == {MISSION_SOURCE}
