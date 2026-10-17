@@ -122,6 +122,21 @@ class FakeGitHub:
             if row["state"] == "OPEN" and "oc-running" in row["labels"]
         ]
 
+    def validating_issues(self) -> list[dict]:
+        return [
+            {**self._view(n), "updatedAt": iso(self.now())}
+            for n, row in sorted(self.rows.items())
+            if row["state"] == "OPEN" and "oc-validating" in row["labels"]
+        ]
+
+    def parked_issues(self) -> list[dict]:
+        parked = {"oc-blocked", "oc-runtime-backoff", "oc-repair-backoff"}
+        return [
+            self._view(n)
+            for n, row in sorted(self.rows.items())
+            if row["state"] == "OPEN" and parked & set(row["labels"])
+        ]
+
     def pull_requests(self) -> list[dict]:
         return []
 
