@@ -150,6 +150,7 @@ in neither table, or when this table and `app/release_env.py` drift apart.
 | Taxonomy intake and activation; owner-gated, not activated in Release 1. | `CALYX_TAXONOMY_ACTIVE_BASELINE_PATH`, `CALYX_TAXONOMY_INTAKE_DIR`, `CALYX_TAXONOMY_INTAKE_PATH`, `CALYX_TAXONOMY_MAX_UPLOAD_BYTES` |
 | Literature, external-source and scientific-pipeline settings; background pipelines, not assessed for this checklist. | `BHL_API_KEY`, `CROSSREF_MAILTO`, `CALYX_EXTERNAL_LITERATURE_ALWAYS`, `CALYX_EXTERNAL_LITERATURE_TIMEOUT_SECONDS`, `CALYX_CLIMATE_TIMEOUT_SECONDS`, `CALYX_DATA_INTELLIGENCE_ROOT`, `LITERATURE_EXTRACTION_ROOT`, `SCIENTIFIC_LANGUAGE_CANDIDATE_ROOT`, `SCIENTIFIC_LANGUAGE_FIGURE_REQUEST_ROOT`, `SCI_OBS_EXPORT_ENABLED`, `TRAITBANK_DATABASE_URL` |
 | Surfaces not assessed for this checklist (University, Conservatory storage, reference-document storage, reviewer qualifications, local Show Day rehearsal). | `OCU_UNIVERSITY_ENABLED`, `OCU_UNIVERSITY_LEARNER_AUTH_ENABLED`, `OCU_UNIVERSITY_RELEASE_EVIDENCE_ID`, `OCU_UNIVERSITY_SESSION_WRITES_ENABLED`, `CALYX_CONSERVATORY_DIR`, `CONSERVATORY_SCAN_BASE_URL`, `REFERENCE_DOCS_DIR`, `MISSION_CONTROL_REVIEWER_QUALIFICATIONS_JSON`, `CALYX_SHOW_CREATE_TABLES` |
+| Field Journal original-media storage (pilot); FIELD_MEDIA_STORAGE_DURABLE=true only after durable private storage is mounted at FIELD_MEDIA_STORAGE_DIR, otherwise uploads report durability not_guaranteed. | `FIELD_MEDIA_MAX_BYTES`, `FIELD_MEDIA_STORAGE_DIR`, `FIELD_MEDIA_STORAGE_DURABLE` |
 
 ### Other runtime settings
 
