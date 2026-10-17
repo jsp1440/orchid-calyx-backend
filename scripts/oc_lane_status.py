@@ -200,18 +200,35 @@ def _lane_issues(entry: dict) -> set[int]:
     return issues
 
 
+def _numbers(value: Any) -> bool:
+    """A list of real issue numbers (bool is not a number here)."""
+    return isinstance(value, list) and all(
+        isinstance(n, int) and not isinstance(n, bool) for n in value
+    )
+
+
 def _lane_valid(entry: Any) -> bool:
+    """Every element type the derivation relies on, so bad data fails closed."""
     return (
         isinstance(entry, dict)
         and isinstance(entry.get("state"), str)
         and all(
-            isinstance(entry.get(f), list)
+            _numbers(entry.get(f))
             for f in ("running", "replenishable", "validating", "capability_gap")
         )
+        and _numbers(entry.get("planned", []))
         and isinstance(entry.get("gates"), dict)
-        and all(isinstance(v, list) for v in entry["gates"].values())
+        and all(
+            isinstance(k, str) and k.strip() and _numbers(v)
+            for k, v in entry["gates"].items()
+        )
         and isinstance(entry.get("refusal_reasons", []), list)
-        and isinstance(entry.get("planned", []), list)
+        and all(
+            isinstance(r, dict)
+            and isinstance(r.get("reason"), str)
+            and _numbers([r.get("issue")])
+            for r in entry.get("refusal_reasons", [])
+        )
     )
 
 
@@ -224,6 +241,32 @@ def _module_reason(module_state: str, entry: dict) -> str:
                 tokens.add(str(row["reason"]).strip())
         return ",".join(sorted(tokens)) if tokens else NO_REASON
     return f"module_state:{module_state}"
+
+
+def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int]) -> dict:
+    if not _lane_valid(entry):
+        return {"lane_state": "unknown", "reason": "malformed_lane_entry", "module_state": None}
+    module_state = entry["state"]
+    if module_state not in MODULE_STATE_MAP:
+        return {"lane_state": "unknown", "reason": "unknown_module_state", "module_state": None}
+    state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
+    issues = _lane_issues(entry)
+    planned = {_int(n) for n in entry.get("planned") or []}
+    if claims.get("status") == "malformed" and planned:
+        return {"lane_state": "unknown", "reason": "claims_malformed", "module_state": module_state}
+    if claims.get("status") == "ok":
+        kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
+        if kinds:
+            state, reason = "working", "claim_confirmed:" + ",".join(kinds)
+        elif planned and state == "idle":
+            reason = "planned_unconfirmed"
+        if issues & claims["errors"]:
+            reason = f"claim_error:{reason}"
+    if issues & errored:
+        state, reason = "failed", f"lease_reconcile_errors:{reason}"
+    elif issues & recovered:
+        state, reason = "recovering", f"lease_recovered:{reason}"
+    return {"lane_state": state, "reason": reason, "module_state": module_state}
 
 
 def module_lane_states(
@@ -254,47 +297,17 @@ def module_lane_states(
         return {"status": "malformed", "reason": "module_lanes_malformed", "lanes": {}, "counts": {}, "claims": claim_section}
     recovered, errored = _lease_evidence(recovery if isinstance(recovery, dict) else {})
     out: dict[str, dict] = {}
-    for key, entry in sorted(block["lanes"].items()):
+    for key, entry in sorted(block["lanes"].items(), key=lambda kv: str(kv[0])):
         if key == "unassigned":
             continue
-        if not _lane_valid(entry):
+        try:
+            out[str(key)] = _derive_lane(entry, claims, recovered, errored)
+        except Exception:  # noqa: BLE001 - one lane's bad data must not take down the rest
             out[str(key)] = {
                 "lane_state": "unknown",
-                "reason": "malformed_lane_entry",
+                "reason": "lane_derivation_error",
                 "module_state": None,
             }
-            continue
-        module_state = entry["state"]
-        if module_state not in MODULE_STATE_MAP:
-            out[str(key)] = {
-                "lane_state": "unknown",
-                "reason": "unknown_module_state",
-                "module_state": None,
-            }
-            continue
-        state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
-        issues = _lane_issues(entry)
-        planned = {_int(n) for n in entry.get("planned") or []}
-        if claims.get("status") == "malformed" and planned:
-            out[str(key)] = {
-                "lane_state": "unknown",
-                "reason": "claims_malformed",
-                "module_state": module_state,
-            }
-            continue
-        if claims.get("status") == "ok":
-            kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
-            if kinds:
-                state, reason = "working", "claim_confirmed:" + ",".join(kinds)
-            elif planned and state == "idle":
-                reason = "planned_unconfirmed"
-            if issues & claims["errors"]:
-                reason = f"claim_error:{reason}"
-        if issues & errored:
-            state, reason = "failed", f"lease_reconcile_errors:{reason}"
-        elif issues & recovered:
-            state, reason = "recovering", f"lease_recovered:{reason}"
-        out[str(key)] = {"lane_state": state, "reason": reason, "module_state": module_state}
     counts: dict[str, int] = {}
     for item in out.values():
         counts[item["lane_state"]] = counts.get(item["lane_state"], 0) + 1
@@ -305,6 +318,20 @@ def module_lane_states(
         "counts": dict(sorted(counts.items())),
         "claims": claim_section,
     }
+
+
+def _safe_module_lanes(module_lanes: Any, recovery: Any, claims: Any) -> dict:
+    """The module-lane section can never stop the global record from being built."""
+    try:
+        return module_lane_states(module_lanes, recovery, claims)
+    except Exception:  # noqa: BLE001 - telemetry is best effort; the global record is not
+        return {
+            "status": "error",
+            "reason": "module_lane_states_error",
+            "lanes": {},
+            "counts": {},
+            "claims": {"status": None, "reason": None},
+        }
 
 
 def build_record(
@@ -355,7 +382,7 @@ def build_record(
         "leases_recovered": recovered,
         "lease_reconcile_errors": reconcile_errors,
         "selected": sorted(_int(n) for n in plan.get("selected_numbers") or []),
-        "module_lanes": module_lane_states(plan.get("module_lanes"), recovery, claims),
+        "module_lanes": _safe_module_lanes(plan.get("module_lanes"), recovery, claims),
         "evidence": evidence if isinstance(evidence, dict) else {},
         "run_id": str(run_id),
         "run_url": run_url,

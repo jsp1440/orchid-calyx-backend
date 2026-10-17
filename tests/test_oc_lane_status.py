@@ -725,3 +725,100 @@ def test_main_cli_accepts_claims_flag(tmp_path, monkeypatch, capsys):
                 "--claims", str(tmp_path / "claims.json"), "--run-id", "1", "--run-url", "u"])
     out = json.loads(capsys.readouterr().out)
     assert out["record"]["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "working"
+
+
+# --- malformed element types and exception safety ------------------------------
+
+
+def _bad_lane(**override):
+    base = lane("gated", gates={"owner_gated": [7]})
+    base.update(override)
+    return base
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        _bad_lane(gates={1: [7]}),
+        _bad_lane(gates={None: [7]}),
+        _bad_lane(gates={(1, 2): [7]}),
+        _bad_lane(gates={"": [7]}),
+        _bad_lane(gates={"owner_gated": 7}),
+        _bad_lane(gates={"owner_gated": ["7"]}),
+        _bad_lane(running=["x"]),
+        _bad_lane(running=[None]),
+        _bad_lane(running=[True]),
+        _bad_lane(validating=[1.5]),
+        _bad_lane(replenishable=[{}]),
+        _bad_lane(capability_gap=["gap"]),
+        _bad_lane(planned=["p"]),
+        _bad_lane(refusal_reasons=["not-a-row"]),
+        _bad_lane(refusal_reasons=[{"issue": 1, "reason": 5}]),
+        _bad_lane(refusal_reasons=[{"issue": 1}]),
+    ],
+)
+def test_malformed_element_types_fail_closed_to_unknown_without_raising(bad):
+    entry = lane_entry(with_lanes({"taxonomy": bad}), "taxonomy")
+    assert entry["lane_state"] == "unknown" and entry["reason"] == "malformed_lane_entry"
+
+
+def test_one_bad_lane_does_not_affect_a_good_lane_or_the_global_record(monkeypatch):
+    doc = with_lanes(
+        {
+            "taxonomy": _bad_lane(gates={1: [7]}),
+            "literature": lane("executing", running=[2]),
+        }
+    )
+    rec = record(doc)
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "unknown"
+    assert rec["module_lanes"]["lanes"]["literature"]["lane_state"] == "working"
+    assert (rec["lane_state"], rec["reason"]) == ("idle", "queue_empty")
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, rec)
+    assert len(gh.created) == 2
+
+
+def test_an_unexpected_exception_in_one_lane_derivation_is_that_lane_unknown(monkeypatch):
+    real = lanes._module_reason
+
+    def boom(module_state, entry):
+        if entry["running"] == [666]:
+            raise RuntimeError("boom")
+        return real(module_state, entry)
+
+    monkeypatch.setattr(lanes, "_module_reason", boom)
+    out = record(
+        with_lanes(
+            {
+                "taxonomy": lane("executing", running=[666]),
+                "literature": lane("executing", running=[2]),
+            }
+        )
+    )["module_lanes"]["lanes"]
+    assert (out["taxonomy"]["lane_state"], out["taxonomy"]["reason"]) == (
+        "unknown",
+        "lane_derivation_error",
+    )
+    assert out["literature"]["lane_state"] == "working"
+
+
+def test_a_failure_in_the_module_lane_section_never_blocks_the_global_record(monkeypatch):
+    def boom(*args, **kwargs):
+        raise TypeError("boom")
+
+    monkeypatch.setattr(lanes, "module_lane_states", boom)
+    rec = record(with_lanes({"taxonomy": lane("executing", running=[1])}))
+    assert (rec["lane_state"], rec["reason"]) == ("idle", "queue_empty")
+    section = rec["module_lanes"]
+    assert section["status"] == "error" and section["reason"] == "module_lane_states_error"
+    assert section["lanes"] == {}
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, rec)
+    assert len(gh.created) == 2
+
+
+def test_non_string_lane_keys_do_not_raise():
+    doc = with_lanes({"taxonomy": lane("empty")})
+    doc["module_lanes"]["lanes"][5] = lane("empty")
+    out = record(doc)["module_lanes"]["lanes"]
+    assert out["5"]["lane_state"] == "idle" and out["taxonomy"]["lane_state"] == "idle"
