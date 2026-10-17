@@ -113,7 +113,9 @@ class MissionService:
             started = self.repository.start_job(job["job_id"], worker_id)
             try:
                 output = self._execute_registered_handler(started)
-            except Exception as exc:
+            # A handler failure of any kind must become a recorded failed job,
+            # never a crashed worker loop that strands the claimed job.
+            except Exception as exc:  # noqa: BLE001
                 self.repository.fail_job(started, exc.__class__.__name__, str(exc), worker_id)
                 failed += 1
                 continue
@@ -176,6 +178,9 @@ class MissionService:
             result = get_import_service().import_batch(registry_ids, "mission_control", mission_id=mission["mission_id"])
             return {**result, "semantic_extraction_performed": False, "ontology_mutated": False,
                     "embeddings_created": False, "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "literature_ingestion_review":
+            from .literature_review import build_literature_ingestion_review
+            return build_literature_ingestion_review(mission.get("input_manifest") or {})
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 
