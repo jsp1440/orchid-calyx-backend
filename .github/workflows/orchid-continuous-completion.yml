@@ -6,7 +6,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: orchid-swarm-controller-${{ github.repository }}
+  # A redirect must never occupy the controller's single pending slot. GitHub
+  # evicts an older pending run even when cancel-in-progress is false.
+  group: orchid-continuous-completion-redirect-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:

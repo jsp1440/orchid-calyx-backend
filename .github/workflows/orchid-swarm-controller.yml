@@ -57,7 +57,9 @@ on:
     types: [closed]
 
 concurrency:
-  group: orchid-swarm-controller-${{ github.repository }}
+  # Scheduled events originate on the default branch. Route that pulse to
+  # integration without taking the execution controller's pending queue slot.
+  group: ${{ github.event_name == 'schedule' && github.ref != 'refs/heads/oc-autonomous-integration' && 'orchid-swarm-pulse' || 'orchid-swarm-controller' }}-${{ github.repository }}
   cancel-in-progress: false
 
 permissions:
@@ -67,7 +69,29 @@ permissions:
   actions: write
 
 jobs:
+  scheduled-pulse:
+    if: ${{ github.event_name == 'schedule' && github.ref != 'refs/heads/oc-autonomous-integration' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
+    steps:
+      - name: Route default-branch timer to the canonical integration controller
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh workflow run orchid-swarm-controller.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref oc-autonomous-integration
+          echo "Dispatch accepted; execution and completion remain unproven until controller receipts exist." >> "$GITHUB_STEP_SUMMARY"
+
   plan:
+    # Do not claim leases on main only to discover in the worker that the edit
+    # lane requires integration. The dispatch above performs no queue writes.
+    if: ${{ !(github.event_name == 'schedule' && github.ref != 'refs/heads/oc-autonomous-integration') }}
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.claim.outputs.matrix }}
