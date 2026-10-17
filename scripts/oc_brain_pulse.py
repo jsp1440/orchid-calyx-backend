@@ -23,7 +23,11 @@ from app.calyx_advisory.product_artifact import (
     UNIVERSITY_MODULE_PATH,
     from_university_module,
 )
-from app.cognitive_integration.executor import CognitiveIntegrationError, execute
+from app.cognitive_integration.executor import (
+    CognitiveIntegrationError,
+    contradiction_adjudication,
+    execute,
+)
 from app.cognitive_integration.improvement_discovery import Deficiency, discover
 from app.cognitive_integration.routes import SUPPORTED_QUESTIONS
 from app.missions.registry import MISSION_TYPES
@@ -375,7 +379,7 @@ def build_report() -> dict[str, Any]:
         try:
             reasoning_map = execute(question)
             questions_evaluated.append(question)
-            for item in discover(reasoning_map):
+            for item in discover(reasoning_map, contradiction_adjudication()):
                 # Optional prose rendering is deliberately not queue-worthy:
                 # structured reasoning is already complete and the candidate
                 # explicitly says it blocks nothing scientific.
