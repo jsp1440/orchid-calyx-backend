@@ -274,3 +274,24 @@ def test_comment_reads_stop_at_the_page_holding_current(monkeypatch):
     monkeypatch.setattr(gh, "_api", api)
     rows = gh.comments(1949)
     assert calls == [1] and len(rows) == 100
+
+
+def test_empty_queue_with_held_unfinished_work_is_blocked_not_idle():
+    doc = plan()
+    doc["homeostasis"]["evidence"]["unfinished_held"] = {
+        "repair_pending": 16,
+        "validating": 11,
+        "owner_gate": 0,
+    }
+    out = record(doc)
+    assert (out["lane_state"], out["reason"]) == (
+        "blocked",
+        "queue_empty_unfinished_held",
+    )
+    assert out["evidence"]["unfinished_held"]["repair_pending"] == 16
+
+
+def test_empty_queue_with_nothing_held_stays_idle():
+    doc = plan()
+    doc["homeostasis"]["evidence"]["unfinished_held"] = {"repair_pending": 0}
+    assert record(doc)["lane_state"] == "idle"

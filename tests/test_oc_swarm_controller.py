@@ -853,3 +853,42 @@ def test_an_unroutable_running_issue_counts_as_paid_instead_of_crashing():
     plan = _plan([running, _paid(2)], coding_executor_available=True, paid_launch_capacity=1)
     assert plan["paid_active_count"] == 1 and plan["provider_launch_count"] == 0
     assert plan["paid_capacity_deferred"] == [2]
+
+
+def test_empty_queue_names_the_hold_of_every_unfinished_issue():
+    # The 2026-10-17 zero-launch waves: 54 unfinished issues, none queued, and
+    # the verdict said only queue_empty. Each unfinished issue is now recorded
+    # under the label class that holds it outside the queue.
+    issues = [
+        _row(1, "oc-repair", "oc-discovered"),
+        _row(2, "oc-validating"),
+        _row(3, "oc-blocked", "oc-repair"),
+        _row(4, "oc-runtime-backoff"),
+        _row(5, "oc-repair-backoff"),
+        _row(6, "oc-owner-gate", "oc-discovered"),
+        _row(7, "oc-scientific-gate"),
+        _row(8, "oc-done", "oc-r1-controlled-test"),
+        _row(9, "enhancement"),
+        _row(10, "oc-repair", state="CLOSED"),
+    ]
+    verdict = _plan(issues)["homeostasis"]
+    assert verdict["reason"] == "queue_empty"
+    assert verdict["gates"]["unfinished_holds"] == {
+        "owner_gate": [6],
+        "scientific_gate": [7],
+        "running": [],
+        "validating": [2],
+        "blocked": [3],
+        "repair_backoff": [5],
+        "runtime_backoff": [4],
+        "repair_pending": [1],
+    }
+    held = verdict["evidence"]["unfinished_held"]
+    assert held["repair_pending"] == 1 and sum(held.values()) == 7
+    assert verdict["evidence"]["unfinished_open"] == 7
+
+
+def test_queued_repair_is_queued_work_not_a_hold():
+    issues = [_row(1, "oc-queued", "oc-repair")]
+    holds = _plan(issues)["homeostasis"]["gates"]["unfinished_holds"]
+    assert all(numbers == [] for numbers in holds.values())
