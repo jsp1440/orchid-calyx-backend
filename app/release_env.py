@@ -751,8 +751,11 @@ OTHER_APP_ENV: tuple[tuple[str, tuple[str, ...]], ...] = (
         ),
     ),
     (
-        "Field Journal original-media storage (pilot); FIELD_MEDIA_STORAGE_DURABLE=true only after durable private storage is mounted at FIELD_MEDIA_STORAGE_DIR, otherwise uploads report durability not_guaranteed.",
+        "Field Journal original-media storage (pilot); uploads report durability durable only after a verified Google Drive archive copy (FIELD_MEDIA_DRIVE_CREDENTIALS_JSON, OAuth authorized_user with the drive.file scope; see docs/field-journal-drive-archive.md) or after the operator declares FIELD_MEDIA_STORAGE_DURABLE=true for durable private storage mounted at FIELD_MEDIA_STORAGE_DIR, otherwise not_guaranteed.",
         (
+            "FIELD_MEDIA_DRIVE_CREDENTIALS_JSON",
+            "FIELD_MEDIA_DRIVE_FOLDER_NAME",
+            "FIELD_MEDIA_DRIVE_TIMEOUT_SECONDS",
             "FIELD_MEDIA_MAX_BYTES",
             "FIELD_MEDIA_STORAGE_DIR",
             "FIELD_MEDIA_STORAGE_DURABLE",
