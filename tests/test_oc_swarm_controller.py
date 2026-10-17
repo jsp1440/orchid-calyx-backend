@@ -946,3 +946,48 @@ def test_queued_repair_is_queued_work_not_a_hold():
     issues = [_row(1, "oc-queued", "oc-repair")]
     holds = _plan(issues)["homeostasis"]["gates"]["unfinished_holds"]
     assert all(numbers == [] for numbers in holds.values())
+
+
+def test_plan_records_path_disjoint_pairs_with_real_locks(monkeypatch):
+    lock_spec = importlib.util.spec_from_file_location(
+        "oc_swarm_resource_locks_real", ROOT / "scripts" / "oc_swarm_resource_locks.py"
+    )
+    real_locks = importlib.util.module_from_spec(lock_spec)
+    lock_spec.loader.exec_module(real_locks)
+
+    class ThreeIssueScheduler(FakeScheduler):
+        @staticmethod
+        def build_plan(snapshot):
+            plan = FakeScheduler.build_plan(snapshot)
+            plan["ranking"] = [
+                {"number": 200, "lane_id": "L5", "priority": 0, "repair": False},
+                {"number": 201, "lane_id": "L5", "priority": 1, "repair": False},
+                {"number": 202, "lane_id": "L5", "priority": 2, "repair": False},
+            ]
+            return plan
+
+    def loader(name, filename):
+        if filename == "oc_swarm_resource_locks.py":
+            return real_locks
+        if filename == "oc_portfolio_scheduler.py":
+            return ThreeIssueScheduler
+        return _loader(name, filename)
+
+    def body(path):
+        return f"Allowed paths:\n- `{path}`\n"
+
+    snapshot = {
+        "issues": [
+            {"number": 200, "title": "Scheduler queue A", "body": body("app/a.py"), "labels": ["oc-queued"], "state": "OPEN"},
+            {"number": 201, "title": "Scheduler queue B", "body": body("scripts/b.py"), "labels": ["oc-queued"], "state": "OPEN"},
+            {"number": 202, "title": "Scheduler queue C", "body": body("app/a.py"), "labels": ["oc-queued"], "state": "OPEN"},
+        ]
+    }
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=5)
+    assert plan["selected_numbers"] == [200, 201]
+    assert [row["issue_number"] for row in plan["resource_lock_path_disjoint_allowed"]] == [201]
+    assert plan["resource_lock_path_disjoint_allowed"][0]["with_issue_number"] == 200
+    suppressed = {row["issue_number"]: row for row in plan["resource_lock_suppressed"]}
+    assert 202 in suppressed
+    assert suppressed[202]["path_checks"][0]["reason"].startswith("paths-overlap")

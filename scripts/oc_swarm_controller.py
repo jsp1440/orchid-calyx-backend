@@ -1076,6 +1076,14 @@ def build_swarm_plan(
         "dependency_suppressed": dependency_suppressed,
         "active_resource_locks": active_locks,
         "resource_lock_suppressed": lock_suppressed,
+        # Pairs admitted together only because their declared Allowed paths
+        # are provably disjoint (audit trail; serialized pairs, with the reason
+        # the relaxation did not apply, are in resource_lock_suppressed).
+        "resource_lock_path_disjoint_allowed": [
+            row
+            for item in selected
+            for row in (item.get("path_disjoint_allowed") or [])
+        ],
         "canonical_suppressed": list(plan.get("suppressed") or []),
         "blocked_reconciliation": blocked_report,
         "eligible_count": int(plan.get("eligible_count") or 0),
