@@ -8,27 +8,34 @@ the knowledge graph or canonical taxonomy.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 import os
 import re
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
+from typing import Any
 from urllib.parse import urlparse
 
 import httpx
 
+from app.source_federation.deadline import call_with_deadline, validate_deadline
 
 FIRECRAWL_MAP_URL = "https://api.firecrawl.dev/v2/map"
 DEFAULT_LIMIT = 100
 MAX_LIMIT = 1000
+#: Wall-clock bound on one paid Map call, enforced around the whole HTTP
+#: exchange by ``call_with_deadline`` (httpx timeouts are per phase). The
+#: ledger lease is sized from it (``SharedFirecrawlFederationService``), and
+#: every httpx phase is also capped at it so an abandoned call ends on its own.
+DEFAULT_TOTAL_TIMEOUT_SECONDS = 60.0
 
 _API_HINTS = ("api", "download", "dataset", "dwca", "darwin", "export", "bulk", "data")
 _TERMS_HINTS = ("terms", "license", "licence", "copyright", "usage", "cite", "citation")
 _TAXON_HINTS = ("taxon", "species", "name", "plant", "flora", "search")
 _IDENTIFIER_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("ipni_lsid", re.compile(r"urn:lsid:ipni\.org:[^\s/?#]+:[^\s/?#]+", re.I)),
-    ("wfo_id", re.compile(r"\bwfo-\d{6,}\b", re.I)),
-    ("doi", re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.I)),
+    ("ipni_lsid", re.compile(r"urn:lsid:ipni\.org:[^\s/?#]+:[^\s/?#]+", re.IGNORECASE)),
+    ("wfo_id", re.compile(r"\bwfo-\d{6,}\b", re.IGNORECASE)),
+    ("doi", re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Z0-9]+", re.IGNORECASE)),
 )
 
 
@@ -58,10 +65,12 @@ class FirecrawlFederationMapper:
         api_key: str | None = None,
         client: httpx.Client | None = None,
         endpoint: str = FIRECRAWL_MAP_URL,
+        total_timeout_seconds: float = DEFAULT_TOTAL_TIMEOUT_SECONDS,
     ) -> None:
         self.api_key = api_key or os.getenv("FIRECRAWL_API_KEY")
         self._client = client
         self.endpoint = endpoint
+        self.total_timeout_seconds = validate_deadline(total_timeout_seconds)
 
     def map_source(
         self,
@@ -74,7 +83,9 @@ class FirecrawlFederationMapper:
         include_subdomains: bool = False,
     ) -> FederationSourceProfile:
         if not self.api_key:
-            raise RuntimeError("FIRECRAWL_API_KEY is required for live federation mapping")
+            raise RuntimeError(
+                "FIRECRAWL_API_KEY is required for live federation mapping"
+            )
         if limit < 1 or limit > MAX_LIMIT:
             raise ValueError(f"limit must be between 1 and {MAX_LIMIT}")
         if sitemap not in {"include", "only", "skip"}:
@@ -98,15 +109,21 @@ class FirecrawlFederationMapper:
             "Content-Type": "application/json",
         }
 
-        if self._client is not None:
-            response = self._client.post(self.endpoint, headers=headers, json=payload)
-            response.raise_for_status()
-            data = response.json()
-        else:
-            with httpx.Client(timeout=60.0) as client:
+        def exchange() -> Any:
+            if self._client is not None:
+                response = self._client.post(
+                    self.endpoint, headers=headers, json=payload
+                )
+                response.raise_for_status()
+                return response.json()
+            with httpx.Client(timeout=self.total_timeout_seconds) as client:
                 response = client.post(self.endpoint, headers=headers, json=payload)
                 response.raise_for_status()
-                data = response.json()
+                return response.json()
+
+        # httpx timeouts are per phase; this bounds the whole exchange, so the
+        # caller settles its ledger lease before the lease can expire.
+        data = call_with_deadline(exchange, self.total_timeout_seconds)
 
         urls = tuple(_extract_links(data))
         return build_source_profile(

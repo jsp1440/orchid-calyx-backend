@@ -35,6 +35,25 @@ A lease that expired but was never re-claimed still carries the holder's token
 and may still be completed or failed: nobody else was authorised in the
 meantime, so accepting it costs nothing and wastes nothing.
 
+Expired leases and operator review
+----------------------------------
+
+A lease is sized to outlive its paid call (see
+:mod:`app.source_federation.deadline`): a live worker always settles it --
+``complete``, ``fail`` or :meth:`~AcquisitionLedger.hold_for_review` -- before
+it expires. An expired lease therefore means the holder died or could not
+reach the ledger, and whether the provider billed the call is unknown. By
+default (``on_expired_lease="review"``) ``claim`` does NOT hand such a lease
+to another worker: it answers ``review_required`` (no lease, no provider
+call) and leaves the row untouched, so the original holder can still
+complete it. The same answer is given for a row in status
+``review_required``, which :meth:`~AcquisitionLedger.hold_for_review` writes
+when a paid call succeeded but its result could not be recorded. Neither is
+ever retried automatically, and ``force_refresh`` does not override them.
+Only :meth:`~AcquisitionLedger.release_for_retry`, an explicit and logged
+operator action, re-opens the resource. ``on_expired_lease="takeover"``
+restores automatic crash recovery for callers whose call is not paid.
+
 ``lease_token`` doubles as the row's version. Releasing a lease (complete or
 fail) rotates it to a fresh random value that no worker holds, rather than
 clearing it, so every lease transition changes it. Claim takeovers (a failed
@@ -70,6 +89,7 @@ from __future__ import annotations
 import json
 import logging
 import secrets
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -88,11 +108,16 @@ from .acquisition_ledger_schema import (
 from .acquisition_models import AcquisitionLedgerRow
 
 __all__ = [
+    "EXPIRED_LEASE_REVIEW",
+    "EXPIRED_LEASE_TAKEOVER",
     "MAX_LEDGER_ATTEMPTS",
+    "REVIEW_REQUIRED",
     "AcquisitionLedger",
     "ClaimResult",
     "LedgerContentionError",
+    "LedgerEntry",
     "LedgerSchemaUnavailableError",
+    "PaidResultUnrecordedError",
     "StaleLeaseError",
 ]
 
@@ -102,6 +127,13 @@ logger = logging.getLogger(__name__)
 #: another writer changed the row between our read and our conditional write;
 #: three consecutive losses is contention, not a normal race, and fails closed.
 MAX_LEDGER_ATTEMPTS = 3
+
+#: Row status for a resource whose paid outcome is unknown or unrecorded.
+REVIEW_REQUIRED = "review_required"
+#: ``claim(on_expired_lease=...)`` policies; see the module docstring.
+EXPIRED_LEASE_REVIEW = "review"
+EXPIRED_LEASE_TAKEOVER = "takeover"
+_EXPIRED_LEASE_POLICIES = frozenset({EXPIRED_LEASE_REVIEW, EXPIRED_LEASE_TAKEOVER})
 
 
 class StaleLeaseError(RuntimeError):
@@ -148,6 +180,41 @@ class LedgerContentionError(RuntimeError):
         )
 
 
+class PaidResultUnrecordedError(RuntimeError):
+    """A paid call succeeded but its result could not be recorded as complete.
+
+    ``held_for_review`` says whether the row was durably moved to
+    ``review_required``. When it was not (the ledger itself was unreachable)
+    the lease is left to expire, and an expired lease also answers
+    ``review_required``: either way no worker re-pays automatically.
+    """
+
+    def __init__(
+        self, *, resource_key: str, credits_spent: int, held_for_review: bool
+    ) -> None:
+        self.resource_key = resource_key
+        self.credits_spent = credits_spent
+        self.held_for_review = held_for_review
+        super().__init__(
+            f"paid acquisition result for {resource_key} was not recorded "
+            f"({credits_spent} credit(s)); held_for_review={held_for_review}; "
+            "operator review required before any retry"
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class LedgerEntry:
+    """Read-only view of one ledger row (see :meth:`AcquisitionLedger.lookup`)."""
+
+    resource_key: str
+    status: str
+    payload_json: str | None
+    provenance: dict
+    retrieved_at: datetime | None
+    lease_expires_at: datetime | None
+    credits_spent: int
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     """Return ``value`` as a timezone-aware UTC datetime.
 
@@ -191,7 +258,8 @@ def _new_lease_token() -> str:
 
 @dataclass(frozen=True, slots=True)
 class ClaimResult:
-    action: str  # cache_hit | acquired_lease | in_flight | retry_blocked
+    # cache_hit | acquired_lease | in_flight | retry_blocked | review_required
+    action: str
     row_id: int
     resource_key: str
     # Set only when ``action == "acquired_lease"``; pass this ClaimResult back
@@ -220,18 +288,27 @@ class AcquisitionLedger:
         worker_id: str,
         lease_seconds: int = 120,
         now: datetime | None = None,
+        on_expired_lease: str = EXPIRED_LEASE_REVIEW,
     ) -> ClaimResult:
         """Coalesce ``request`` onto the ledger; only ``acquired_lease`` may fetch.
 
         Raises :class:`LedgerSchemaUnavailableError` (no lease, nothing
-        written) when the ledger table is missing or incompatible.
+        written) when the ledger table is missing or incompatible. An
+        expired lease answers ``review_required`` unless ``on_expired_lease``
+        is ``"takeover"`` (see the module docstring).
         """
+        if on_expired_lease not in _EXPIRED_LEASE_POLICIES:
+            raise ValueError(f"unknown on_expired_lease policy {on_expired_lease!r}")
         require_ledger_schema(self.session)
         now = _utc_now(now)
         for _attempt in range(MAX_LEDGER_ATTEMPTS):
             try:
                 result = self._try_claim(
-                    request, worker_id=worker_id, lease_seconds=lease_seconds, now=now
+                    request,
+                    worker_id=worker_id,
+                    lease_seconds=lease_seconds,
+                    now=now,
+                    on_expired_lease=on_expired_lease,
                 )
             except LedgerSchemaUnavailableError:
                 raise
@@ -253,6 +330,7 @@ class AcquisitionLedger:
         worker_id: str,
         lease_seconds: int,
         now: datetime,
+        on_expired_lease: str = EXPIRED_LEASE_REVIEW,
     ) -> ClaimResult | None:
         """One claim attempt; ``None`` means a concurrent writer won the race."""
         self.session.expire_all()
@@ -297,6 +375,12 @@ class AcquisitionLedger:
         consumers.add(request.consumer_module)
         consumers_json = json.dumps(sorted(consumers))
 
+        if row.status == REVIEW_REQUIRED:
+            # Paid outcome unrecorded: never retried automatically, and not
+            # overridable by force_refresh (see release_for_retry).
+            row.consumers_json = consumers_json
+            self.session.commit()
+            return ClaimResult(REVIEW_REQUIRED, row.id, request.key)
         if row.status == "complete" and not request.force_refresh:
             row.consumers_json = consumers_json
             self.session.commit()
@@ -315,6 +399,13 @@ class AcquisitionLedger:
             row.consumers_json = consumers_json
             self.session.commit()
             return ClaimResult("in_flight", row.id, request.key)
+        if row.status == "leased" and on_expired_lease == EXPIRED_LEASE_REVIEW:
+            # Expired without being settled: the holder died or lost the
+            # ledger mid-call, so the call may have been billed. Read-only
+            # verdict; the row (and the holder's token) stay as they are.
+            row.consumers_json = consumers_json
+            self.session.commit()
+            return ClaimResult(REVIEW_REQUIRED, row.id, request.key)
 
         # Takeover: compare-and-swap on the token we just read (it changes on
         # every lease transition, see module docstring), so two workers that
@@ -369,6 +460,252 @@ class AcquisitionLedger:
             require_ledger_schema(self.session, use_cache=False)
         except LedgerSchemaUnavailableError as schema_error:
             raise schema_error from exc
+
+    def lookup(self, resource_key: str) -> LedgerEntry | None:
+        """Read-only view of the row for ``resource_key`` (``None`` if absent).
+
+        Fails closed like ``claim``: :class:`LedgerSchemaUnavailableError`
+        when the table is missing or incompatible.
+        """
+        require_ledger_schema(self.session)
+        self.session.expire_all()
+        try:
+            row = (
+                self.session.query(AcquisitionLedgerRow)
+                .filter(AcquisitionLedgerRow.resource_key == resource_key)
+                .first()
+            )
+        except SQLAlchemyError as exc:
+            self._raise_if_schema_unavailable(exc)
+            raise
+        if row is None:
+            self.session.rollback()
+            return None
+        try:
+            provenance = json.loads(row.provenance_json or "{}")
+        except ValueError:
+            provenance = {}
+        entry = LedgerEntry(
+            resource_key=row.resource_key,
+            status=row.status,
+            payload_json=row.payload_json,
+            provenance=provenance if isinstance(provenance, dict) else {},
+            retrieved_at=_as_utc(row.retrieved_at),
+            lease_expires_at=_as_utc(row.lease_expires_at),
+            credits_spent=row.credits_spent,
+        )
+        self.session.rollback()
+        return entry
+
+    def assert_lease_live(self, lease: ClaimResult, *, now: datetime | None = None):
+        """Raise :class:`StaleLeaseError` unless ``lease`` is live and unexpired.
+
+        Called immediately before a paid call: a lease that expired while
+        the worker was preparing must not be spent.
+        """
+        lease = _require_lease(lease, "assert_lease_live")
+        now = _utc_now(now)
+        stale = StaleLeaseError(
+            resource_key=lease.resource_key,
+            lease_holder=lease.lease_holder,
+            operation="assert_lease_live",
+        )
+        if lease.action != "acquired_lease" or lease.lease_token is None:
+            raise stale
+        self.session.expire_all()
+        row = self._fenced(lease).first()
+        expires = _as_utc(row.lease_expires_at) if row is not None else None
+        self.session.rollback()
+        if row is None or expires is None or expires <= now:
+            raise stale
+
+    def hold_for_review(
+        self,
+        lease: ClaimResult,
+        *,
+        credits_spent: int,
+        reason: str,
+        now: datetime | None = None,
+    ) -> None:
+        """Park ``lease``'s resource as ``review_required`` after a paid call.
+
+        For a paid call whose result cannot be recorded: the credit is
+        counted, the lease is released, and no worker (including a
+        ``force_refresh`` one) re-pays until an operator calls
+        :meth:`release_for_retry`. Raises :class:`StaleLeaseError` (writing
+        nothing) when ``lease`` is no longer live.
+        """
+        lease = _require_lease(lease, "hold_for_review")
+        now = _utc_now(now)
+        stale = StaleLeaseError(
+            resource_key=lease.resource_key,
+            lease_holder=lease.lease_holder,
+            operation="hold_for_review",
+            unrecorded_credits=credits_spent,
+        )
+        if lease.action != "acquired_lease" or lease.lease_token is None:
+            raise stale
+        self.session.expire_all()
+        row = self._fenced(lease).first()
+        if row is None:
+            self.session.rollback()
+            raise stale
+        provenance = _provenance_dict(row.provenance_json)
+        provenance.update(
+            review_reason=str(reason)[:200],
+            review_held_at=now.isoformat(),
+            review_unrecorded_credits=str(credits_spent),
+            review_lease_holder=str(lease.lease_holder),
+        )
+        written = self._fenced(lease).update(
+            {
+                AcquisitionLedgerRow.status: REVIEW_REQUIRED,
+                AcquisitionLedgerRow.credits_spent: (
+                    AcquisitionLedgerRow.credits_spent + credits_spent
+                ),
+                AcquisitionLedgerRow.provenance_json: json.dumps(
+                    provenance, sort_keys=True
+                ),
+                AcquisitionLedgerRow.lease_holder: None,
+                AcquisitionLedgerRow.lease_token: _new_lease_token(),
+                AcquisitionLedgerRow.lease_expires_at: None,
+                AcquisitionLedgerRow.next_retry_at: None,
+            },
+            synchronize_session=False,
+        )
+        if written != 1:
+            self.session.rollback()
+            raise stale
+        self.session.commit()
+        logger.error(
+            "acquisition ledger: %s held for operator review after a paid call "
+            "(credits=%d, reason=%s); it will not be retried automatically",
+            lease.resource_key,
+            credits_spent,
+            reason,
+        )
+
+    def settle_paid_result(
+        self,
+        build: Callable[[], tuple[AcquisitionRecord, str | None]],
+        *,
+        lease: ClaimResult,
+        credits_spent: int,
+    ) -> AcquisitionRecord:
+        """Record a SUCCESSFUL paid call's result on ``lease``, failing closed.
+
+        ``build`` returns ``(record, payload_json)``. :class:`StaleLeaseError`
+        propagates (the live holder owns the row). Any other failure -- the
+        record cannot be built, or the ledger write fails -- never reaches
+        ``fail()`` (which would invite a re-pay after the retry window): the
+        row is moved to ``review_required`` if the ledger is reachable, and
+        :class:`PaidResultUnrecordedError` is raised either way.
+        """
+        try:
+            record, payload_json = build()
+            self.complete(record, lease=lease, payload_json=payload_json)
+            return record
+        except StaleLeaseError:
+            raise
+        except Exception as exc:
+            self.session.rollback()
+            held = False
+            try:
+                self.hold_for_review(
+                    lease,
+                    credits_spent=credits_spent,
+                    reason="result_not_recorded:" + type(exc).__name__,
+                )
+                held = True
+            except Exception:  # noqa: BLE001 - lease left to expire -> review
+                self.session.rollback()
+            raise PaidResultUnrecordedError(
+                resource_key=lease.resource_key,
+                credits_spent=credits_spent,
+                held_for_review=held,
+            ) from exc
+
+    def release_for_retry(
+        self,
+        resource_key: str,
+        *,
+        operator_id: str,
+        reason: str,
+        now: datetime | None = None,
+    ) -> bool:
+        """Operator action: re-open a ``review_required`` or expired-lease row.
+
+        Explicit and logged. The row becomes ``failed`` with an immediate
+        retry window, so the next claim (and only one: the takeover is a
+        compare-and-swap) may pay again. Returns ``False`` when the row is
+        not in a reviewable state (absent, complete, failed, or a live
+        lease). The credits already counted are kept.
+        """
+        operator_id = (operator_id or "").strip()
+        reason = (reason or "").strip()
+        if not operator_id or not reason:
+            raise ValueError("release_for_retry requires operator_id and reason")
+        now = _utc_now(now)
+        self.session.expire_all()
+        row = (
+            self.session.query(AcquisitionLedgerRow)
+            .filter(AcquisitionLedgerRow.resource_key == resource_key)
+            .with_for_update()
+            .first()
+        )
+        if row is None:
+            self.session.rollback()
+            return False
+        expires = _as_utc(row.lease_expires_at)
+        reviewable = row.status == REVIEW_REQUIRED or (
+            row.status == "leased" and (expires is None or expires <= now)
+        )
+        if not reviewable:
+            self.session.rollback()
+            return False
+        observed_token = row.lease_token
+        provenance = _provenance_dict(row.provenance_json)
+        provenance.update(
+            released_by=operator_id[:160],
+            release_reason=reason[:200],
+            released_at=now.isoformat(),
+            released_from=row.status,
+        )
+        written = (
+            self.session.query(AcquisitionLedgerRow)
+            .filter(
+                AcquisitionLedgerRow.id == row.id,
+                (
+                    AcquisitionLedgerRow.lease_token.is_(None)
+                    if observed_token is None
+                    else AcquisitionLedgerRow.lease_token == observed_token
+                ),
+            )
+            .update(
+                {
+                    AcquisitionLedgerRow.status: "failed",
+                    AcquisitionLedgerRow.next_retry_at: now,
+                    AcquisitionLedgerRow.lease_holder: None,
+                    AcquisitionLedgerRow.lease_token: _new_lease_token(),
+                    AcquisitionLedgerRow.lease_expires_at: None,
+                    AcquisitionLedgerRow.provenance_json: json.dumps(
+                        provenance, sort_keys=True
+                    ),
+                },
+                synchronize_session=False,
+            )
+        )
+        if written != 1:
+            self.session.rollback()
+            return False
+        self.session.commit()
+        logger.warning(
+            "acquisition ledger: operator %s released %s for retry (reason=%s)",
+            operator_id,
+            resource_key,
+            reason,
+        )
+        return True
 
     def cached_payload(self, resource_key: str) -> str | None:
         row = (
@@ -572,11 +909,28 @@ class AcquisitionLedger:
             raise stale
         self.session.commit()
 
-    def metrics(self) -> dict[str, int]:
+    def metrics(self, *, now: datetime | None = None) -> dict[str, int]:
+        now = _utc_now(now)
         rows = self.session.query(AcquisitionLedgerRow).all()
+
+        def needs_review(row) -> bool:
+            if row.status == REVIEW_REQUIRED:
+                return True
+            expires = _as_utc(row.lease_expires_at)
+            return row.status == "leased" and (expires is None or expires <= now)
+
         return {
             "resources": len(rows),
             "completed": sum(r.status == "complete" for r in rows),
             "credits_spent": sum(r.credits_spent for r in rows),
             "failures": sum(r.failure_count for r in rows),
+            "review_required": sum(needs_review(r) for r in rows),
         }
+
+
+def _provenance_dict(raw: str | None) -> dict:
+    try:
+        value = json.loads(raw or "{}")
+    except ValueError:
+        return {}
+    return dict(value) if isinstance(value, dict) else {}

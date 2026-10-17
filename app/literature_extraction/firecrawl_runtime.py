@@ -7,6 +7,7 @@ Swarm. External transports are the only replaceable test boundary.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -69,6 +70,36 @@ def _record_store():
             return operation(cursor)
 
     return PostgresProjectRecordStore(execute)
+
+
+def search_cache(config):
+    """Ledger-backed search reuse on the acquisition database.
+
+    The acquisition ledger table is created only by
+    ``scripts/activate_acquisition_ledger_schema.py``; when it is absent the
+    cache refuses (``ACQUISITION_LEDGER_UNAVAILABLE``) and no search is paid.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from .firecrawl_search_cache import LedgerSearchCache
+
+    url = os.getenv("DATABASE_URL") or os.getenv("TEST_DATABASE_URL")
+    if not url:
+        raise AcquisitionBlocked("ACQUISITION_DATABASE_REQUIRED")
+    return LedgerSearchCache(
+        sessionmaker(bind=_ledger_engine(url)),
+        freshness_seconds=config.search_cache_seconds,
+    )
+
+
+@functools.lru_cache(maxsize=4)
+def _ledger_engine(url):
+    from sqlalchemy import create_engine
+
+    for prefix in ("postgres://", "postgresql://"):
+        if url.startswith(prefix):
+            url = "postgresql+psycopg://" + url[len(prefix) :]
+    return create_engine(url, pool_pre_ping=True)
 
 
 def reserve_live_pilot_attempt(request):
@@ -235,6 +266,9 @@ async def execute_acquisition(
         reserve_credits=reservation.reserve_credits,
         observe_credits=reservation.observe_credits,
         fixture_transport=fixture_transport,
+        # Live searches are admitted only through the ledger; a fixture dry
+        # run pays nothing and needs no ledger.
+        search_cache=None if config.dry_run else search_cache(config),
     )
     provider.lease_check = lambda: verify_swarm_acquisition_lease(**lease)
     identity = request.model_dump()

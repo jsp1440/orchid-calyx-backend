@@ -9,7 +9,9 @@ ledger-routed call are counted alike.
 Provider-free: no Firecrawl call is made, Python-level socket connects are
 refused, and the spy returns a profile built locally by
 ``build_source_profile``. Corpus audit reports below are synthetic shapes
-(labelled as such), not captured production data.
+(labelled as such), not captured production data. The budget authority is an
+in-memory recorder (``FakeSpendAuthority``), never the production
+reservation store.
 """
 
 from __future__ import annotations
@@ -66,6 +68,65 @@ class SpyMapper:
         )
 
 
+class FakeSpendAuthority:
+    """Records the provider-parity reservations the pilot makes (in memory)."""
+
+    def __init__(self, *, refuse_credits: bool = False):
+        self.refuse_credits = refuse_credits
+        self.credit_reservations: list[tuple[str, int, int]] = []
+        self.usd_reservations: list = []
+        self.observations: list = []
+        self.ended: list[bool] = []
+        self._lock = threading.Lock()
+
+    def _begin(self, request):
+        return ("entry", request.issue_task_id)
+
+    def _end(self, entry, *, succeeded, termination_reason):
+        with self._lock:
+            self.ended.append(succeeded)
+
+    def _reserve_credits(self, task_id, amount, cap):
+        if self.refuse_credits:
+            raise RuntimeError("DAILY_CREDIT_CAP (synthetic)")
+        with self._lock:
+            self.credit_reservations.append((task_id, amount, cap))
+        return {"reserved": amount}
+
+    def _reserve(self, task_id, amount, cap):
+        with self._lock:
+            self.usd_reservations.append((task_id, amount, cap))
+
+    def _observe(self, reservation, used):
+        with self._lock:
+            self.observations.append(used)
+
+    def authority(self):
+        from types import SimpleNamespace
+
+        from app.federation.federation_pilot import SpendAuthority
+
+        return SpendAuthority(
+            governor=SimpleNamespace(begin=self._begin, end=self._end),
+            reserve=self._reserve,
+            reserve_credits=self._reserve_credits,
+            observe_credits=self._observe,
+        )
+
+
+#: The live environment the provider gate admits (placeholders, no secret).
+LIVE_ENV = {
+    "NO_API_MODE": "false",
+    "FIRECRAWL_KILL_SWITCH": "false",
+    "FIRECRAWL_ENABLED": "true",
+    "FIRECRAWL_DRY_RUN": "false",
+    "PROVIDER_AUTHORIZED": "true",
+    "FIRECRAWL_MAX_CALL_COST_USD": "0.01",
+    "FIRECRAWL_DAILY_BUDGET_USD": "1",
+    "FIRECRAWL_API_KEY": "test-placeholder-not-a-credential",
+}
+
+
 def _synthetic_audit(identities=()):
     """Synthetic ``audit_existing_corpus`` report shape (complete audit)."""
 
@@ -95,9 +156,12 @@ def env(monkeypatch, tmp_path):
     engine.dispose()
     monkeypatch.delenv("PGHOST", raising=False)
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{db}")
-    monkeypatch.setenv("NO_API_MODE", "false")
-    monkeypatch.setenv("FIRECRAWL_KILL_SWITCH", "false")
-    monkeypatch.setenv("FIRECRAWL_API_KEY", "test-placeholder-not-a-credential")
+    for name, value in LIVE_ENV.items():
+        monkeypatch.setenv(name, value)
+    spend = FakeSpendAuthority()
+    monkeypatch.setattr(
+        pilot, "build_spend_authority", lambda _url, _env: spend.authority()
+    )
     spy = SpyMapper()
     # A plain function, so it binds as a method like the real one.
     monkeypatch.setattr(
@@ -111,7 +175,13 @@ def env(monkeypatch, tmp_path):
         return pilot.CorpusHoldings(connect=None, audit=holdings["audit"])
 
     monkeypatch.setattr(pilot, "build_holdings_check", _holdings, raising=False)
-    return {"db": db, "spy": spy, "holdings": holdings, "tmp": tmp_path}
+    return {
+        "db": db,
+        "spy": spy,
+        "holdings": holdings,
+        "tmp": tmp_path,
+        "spend": spend,
+    }
 
 
 def _run(monkeypatch, tmp: Path, *args: str, tag: str = "out"):
@@ -284,8 +354,10 @@ def test_no_api_mode_makes_zero_paid_calls(monkeypatch, env, value):
 
     assert env["spy"].calls == []
     assert code == 3
-    assert {s["reason"] for s in result["sources"]} == {"NO_API_MODE"}
+    # The provider's own gate code (live_gate), not a pilot-specific one.
+    assert {s["reason"] for s in result["sources"]} == {"PROVIDER_NOT_AUTHORIZED"}
     assert _rows(env["db"]) == []  # no lease taken
+    assert env["spend"].credit_reservations == []
 
 
 @pytest.mark.parametrize("value", ["true", "1", "on", "yes"])
@@ -295,7 +367,7 @@ def test_kill_switch_makes_zero_paid_calls(monkeypatch, env, value):
 
     assert env["spy"].calls == []
     assert code == 3
-    assert {s["reason"] for s in result["sources"]} == {"FIRECRAWL_KILL_SWITCH"}
+    assert {s["reason"] for s in result["sources"]} == {"FIRECRAWL_DISABLED"}
     assert _rows(env["db"]) == []
 
 
@@ -322,24 +394,14 @@ def test_missing_key_takes_no_lease(monkeypatch, env):
 
 def test_in_flight_lease_elsewhere_makes_zero_paid_calls(monkeypatch, env):
     from app.federation.shared_firecrawl import SharedFirecrawlFederationService
-    from app.source_federation.acquisition import AcquisitionRequest
     from app.source_federation.acquisition_ledger import AcquisitionLedger
 
     engine = create_engine(f"sqlite:///{env['db']}")
     session = sessionmaker(bind=engine)()
-    # The same resource the pilot maps (built without the new helper, so this
-    # test also runs against the pre-ledger pilot).
-    request = AcquisitionRequest(
-        url=POWO,
-        provider="firecrawl_map",
-        consumer_module="other-module",
-        stable_identifier=SharedFirecrawlFederationService._request_identity(
-            root_url=POWO,
-            search="Phragmipedium",
-            limit=50,
-            sitemap="include",
-            include_subdomains=False,
-        ),
+    # The same canonical resource the pilot maps (limit/sitemap are not
+    # part of its identity).
+    request = SharedFirecrawlFederationService.acquisition_request(
+        consumer_module="other-module", root_url=POWO, search="Phragmipedium"
     )
     claim = AcquisitionLedger(session).claim(request, worker_id="another-worker")
     assert claim.action == "acquired_lease"
@@ -376,11 +438,8 @@ def test_postgres_concurrent_pilot_runs_make_one_paid_call():
 
     spy = SpyMapper(delay=0.05)
     mapper = type("M", (), {"map_source": lambda self, **kw: spy(self, **kw)})()
-    live_env = {
-        "NO_API_MODE": "false",
-        "FIRECRAWL_KILL_SWITCH": "false",
-        "FIRECRAWL_API_KEY": "test-placeholder-not-a-credential",
-    }
+    live_env = dict(LIVE_ENV)
+    spend = FakeSpendAuthority()
     with migrated_postgres_engine(pool_size=8) as engine:
         make_session = sessionmaker(bind=engine)
         count = 6
@@ -397,6 +456,7 @@ def test_postgres_concurrent_pilot_runs_make_one_paid_call():
                     mapper=mapper,
                     holdings=CorpusHoldings(None, audit=_synthetic_audit()),
                     env=live_env,
+                    authority=spend.authority(),
                 )
             finally:
                 session.close()
@@ -411,6 +471,7 @@ def test_postgres_concurrent_pilot_runs_make_one_paid_call():
     statuses = [report.sources[0]["status"] for report in reports]
     assert statuses.count("fetched") == 1, statuses
     assert sum(report.provider_calls for report in reports) == 1
+    assert len(spend.credit_reservations) == 1
 
 
 def test_out_of_range_limit_is_refused_before_any_lease(monkeypatch, env):
