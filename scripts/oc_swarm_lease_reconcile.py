@@ -66,6 +66,15 @@ MANUAL_LEASE_MAX_AGE_SECONDS = 24 * 60 * 60
 MAX_AUTOMATIC_RECOVERIES = 2
 BOT_LOGIN = "github-actions[bot]"
 RECOVERY_PREFIX = "[OC-SWARM-V4] Stale lease recovered: `"
+#: A worker run that opened its PR but then ended without success (#1938: the
+#: controller run was cancelled after dispatching the worker) leaves the issue
+#: in oc-validating with a PR no checker will ever consume, because the hosted
+#: checker only trusts a successful controller run. Only these definite
+#: conclusions qualify; anything else (success, unknown, still running) is kept.
+STRANDED_REASON = "validating_worker_run_unsuccessful"
+UNSUCCESSFUL_CONCLUSIONS = frozenset(
+    {"cancelled", "failure", "timed_out", "startup_failure"}
+)
 
 _CLAIM = re.compile(
     r"^\[OC-SWARM-V\d+\] Dependency/resource lease claimed: `(\{[^\n]+\})`",
@@ -277,6 +286,92 @@ def classify_lease(
     return decision
 
 
+def classify_stranded_validation(
+    issue: dict,
+    comments: list[dict],
+    *,
+    repository: str,
+    run_status: Callable[[int], str],
+    run_conclusion: Callable[[int], str],
+    durable_pr: dict | None,
+    now: datetime,
+) -> dict:
+    """Decide, without mutating anything, whether an oc-validating issue is stranded.
+
+    Stranded means all of: the issue is open and its only state label is
+    oc-validating (no gate, hold or other state, as the hosted checker itself
+    requires); no merged integration PR exists for it; the newest authenticated
+    claim's controller run has completed with a definite unsuccessful
+    conclusion. The hosted checker refuses any worker run that did not succeed,
+    so that PR can never be validated and nothing else would ever move the issue.
+    """
+    number = int(issue["number"])
+    labels = _labels(issue)
+    decision: dict[str, Any] = {
+        "schema": RECOVERY_SCHEMA,
+        "issue_number": number,
+        "action": "keep",
+        "reason": None,
+        "target": None,
+        "lease_id": None,
+        "lease_comment_id": None,
+        "run_id": None,
+        "run_status": None,
+        "run_conclusion": None,
+        "lease_age_seconds": None,
+        "recoveries_before": _recovery_count(comments),
+        "durable_pr": None if durable_pr is None else durable_pr["number"],
+        "stranded_pr": None,
+        "labels": sorted(labels),
+    }
+    if (
+        str(issue.get("state") or "OPEN").upper() != "OPEN"
+        or VALIDATING not in labels
+        or labels & (PARKED | {RUNNING, QUEUED, "oc-repair"}) != {VALIDATING}
+    ):
+        decision["reason"] = "not_exclusively_validating"
+        return decision
+    if durable_pr is not None and (
+        durable_pr.get("merged") or str(durable_pr.get("state") or "").upper() != "OPEN"
+    ):
+        decision["reason"] = "integration_pr_merged"
+        return decision
+    claim = _latest_claim(comments, repository=repository, number=number)
+    if claim is None:
+        decision["reason"] = "no_authenticated_claim"
+        return decision
+    decision.update(
+        lease_id=claim["lease_id"],
+        lease_comment_id=claim["comment_id"],
+        run_id=claim["run_id"],
+    )
+    if claim["created_at"] is not None:
+        decision["lease_age_seconds"] = int((now - claim["created_at"]).total_seconds())
+    status = run_status(claim["run_id"])
+    decision["run_status"] = status
+    if status != "completed":
+        decision["reason"] = "worker_run_active_or_unknown"
+        return decision
+    conclusion = run_conclusion(claim["run_id"])
+    decision["run_conclusion"] = conclusion
+    if conclusion not in UNSUCCESSFUL_CONCLUSIONS:
+        decision["reason"] = "worker_run_not_definitely_unsuccessful"
+        return decision
+    # No open PR (for example, a previous recovery closed it but could not
+    # relabel) is equally stranded: there is nothing left to validate.
+    decision.update(
+        action="recover",
+        reason=STRANDED_REASON,
+        stranded_pr=None if durable_pr is None else durable_pr["number"],
+    )
+    if decision["recoveries_before"] < MAX_AUTOMATIC_RECOVERIES:
+        decision["target"] = QUEUED
+    else:
+        decision["target"] = BLOCKED
+        decision["reason"] = f"{STRANDED_REASON}:automatic_recoveries_exhausted"
+    return decision
+
+
 # ---------------------------------------------------------------------------
 # GitHub transport (gh CLI). Never interpolates issue text into a shell.
 # ---------------------------------------------------------------------------
@@ -338,6 +433,25 @@ class GitHubTransport:
         )
         return list(rows or [])
 
+    def validating_issues(self) -> list[dict]:
+        rows = self._run(
+            [
+                "issue",
+                "list",
+                "--repo",
+                self.repository,
+                "--state",
+                "open",
+                "--label",
+                VALIDATING,
+                "--limit",
+                "200",
+                "--json",
+                "number,title,body,state,labels,updatedAt",
+            ]
+        )
+        return list(rows or [])
+
     def pull_requests(self) -> list[dict]:
         rows = self._run(
             [
@@ -383,6 +497,13 @@ class GitHubTransport:
         except (OSError, subprocess.SubprocessError, ValueError):
             return "unknown"
         return str((run or {}).get("status") or "unknown")
+
+    def run_conclusion(self, run_id: int) -> str:
+        try:
+            run = self._run(["api", f"repos/{self.repository}/actions/runs/{run_id}"])
+        except (OSError, subprocess.SubprocessError, ValueError):
+            return "unknown"
+        return str((run or {}).get("conclusion") or "unknown")
 
     def issue(self, number: int) -> dict:
         return self._run(
@@ -455,6 +576,40 @@ def apply_recovery(
     return {**decision, "recovery_comment_id": saved["id"]}
 
 
+def apply_stranded_recovery(
+    transport: GitHubTransport, decision: dict, *, controller_run_url: str
+) -> dict:
+    """Requeue (or park) a stranded issue and receipt it on the issue.
+
+    The PR is deliberately left open and only named in the receipt: the plan
+    job that runs this reconciler has read-only pull-request access, and the
+    next worker opens a new PR on its own branch, which the completion lane
+    selects as the newest open PR for the issue. Only issue writes happen here.
+    """
+    number = decision["issue_number"]
+    present = set(decision.get("labels") or [VALIDATING])
+    remove = [label for label in (VALIDATING, QUEUED) if label in present]
+    add = [decision["target"]] if decision["target"] not in present else []
+    if decision["target"] == QUEUED:
+        remove = [label for label in remove if label != QUEUED]
+    transport.edit_labels(number, remove=remove, add=add)
+    current = transport.issue(number)
+    labels = _labels(current)
+    if VALIDATING in labels or RUNNING in labels or decision["target"] not in labels:
+        raise ValueError("stranded validation release unconfirmed")
+    receipt = {k: v for k, v in decision.items() if k != "action"}
+    receipt["released_state"] = sorted(labels)
+    body = (
+        RECOVERY_PREFIX
+        + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+        + f"`. Controller run: {controller_run_url}."
+    )
+    saved = transport.comment(number, body)
+    if saved.get("body") != body or not saved.get("id"):
+        raise ValueError("recovery receipt unconfirmed")
+    return {**decision, "recovery_comment_id": saved["id"]}
+
+
 def reconcile(
     transport: GitHubTransport,
     *,
@@ -510,6 +665,47 @@ def reconcile(
                     "error_type": type(exc).__name__,
                 }
             )
+    stranded: list[dict] = []
+    handled = {int(i["number"]) for i in running}
+    for issue in transport.validating_issues():
+        number = int(issue["number"])
+        if number in handled:
+            continue
+        try:
+            comments = transport.comments(number)
+            decision = classify_stranded_validation(
+                issue,
+                comments,
+                repository=transport.repository,
+                run_status=transport.run_status,
+                run_conclusion=transport.run_conclusion,
+                durable_pr=durable.get(number),
+                now=now,
+            )
+            if decision["action"] != "recover":
+                continue
+            if dry_run:
+                stranded.append({**decision, "dry_run": True})
+                continue
+            stranded.append(
+                apply_stranded_recovery(
+                    transport, decision, controller_run_url=controller_run_url
+                )
+            )
+        except (
+            OSError,
+            subprocess.SubprocessError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
+            errors.append(
+                {
+                    "issue": number,
+                    "reason": "stranded_validation_unconfirmed",
+                    "error_type": type(exc).__name__,
+                }
+            )
     return {
         "schema": SCHEMA,
         "run_id": run_id,
@@ -519,6 +715,8 @@ def reconcile(
         "running_after": len(running) - len(recovered),
         "recovered": recovered,
         "kept": kept,
+        "stranded_recovered_count": len(stranded),
+        "stranded_recovered": stranded,
         "errors": errors,
         "dry_run": dry_run,
         "safety": {
@@ -545,6 +743,9 @@ def main(argv: list[str] | None = None) -> int:
         with open(args.github_output, "a", encoding="utf-8") as handle:
             handle.write(f"recovered_count={report['recovered_count']}\n")
             handle.write(f"running_after={report['running_after']}\n")
+            handle.write(
+                f"stranded_recovered_count={report['stranded_recovered_count']}\n"
+            )
             handle.write(f"reconcile_errors={len(report['errors'])}\n")
     json.dump(report, sys.stdout, sort_keys=True, default=str)
     sys.stdout.write("\n")

@@ -54,6 +54,7 @@ env:
     tests/test_eligible_ledger_discovery.py
     tests/test_eligible_ledger_discovery_observability.py
     tests/test_swarm_governor_github_ledger.py
+    tests/test_governor_cost_settlement.py
     tests/test_ledger_exact_revision_retrieval.py
     tests/test_reasoning_ledger_exact_revision.py
     tests/test_reasoning_ledger_exact_service.py
@@ -73,6 +74,7 @@ env:
     tests/test_common_security_boundary.py
     tests/test_agent_security_gateway.py
     tests/test_owner_authorization_gate.py
+    tests/test_oc_standing_authorization.py
     tests/test_build_056_owner_authentication.py
     tests/test_build_063_owner_auth.py
     tests/test_owner_session_cors_repair.py
@@ -89,6 +91,7 @@ env:
     tests/test_show_output_safety_redaction.py
     tests/test_show_output_safety_timing.py
     tests/test_show_day_judging_lock.py
+    tests/test_judging_points_breakdown.py
     tests/test_show_day_phase1.py
     tests/test_calyx_core_owner_only_show_management.py
     tests/test_calyx_100_l2_all_domain_authorization.py

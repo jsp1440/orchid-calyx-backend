@@ -36,9 +36,22 @@ from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_control_plane_health import build_health, collect_github_snapshot
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 from scripts.oc_swarm_write_set_verifier import parse_lease_claim, verify_write_set
+from scripts.swarm_anthropic_direct import _parse_allowed_paths
 
 BRANCH = "oc-autonomous-integration"
 AUTH_TAG = "OC-HOSTED-FACTORY-AUTHORIZATION-V1"
+# One owner grant covering a batch of issues, so the owner signs once per
+# batch instead of once per issue. It lists each issue with the digest of its
+# title and body, so it covers exactly the text the owner saw: an issue opened
+# or edited afterwards (an agent with the owner's token can do both) is not
+# covered. It lives on its own issue, never the hub, and must be typed by the
+# owner directly: a comment posted through an app carries
+# performed_via_github_app and never counts, so the maker cannot authorize its
+# own work.
+STANDING_TAG = "OC-HOSTED-STANDING-AUTHORIZATION-V1"
+STANDING_ISSUE = 1924
+STANDING_MAX_DAYS = 31
+STANDING_MAX_ISSUES = 50
 ATTEMPT_TAG = "OC-HOSTED-CHECKER-ATTEMPT-V1"
 MODEL = "claude-haiku-4-5"
 RESERVATION = "0.08"
@@ -218,14 +231,12 @@ def parse_tag(body, tag):
     return json.loads(matches[0])
 
 
-def authorization(issue, comments, repository, now=None):
-    """A scoped owner record enrolls work; maker-authored PR markers cannot."""
-    records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
-    require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
-    record = records[0]
+def _owner_record(record, repository):
+    """The owner's own unedited comment, never one posted through an app."""
     require(
         record["user"]["login"] == repository.split("/")[0]
-        and record.get("author_association") == "OWNER",
+        and record.get("author_association") == "OWNER"
+        and record.get("performed_via_github_app") is None,
         "authorization_not_owner",
     )
     require(
@@ -233,21 +244,19 @@ def authorization(issue, comments, repository, now=None):
         and record.get("created_at") == record.get("updated_at"),
         "authorization_edited",
     )
-    grant = parse_tag(record["body"], AUTH_TAG)
-    require(
-        grant.get("repository") == repository
-        and grant.get("issue") == issue["number"]
-        and grant.get("issue_material") == issue_material(issue)
-        and grant.get("target") == BRANCH
-        and type(grant.get("checker_calls")) is int
-        and grant.get("checker_calls") == 1
-        and grant.get("risk") in {"low", "moderate"},
-        "authorization_binding_invalid",
-    )
-    expires_at = grant["expires_at"].replace("Z", "+00:00")
-    expiry = datetime.fromisoformat(expires_at)
-    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
-    allowed = grant.get("allowed_paths")
+
+
+def _expiry(value):
+    """A timezone-aware timestamp, or a refusal (never a stray TypeError)."""
+    try:
+        moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        raise ValueError("authorization_timestamp_invalid") from None
+    require(moment.tzinfo is not None, "authorization_timestamp_invalid")
+    return moment
+
+
+def _safe_allowed_paths(allowed):
     require(
         isinstance(allowed, list)
         and 0 < len(allowed) <= 12
@@ -262,7 +271,127 @@ def authorization(issue, comments, repository, now=None):
         ),
         "unsafe_allowed_paths",
     )
+
+
+def authorization(issue, comments, repository, now=None, standing=None):
+    """A scoped owner record enrolls work; maker-authored PR markers cannot.
+
+    A per-issue record, when present, decides alone. Without one, ``standing``
+    (the comments of ``STANDING_ISSUE``, or a callable returning them, read only
+    then) may supply the owner's standing grant.
+    """
+    records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
+    if not records and standing is not None:
+        rows = standing() if callable(standing) else standing
+        return standing_authorization(issue, rows, repository, now)
+    require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
+    record = records[0]
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], AUTH_TAG)
+    require(
+        grant.get("repository") == repository
+        and grant.get("issue") == issue["number"]
+        and grant.get("issue_material") == issue_material(issue)
+        and grant.get("target") == BRANCH
+        and type(grant.get("checker_calls")) is int
+        and grant.get("checker_calls") == 1
+        and grant.get("risk") in {"low", "moderate"},
+        "authorization_binding_invalid",
+    )
+    expiry = _expiry(grant["expires_at"])
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
+    _safe_allowed_paths(grant.get("allowed_paths"))
     return {**grant, "comment_id": record["id"], "digest": digest(grant)}
+
+
+def standing_authorization(issue, standing, repository, now=None):
+    """Admit one issue under the owner's standing grant.
+
+    The grant lists each covered issue number with the ``issue_material`` digest
+    of its title and body, exactly as the per-issue record binds one issue, so
+    it covers only text that existed when the owner signed: an issue opened or
+    edited afterwards is refused. Every later phase compares the returned grant,
+    so an edit mid-cycle also fails closed. The issue must be open, not a pull
+    request, and opened by the owner account. Allowed paths come from the issue
+    body through the executor's own parser. Low risk only, at most
+    ``STANDING_MAX_ISSUES`` issues, expiring at most ``STANDING_MAX_DAYS`` after
+    the grant was posted. One checker call per issue still holds, because each
+    attempt record binds to the grant comment on that issue.
+
+    Only owner-typed rows are considered, so a stray tagged comment from anyone
+    else cannot make the owner's grant ambiguous; two owner grants still are.
+    """
+    owner = repository.split("/")[0]
+    records = [
+        c
+        for c in standing
+        if STANDING_TAG in (c.get("body") or "")
+        and (c.get("user") or {}).get("login") == owner
+        and c.get("author_association") == "OWNER"
+        and c.get("performed_via_github_app") is None
+    ]
+    require(len(records) == 1, "standing_authorization_missing_or_ambiguous")
+    record = records[0]
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], STANDING_TAG)
+    require(isinstance(grant, dict), "standing_authorization_invalid")
+    covered = grant.get("issues")
+    require(
+        set(grant) == {"repository", "target", "risk", "expires_at", "issues"}
+        and grant["repository"] == repository
+        and grant["target"] == BRANCH
+        and grant["risk"] == "low"
+        and isinstance(covered, dict)
+        and 0 < len(covered) <= STANDING_MAX_ISSUES
+        and all(
+            isinstance(k, str)
+            and k.isdigit()
+            and not k.startswith("0")
+            and isinstance(v, str)
+            and re.fullmatch(r"[0-9a-f]{64}", v)
+            for k, v in covered.items()
+        ),
+        "standing_authorization_invalid",
+    )
+    expiry = _expiry(grant["expires_at"])
+    lifetime = expiry - _expiry(record["created_at"])
+    require(
+        lifetime.total_seconds() <= STANDING_MAX_DAYS * 86400,
+        "standing_authorization_invalid",
+    )
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
+    require(str(issue["number"]) in covered, "issue_outside_standing_authorization")
+    require(
+        covered[str(issue["number"])] == issue_material(issue),
+        "issue_material_changed",
+    )
+    require(
+        issue.get("state") == "open" and not issue.get("pull_request"),
+        "issue_not_open",
+    )
+    require(
+        (issue.get("user") or {}).get("login") == owner,
+        "issue_not_owner_opened",
+    )
+    allowed = sorted(_parse_allowed_paths(issue.get("body") or "") or ())
+    _safe_allowed_paths(allowed)
+    return {
+        "repository": repository,
+        "issue": issue["number"],
+        "issue_material": issue_material(issue),
+        "target": BRANCH,
+        "checker_calls": 1,
+        "risk": "low",
+        "expires_at": grant["expires_at"],
+        "allowed_paths": allowed,
+        "standing": True,
+        "comment_id": record["id"],
+        "digest": digest(grant),
+    }
+
+
+def standing_comments(repository):
+    return pages(repository, f"issues/{STANDING_ISSUE}/comments")
 
 
 def checker_attempt_reserved(grant, comments):
@@ -411,7 +540,9 @@ def inspect(context):
     repo, number = context["repository"], context["issue"]
     issue = api(repo, f"issues/{number}")
     comments = pages(repo, f"issues/{number}/comments")
-    grant = authorization(issue, comments, repo)
+    grant = authorization(
+        issue, comments, repo, standing=lambda: standing_comments(repo)
+    )
     pr = api(repo, f"pulls/{context['pr']}")
     lease = api(repo, f"issues/comments/{context['lease']}")
     files = pages(repo, f"pulls/{context['pr']}/files")
@@ -860,7 +991,36 @@ def record(directory):
     )
     state["review"] = review
     state["usage"] = json.loads((directory / "usage.json").read_text())
+    state["actual_usd"] = settle_checker_cost(state["context"], state["usage"])
     (directory / "prepared.json").write_text(json.dumps(state))
+
+
+def settle_checker_cost(context, usage_record):
+    """Settle the checker's reservation with its real cost, best effort.
+
+    ``reserve`` records only the $0.08 reservation, before credentials exist.
+    The provider returned usage, so the real cost is now known; one settle line
+    replaces that reservation in the ledger totals. Any failure (unpriced or
+    malformed usage, ledger write error) leaves the conservative reservation
+    standing and never fails the record phase.
+    """
+    from scripts.swarm_anthropic_direct import _actual_cost_usd
+    from scripts.swarm_governor_github_ledger import append_settlement
+
+    try:
+        actual = _actual_cost_usd(MODEL, (usage_record or {}).get("usage") or {})
+        if actual is None:
+            return None
+        written = append_settlement(
+            context["repository"],
+            1330,
+            run_id=str(context["completion_run"]),
+            provider="anthropic-checker",
+            actual_usd=actual,
+        )
+        return actual if written else None
+    except Exception:  # noqa: BLE001 - the reservation already covers the run
+        return None
 
 
 def decide(state, current_material, current_validation, assignment, evidence):

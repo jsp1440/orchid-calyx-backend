@@ -16,8 +16,19 @@ class _HTMLText(HTMLParser):
     def __init__(self) -> None:
         super().__init__()
         self.parts: list[str] = []
+        self.skip_content = False
+
+    def handle_starttag(self, tag: str, attrs: list) -> None:
+        if tag in {"script", "style"}:
+            self.skip_content = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"}:
+            self.skip_content = False
 
     def handle_data(self, data: str) -> None:
+        if self.skip_content:
+            return
         value = data.strip()
         if value:
             self.parts.append(value)

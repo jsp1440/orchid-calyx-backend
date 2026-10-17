@@ -163,6 +163,16 @@ def compare_subjects(
         (cell["subject_id"], cell["object_id"]): cell
         for cell in matrix.get("cells", [])
     }
+
+    # Extract subject ids from matrix or use empty set if "subjects" key is missing
+    matrix_subject_ids = set()
+    if "subjects" in matrix:
+        matrix_subject_ids = {subject["id"] for subject in matrix["subjects"]}
+
+    # Identify unmatched subject ids
+    given_ids = {left_subject_id, right_subject_id}
+    unmatched = sorted(given_ids - matrix_subject_ids)
+
     comparisons: list[dict[str, Any]] = []
     shared_present = 0
     disagreements = 0
@@ -191,5 +201,6 @@ def compare_subjects(
         "shared_present": shared_present,
         "present_absent_disagreements": disagreements,
         "comparisons": comparisons,
+        "unmatched_subject_ids": unmatched,
         "read_only": True,
     }

@@ -449,6 +449,7 @@ jobs:
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \
             --worker-slots "$WORKER_SLOTS" \
+            --paid-launch-capacity 1 \
             "${provider_args[@]}" \
             --github-output "$GITHUB_OUTPUT" \
             | tee "$RUNNER_TEMP/swarm-plan.json"
@@ -539,6 +540,33 @@ jobs:
             echo "- main merge: disabled"
             echo "- production deploy: disabled"
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Durable lane telemetry. The homeostasis reason above lives only in this
+      # run's summary; 32 consecutive zero-launch waves left no durable reason.
+      # This keeps one current-status comment on the lane feed issue (#1949)
+      # updated every wave and appends one only when the lane state or reason
+      # changes. Best effort: it never fails or delays the wave.
+      # Only the canonical integration run publishes: issue/PR-event runs on
+      # main plan provider-free-only with deferred edits, so their reason
+      # describes a different queue and would overwrite the canonical status.
+      - name: Publish lane status
+        if: ${{ !cancelled() && steps.controller_revision.outputs.canonical_integration == 'true' }}
+        continue-on-error: true
+        timeout-minutes: 2
+        shell: bash
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 -m scripts.oc_lane_status \
+            --repository "$REPO" \
+            --plan "$RUNNER_TEMP/swarm-plan.json" \
+            --lease-recovery "$RUNNER_TEMP/swarm-lease-recovery.json" \
+            --run-id "${{ github.run_id }}" \
+            --run-url "$RUN_URL" \
+            --event "${{ github.event_name }}" \
+            --provider-launch-count "${{ steps.claim.outputs.provider_launch_count || '0' }}" \
+            --provider-free-launch-count "${{ steps.claim.outputs.provider_free_launch_count || '0' }}" \
+            --provider-blocked "${{ steps.no_api.outputs.blocked == 'true' || steps.coding_governor.outputs.authorized != 'true' }}"
 
   workers:
     needs: plan

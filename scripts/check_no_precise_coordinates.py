@@ -125,7 +125,7 @@ SOURCE_FIXTURE_DIGESTS: dict[str, str] = {
     "tests/scientific_observability/test_workflow_reconstruction.py": "453299b83f74efde7e004c85edab7147988c402a39a52f32a1a53a9330d965c4",
     "tests/test_matrix_relationship_governed_sources.py": "77413e6da60e3ce65f3b567ec88f60051205558db0297d71f1333dd5e2c278d8",
     "tests/test_member_matrix_identification_adversarial.py": "e16968c96893e6917ff0d1ad9e9d4aef52abb5d0551458b5c1a1c7cd55d08d57",
-    "tests/test_member_matrix_screen_broadened.py": "c67803cd31119d90f20f81e80b8430991df9a3ee04a53715a1b060ebc62336e0",
+    "tests/test_member_matrix_screen_broadened.py": "09531a494108fbf1477ae188da9ca38a391c19a2b3882785628c9657bb238e5b",
     "tests/test_member_read_access.py": "f37bc276cde252be90568dc136656eb5215447fed17cee060314c3e01255216e",
     "tests/test_no_precise_coordinates.py": "f3d5c416924e2384db26112a5bff83bc690463c6eec9db73fc2ee36d79f6525a",
     "tests/test_provider_reservoir.py": "fd158f8af272d724d0ed193cbd0dc4880ac12834cb2ff74504b42ae411ce316e",

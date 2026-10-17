@@ -93,12 +93,24 @@ def merge_plain_with_html_links(plain_text: str, html: str) -> str:
     if not plain:
         return html_text
 
-    html_links = [
+    # Extract links that appear in the "Source URL: " lines from html_text
+    html_links_from_source_lines = [
         line.removeprefix("Source URL: ").strip()
         for line in html_text.splitlines()
         if line.startswith("Source URL: ")
     ]
-    missing = [link for link in html_links if link and not _is_link_present(link, plain)]
+
+    # Also extract all href links directly from the HTML (including inline URLs)
+    parser = _LinkPreservingParser()
+    parser.feed(html or "")
+    parser.close()
+    all_html_links = parser.links
+
+    # Combine both sources and deduplicate
+    all_links = list(dict.fromkeys(html_links_from_source_lines + all_html_links))
+
+    # Find links that are not present in the plain text
+    missing = [link for link in all_links if link and not _is_link_present(link, plain)]
     if not missing:
         return plain
     return plain + "\n\n" + "\n".join(f"Source URL: {link}" for link in missing)
