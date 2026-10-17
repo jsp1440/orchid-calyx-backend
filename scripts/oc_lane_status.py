@@ -13,7 +13,9 @@ could read. This writes it to the lane-status feed issue (#1949):
   wave.
 
 Lane states are ``working``, ``idle``, ``blocked``, ``failed`` and
-``recovering``. Only the workflow bot's own comments are read back. Nothing here
+``recovering``. The same record also carries a per-module-lane map
+(``module_lanes``, from the plan's ``oc.module-lanes.v1`` report); see
+``MODULE_STATE_MAP`` for the explicit mapping. Only the workflow bot's own comments are read back. Nothing here
 calls a provider or writes a repository file, and publishing is best effort: a
 failure is reported in the output, never raised into the wave.
 """
@@ -35,6 +37,24 @@ CURRENT_TAG = "OC-LANE-STATUS-CURRENT-V1"
 TRANSITION_TAG = "OC-LANE-STATUS-TRANSITION-V1"
 BOT_LOGIN = "github-actions[bot]"
 LANE_STATES = ("working", "idle", "blocked", "failed", "recovering")
+
+#: Module-lane states carry one extra, fail-closed value: ``unknown``.
+MODULE_LANE_STATES = LANE_STATES + ("unknown",)
+MODULE_LANES_SCHEMA = "oc.module-lanes.v1"
+NO_REASON = "no_reason_recorded"
+
+#: oc.module-lanes.v1 state -> Mission Control lane state. Only states the engine
+#: reports appear here. ``failed`` and ``recovering`` are deliberately absent: a
+#: module lane is failed/recovering only on lease evidence for its own issues
+#: (see ``module_lane_states``), never from its module state alone.
+MODULE_STATE_MAP = {
+    "executing": "working",
+    "validating": "working",  # a PR is in validation: work is in flight
+    "replenishable": "idle",  # an ungated queued mission exists, nothing running
+    "empty": "idle",  # nothing unfinished; discovery should replenish
+    "gated": "blocked",
+    "capability_gap": "blocked",
+}
 
 #: Planner homeostasis reason -> lane state (oc_swarm_controller.HOMEOSTASIS_STATUS).
 _REASON_STATE = {
@@ -97,6 +117,105 @@ def lane_state(
     return _REASON_STATE.get(reason, "blocked"), reason
 
 
+def _issue_numbers(rows: Any, key: str) -> set[int]:
+    if not isinstance(rows, list):
+        return set()
+    return {_int(r.get(key)) for r in rows if isinstance(r, dict) and _int(r.get(key))}
+
+
+def _lease_evidence(recovery: dict) -> tuple[set[int], set[int]]:
+    """(issues with a lease recovery, issues with a reconcile error), by number."""
+    recovered: set[int] = set()
+    for field in ("recovered", "stranded_recovered", "parked_lease_recovered"):
+        recovered |= _issue_numbers(recovery.get(field), "issue_number")
+    return recovered, _issue_numbers(recovery.get("errors"), "issue")
+
+
+def _lane_issues(entry: dict) -> set[int]:
+    issues: set[int] = set()
+    for field in ("running", "replenishable", "validating", "capability_gap"):
+        issues |= {_int(n) for n in entry[field]}
+    for numbers in entry["gates"].values():
+        issues |= {_int(n) for n in numbers}
+    return issues
+
+
+def _lane_valid(entry: Any) -> bool:
+    return (
+        isinstance(entry, dict)
+        and isinstance(entry.get("state"), str)
+        and all(
+            isinstance(entry.get(f), list)
+            for f in ("running", "replenishable", "validating", "capability_gap")
+        )
+        and isinstance(entry.get("gates"), dict)
+        and all(isinstance(v, list) for v in entry["gates"].values())
+        and isinstance(entry.get("refusal_reasons", []), list)
+    )
+
+
+def _module_reason(module_state: str, entry: dict) -> str:
+    """The engine's own reason fields; ``no_reason_recorded`` if a blocked lane has none."""
+    if module_state in {"gated", "capability_gap"}:
+        tokens = {gate for gate, nums in entry["gates"].items() if nums}
+        for row in entry.get("refusal_reasons") or []:
+            if isinstance(row, dict) and str(row.get("reason") or "").strip():
+                tokens.add(str(row["reason"]).strip())
+        return ",".join(sorted(tokens)) if tokens else NO_REASON
+    return f"module_state:{module_state}"
+
+
+def module_lane_states(module_lanes: Any, recovery: dict | None = None) -> dict:
+    """Per-module-lane Mission Control states from an ``oc.module-lanes.v1`` report.
+
+    * ``MODULE_STATE_MAP`` gives the base state; every lane has a non-blank reason.
+    * ``failed``/``recovering`` come only from lease evidence naming one of the
+      lane's own issues (reconcile error -> failed, recovery -> recovering).
+    * Missing, malformed or unrecognised lane data is ``unknown``, never ``idle``;
+      a missing/malformed whole block is reported with an explicit status.
+    """
+    if module_lanes is None:
+        return {"status": "unavailable", "reason": "module_lanes_missing", "lanes": {}, "counts": {}}
+    block = module_lanes
+    if (
+        not isinstance(block, dict)
+        or block.get("schema") != MODULE_LANES_SCHEMA
+        or not isinstance(block.get("lanes"), dict)
+    ):
+        return {"status": "malformed", "reason": "module_lanes_malformed", "lanes": {}, "counts": {}}
+    recovered, errored = _lease_evidence(recovery if isinstance(recovery, dict) else {})
+    out: dict[str, dict] = {}
+    for key, entry in sorted(block["lanes"].items()):
+        if key == "unassigned":
+            continue
+        if not _lane_valid(entry):
+            out[str(key)] = {
+                "lane_state": "unknown",
+                "reason": "malformed_lane_entry",
+                "module_state": None,
+            }
+            continue
+        module_state = entry["state"]
+        if module_state not in MODULE_STATE_MAP:
+            out[str(key)] = {
+                "lane_state": "unknown",
+                "reason": "unknown_module_state",
+                "module_state": None,
+            }
+            continue
+        state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
+        issues = _lane_issues(entry)
+        if issues & errored:
+            state, reason = "failed", f"lease_reconcile_errors:{reason}"
+        elif issues & recovered:
+            state, reason = "recovering", f"lease_recovered:{reason}"
+        out[str(key)] = {"lane_state": state, "reason": reason, "module_state": module_state}
+    counts: dict[str, int] = {}
+    for item in out.values():
+        counts[item["lane_state"]] = counts.get(item["lane_state"], 0) + 1
+    return {"status": "ok", "reason": None, "lanes": out, "counts": dict(sorted(counts.items()))}
+
+
 def build_record(
     plan: dict | None,
     recovery: dict | None,
@@ -144,6 +263,7 @@ def build_record(
         "leases_recovered": recovered,
         "lease_reconcile_errors": reconcile_errors,
         "selected": sorted(_int(n) for n in plan.get("selected_numbers") or []),
+        "module_lanes": module_lane_states(plan.get("module_lanes"), recovery),
         "evidence": evidence if isinstance(evidence, dict) else {},
         "run_id": str(run_id),
         "run_url": run_url,
@@ -192,9 +312,10 @@ def plan_writes(comments: list[dict], record: dict) -> dict:
         previous.get("lane_state"),
         previous.get("reason"),
     ) != (record["lane_state"], record["reason"])
-    return {
+    lane_changes = _lane_changes(previous, record)
+    writes = {
         "current_comment_id": current["id"] if current else None,
-        "transition": changed,
+        "transition": changed or bool(lane_changes),
         "previous": None
         if previous is None
         else {
@@ -202,6 +323,35 @@ def plan_writes(comments: list[dict], record: dict) -> dict:
             "reason": previous.get("reason"),
         },
     }
+    if lane_changes:
+        writes["lane_changes"] = lane_changes
+    return writes
+
+
+def _lane_map(record: dict | None) -> dict | None:
+    section = (record or {}).get("module_lanes")
+    lanes = section.get("lanes") if isinstance(section, dict) else None
+    return lanes if isinstance(lanes, dict) else None
+
+
+def _lane_view(entry: Any) -> dict | None:
+    if not isinstance(entry, dict):
+        return None
+    return {"lane_state": entry.get("lane_state"), "reason": entry.get("reason")}
+
+
+def _lane_changes(previous: dict | None, record: dict) -> list[dict]:
+    """Per-lane (state, reason) changes. A previous record with no lane map (written
+    before this field existed, or the first wave) yields none, so rollout is silent."""
+    before, after = _lane_map(previous), _lane_map(record)
+    if before is None or after is None:
+        return []
+    changes = []
+    for key in sorted(set(before) | set(after)):
+        old, new = _lane_view(before.get(key)), _lane_view(after.get(key))
+        if old != new:
+            changes.append({"lane": key, "from": old, "to": new})
+    return changes
 
 
 class GitHub:
@@ -268,8 +418,11 @@ def publish(github: GitHub, issue: int, record: dict, *, dry_run: bool = False) 
     else:
         github.update(int(writes["current_comment_id"]), body)
     if writes["transition"]:
+        transition = record
+        if writes.get("lane_changes"):
+            transition = {**record, "module_lane_changes": writes["lane_changes"]}
         result["transition_comment_id"] = github.create(
-            issue, render(TRANSITION_TAG, record)
+            issue, render(TRANSITION_TAG, transition)
         )
     return result
 

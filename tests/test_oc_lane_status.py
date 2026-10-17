@@ -295,3 +295,274 @@ def test_empty_queue_with_nothing_held_stays_idle():
     doc = plan()
     doc["homeostasis"]["evidence"]["unfinished_held"] = {"repair_pending": 0}
     assert record(doc)["lane_state"] == "idle"
+
+
+# --- per-module-lane telemetry (module_lanes -> Mission Control states) -------
+
+
+def lane(state="empty", *, running=(), gates=None, refusals=(), gap=(), validating=(),
+         replenishable=(), unfinished=0):
+    return {
+        "state": state,
+        "running": list(running),
+        "next_mission": min(replenishable) if replenishable else None,
+        "replenishable": list(replenishable),
+        "gates": gates or {},
+        "capability_gap": list(gap),
+        "validating": list(validating),
+        "refusal_reasons": list(refusals),
+        "unfinished": unfinished,
+    }
+
+
+def with_lanes(lanes_map, base=None):
+    doc = base or plan()
+    doc["module_lanes"] = {
+        "schema": "oc.module-lanes.v1",
+        "lanes": {"unassigned": lane(), **lanes_map},
+    }
+    return doc
+
+
+def lane_entry(doc, key, recovery=None):
+    return record(doc, recovery)["module_lanes"]["lanes"][key]
+
+
+@pytest.mark.parametrize(
+    ("module_state", "kwargs", "state"),
+    [
+        ("executing", {"running": [11]}, "working"),
+        ("validating", {"validating": [12]}, "working"),
+        ("replenishable", {"replenishable": [13]}, "idle"),
+        ("empty", {}, "idle"),
+        ("gated", {"gates": {"owner_gated": [14]}}, "blocked"),
+        ("capability_gap", {"gap": [15]}, "blocked"),
+    ],
+)
+def test_module_state_maps_to_the_five_mission_control_states(module_state, kwargs, state):
+    entry = lane_entry(with_lanes({"taxonomy": lane(module_state, **kwargs)}), "taxonomy")
+    assert entry["lane_state"] == state and entry["module_state"] == module_state
+    assert entry["lane_state"] in lanes.LANE_STATES
+
+
+def test_the_mapping_is_documented_and_covers_every_engine_state():
+    from app.autonomy.module_lanes import lane_report
+
+    states = set(lane_report([])["summary"])
+    assert states == set(lanes.MODULE_STATE_MAP)
+    assert set(lanes.MODULE_STATE_MAP.values()) <= set(lanes.LANE_STATES)
+    assert lanes.MODULE_STATE_MAP["validating"] == "working"
+    assert "failed" not in lanes.MODULE_STATE_MAP.values()
+    assert "recovering" not in lanes.MODULE_STATE_MAP.values()
+
+
+def test_every_lane_carries_a_reason_never_blank():
+    doc = with_lanes(
+        {
+            "taxonomy": lane("executing", running=[1]),
+            "literature": lane("empty"),
+            "atlas-geography-environment": lane("gated", gates={"owner_gated": [2]}),
+            "matrix-id": lane("gated"),  # gated but the engine recorded no gate
+            "pollinator": lane("capability_gap", gap=[3]),
+        }
+    )
+    out = record(doc)["module_lanes"]["lanes"]
+    assert all(isinstance(e["reason"], str) and e["reason"].strip() for e in out.values())
+    assert out["atlas-geography-environment"]["reason"] == "owner_gated"
+    assert out["matrix-id"]["reason"] == "no_reason_recorded"
+    assert out["pollinator"]["reason"] == "no_reason_recorded"
+    assert out["taxonomy"]["reason"] == "module_state:executing"
+
+
+def test_engine_refusal_reasons_are_reused_as_the_lane_reason():
+    doc = with_lanes(
+        {
+            "pollinator": lane(
+                "capability_gap",
+                gap=[3],
+                refusals=[{"issue": 3, "reason": "no_authorised_coding_executor"}],
+            ),
+            "atlas-geography-environment": lane(
+                "gated",
+                gates={"provider_blocked": [4], "owner_gated": [5]},
+                refusals=[{"issue": 4, "reason": "provider_blocked_by_no_api"}],
+            ),
+        }
+    )
+    out = record(doc)["module_lanes"]["lanes"]
+    assert out["pollinator"]["reason"] == "no_authorised_coding_executor"
+    assert out["atlas-geography-environment"]["reason"] == (
+        "owner_gated,provider_blocked,provider_blocked_by_no_api"
+    )
+
+
+def test_unassigned_is_not_reported_as_a_module_lane_and_global_fields_are_unchanged():
+    doc = with_lanes({"taxonomy": lane("executing", running=[1])})
+    rec = record(doc)
+    assert "unassigned" not in rec["module_lanes"]["lanes"]
+    plain = record(plan())
+    for key in ("lane_state", "reason", "launched", "selected", "evidence", "schema"):
+        assert rec[key] == plain[key]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        None,
+        "executing",
+        [],
+        {},
+        {"state": "exploding"},
+        {"state": None},
+        {"state": ["executing"]},
+        {"state": "executing", "running": "not-a-list"},
+    ],
+)
+def test_malformed_lane_data_fails_closed_to_unknown_not_idle(bad):
+    entry = lane_entry(with_lanes({"taxonomy": bad}), "taxonomy")
+    assert entry["lane_state"] == "unknown"
+    assert entry["reason"] and entry["reason"] != "no_reason_recorded"
+
+
+@pytest.mark.parametrize(
+    ("block", "status"),
+    [
+        (None, "unavailable"),
+        ("garbage", "malformed"),
+        ({"schema": "other", "lanes": {}}, "malformed"),
+        ({"schema": "oc.module-lanes.v1", "lanes": []}, "malformed"),
+    ],
+)
+def test_missing_or_malformed_module_lanes_block_is_visible_not_silent(block, status):
+    doc = plan()
+    if block is not None:
+        doc["module_lanes"] = block
+    section = record(doc)["module_lanes"]
+    assert section["status"] == status and section["lanes"] == {} and section["reason"]
+
+
+def test_failed_and_recovering_come_only_from_lease_evidence_for_that_lane():
+    doc = with_lanes(
+        {
+            "taxonomy": lane("executing", running=[10]),
+            "literature": lane("executing", running=[20]),
+            "matrix-id": lane("replenishable", replenishable=[30]),
+        }
+    )
+    recovery = {
+        "recovered_count": 1,
+        "recovered": [{"issue_number": 10}],
+        "stranded_recovered": [],
+        "parked_lease_recovered": [],
+        "errors": [{"issue": 30, "reason": "lease_reconcile_unconfirmed"}],
+    }
+    out = record(doc, recovery)["module_lanes"]["lanes"]
+    assert (out["taxonomy"]["lane_state"], out["taxonomy"]["reason"]) == (
+        "recovering",
+        "lease_recovered:module_state:executing",
+    )
+    assert (out["matrix-id"]["lane_state"], out["matrix-id"]["reason"]) == (
+        "failed",
+        "lease_reconcile_errors:module_state:replenishable",
+    )
+    assert out["literature"]["lane_state"] == "working"  # no evidence about 20
+
+
+def test_no_lane_is_failed_or_recovering_without_evidence():
+    doc = with_lanes({k: lane("empty") for k in ("taxonomy", "literature")})
+    for recovery in (None, {}, {"recovered_count": 0, "errors": []}):
+        states = {e["lane_state"] for e in record(doc, recovery)["module_lanes"]["lanes"].values()}
+        assert states == {"idle"}
+
+
+def test_global_recovery_count_alone_does_not_invent_a_lane_recovery():
+    # The global flag says something recovered, but names no issue: no lane is blamed.
+    doc = with_lanes({"taxonomy": lane("executing", running=[10])})
+    recovery = {"recovered_count": 2, "recovered": [], "errors": [{"reason": "x"}]}
+    assert record(doc, recovery)["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "working"
+
+
+def test_summary_counts_cover_every_lane_including_unknown():
+    doc = with_lanes({"taxonomy": lane("executing", running=[1]), "literature": "bad"})
+    counts = record(doc)["module_lanes"]["counts"]
+    assert counts == {"working": 1, "unknown": 1}
+
+
+def test_record_with_module_lanes_round_trips_and_is_json_serialisable():
+    rec = record(with_lanes({"taxonomy": lane("executing", running=[1])}))
+    assert lanes.parse(lanes.render(lanes.CURRENT_TAG, rec), lanes.CURRENT_TAG) == rec
+
+
+def _wave(lane_map):
+    return record(with_lanes(lane_map))
+
+
+def test_a_single_lane_change_appends_a_transition_naming_the_lane():
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, _wave({"taxonomy": lane("empty")}))
+    assert len(gh.created) == 2
+    lanes.publish(gh, 1949, _wave({"taxonomy": lane("empty")}))
+    assert len(gh.created) == 2  # identical wave: no spam
+    result = lanes.publish(gh, 1949, _wave({"taxonomy": lane("executing", running=[1])}))
+    assert len(gh.created) == 3
+    assert result["lane_changes"] == [
+        {
+            "lane": "taxonomy",
+            "from": {"lane_state": "idle", "reason": "module_state:empty"},
+            "to": {"lane_state": "working", "reason": "module_state:executing"},
+        }
+    ]
+    body = gh.created[-1]
+    assert body.startswith("<!-- " + lanes.TRANSITION_TAG) and "module_lane_changes" in body
+    assert "module_lane_changes" not in gh.rows[0]["body"]
+
+
+def test_changes_inside_a_lane_that_keep_state_and_reason_do_not_spam():
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, _wave({"taxonomy": lane("executing", running=[1])}))
+    lanes.publish(gh, 1949, _wave({"taxonomy": lane("executing", running=[1, 2], unfinished=5)}))
+    assert len(gh.created) == 2
+
+
+def test_a_legacy_previous_record_without_lanes_does_not_trigger_a_transition():
+    legacy = record(plan())
+    legacy.pop("module_lanes")
+    writes = lanes.plan_writes([comment(7, legacy)], _wave({"taxonomy": lane("empty")}))
+    assert writes["transition"] is False and "lane_changes" not in writes
+
+
+def test_a_lane_appearing_or_disappearing_is_a_change():
+    prior = _wave({"taxonomy": lane("empty")})
+    writes = lanes.plan_writes(
+        [comment(7, prior)], _wave({"taxonomy": lane("empty"), "literature": lane("empty")})
+    )
+    assert writes["transition"] is True
+    assert writes["lane_changes"][0]["lane"] == "literature"
+    assert writes["lane_changes"][0]["from"] is None
+
+
+def test_first_wave_with_lanes_keeps_the_original_plan_writes_shape():
+    writes = lanes.plan_writes([], _wave({"taxonomy": lane("empty")}))
+    assert writes == {"current_comment_id": None, "transition": True, "previous": None}
+
+
+def test_a_real_module_lane_report_flows_through_end_to_end():
+    from app.autonomy.module_lanes import lane_report
+
+    report = lane_report(
+        [
+            {"number": 1, "title": "Taxonomy sweep", "labels": ["oc-running"], "state": "OPEN"},
+            {"number": 2, "title": "Literature DOI check", "labels": ["oc-validating"], "state": "OPEN"},
+            {"number": 3, "title": "Matrix key", "labels": ["oc-queued", "oc-owner-gate"], "state": "OPEN"},
+        ]
+    )
+    doc = plan()
+    doc["module_lanes"] = report
+    out = record(doc)["module_lanes"]
+    assert out["status"] == "ok"
+    assert out["lanes"]["taxonomy"]["lane_state"] == "working"
+    assert out["lanes"]["literature"]["lane_state"] == "working"
+    assert out["lanes"]["matrix-id"]["lane_state"] == "blocked"
+    assert out["lanes"]["matrix-id"]["reason"] == "owner_gated"
+    assert out["lanes"]["pollinator"]["lane_state"] == "idle"
+    assert len(out["lanes"]) == 16
