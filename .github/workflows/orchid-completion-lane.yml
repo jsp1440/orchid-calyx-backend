@@ -177,7 +177,10 @@ jobs:
       # record reaches a provider (#1823: ten unauthorized issues were paid for
       # after a budget change re-queued them). A refusal skips the governor and
       # parks the issue as governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED, which
-      # blocked reconciliation holds as owner-gated.
+      # blocked reconciliation holds as owner-gated. An engine-discovered issue
+      # admitted under the owner's discovery grant on #1924 is also held to the
+      # grant's per-issue reservation ceiling and daily cap; its receipt goes
+      # to ledger #1330 before the governor runs.
       - name: Owner issue authorization for paid execution
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false'
         id: issue_auth
@@ -187,7 +190,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 scripts/oc_paid_issue_admission.py \
-            --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER"
+            --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER" \
+            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
 
       - name: Swarm governor precheck — primary provider
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.issue_auth.outputs.authorized == 'true'

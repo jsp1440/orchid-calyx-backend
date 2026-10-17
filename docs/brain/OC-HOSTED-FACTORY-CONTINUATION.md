@@ -53,6 +53,59 @@ record count only when typed by the owner directly: a comment posted through an
 app (performed_via_github_app, as an agent using the owner's token produces) never
 counts, so the maker cannot authorize its own work.
 
+### Discovery grant for engine-filed work
+
+A digest-listed standing grant cannot cover work the engine discovers after the
+owner signs: #1968 was filed by `scripts/oc_work_materialize.py`, claimed, and
+parked as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED`, so the queue drained and
+could not replenish unattended. One OC-HOSTED-DISCOVERY-AUTHORIZATION-V1 comment
+on issue #1924 covers such work by policy instead. It is honoured under the same
+record checks as the standing grant (exactly one, typed by the owner directly,
+never through an app, never edited, expiring at most 31 days after posting), and
+its JSON has exactly these fields:
+
+```
+<!-- OC-HOSTED-DISCOVERY-AUTHORIZATION-V1
+{"allowed_lanes": ["oc-lane:research-station"], "allowed_paths": ["app/cognitive_integration/improvement_discovery.py", "tests/test_improvement_discovery.py"], "allowed_sources": ["brain-reasoning-gap", "brain-mission-capability-gap", "brain-source-contract-gap"], "expires_at": "2026-11-16T00:00:00Z", "max_issues_per_day": 3, "max_reserved_usd_per_issue": "0.50", "repository": "jsp1440/orchid-calyx-backend", "risk": "low", "target": "oc-autonomous-integration"}
+-->
+```
+
+`risk` is "low" only and `target` the integration branch. `max_issues_per_day`
+is an integer from 1 to 10. `max_reserved_usd_per_issue` is a two-decimal string
+no larger than the router's largest per-run reservation (2.00). `allowed_lanes`
+are full `oc-lane:*` label names, `allowed_sources` the discovery sources named in
+the issue's `Discovery source:` line, and `allowed_paths` exact, unprotected file
+paths (at most 12): the checker's write-scope check is exact membership, so a
+discovered PR may touch only those files, and must include a `tests/*.py` file
+among them.
+
+An issue qualifies only when it is open, not a pull request, and opened by
+`github-actions[bot]` (account type Bot, which a person cannot impersonate); its
+body has the materializer's filing line, exactly one `OC-DISCOVERY-FINGERPRINT`
+and exactly one listed discovery source; it carries `oc-discovered` and exactly
+one listed `oc-lane:*` label; it has no `oc-owner-gate`, `blocked-on-owner`,
+`oc-scientific-gate`, `owner-gate` or `scientific-gate` label, no
+`OC-AUTO-REQUEUE: false` and no owner-gate disposition; its body was never
+edited and its title never renamed, by anyone (read from GraphQL `lastEditedAt`
+and rename events, because REST `updated_at` moves on every label change); and
+any `Allowed paths:` it declares lie inside the grant, narrowing it. An
+owner-opened issue is never on this path; it stays on the digest-listed grant.
+
+Paid admission (`scripts/oc_paid_issue_admission.py`) then requires the route's
+reservation to be within `max_reserved_usd_per_issue` and counts today's (UTC)
+`[OC-DISCOVERY-ADMISSION]` receipts on governor ledger #1330, refusing at
+`max_issues_per_day`. The receipt is written and read back before admission is
+reported; a run the governor then refuses still uses its slot. Budget, kill
+switch, NO-API, provider allowlist and paid concurrency all still apply, as do
+one checker call per issue and the factory gate.
+
+This grant authorizes only a bounded maker run and one checker call whose PR
+targets `oc-autonomous-integration` through the normal independent checker and
+factory gate. It never authorizes a merge to main, a deployment, production
+mutation, taxonomy activation or scientific publication; those stay owner-gated.
+Issues already parked as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED` stay held
+by blocked reconciliation until released through its owner-gated path.
+
 A separate privileged job rereads all mutable authority and the exact checker
 comments produced by this run, invokes the existing factory gate, and uses the
 GitHub merge API's expected-head SHA fence. The actual merged PR and both merge

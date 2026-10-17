@@ -17,6 +17,7 @@ import sys
 import time
 from dataclasses import asdict
 from datetime import UTC, datetime
+from decimal import Decimal, InvalidOperation
 from pathlib import Path, PurePosixPath
 from urllib import request
 
@@ -34,8 +35,17 @@ from app.calyx_orchestrator.factory_bridge import route_completion_to_factory
 from app.calyx_orchestrator.factory_policy import CheckerVerdict, RiskTier, WorkIntent
 from runtime.swarm.work_packet import build_work_packet
 from scripts.oc_control_plane_health import build_health, collect_github_snapshot
+from scripts.oc_model_router import DEFAULT_ESTIMATED_COST_USD
 from scripts.oc_swarm_dependency_graph import build_dependency_graph, dependencies
 from scripts.oc_swarm_write_set_verifier import parse_lease_claim, verify_write_set
+from scripts.oc_work_materialize import (
+    DISCOVERED_LABEL,
+    DISCOVERY_SOURCE,
+    FINGERPRINT,
+    LANE_LABEL,
+    NO_REQUEUE,
+    OWNER_HOLDS,
+)
 from scripts.swarm_anthropic_direct import _parse_allowed_paths
 
 BRANCH = "oc-autonomous-integration"
@@ -52,6 +62,40 @@ STANDING_TAG = "OC-HOSTED-STANDING-AUTHORIZATION-V1"
 STANDING_ISSUE = 1924
 STANDING_MAX_DAYS = 31
 STANDING_MAX_ISSUES = 50
+# One owner grant covering work the engine discovered and filed itself
+# (scripts/oc_work_materialize.py), so the queue can replenish unattended. It
+# cannot list digests -- the issues do not exist yet when the owner signs -- so
+# it is scoped by POLICY instead: lanes, discovery sources, exact paths, a daily
+# admission cap and a per-issue reservation ceiling. It covers only issues the
+# workflow bot opened, carrying the materializer's markers, never edited since
+# (body or title), and not held by an owner or scientific gate. Like every
+# grant here it authorizes only one paid maker run and one checker call whose
+# PR targets oc-autonomous-integration through the normal checker and factory
+# gate. It NEVER authorizes a merge to main, a deployment, production
+# mutation, taxonomy activation or scientific publication.
+DISCOVERY_TAG = "OC-HOSTED-DISCOVERY-AUTHORIZATION-V1"
+DISCOVERY_MAX_DAYS = STANDING_MAX_DAYS
+DISCOVERY_MAX_ISSUES_PER_DAY = 10
+# The largest per-run reservation the completion lane's router makes.
+DISCOVERY_MAX_RESERVED_USD = max(
+    Decimal(value) for value in DEFAULT_ESTIMATED_COST_USD.values()
+)
+DISCOVERY_AUTHOR = "github-actions[bot]"
+DISCOVERY_FILER = "This task was filed by `scripts/oc_work_materialize.py`"
+DISCOVERY_HOLDS = OWNER_HOLDS | {"owner-gate", "scientific-gate"}
+DISCOVERY_FIELDS = frozenset(
+    {
+        "repository",
+        "target",
+        "risk",
+        "expires_at",
+        "max_issues_per_day",
+        "max_reserved_usd_per_issue",
+        "allowed_lanes",
+        "allowed_paths",
+        "allowed_sources",
+    }
+)
 ATTEMPT_TAG = "OC-HOSTED-CHECKER-ATTEMPT-V1"
 MODEL = "claude-haiku-4-5"
 RESERVATION = "0.08"
@@ -117,6 +161,8 @@ PROTECTED = (
     "runtime/swarm/",
     "scripts/swarm_",
     "scripts/oc_hosted_completion.py",
+    "scripts/oc_paid_issue_admission",
+    "scripts/oc_work_materialize",
     "scripts/agent_security_guard.py",
     "scripts/oc_swarm",
     "scripts/oc_health_contract.py",
@@ -273,16 +319,20 @@ def _safe_allowed_paths(allowed):
     )
 
 
-def authorization(issue, comments, repository, now=None, standing=None):
+def authorization(issue, comments, repository, now=None, standing=None, history=None):
     """A scoped owner record enrolls work; maker-authored PR markers cannot.
 
     A per-issue record, when present, decides alone. Without one, ``standing``
     (the comments of ``STANDING_ISSUE``, or a callable returning them, read only
-    then) may supply the owner's standing grant.
+    then) may supply the owner's standing grant -- or, for an issue the
+    workflow bot opened, the owner's discovery grant, which also needs
+    ``history`` (the issue's edit history, or a callable returning it).
     """
     records = [c for c in comments if AUTH_TAG in (c.get("body") or "")]
     if not records and standing is not None:
         rows = standing() if callable(standing) else standing
+        if (issue.get("user") or {}).get("login") == DISCOVERY_AUTHOR:
+            return discovery_authorization(issue, rows, repository, now, history)
         return standing_authorization(issue, rows, repository, now)
     require(len(records) == 1, "hosted_authorization_missing_or_ambiguous")
     record = records[0]
@@ -392,6 +442,214 @@ def standing_authorization(issue, standing, repository, now=None):
 
 def standing_comments(repository):
     return pages(repository, f"issues/{STANDING_ISSUE}/comments")
+
+
+def _owner_rows(rows, tag, repository):
+    owner = repository.split("/")[0]
+    return [
+        c
+        for c in rows
+        if tag in (c.get("body") or "")
+        and (c.get("user") or {}).get("login") == owner
+        and c.get("author_association") == "OWNER"
+        and c.get("performed_via_github_app") is None
+    ]
+
+
+def _distinct_strings(value, pattern, limit):
+    return (
+        isinstance(value, list)
+        and 0 < len(value) <= limit
+        and len(value) == len(set(value))
+        and all(isinstance(v, str) and re.fullmatch(pattern, v) for v in value)
+    )
+
+
+def _discovery_grant(record, repository):
+    """The validated JSON of an owner-typed discovery grant, or a refusal."""
+    _owner_record(record, repository)
+    grant = parse_tag(record["body"], DISCOVERY_TAG)
+    require(isinstance(grant, dict), "discovery_authorization_invalid")
+    reserved = grant.get("max_reserved_usd_per_issue")
+    try:
+        ceiling = (
+            Decimal(reserved)
+            if re.fullmatch(r"[0-9]+\.[0-9]{2}", str(reserved))
+            else None
+        )
+    except InvalidOperation:  # pragma: no cover - the pattern admits only decimals
+        ceiling = None
+    require(
+        set(grant) == DISCOVERY_FIELDS
+        and grant["repository"] == repository
+        and grant["target"] == BRANCH
+        and grant["risk"] == "low"
+        and type(grant["max_issues_per_day"]) is int
+        and 0 < grant["max_issues_per_day"] <= DISCOVERY_MAX_ISSUES_PER_DAY
+        and isinstance(reserved, str)
+        and ceiling is not None
+        and 0 < ceiling <= DISCOVERY_MAX_RESERVED_USD
+        and _distinct_strings(grant["allowed_lanes"], LANE_LABEL.pattern, 12)
+        and _distinct_strings(grant["allowed_sources"], r"[a-z0-9-]+", 12)
+        and isinstance(grant["allowed_paths"], list)
+        and len(grant["allowed_paths"]) == len(set(grant["allowed_paths"])),
+        "discovery_authorization_invalid",
+    )
+    _safe_allowed_paths(grant["allowed_paths"])
+    expiry = _expiry(grant["expires_at"])
+    lifetime = expiry - _expiry(record["created_at"])
+    require(
+        lifetime.total_seconds() <= DISCOVERY_MAX_DAYS * 86400,
+        "discovery_authorization_invalid",
+    )
+    return grant, expiry
+
+
+def discovery_authorization(issue, standing, repository, now=None, history=None):
+    """Admit one engine-discovered issue under the owner's discovery grant.
+
+    The grant is exactly one owner-typed, unedited, app-free
+    ``DISCOVERY_TAG`` comment on ``STANDING_ISSUE``, expiring at most
+    ``DISCOVERY_MAX_DAYS`` after it was posted. The issue qualifies only when
+    all of these hold:
+
+    * it is open, not a pull request, and opened by the workflow bot -- a
+      person cannot open an issue as ``github-actions[bot]``, so a forged
+      issue that copies the markers is never in scope;
+    * its body carries the materializer's filing line, exactly one
+      ``OC-DISCOVERY-FINGERPRINT`` and exactly one discovery source listed in
+      ``allowed_sources``;
+    * it carries ``oc-discovered`` and exactly one ``oc-lane:*`` label, listed
+      in ``allowed_lanes``;
+    * no owner or scientific hold label, no ``OC-AUTO-REQUEUE: false`` and no
+      owner-gate disposition;
+    * ``history`` shows its body never edited and its title never renamed by
+      anyone (the materializer never edits either, so any edit is foreign);
+    * any ``Allowed paths:`` it declares lie inside the grant's exact paths.
+
+    The daily admission cap and the per-issue reservation ceiling are enforced
+    at paid admission (``scripts/oc_paid_issue_admission.py``) against durable
+    ledger receipts, not here, so the checker's later re-reads of this grant
+    stay stable. This grants only the bounded integration-branch path; merge
+    to main, deployment and any scientific activation stay owner-gated.
+    """
+    records = _owner_rows(standing, DISCOVERY_TAG, repository)
+    require(len(records) == 1, "discovery_authorization_missing_or_ambiguous")
+    record = records[0]
+    grant, expiry = _discovery_grant(record, repository)
+    require(expiry > (now or datetime.now(UTC)), "authorization_expired")
+    require(
+        issue.get("state") == "open" and not issue.get("pull_request"),
+        "issue_not_open",
+    )
+    author = issue.get("user") or {}
+    require(
+        author.get("login") == DISCOVERY_AUTHOR and author.get("type") == "Bot",
+        "issue_not_engine_discovered",
+    )
+    body = issue.get("body") or ""
+    sources = DISCOVERY_SOURCE.findall(body)
+    require(
+        DISCOVERY_FILER in body and len(FINGERPRINT.findall(body)) == 1,
+        "issue_not_engine_discovered",
+    )
+    require(
+        len(sources) == 1 and sources[0] in grant["allowed_sources"],
+        "discovery_source_not_authorized",
+    )
+    labels = {label["name"] for label in issue.get("labels") or ()}
+    lanes = {name for name in labels if name.startswith("oc-lane:")}
+    require(DISCOVERED_LABEL in labels, "issue_not_engine_discovered")
+    require(
+        len(lanes) == 1 and lanes <= set(grant["allowed_lanes"]),
+        "discovery_lane_not_authorized",
+    )
+    require(
+        not labels & DISCOVERY_HOLDS
+        and not NO_REQUEUE.search(body)
+        and not re.search(r"(?m)^OC-SWARM-DISPOSITION:\s*owner-gate\s*$", body),
+        "issue_owner_held",
+    )
+    edits = history() if callable(history) else history
+    require(
+        isinstance(edits, dict)
+        and edits.get("number") == issue["number"]
+        and "last_edited_at" in edits
+        and edits["last_edited_at"] is None
+        and type(edits.get("renamed")) is int
+        and edits["renamed"] == 0,
+        "issue_edited_since_filed",
+    )
+    declared = _parse_allowed_paths(body)
+    if declared is None:
+        allowed = sorted(grant["allowed_paths"])
+    else:
+        require(
+            declared and declared <= set(grant["allowed_paths"]),
+            "issue_paths_outside_discovery_authorization",
+        )
+        allowed = sorted(declared)
+    _safe_allowed_paths(allowed)
+    return {
+        "repository": repository,
+        "issue": issue["number"],
+        "issue_material": issue_material(issue),
+        "target": BRANCH,
+        "checker_calls": 1,
+        "risk": "low",
+        "expires_at": grant["expires_at"],
+        "allowed_paths": allowed,
+        "standing": True,
+        "discovery": True,
+        "max_issues_per_day": grant["max_issues_per_day"],
+        "max_reserved_usd_per_issue": grant["max_reserved_usd_per_issue"],
+        "comment_id": record["id"],
+        "digest": digest(grant),
+    }
+
+
+EDIT_HISTORY_QUERY = (
+    "query($owner: String!, $name: String!, $number: Int!) {"
+    " repository(owner: $owner, name: $name) {"
+    " issue(number: $number) { number lastEditedAt"
+    " timelineItems(itemTypes: [RENAMED_TITLE_EVENT]) { totalCount } } } }"
+)
+
+
+def issue_edit_history(repository, number):
+    """Whether anyone ever edited the issue body or renamed its title.
+
+    REST reports neither (``updated_at`` moves on every label change), so this
+    reads ``lastEditedAt`` and the rename events. Any error is a refusal.
+    """
+    owner, name = repository.split("/")
+    result = subprocess.run(
+        [
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            f"query={EDIT_HISTORY_QUERY}",
+            "-f",
+            f"owner={owner}",
+            "-f",
+            f"name={name}",
+            "-F",
+            f"number={int(number)}",
+        ],
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=45,
+    )
+    payload = json.loads(result.stdout)
+    require(not payload.get("errors"), "issue_edit_history_unavailable")
+    node = payload["data"]["repository"]["issue"]
+    return {
+        "number": node["number"],
+        "last_edited_at": node["lastEditedAt"],
+        "renamed": node["timelineItems"]["totalCount"],
+    }
 
 
 def checker_attempt_reserved(grant, comments):
@@ -541,7 +799,11 @@ def inspect(context):
     issue = api(repo, f"issues/{number}")
     comments = pages(repo, f"issues/{number}/comments")
     grant = authorization(
-        issue, comments, repo, standing=lambda: standing_comments(repo)
+        issue,
+        comments,
+        repo,
+        standing=lambda: standing_comments(repo),
+        history=lambda: issue_edit_history(repo, number),
     )
     pr = api(repo, f"pulls/{context['pr']}")
     lease = api(repo, f"issues/comments/{context['lease']}")
