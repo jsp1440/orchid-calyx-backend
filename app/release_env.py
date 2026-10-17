@@ -750,6 +750,14 @@ OTHER_APP_ENV: tuple[tuple[str, tuple[str, ...]], ...] = (
             "CALYX_SHOW_CREATE_TABLES",
         ),
     ),
+    (
+        "Field Journal original-media storage (pilot); FIELD_MEDIA_STORAGE_DURABLE=true only after durable private storage is mounted at FIELD_MEDIA_STORAGE_DIR, otherwise uploads report durability not_guaranteed.",
+        (
+            "FIELD_MEDIA_MAX_BYTES",
+            "FIELD_MEDIA_STORAGE_DIR",
+            "FIELD_MEDIA_STORAGE_DURABLE",
+        ),
+    ),
 )
 OTHER_APP_ENV_NAMES: tuple[str, ...] = tuple(
     n for _, names in OTHER_APP_ENV for n in names
