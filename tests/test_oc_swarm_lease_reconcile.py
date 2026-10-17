@@ -602,3 +602,52 @@ def test_the_classifier_itself_refuses_an_issue_that_is_also_running():
     assert len(recon.classify_parked_leases(
         t.issue(1), t.comments(1), repository=REPO, run_status=t.run_status, now=NOW
     )) == 1
+
+
+def legacy_claim_comment(comment_id, run_id=34532059978):
+    # The pre-oc.swarm-claim.v1 receipt shape, verbatim from #1264 (2026-09-10).
+    body = ('[OC-SWARM-V4] Dependency/resource lease claimed: '
+            '`{"reads":[],"writes":["control-plane"],"dependencies":[]}`. Wave 1/4. '
+            f'Controller run: https://github.com/{REPO}/actions/runs/{run_id}.')
+    return {"id": comment_id, "body": body, "user": BOT,
+            "created_at": (NOW - timedelta(days=30)).isoformat()}
+
+
+def test_a_parked_issue_with_only_legacy_claims_is_skipped_without_an_error():
+    t = issue_1396_shape()
+    t._comments[1] = [legacy_claim_comment(5625651386), legacy_claim_comment(5625659129)]
+    report = run(t)
+    assert report["errors"] == []
+    assert report["parked_lease_recovered_count"] == 0
+    assert t.posted == [] and t.edits == []
+
+
+def test_legacy_claims_do_not_hide_a_current_unsettled_lease():
+    t = issue_1396_shape()
+    t._comments[1].insert(0, legacy_claim_comment(5625651386))
+    report = run(t)
+    assert report["errors"] == []
+    assert report["parked_lease_recovered_count"] == 1
+    assert report["parked_lease_recovered"][0]["lease_comment_id"] == 900
+
+
+@pytest.mark.parametrize(
+    "claim_json",
+    [
+        '{"schema":"oc.swarm-claim.v1","reads":[],"writes":[],"dependencies":[]}',
+        '{"lease_id":"owner/repo:1:1:1","reads":[]}',
+        '{"issue_number":1,"reads":[]}',
+        'not json',
+    ],
+)
+def test_a_malformed_current_claim_still_fails_closed(claim_json):
+    t = issue_1396_shape()
+    t._comments[1].append({
+        "id": 950,
+        "body": f"[OC-SWARM-V4] Dependency/resource lease claimed: `{claim_json}`.",
+        "user": BOT,
+        "created_at": (NOW - timedelta(minutes=30)).isoformat(),
+    })
+    report = run(t)
+    assert report["parked_lease_recovered_count"] == 0 and t.posted == []
+    assert [e["reason"] for e in report["errors"]] == ["parked_lease_unconfirmed"]
