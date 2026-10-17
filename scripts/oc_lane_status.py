@@ -71,12 +71,25 @@ _REASON_STATE = {
 }
 
 
+def _issue_no(value: Any) -> int | None:
+    """The single issue-number rule: a real positive int. Never a bool (``True`` is
+    an ``int`` in Python and would collide with issue 1), float, string, zero or
+    negative number. Everything that treats a value as an issue number uses this."""
+    if isinstance(value, int) and not isinstance(value, bool) and value > 0:
+        return value
+    return None
+
+
 def _int(value: Any) -> int:
-    try:
-        number = int(str(value).strip())
-    except (TypeError, ValueError):
+    """A non-negative count. Ints and CLI-style digit strings count; bools, floats
+    and anything else are 0 (this is a count, never an issue number)."""
+    if isinstance(value, bool):
         return 0
-    return max(number, 0)
+    if isinstance(value, int):
+        return max(value, 0)
+    if isinstance(value, str) and value.strip().isdecimal():
+        return int(value.strip())
+    return 0
 
 
 def _held_count(homeostasis: dict) -> int:
@@ -121,7 +134,8 @@ def lane_state(
 def _issue_numbers(rows: Any, key: str) -> set[int]:
     if not isinstance(rows, list):
         return set()
-    return {_int(r.get(key)) for r in rows if isinstance(r, dict) and _int(r.get(key))}
+    numbers = (_issue_no(r.get(key)) for r in rows if isinstance(r, dict))
+    return {n for n in numbers if n is not None}
 
 
 def _lease_evidence(recovery: dict) -> tuple[set[int], set[int]]:
@@ -156,7 +170,7 @@ def claim_evidence(doc: Any) -> dict:
         return bad
     confirmed: dict[int, str] = {}
     for row in doc["confirmed"]:
-        if not isinstance(row, dict) or not isinstance(row.get("issue_number"), int):
+        if not isinstance(row, dict) or _issue_no(row.get("issue_number")) is None:
             return bad
         kind = (
             "provider_free"
@@ -168,7 +182,7 @@ def claim_evidence(doc: Any) -> dict:
         confirmed[row["issue_number"]] = kind
     errors: set[int] = set()
     for row in doc["errors"]:
-        if not isinstance(row, dict) or not isinstance(row.get("issue"), int):
+        if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
             return bad
         errors.add(row["issue"])
     return {"status": "ok", "reason": None, "confirmed": confirmed, "errors": errors}
@@ -194,17 +208,15 @@ def _lane_issues(entry: dict) -> set[int]:
     for field in ("running", "replenishable", "validating", "capability_gap", "planned"):
         if field == "planned" and field not in entry:
             continue
-        issues |= {_int(n) for n in entry[field]}
+        issues |= set(entry[field])
     for numbers in entry["gates"].values():
-        issues |= {_int(n) for n in numbers}
+        issues |= set(numbers)
     return issues
 
 
 def _numbers(value: Any) -> bool:
     """A list of real issue numbers (bool is not a number here)."""
-    return isinstance(value, list) and all(
-        isinstance(n, int) and not isinstance(n, bool) for n in value
-    )
+    return isinstance(value, list) and all(_issue_no(n) is not None for n in value)
 
 
 def _lane_valid(entry: Any) -> bool:
@@ -251,7 +263,7 @@ def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int
         return {"lane_state": "unknown", "reason": "unknown_module_state", "module_state": None}
     state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
     issues = _lane_issues(entry)
-    planned = {_int(n) for n in entry.get("planned") or []}
+    planned = set(entry.get("planned") or [])
     if claims.get("status") == "malformed" and planned:
         return {"lane_state": "unknown", "reason": "claims_malformed", "module_state": module_state}
     if claims.get("status") == "ok":
@@ -334,6 +346,11 @@ def _safe_module_lanes(module_lanes: Any, recovery: Any, claims: Any) -> dict:
         }
 
 
+def _selected(value: Any) -> set[int]:
+    numbers = (_issue_no(n) for n in value) if isinstance(value, list) else ()
+    return {n for n in numbers if n is not None}
+
+
 def build_record(
     plan: dict | None,
     recovery: dict | None,
@@ -381,7 +398,7 @@ def build_record(
         "provider_blocked": bool(provider_blocked),
         "leases_recovered": recovered,
         "lease_reconcile_errors": reconcile_errors,
-        "selected": sorted(_int(n) for n in plan.get("selected_numbers") or []),
+        "selected": sorted(_selected(plan.get("selected_numbers"))),
         "module_lanes": _safe_module_lanes(plan.get("module_lanes"), recovery, claims),
         "evidence": evidence if isinstance(evidence, dict) else {},
         "run_id": str(run_id),

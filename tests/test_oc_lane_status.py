@@ -822,3 +822,69 @@ def test_non_string_lane_keys_do_not_raise():
     doc["module_lanes"]["lanes"][5] = lane("empty")
     out = record(doc)["module_lanes"]["lanes"]
     assert out["5"]["lane_state"] == "idle" and out["taxonomy"]["lane_state"] == "idle"
+
+
+# --- one strict issue-number rule: no bools, floats, strings, zero or negatives ---
+
+BAD_NUMBERS = [True, False, 1.0, "1", 0, -1, None]
+
+
+@pytest.mark.parametrize("bad", BAD_NUMBERS)
+def test_issue_no_accepts_only_positive_real_ints(bad):
+    assert lanes._issue_no(bad) is None
+    assert lanes._issue_no(7) == 7
+
+
+@pytest.mark.parametrize("bad", BAD_NUMBERS)
+def test_bad_issue_number_in_a_confirmed_claim_is_malformed_never_working(bad):
+    doc = claims_doc()
+    doc["confirmed"] = [{"issue_number": bad, "lane_executable": False}]
+    rec = claimed_record({"taxonomy": planned_lane(1)}, doc)
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert rec["module_lanes"]["claims"]["status"] == "malformed"
+    assert entry["lane_state"] == "unknown" and entry["reason"] == "claims_malformed"
+
+
+@pytest.mark.parametrize("bad", BAD_NUMBERS)
+def test_bad_issue_number_in_a_claim_error_row_is_malformed(bad):
+    doc = claims_doc()
+    doc["errors"] = [{"issue": bad, "reason": "claim_unconfirmed"}]
+    rec = claimed_record({"taxonomy": planned_lane(1)}, doc)
+    assert rec["module_lanes"]["claims"]["status"] == "malformed"
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "unknown"
+
+
+@pytest.mark.parametrize("bad", [b for b in BAD_NUMBERS if b is not None])
+@pytest.mark.parametrize(
+    "field", ["recovered", "stranded_recovered", "parked_lease_recovered"]
+)
+def test_bad_issue_number_in_recovery_lists_never_marks_a_lane_recovering(field, bad):
+    doc = with_lanes({"taxonomy": lane("executing", running=[1])})
+    out = record(doc, {field: [{"issue_number": bad}]})["module_lanes"]["lanes"]["taxonomy"]
+    assert out["lane_state"] == "working"
+
+
+@pytest.mark.parametrize("bad", [b for b in BAD_NUMBERS if b is not None])
+def test_bad_issue_number_in_recovery_errors_never_marks_a_lane_failed(bad):
+    doc = with_lanes({"taxonomy": lane("executing", running=[1])})
+    out = record(doc, {"errors": [{"issue": bad}]})["module_lanes"]["lanes"]["taxonomy"]
+    assert out["lane_state"] == "working"
+
+
+@pytest.mark.parametrize("bad", [True, False, 1.0, "1", 0, -1])
+def test_bad_issue_number_inside_lane_lists_is_a_malformed_lane(bad):
+    entry = lane_entry(with_lanes({"taxonomy": lane("executing", running=[bad])}), "taxonomy")
+    assert (entry["lane_state"], entry["reason"]) == ("unknown", "malformed_lane_entry")
+
+
+def test_selected_and_counts_reject_bools_and_non_integral_values():
+    doc = plan("executing", "executing", [1943, True, 1.5, "7", -3, 0])
+    rec = record(doc, {"recovered_count": True, "errors": True}, paid=True, free=1.5)
+    assert rec["selected"] == [1943]
+    assert rec["launched"] == {"provider": 0, "provider_free": 0}
+    assert rec["leases_recovered"] == 0 and rec["lease_reconcile_errors"] == 0
+
+
+def test_cli_style_digit_strings_still_count():
+    rec = record(plan("executing", "executing", [1]), paid="2", free=" 1 ")
+    assert rec["launched"] == {"provider": 2, "provider_free": 1}
