@@ -10,7 +10,7 @@ Layout inside the store (owner_key ``field-observations``):
 * ``field_observation`` — project_id = observer subject, record_id = observation id
 * ``field_observation_index`` — project_id ``index``, record_id = observation id,
   payload names the observer so a bare id can be resolved
-* ``field_observation_photo`` — project_id = observation id, record_id = photo id
+* ``field_observation_photo`` — project_id = observation id, record_id = photo/media id
 """
 
 from __future__ import annotations
@@ -63,6 +63,10 @@ def observation_id_for(observer_subject: str, client_draft_id: str | None) -> st
     return f"fo-{uuid.uuid4().hex[:24]}"
 
 
+def identification_status_for(taxon_hint: str | None) -> str:
+    return "observer_hint_unresolved" if (taxon_hint or "").strip() else "unresolved"
+
+
 _store: ProjectRecordStore | None = None
 
 
@@ -107,6 +111,7 @@ class FieldObservationService:
             "id": observation_id,
             "observer_subject": observer_subject,
             "observed_at": _iso(payload.observed_at),
+            "device_captured_at": _iso(payload.device_captured_at) if payload.device_captured_at else None,
             "note": payload.note,
             "taxon_hint": payload.taxon_hint,
             "epistemic_certainty": payload.epistemic_certainty.value,
@@ -115,6 +120,13 @@ class FieldObservationService:
             "curated_by": None,
             "curated_at": None,
             "locality_visibility": payload.locality_visibility,
+            "habitat": payload.habitat,
+            "substrate": payload.substrate,
+            "ecological_notes": payload.ecological_notes,
+            "associated_organisms": payload.associated_organisms,
+            "pollinator_observations": payload.pollinator_observations,
+            "mycorrhizal_observations": payload.mycorrhizal_observations,
+            "phenology": payload.phenology,
             "media": [item.model_dump() for item in payload.media],
             "client_draft_id": payload.client_draft_id,
             "created_at": now,
@@ -179,7 +191,7 @@ class FieldObservationService:
         )
         return self._assemble(record)
 
-    # -- photos -------------------------------------------------------------------------
+    # -- photos and field media -------------------------------------------------------------
 
     def attach_photo(self, observation_id: str, payload: PhotoAttachRequest) -> PhotoOut:
         record = self._load(observation_id)
@@ -195,6 +207,7 @@ class FieldObservationService:
             "observation_id": observation_id,
             "storage_key": payload.storage_key,
             "content_hash": payload.content_hash,
+            "media_kind": payload.media_kind,
             "photographer_subject": payload.photographer_subject,
             "captured_at": _iso(payload.captured_at) if payload.captured_at else None,
             "license": payload.license,
@@ -224,6 +237,13 @@ class FieldObservationService:
         rows.sort(key=lambda row: str(row.get("created_at", "")))
         return [PhotoOut(**row) for row in rows]
 
+    def photo_record_by_hash(self, observation_id: str, content_hash: str) -> dict[str, Any]:
+        self._load(observation_id)
+        for row in self._store.list(owner_key=OWNER_KEY, project_id=observation_id, kind=KIND_PHOTO):
+            if row.get("content_hash") == content_hash:
+                return row
+        raise ObservationNotFound(f"media {content_hash}")
+
     # -- internals ----------------------------------------------------------------------
 
     def _load(self, observation_id: str) -> dict[str, Any]:
@@ -246,18 +266,28 @@ class FieldObservationService:
         return len(self._store.list(owner_key=OWNER_KEY, project_id=observation_id, kind=KIND_PHOTO))
 
     def _assemble(self, record: dict[str, Any]) -> FieldObservationOut:
+        taxon_hint = record.get("taxon_hint")
         return FieldObservationOut(
             id=record["id"],
             observer_subject=record["observer_subject"],
             observed_at=record["observed_at"],
+            device_captured_at=record.get("device_captured_at"),
             note=record["note"],
-            taxon_hint=record.get("taxon_hint"),
+            taxon_hint=taxon_hint,
+            identification_status=identification_status_for(taxon_hint),
             epistemic_certainty=record["epistemic_certainty"],
             curation_state=record["curation_state"],
             curation_reason=record.get("curation_reason"),
             curated_by=record.get("curated_by"),
             curated_at=record.get("curated_at"),
             locality_visibility=record["locality_visibility"],
+            habitat=record.get("habitat"),
+            substrate=record.get("substrate"),
+            ecological_notes=record.get("ecological_notes"),
+            associated_organisms=record.get("associated_organisms") or [],
+            pollinator_observations=record.get("pollinator_observations"),
+            mycorrhizal_observations=record.get("mycorrhizal_observations"),
+            phenology=record.get("phenology"),
             media=record.get("media") or [],
             photo_count=self._photo_count(record["id"]),
             client_draft_id=record.get("client_draft_id"),
