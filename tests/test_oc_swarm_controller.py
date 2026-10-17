@@ -782,3 +782,74 @@ def test_github_output_carries_the_homeostasis_verdict(tmp_path):
     text = output.read_text(encoding="utf-8")
     assert "homeostasis_status=replenish\n" in text
     assert "homeostasis_reason=queue_empty\n" in text
+
+
+# --- Paid launch cap: one GitHub concurrency group holds one running paid job --
+
+CODE = "OC-SWARM-CAPABILITY: open-ended-code-authoring"
+
+
+def _paid(number, *labels):
+    return _row(number, "oc-queued", *labels, body=CODE)
+
+
+def test_paid_launches_are_capped_and_excess_stays_queued_unleased():
+    issues = [_paid(1, "oc-p1"), _paid(2, "oc-p2"), _paid(3, "oc-p3")]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1
+    assert [w["issue_number"] for w in plan["provider_matrix"]["include"]] == [1]
+    assert plan["paid_capacity_deferred"] == [2, 3]
+    assert plan["selected_numbers"] == [1]
+    assert [w["slot"] for w in plan["workers"]] == [1]
+    # Deferred paid work is held, not ready-but-idle: no invariant violation.
+    assert plan["homeostasis"]["reason"] == "executing"
+    assert plan["homeostasis"]["gates"]["paid_capacity_deferred"] == [2, 3]
+    assert plan["refill_recommended"] is True
+
+
+def test_a_running_paid_worker_fills_the_paid_lane():
+    issues = [_row(1, "oc-running", body=CODE), _paid(2), _paid(3)]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 0 and plan["paid_active_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2, 3]
+    assert plan["homeostasis"]["reason"] == "capacity_full"
+
+
+def test_provider_free_work_is_never_held_by_the_paid_cap():
+    free = _row(9, "oc-queued", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done")
+    issues = [_paid(1), _paid(2), free]
+    plan = _plan(issues, coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1 and plan["provider_free_launch_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2]
+
+
+def test_without_a_cap_the_planner_behaves_as_before():
+    issues = [_paid(1), _paid(2), _paid(3)]
+    plan = _plan(issues, coding_executor_available=True)
+    assert plan["provider_launch_count"] == 3 and plan["paid_capacity_deferred"] == []
+
+
+def test_the_controller_workflow_caps_paid_launches_at_the_lane_concurrency():
+    text = Path(".github/workflows/orchid-swarm-controller.yml").read_text(encoding="utf-8")
+    assert "--paid-launch-capacity 1" in text
+    lane = Path(".github/workflows/orchid-completion-lane.yml").read_text(encoding="utf-8")
+    assert "group: swarm-paid-execution-${{ github.repository }}" in lane
+    assert swarm.PAID_LAUNCH_CAPACITY == 1
+
+
+def test_deferred_paid_work_frees_its_slot_and_lock_for_launchable_work():
+    """Review F2: the cap is applied before slots and locks are spent."""
+    free = _row(9, "oc-queued", "oc-p3", body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done", writes="shared-x")
+    issues = [_paid(1, "oc-p1"), _row(2, "oc-queued", "oc-p1", body=CODE, writes="shared-x"), free]
+    plan = _plan(issues, coding_executor_available=True, worker_slots=2, paid_launch_capacity=1)
+    assert plan["provider_launch_count"] == 1 and plan["provider_free_launch_count"] == 1
+    assert plan["paid_capacity_deferred"] == [2]
+    assert plan["homeostasis"]["reason"] == "executing"
+
+
+def test_an_unroutable_running_issue_counts_as_paid_instead_of_crashing():
+    """Review F1: an unknown capability on an oc-running row must not stop planning."""
+    running = _row(1, "oc-running", body="OC-SWARM-CAPABILITY: frobnicate-xyz")
+    plan = _plan([running, _paid(2)], coding_executor_available=True, paid_launch_capacity=1)
+    assert plan["paid_active_count"] == 1 and plan["provider_launch_count"] == 0
+    assert plan["paid_capacity_deferred"] == [2]
