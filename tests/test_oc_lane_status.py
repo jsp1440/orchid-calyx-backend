@@ -566,3 +566,162 @@ def test_a_real_module_lane_report_flows_through_end_to_end():
     assert out["lanes"]["matrix-id"]["reason"] == "owner_gated"
     assert out["lanes"]["pollinator"]["lane_state"] == "idle"
     assert len(out["lanes"]) == 16
+
+
+# --- claim evidence: the plan is written BEFORE the claim step ----------------
+
+
+def claims_doc(confirmed=(), errors=()):
+    return {
+        "schema": "oc.swarm-claim-handoff.v1",
+        "confirmed": [
+            {"issue_number": n, "lane_executable": free, "acquisition": False,
+             "lease_comment_id": 900 + n}
+            for n, free in confirmed
+        ],
+        "errors": [
+            {"issue": n, "phase": "claim", "reason": "claim_unconfirmed"} for n in errors
+        ],
+    }
+
+
+def claimed_record(lane_map, claims, recovery=None):
+    return lanes.build_record(
+        with_lanes(lane_map),
+        recovery,
+        run_id="1",
+        run_url="u",
+        event="schedule",
+        provider_launch_count=0,
+        provider_free_launch_count=0,
+        provider_blocked=False,
+        claims=lanes.claim_evidence(claims),
+        now=NOW,
+    )
+
+
+def planned_lane(*planned, state="replenishable"):
+    return lane(state, replenishable=list(planned)) | {"planned": list(planned)}
+
+
+def test_confirmed_claim_makes_a_planned_lane_working_with_the_evidence_as_reason():
+    rec = claimed_record({"taxonomy": planned_lane(7), "literature": planned_lane(8)},
+                         claims_doc(confirmed=[(7, False), (8, True)]))
+    out = rec["module_lanes"]["lanes"]
+    assert (out["taxonomy"]["lane_state"], out["taxonomy"]["reason"]) == (
+        "working", "claim_confirmed:provider")
+    assert (out["literature"]["lane_state"], out["literature"]["reason"]) == (
+        "working", "claim_confirmed:provider_free")
+    assert rec["module_lanes"]["claims"]["status"] == "ok"
+
+
+def test_planned_without_a_confirmed_claim_is_idle_planned_unconfirmed():
+    out = claimed_record({"taxonomy": planned_lane(7)}, claims_doc())["module_lanes"]["lanes"]
+    assert (out["taxonomy"]["lane_state"], out["taxonomy"]["reason"]) == (
+        "idle", "planned_unconfirmed")
+
+
+def test_a_lane_with_nothing_planned_keeps_its_ordinary_reason_when_claims_exist():
+    out = claimed_record({"taxonomy": lane("empty")}, claims_doc())["module_lanes"]["lanes"]
+    assert out["taxonomy"]["reason"] == "module_state:empty"
+
+
+def test_a_claim_error_naming_a_lane_issue_is_surfaced_without_inventing_failure():
+    out = claimed_record({"taxonomy": planned_lane(7)}, claims_doc(errors=[7]))["module_lanes"]["lanes"]
+    assert out["taxonomy"]["lane_state"] == "idle"
+    assert out["taxonomy"]["reason"] == "claim_error:planned_unconfirmed"
+
+
+def test_a_claim_error_on_another_lanes_issue_does_not_touch_this_lane():
+    out = claimed_record({"taxonomy": planned_lane(7), "literature": planned_lane(8)},
+                         claims_doc(errors=[8]))["module_lanes"]["lanes"]
+    assert out["taxonomy"]["reason"] == "planned_unconfirmed"
+    assert out["literature"]["reason"].startswith("claim_error:")
+
+
+def test_confirmed_claim_plus_error_in_one_lane_is_working_and_shows_the_error():
+    out = claimed_record({"taxonomy": planned_lane(7, 9)},
+                         claims_doc(confirmed=[(7, False)], errors=[9]))["module_lanes"]["lanes"]
+    assert out["taxonomy"] == {**out["taxonomy"], "lane_state": "working",
+                               "reason": "claim_error:claim_confirmed:provider"}
+
+
+def test_claim_evidence_still_yields_to_lease_evidence_on_the_same_lane():
+    rec = claimed_record({"taxonomy": planned_lane(7)}, claims_doc(confirmed=[(7, False)]),
+                         recovery={"recovered": [{"issue_number": 7}]})
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert (entry["lane_state"], entry["reason"]) == (
+        "recovering", "lease_recovered:claim_confirmed:provider")
+
+
+def test_missing_claims_are_explicitly_unavailable_and_keep_the_old_mapping():
+    doc = with_lanes({"taxonomy": planned_lane(7)})
+    rec = record(doc)
+    assert rec["module_lanes"]["claims"] == {"status": "unavailable", "reason": "claims_missing"}
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["reason"] == "module_state:replenishable"
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "idle"
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "text",
+        [],
+        {"schema": "other", "confirmed": [], "errors": []},
+        {"schema": "oc.swarm-claim-handoff.v1", "confirmed": "x", "errors": []},
+        {"schema": "oc.swarm-claim-handoff.v1", "confirmed": [{"issue_number": "?"}], "errors": []},
+        {"schema": "oc.swarm-claim-handoff.v1", "confirmed": [], "errors": [3]},
+    ],
+)
+def test_malformed_claims_fail_closed_for_planned_lanes(bad):
+    rec = claimed_record({"taxonomy": planned_lane(7), "literature": lane("empty")}, bad)
+    out = rec["module_lanes"]["lanes"]
+    assert rec["module_lanes"]["claims"]["status"] == "malformed"
+    assert (out["taxonomy"]["lane_state"], out["taxonomy"]["reason"]) == (
+        "unknown", "claims_malformed")
+    assert out["literature"]["lane_state"] == "idle"
+
+
+def test_load_claim_evidence_missing_unreadable_and_ok(tmp_path):
+    assert lanes.load_claim_evidence(None)["status"] == "unavailable"
+    assert lanes.load_claim_evidence(str(tmp_path / "nope.json"))["status"] == "unavailable"
+    bad = tmp_path / "bad.json"
+    bad.write_text("{not json")
+    assert lanes.load_claim_evidence(str(bad))["status"] == "malformed"
+    good = tmp_path / "good.json"
+    good.write_text(json.dumps(claims_doc(confirmed=[(7, False)])))
+    assert lanes.load_claim_evidence(str(good))["status"] == "ok"
+
+
+def test_default_claims_path_comes_from_runner_temp_only_if_the_file_exists(tmp_path, monkeypatch):
+    monkeypatch.delenv("RUNNER_TEMP", raising=False)
+    assert lanes.default_claims_path() is None
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path))
+    assert lanes.default_claims_path() is None
+    (tmp_path / "swarm-claims.json").write_text("{}")
+    assert lanes.default_claims_path() == str(tmp_path / "swarm-claims.json")
+
+
+def test_main_reads_claims_and_a_claim_confirmed_lane_appends_a_transition(tmp_path):
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, claimed_record({"taxonomy": planned_lane(7)}, claims_doc()))
+    assert len(gh.created) == 2
+    result = lanes.publish(
+        gh, 1949,
+        claimed_record({"taxonomy": planned_lane(7)}, claims_doc(confirmed=[(7, False)])),
+    )
+    assert len(gh.created) == 3
+    assert result["lane_changes"][0]["from"]["reason"] == "planned_unconfirmed"
+    assert result["lane_changes"][0]["to"] == {
+        "lane_state": "working", "reason": "claim_confirmed:provider"}
+
+
+def test_main_cli_accepts_claims_flag(tmp_path, monkeypatch, capsys):
+    (tmp_path / "plan.json").write_text(json.dumps(with_lanes({"taxonomy": planned_lane(7)})))
+    (tmp_path / "claims.json").write_text(json.dumps(claims_doc(confirmed=[(7, False)])))
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path / "empty"))
+    monkeypatch.setattr(lanes.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
+    lanes.main(["--repository", "o/r", "--plan", str(tmp_path / "plan.json"),
+                "--claims", str(tmp_path / "claims.json"), "--run-id", "1", "--run-url", "u"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["record"]["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "working"

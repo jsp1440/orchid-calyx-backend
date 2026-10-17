@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -131,9 +132,68 @@ def _lease_evidence(recovery: dict) -> tuple[set[int], set[int]]:
     return recovered, _issue_numbers(recovery.get("errors"), "issue")
 
 
+CLAIMS_SCHEMA = "oc.swarm-claim-handoff.v1"
+CLAIMS_FILE = "swarm-claims.json"
+
+
+def claim_evidence(doc: Any) -> dict:
+    """Parse the claim step's handoff (``oc.swarm-claim-handoff.v1``).
+
+    The plan is written before leases are claimed, so a selected lane still looks
+    ``replenishable`` there. The claim result is what proves a launch. ``None`` is
+    ``unavailable`` (no file); anything unparseable is ``malformed``, never "nothing
+    launched".
+    """
+    if doc is None:
+        return {"status": "unavailable", "reason": "claims_missing"}
+    bad = {"status": "malformed", "reason": "claims_malformed"}
+    if (
+        not isinstance(doc, dict)
+        or doc.get("schema") != CLAIMS_SCHEMA
+        or not isinstance(doc.get("confirmed"), list)
+        or not isinstance(doc.get("errors"), list)
+    ):
+        return bad
+    confirmed: dict[int, str] = {}
+    for row in doc["confirmed"]:
+        if not isinstance(row, dict) or not isinstance(row.get("issue_number"), int):
+            return bad
+        kind = (
+            "provider_free"
+            if row.get("lane_executable") is True
+            else "acquisition"
+            if row.get("acquisition") is True
+            else "provider"
+        )
+        confirmed[row["issue_number"]] = kind
+    errors: set[int] = set()
+    for row in doc["errors"]:
+        if not isinstance(row, dict) or not isinstance(row.get("issue"), int):
+            return bad
+        errors.add(row["issue"])
+    return {"status": "ok", "reason": None, "confirmed": confirmed, "errors": errors}
+
+
+def default_claims_path() -> str | None:
+    base = os.environ.get("RUNNER_TEMP")
+    path = Path(base) / CLAIMS_FILE if base else None
+    return str(path) if path is not None and path.is_file() else None
+
+
+def load_claim_evidence(path: str | None) -> dict:
+    if not path or not Path(path).is_file():
+        return claim_evidence(None)
+    try:
+        return claim_evidence(json.loads(Path(path).read_text(encoding="utf-8")))
+    except (OSError, ValueError):
+        return {"status": "malformed", "reason": "claims_malformed"}
+
+
 def _lane_issues(entry: dict) -> set[int]:
     issues: set[int] = set()
-    for field in ("running", "replenishable", "validating", "capability_gap"):
+    for field in ("running", "replenishable", "validating", "capability_gap", "planned"):
+        if field == "planned" and field not in entry:
+            continue
         issues |= {_int(n) for n in entry[field]}
     for numbers in entry["gates"].values():
         issues |= {_int(n) for n in numbers}
@@ -151,6 +211,7 @@ def _lane_valid(entry: Any) -> bool:
         and isinstance(entry.get("gates"), dict)
         and all(isinstance(v, list) for v in entry["gates"].values())
         and isinstance(entry.get("refusal_reasons", []), list)
+        and isinstance(entry.get("planned", []), list)
     )
 
 
@@ -165,7 +226,9 @@ def _module_reason(module_state: str, entry: dict) -> str:
     return f"module_state:{module_state}"
 
 
-def module_lane_states(module_lanes: Any, recovery: dict | None = None) -> dict:
+def module_lane_states(
+    module_lanes: Any, recovery: dict | None = None, claims: dict | None = None
+) -> dict:
     """Per-module-lane Mission Control states from an ``oc.module-lanes.v1`` report.
 
     * ``MODULE_STATE_MAP`` gives the base state; every lane has a non-blank reason.
@@ -173,16 +236,22 @@ def module_lane_states(module_lanes: Any, recovery: dict | None = None) -> dict:
       lane's own issues (reconcile error -> failed, recovery -> recovering).
     * Missing, malformed or unrecognised lane data is ``unknown``, never ``idle``;
       a missing/malformed whole block is reported with an explicit status.
+    * Claim evidence (``claims``): a confirmed claim on a lane's issue makes the lane
+      ``working`` (``claim_confirmed:<kind>``); a planned issue with no confirmed
+      claim stays idle as ``planned_unconfirmed``; a claim error naming the lane is
+      prefixed ``claim_error:``. Malformed claims make planned lanes ``unknown``.
     """
+    claims = claims if isinstance(claims, dict) else claim_evidence(None)
+    claim_section = {"status": claims.get("status"), "reason": claims.get("reason")}
     if module_lanes is None:
-        return {"status": "unavailable", "reason": "module_lanes_missing", "lanes": {}, "counts": {}}
+        return {"status": "unavailable", "reason": "module_lanes_missing", "lanes": {}, "counts": {}, "claims": claim_section}
     block = module_lanes
     if (
         not isinstance(block, dict)
         or block.get("schema") != MODULE_LANES_SCHEMA
         or not isinstance(block.get("lanes"), dict)
     ):
-        return {"status": "malformed", "reason": "module_lanes_malformed", "lanes": {}, "counts": {}}
+        return {"status": "malformed", "reason": "module_lanes_malformed", "lanes": {}, "counts": {}, "claims": claim_section}
     recovered, errored = _lease_evidence(recovery if isinstance(recovery, dict) else {})
     out: dict[str, dict] = {}
     for key, entry in sorted(block["lanes"].items()):
@@ -205,6 +274,22 @@ def module_lane_states(module_lanes: Any, recovery: dict | None = None) -> dict:
             continue
         state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
         issues = _lane_issues(entry)
+        planned = {_int(n) for n in entry.get("planned") or []}
+        if claims.get("status") == "malformed" and planned:
+            out[str(key)] = {
+                "lane_state": "unknown",
+                "reason": "claims_malformed",
+                "module_state": module_state,
+            }
+            continue
+        if claims.get("status") == "ok":
+            kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
+            if kinds:
+                state, reason = "working", "claim_confirmed:" + ",".join(kinds)
+            elif planned and state == "idle":
+                reason = "planned_unconfirmed"
+            if issues & claims["errors"]:
+                reason = f"claim_error:{reason}"
         if issues & errored:
             state, reason = "failed", f"lease_reconcile_errors:{reason}"
         elif issues & recovered:
@@ -213,7 +298,13 @@ def module_lane_states(module_lanes: Any, recovery: dict | None = None) -> dict:
     counts: dict[str, int] = {}
     for item in out.values():
         counts[item["lane_state"]] = counts.get(item["lane_state"], 0) + 1
-    return {"status": "ok", "reason": None, "lanes": out, "counts": dict(sorted(counts.items()))}
+    return {
+        "status": "ok",
+        "reason": None,
+        "lanes": out,
+        "counts": dict(sorted(counts.items())),
+        "claims": claim_section,
+    }
 
 
 def build_record(
@@ -227,6 +318,7 @@ def build_record(
     provider_free_launch_count: Any,
     provider_blocked: bool,
     now: datetime | None = None,
+    claims: dict | None = None,
 ) -> dict:
     plan = plan if isinstance(plan, dict) else {}
     recovery = recovery if isinstance(recovery, dict) else {}
@@ -263,7 +355,7 @@ def build_record(
         "leases_recovered": recovered,
         "lease_reconcile_errors": reconcile_errors,
         "selected": sorted(_int(n) for n in plan.get("selected_numbers") or []),
-        "module_lanes": module_lane_states(plan.get("module_lanes"), recovery),
+        "module_lanes": module_lane_states(plan.get("module_lanes"), recovery, claims),
         "evidence": evidence if isinstance(evidence, dict) else {},
         "run_id": str(run_id),
         "run_url": run_url,
@@ -442,6 +534,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repository", required=True)
     parser.add_argument("--plan")
     parser.add_argument("--lease-recovery")
+    parser.add_argument(
+        "--claims",
+        help="claim handoff JSON; defaults to $RUNNER_TEMP/swarm-claims.json if present",
+    )
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--run-url", required=True)
     parser.add_argument("--event", default="")
@@ -460,6 +556,7 @@ def main(argv: list[str] | None = None) -> int:
         provider_launch_count=args.provider_launch_count,
         provider_free_launch_count=args.provider_free_launch_count,
         provider_blocked=str(args.provider_blocked).lower() == "true",
+        claims=load_claim_evidence(args.claims or default_claims_path()),
     )
     try:
         report = publish(
