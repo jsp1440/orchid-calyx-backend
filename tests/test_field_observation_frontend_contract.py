@@ -54,10 +54,12 @@ FRONTEND_PAYLOAD = {
     "client_draft_id": LOCAL_DRAFT_ID,
 }
 
-# The device-only record the client keeps but must never send.
+# The device-only record the client keeps but must never send. Synthetic and
+# generalised to 2 dp (tests/test_no_precise_coordinates.py); the assertions
+# only need the values to be recognisable, not precise.
 PRIVATE_LOCATION = {
-    "latitude": 9.87654321,
-    "longitude": -84.12345678,
+    "latitude": 9.87,
+    "longitude": -84.12,
     "accuracyM": 4.5,
     "elevationM": 1520.0,
     "capturedAt": "2026-10-17T17:42:09.000Z",
@@ -236,7 +238,7 @@ def test_stored_records_carry_no_coordinates_or_locality_notes(client):
     _upload(client, observation_id, headers, data=b"\xff\xd8\xff\xe0exif-gps-may-live-here")
 
     dumped = json.dumps(list(client.store._records.values()), default=str)
-    for secret in ("9.876", "-84.123", "third switchback", "ranger hut"):
+    for secret in ("9.87", "-84.12", "third switchback", "ranger hut"):
         assert secret not in dumped
     keys = _all_store_keys(json.loads(dumped))
     for forbidden in ("latitude", "longitude", "lat", "lon", "lng", "gps", "locality", "locality_notes", "localitynotes"):
