@@ -459,6 +459,32 @@ def classify_stranded_validation(
     return decision
 
 
+def _is_legacy_claim(comment: dict) -> bool:
+    """A bot claim receipt written before ``oc.swarm-claim.v1`` (before 2026-09-12).
+
+    Those receipts carry only reads, writes and dependencies: no schema, issue
+    number or lease id. No lease id means nothing here can name or release the
+    lease, so the parked path leaves them to the health observer instead of
+    failing every wave that scans an old parked issue (#1264 has 12). A
+    receipt that claims the current schema but is malformed still fails closed.
+    """
+    if (comment.get("user") or {}).get("login") != BOT_LOGIN:
+        return False
+    match = _CLAIM.match(str(comment.get("body") or ""))
+    if not match:
+        return False
+    try:
+        claim = json.loads(match.group(1))
+    except ValueError:
+        return False
+    return (
+        isinstance(claim, dict)
+        and "schema" not in claim
+        and "lease_id" not in claim
+        and "issue_number" not in claim
+    )
+
+
 def classify_parked_leases(
     issue: dict,
     comments: list[dict],
@@ -487,7 +513,11 @@ def classify_parked_leases(
         return []
     unsettled = [
         claim
-        for claim in _claims(comments, repository=repository, number=number)
+        for claim in _claims(
+            [comment for comment in comments if not _is_legacy_claim(comment)],
+            repository=repository,
+            number=number,
+        )
         if not any(_settles_parked_claim(comment, claim) for comment in comments)
     ]
     statuses = {claim["run_id"]: run_status(claim["run_id"]) for claim in unsettled}
