@@ -183,6 +183,57 @@ def test_a_hardened_executor_hides_its_environment_from_children():
     assert results == {False: "READ", True: "DENIED"}
 
 
+def _main_with(monkeypatch, tmp_path, hardened, extra):
+    monkeypatch.setattr(direct, "harden_process", lambda: hardened)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant")
+    # A packet that does not exist: reaching it means main() got past the check.
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "swarm_anthropic_direct.py",
+            "--issue-number",
+            "1",
+            "--title",
+            "t",
+            "--packet-file",
+            str(tmp_path / "absent-packet.md"),
+            "--model",
+            "m",
+            "--execution-file",
+            str(tmp_path / "execution.json"),
+            *extra,
+        ],
+    )
+    return direct.main()
+
+
+def test_an_unhardened_executor_refuses_to_run_in_emit_patch_mode(
+    monkeypatch, tmp_path
+):
+    with pytest.raises(SystemExit) as refused:
+        _main_with(
+            monkeypatch, tmp_path, False, ["--emit-patch-dir", str(tmp_path / "out")]
+        )
+    assert refused.value.code == "PROCESS_HARDENING_REQUIRED"
+    assert not (tmp_path / "execution.json").exists()
+
+
+def test_a_hardened_executor_proceeds_in_emit_patch_mode(monkeypatch, tmp_path):
+    with pytest.raises(FileNotFoundError):
+        _main_with(
+            monkeypatch, tmp_path, True, ["--emit-patch-dir", str(tmp_path / "out")]
+        )
+
+
+def test_outside_emit_patch_mode_an_unhardened_executor_only_warns(
+    monkeypatch, tmp_path, capsys
+):
+    with pytest.raises(FileNotFoundError):
+        _main_with(monkeypatch, tmp_path, False, [])
+    assert "process not hardened" in capsys.readouterr().err
+
+
 def _jobs():
     with open(WORKFLOW, encoding="utf-8") as handle:
         return yaml.safe_load(handle)["jobs"]
