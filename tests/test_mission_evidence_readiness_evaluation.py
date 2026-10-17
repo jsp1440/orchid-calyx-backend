@@ -9,7 +9,11 @@ from typing import Any
 import pytest
 
 from app.missions.evidence_readiness import (
+    MAX_CANDIDATE_ID_INT,
+    MAX_CANDIDATE_ID_LENGTH,
     MAX_CANDIDATES,
+    MAX_PROVENANCE_BYTES,
+    MAX_SOURCE_LENGTH,
     build_evidence_readiness_report,
 )
 from app.missions.registry import MISSION_TYPES
@@ -326,3 +330,69 @@ def test_handler_module_has_no_provider_network_or_db_imports():
         assert token not in source.replace(
             "app.ontology.services.PublicationReadinessService", ""
         ), token
+
+
+def _provenance_of_size(size: int) -> dict[str, str]:
+    # json.dumps({"n":"..."}, separators=(",", ":")) adds 8 bytes of framing.
+    return {"n": "x" * (size - 8)}
+
+
+def test_input_bounds_accept_values_at_the_limit():
+    report = build_evidence_readiness_report(
+        {
+            "source": "s" * MAX_SOURCE_LENGTH,
+            "candidates": [
+                entity(MAX_CANDIDATE_ID_INT),
+                entity("c" * MAX_CANDIDATE_ID_LENGTH),
+                entity(
+                    "  padded-id  ",
+                    candidate_provenance=_provenance_of_size(MAX_PROVENANCE_BYTES),
+                ),
+            ],
+        }
+    )
+    assert report["source"] == "s" * MAX_SOURCE_LENGTH
+    ids = [item["candidate_id"] for item in report["evaluations"]]
+    # The stripped identity used for duplicate detection is what is echoed.
+    assert ids == [MAX_CANDIDATE_ID_INT, "c" * MAX_CANDIDATE_ID_LENGTH, "padded-id"]
+    assert report["evaluations"][2]["criteria"]["provenance"]["state"] == "MET"
+
+
+def test_stripped_identity_is_used_for_duplicate_detection():
+    with pytest.raises(ValueError, match="duplicate_candidate_id"):
+        build_evidence_readiness_report(manifest(entity("a"), entity("  a ")))
+
+
+@pytest.mark.parametrize(
+    ("bad_manifest", "code"),
+    [
+        (
+            {"source": "s" * (MAX_SOURCE_LENGTH + 1), "candidates": [entity(1)]},
+            "source_too_long",
+        ),
+        (
+            manifest(entity("c" * (MAX_CANDIDATE_ID_LENGTH + 1))),
+            "candidate_id_too_long",
+        ),
+        (manifest(entity(MAX_CANDIDATE_ID_INT + 1)), "candidate_id_out_of_range"),
+        (manifest(entity(-5)), "candidate_id_out_of_range"),
+        (
+            manifest(
+                entity(
+                    1,
+                    candidate_provenance=_provenance_of_size(MAX_PROVENANCE_BYTES + 1),
+                )
+            ),
+            "candidate_provenance_too_large",
+        ),
+        (
+            manifest(entity(1, candidate_provenance={"n": {1, 2}})),
+            "candidate_provenance_not_json",
+        ),
+    ],
+)
+def test_input_bounds_fail_closed_past_the_limit(bad_manifest: Any, code: str):
+    with pytest.raises(
+        ValueError, match=f"EVIDENCE_READINESS_MANIFEST_INVALID:.*{code}"
+    ):
+        build_evidence_readiness_report(bad_manifest)

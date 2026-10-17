@@ -30,6 +30,12 @@ from collections.abc import Mapping
 from typing import Any
 
 MAX_CANDIDATES = 100
+# Input bounds: everything accepted here is copied into the persisted mission
+# output manifest, so every free-form field is capped.
+MAX_SOURCE_LENGTH = 500
+MAX_CANDIDATE_ID_LENGTH = 200
+MAX_CANDIDATE_ID_INT = 2**63 - 1
+MAX_PROVENANCE_BYTES = 64 * 1024
 EVALUATION_VERSION = "evidence-readiness-mission-v1"
 ALLOWED_MANIFEST_KEYS = frozenset({"source", "candidates"})
 COMMON_CANDIDATE_KEYS = frozenset(
@@ -99,6 +105,39 @@ def _flag(candidate: Mapping[str, Any], key: str, index: int) -> bool | None:
     return value
 
 
+def _candidate_identity(candidate_id: Any, index: int) -> int | str:
+    """Return the bounded identity that is both deduplicated and echoed."""
+    if isinstance(candidate_id, bool):
+        raise _invalid(f"candidate_{index}_candidate_id_required")
+    if isinstance(candidate_id, int):
+        if not 1 <= candidate_id <= MAX_CANDIDATE_ID_INT:
+            raise _invalid(f"candidate_{index}_candidate_id_out_of_range")
+        return candidate_id
+    if isinstance(candidate_id, str) and candidate_id.strip():
+        identity = candidate_id.strip()
+        if len(identity) > MAX_CANDIDATE_ID_LENGTH:
+            raise _invalid(
+                f"candidate_{index}_candidate_id_too_long>{MAX_CANDIDATE_ID_LENGTH}"
+            )
+        return identity
+    raise _invalid(f"candidate_{index}_candidate_id_required")
+
+
+def _check_provenance(provenance: Any, index: int) -> None:
+    if not isinstance(provenance, Mapping):
+        raise _invalid(f"candidate_{index}_candidate_provenance_not_object")
+    try:
+        encoded = json.dumps(
+            provenance, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise _invalid(f"candidate_{index}_candidate_provenance_not_json") from None
+    if len(encoded) > MAX_PROVENANCE_BYTES:
+        raise _invalid(
+            f"candidate_{index}_candidate_provenance_too_large>{MAX_PROVENANCE_BYTES}"
+        )
+
+
 def validate_evidence_readiness_manifest(
     manifest: Any,
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -111,6 +150,8 @@ def validate_evidence_readiness_manifest(
     source = manifest.get("source")
     if not isinstance(source, str) or not source.strip():
         raise _invalid("source_required")
+    if len(source.strip()) > MAX_SOURCE_LENGTH:
+        raise _invalid(f"source_too_long>{MAX_SOURCE_LENGTH}")
     candidates = manifest.get("candidates")
     if not isinstance(candidates, list) or not candidates:
         raise _invalid("candidates_required")
@@ -129,20 +170,15 @@ def validate_evidence_readiness_manifest(
             raise _invalid(
                 f"candidate_{index}_unknown_fields={','.join(map(str, unknown_fields))}"
             )
-        candidate_id = candidate.get("candidate_id")
-        if isinstance(candidate_id, bool) or not (
-            (isinstance(candidate_id, int) and candidate_id > 0)
-            or (isinstance(candidate_id, str) and candidate_id.strip())
-        ):
-            raise _invalid(f"candidate_{index}_candidate_id_required")
-        identity = str(candidate_id).strip()
+        candidate_id = _candidate_identity(candidate.get("candidate_id"), index)
+        identity = str(candidate_id)
         if identity in seen:
             raise _invalid(f"candidate_{index}_duplicate_candidate_id")
         seen.add(identity)
         provenance = candidate.get("candidate_provenance")
-        if provenance is not None and not isinstance(provenance, Mapping):
-            raise _invalid(f"candidate_{index}_candidate_provenance_not_object")
-        cleaned.append(dict(candidate))
+        if provenance is not None:
+            _check_provenance(provenance, index)
+        cleaned.append({**candidate, "candidate_id": candidate_id})
     return source.strip(), cleaned
 
 
