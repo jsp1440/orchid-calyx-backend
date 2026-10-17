@@ -738,6 +738,7 @@ def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
     assert len(brain_candidates) == 3
     for item in brain_candidates:
         item["rank"] = 1
+    brain_candidates.sort(key=lambda item: (int(item["rank"]), str(item["fingerprint"])))
     monkeypatch.setattr(brain_pulse, "mission_gap_candidates", lambda: brain_candidates)
     monkeypatch.setattr(brain_pulse, "source_registry_gap_candidates", list)
     monkeypatch.setattr(brain_pulse, "SUPPORTED_QUESTIONS", ())
