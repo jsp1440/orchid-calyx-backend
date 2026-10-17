@@ -237,6 +237,94 @@ def test_the_worker_and_grant_protections_are_both_enforced():
     assert publisher.path_admissible("app/example.py") is True
 
 
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/x.PTH",
+        "app/x.Pth",
+        "app/.ENV",
+        "app/.Env.Local",
+        "app/Secrets.JSON",
+        "app/ConfTest.py",
+        ".GIT/config",
+        "app/.GitModules",
+    ],
+)
+def test_refused_names_are_refused_in_any_case(path):
+    assert publisher.path_admissible(path) is False
+
+
+def test_an_upper_case_pth_file_is_refused_even_when_in_scope(repo):
+    (repo / "app/x.PTH").write_text("import os\n")
+    assert _refused(_patch(repo), ALLOWED | {"app/x.PTH"}) == (
+        "patch_protected_or_unsafe_path"
+    )
+
+
+def _read_unprivileged(path):
+    """The collector's in-account reader, run directly instead of under sudo."""
+    return subprocess.run(
+        [*publisher._reader_command(path), str(publisher.MAX_COLLECTED_BYTES)],
+        capture_output=True,
+        check=True,
+        timeout=60,
+    ).stdout
+
+
+def test_the_collector_reads_regular_files_and_refuses_everything_else(tmp_path):
+    regular = tmp_path / "patch.diff"
+    regular.write_bytes(b"diff --git a/x b/x\n")
+    assert _read_unprivileged(regular) == b"diff --git a/x b/x\n"
+    target = tmp_path / "secret"
+    target.write_bytes(b"runner secret")
+    link = tmp_path / "linked.diff"
+    os.symlink(target, link)
+    fifo = tmp_path / "fifo.diff"
+    os.mkfifo(fifo)
+    for refused in (link, fifo, tmp_path):
+        with pytest.raises(subprocess.CalledProcessError):
+            _read_unprivileged(refused)
+
+
+def test_the_collector_reads_at_most_one_byte_past_the_limit(tmp_path):
+    big = tmp_path / "execution.json"
+    big.write_bytes(b"x" * (publisher.MAX_COLLECTED_BYTES + 4096))
+    assert len(_read_unprivileged(big)) == publisher.MAX_COLLECTED_BYTES + 1
+
+
+def test_collect_skips_a_symlink_even_when_its_digest_matches(tmp_path):
+    source = tmp_path / "out"
+    source.mkdir()
+    secret = tmp_path / "runner-secret"
+    secret.write_bytes(b"ghs_token")
+    os.symlink(secret, source / "execution.json")
+    (source / "manifest.json").write_bytes(b"{}")
+    digests = {"execution.json": _digest(b"ghs_token"), "manifest.json": _digest(b"{}")}
+    log = tmp_path / "stdout.log"
+    log.write_text(direct.ARTIFACT_MARKER + " " + json.dumps(digests) + "\n")
+    destination = tmp_path / "dest"
+    copied = publisher.collect(log, source, destination, read=_read_unprivileged)
+    assert copied == ["manifest.json"]
+    assert not (destination / "execution.json").exists()
+
+
+def test_the_collector_reads_as_the_model_account_not_root(monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_run(cmd, **kwargs):
+        seen["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, b"data", b"")
+
+    monkeypatch.setattr(publisher.subprocess, "run", fake_run)
+    assert publisher._sudo_read(tmp_path / "patch.diff") == b"data"
+    cmd = seen["cmd"]
+    assert cmd[:5] == ["sudo", "-n", "-u", "oc-model", "--"]
+    assert "O_NOFOLLOW" in cmd[cmd.index("-c") + 1]
+    for user in ("root", "root; id", ""):
+        with pytest.raises(publisher.PatchRefused):
+            publisher._sudo_read(tmp_path / "patch.diff", user)
+
+
 # -- end to end: the worker's emitted patch through the trusted publisher -----
 
 
