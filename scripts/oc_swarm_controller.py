@@ -480,6 +480,38 @@ def _discovery_evidence(snapshot: dict) -> tuple[bool | None, int | None]:
     return True, count
 
 
+#: Hold class of an open unfinished issue that is not ``oc-queued``, first match
+#: wins. ``queue_empty`` only says the immediate queue is empty; these say why
+#: each unfinished issue is outside it, so a zero-launch wave names its
+#: exclusions instead of leaving them to be reconstructed from labels.
+_HOLD_CLASSES = (
+    ("owner_gate", OWNER_GATE_LABELS),
+    ("scientific_gate", SCIENTIFIC_GATE_LABELS),
+    ("running", frozenset({"oc-running"})),
+    ("validating", frozenset({"oc-validating"})),
+    ("blocked", frozenset({"oc-blocked"})),
+    ("repair_backoff", frozenset({"oc-repair-backoff"})),
+    ("runtime_backoff", frozenset({"oc-runtime-backoff"})),
+    # A worker disposition of ``repair`` without ``repair_queued`` leaves
+    # oc-repair alone: a human-assisted or bounded retry that no wave claims.
+    ("repair_pending", frozenset({"oc-repair"})),
+)
+
+
+def unfinished_holds(open_issues: dict[int, dict]) -> dict[str, list[int]]:
+    """Unfinished, not-queued open issues grouped by the label that holds them."""
+    holds: dict[str, list[int]] = {name: [] for name, _ in _HOLD_CLASSES}
+    for number in sorted(open_issues):
+        names = _names(open_issues[number])
+        if "oc-queued" in names or not names & _PORTFOLIO_LABELS:
+            continue
+        for name, labels in _HOLD_CLASSES:
+            if names & labels:
+                holds[name].append(number)
+                break
+    return holds
+
+
 def classify_wave_outcome(
     snapshot: dict,
     *,
@@ -632,6 +664,7 @@ def classify_wave_outcome(
     else:
         reason = "held_other"
 
+    holds = unfinished_holds(open_issues)
     discovery_ran, discovery_count = _discovery_evidence(snapshot)
     healthy_idle = (
         reason == "queue_empty"
@@ -667,6 +700,7 @@ def classify_wave_outcome(
             ),
             "lock_contended": sorted(lock_held),
             "paid_capacity_deferred": sorted(paid_held),
+            "unfinished_holds": holds,
         },
         "evidence": {
             "queued_open": len(queued),
@@ -677,6 +711,7 @@ def classify_wave_outcome(
             "active_workers": int(active_count),
             "ready_unselected_lock_free": sorted(ready_unselected),
             "unfinished_open": len(unfinished),
+            "unfinished_held": {name: len(numbers) for name, numbers in holds.items()},
             "owner_gated": len(owner_gated),
             "scientific_gated": len(scientific_gated),
             "provider_parked": len(provider_parked_set),
