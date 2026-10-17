@@ -9,7 +9,7 @@ def test_opaque_zero_usage_claude_error_routes_to_authorized_fallback():
     text = LANE.read_text()
     classifier = text[
         text.index("name: Classify Claude terminal state")
-        : text.index("name: Execute bounded Gemini fallback")
+        : text.index("name: Publish the verified patch")
     ]
 
     assert '.is_error // false' in classifier
@@ -27,7 +27,7 @@ def test_security_classification_precedes_opaque_fallback():
     text = LANE.read_text()
     classifier = text[
         text.index("name: Classify Claude terminal state")
-        : text.index("name: Execute bounded Gemini fallback")
+        : text.index("name: Publish the verified patch")
     ]
 
     security = classifier.index('kind=security')

@@ -148,24 +148,36 @@ def test_the_denial_reason_is_in_the_governor_vocabulary():
     assert DENIAL_REASON.fullmatch(admission.DENIAL)
 
 
-def _steps():
+def _jobs():
     with open(WORKFLOW, encoding="utf-8") as handle:
-        workflow = yaml.safe_load(handle)
-    (job,) = workflow["jobs"].values()
-    return job["steps"]
+        return yaml.safe_load(handle)["jobs"]
+
+
+def _steps():
+    return _jobs()["execute"]["steps"]
 
 
 def test_no_provider_step_can_run_without_issue_admission():
+    jobs = _jobs()
     steps = _steps()
     ids = [step.get("id") for step in steps]
     auth, governor = ids.index("issue_auth"), ids.index("governor")
     assert auth < governor
     assert "steps.issue_auth.outputs.authorized == 'true'" in steps[governor]["if"]
     assert steps[auth].get("continue-on-error") is True
-    for step in steps:
-        run = str(step.get("run") or "")
-        if "swarm_anthropic_direct.py" in run:
-            assert "steps.governor.outputs.authorized == 'true'" in step["if"]
+    # The provider runs in its own job, which starts only when the admitting
+    # job reports the governor authorized it.
+    paid = jobs["execute"]["outputs"]["paid"]
+    assert "steps.governor.outputs.authorized == 'true'" in paid
+    providers = [
+        (name, step)
+        for name, job in jobs.items()
+        for step in job["steps"]
+        if "swarm_anthropic_direct.py" in str(step.get("run") or "")
+    ]
+    assert [name for name, _ in providers] == ["model"]
+    assert jobs["model"]["needs"] == "execute"
+    assert "needs.execute.outputs.paid == 'true'" in jobs["model"]["if"]
 
 
 def test_an_admission_refusal_is_parked_through_the_governor_denial_path():

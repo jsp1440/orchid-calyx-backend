@@ -75,6 +75,10 @@ env:
     tests/test_agent_security_gateway.py
     tests/test_owner_authorization_gate.py
     tests/test_oc_standing_authorization.py
+    tests/test_oc_discovery_authorization.py
+    tests/test_oc_worker_credential_scrub.py
+    tests/test_oc_patch_publish.py
+    tests/test_oc_completion_lane_job_boundary.py
     tests/test_build_056_owner_authentication.py
     tests/test_build_063_owner_auth.py
     tests/test_owner_session_cors_repair.py
