@@ -25,3 +25,5 @@ httpx
 PyYAML>=6
 scipy>=1.11
 Pillow
+# Declared by the provider-free edit lane from discovery fingerprint adcae9bddf1df8f9: the installed version, pinned.
+google-auth-httplib2==0.4.4
