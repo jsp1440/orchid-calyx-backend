@@ -25,3 +25,5 @@ httpx
 PyYAML>=6
 scipy>=1.11
 Pillow
+# Declared by the provider-free edit lane from discovery fingerprint 578850d1e54d328d: the installed version, pinned.
+httplib2==0.32.0
