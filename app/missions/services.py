@@ -113,7 +113,9 @@ class MissionService:
             started = self.repository.start_job(job["job_id"], worker_id)
             try:
                 output = self._execute_registered_handler(started)
-            except Exception as exc:
+            # A handler failure of any kind must become a recorded failed job,
+            # never a crashed worker loop that strands the claimed job.
+            except Exception as exc:  # noqa: BLE001
                 self.repository.fail_job(started, exc.__class__.__name__, str(exc), worker_id)
                 failed += 1
                 continue
