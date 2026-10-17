@@ -23,6 +23,12 @@ Policy (time alone never releases a lease; evidence does):
 * Recovery target: ``oc-validating`` when a durable integration PR (open or
   merged) carries ``OC-AUTO-ISSUE: #N``; otherwise ``oc-queued`` for a bounded
   number of automatic recoveries, then ``oc-blocked`` with an explicit reason.
+* A lease on an issue that is already parked (blocked or in backoff) whose
+  run ended without any receipt settling it (#1396: two runs claimed one
+  packet and only one was released) gets a recovery receipt naming it. The
+  labels are already right, so none is edited, and the receipt does not spend
+  the issue's automatic requeue budget. Only a few parked issues are read per
+  wave, chosen by the run id, so every one is reached over successive waves.
 * Every recovery writes one durable ``[OC-SWARM-V4] Stale lease recovered``
   receipt so the observer and later waves can count it. No provider is ever
   called and no repository file is written.
@@ -75,12 +81,29 @@ STRANDED_REASON = "validating_worker_run_unsuccessful"
 UNSUCCESSFUL_CONCLUSIONS = frozenset(
     {"cancelled", "failure", "timed_out", "startup_failure"}
 )
+#: Parked states whose leases the health observer still reads (and reports as
+#: orphaned when nothing settled them).
+LEASE_PARKED = (BLOCKED, "oc-runtime-backoff", "oc-repair-backoff")
+PARKED_LEASE_REASON = "parked_lease_run_terminated_without_settlement"
+#: Parked issues read per wave. The controller runs every five minutes, and each
+#: read issue costs its full comment history against the shared Actions token.
+PARKED_SCAN_PER_WAVE = 3
 
 _CLAIM = re.compile(
     r"^\[OC-SWARM-V\d+\] Dependency/resource lease claimed: `(\{[^\n]+\})`",
     re.IGNORECASE,
 )
 _AUTO_ISSUE = re.compile(r"OC-AUTO-ISSUE:\s*#(\d+)")
+_RECEIPT_JSON = re.compile(r"`(\{[^\n]+\})`")
+#: Receipts that settle only the claim they name. The health observer reads
+#: them that way, so a parked lease is judged by the same rule: a release for
+#: one claim (#1396's second) never settles another (#1396's first).
+_BOUND_RELEASE_PREFIXES = (
+    "[OC-AUTO] Swarm governor blocked provider execution before credentials were initialized.",
+    "[OC-SWARM-V4] Provider admission denied;",
+    "[OC-SWARM-V4] Worker result validated; requested lease disposition",
+)
+_GOVERNOR_RUN = re.compile(r"/actions/runs/(\d+)\.$")
 
 
 def _labels(issue: dict) -> set[str]:
@@ -102,11 +125,9 @@ def _parse_time(value: Any) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def _latest_claim(
-    comments: Iterable[dict], *, repository: str, number: int
-) -> dict | None:
-    """Return the newest authenticated Swarm claim receipt bound to this issue."""
-    latest = None
+def _claims(comments: Iterable[dict], *, repository: str, number: int) -> list[dict]:
+    """Every authenticated Swarm claim receipt bound to this issue, in order."""
+    claims = []
     for comment in comments:
         if (comment.get("user") or {}).get("login") != BOT_LOGIN:
             continue
@@ -143,21 +164,34 @@ def _latest_claim(
             or int(parts[2]) < 1
         ):
             raise ValueError("malformed_authenticated_claim")
-        if (
-            latest is None
-            or (created and latest["created_at"] and created > latest["created_at"])
-            or (
-                created == latest["created_at"]
-                and int(comment.get("id") or 0) > int(latest["comment_id"] or 0)
-            )
-        ):
-            latest = {
+        claims.append(
+            {
                 "comment_id": comment.get("id"),
                 "lease_id": lease_id,
                 "run_id": int(parts[1]),
                 "run_attempt": int(parts[2]),
                 "created_at": created,
             }
+        )
+    return claims
+
+
+def _latest_claim(
+    comments: Iterable[dict], *, repository: str, number: int
+) -> dict | None:
+    """Return the newest authenticated Swarm claim receipt bound to this issue."""
+    latest = None
+    for claim in _claims(comments, repository=repository, number=number):
+        created = claim["created_at"]
+        if (
+            latest is None
+            or (created and latest["created_at"] and created > latest["created_at"])
+            or (
+                created == latest["created_at"]
+                and int(claim["comment_id"] or 0) > int(latest["comment_id"] or 0)
+            )
+        ):
+            latest = claim
     return latest
 
 
@@ -175,12 +209,65 @@ def _settled_after(comments: Iterable[dict], claim: dict) -> bool:
     return False
 
 
+def _names_lease(comment: dict, claim: dict) -> bool:
+    """A later bot receipt whose JSON names this claim's comment id."""
+    if (comment.get("user") or {}).get("login") != BOT_LOGIN:
+        return False
+    if comment.get("id") == claim["comment_id"]:
+        return False
+    match = _RECEIPT_JSON.search(str(comment.get("body") or ""))
+    if not match:
+        return False
+    try:
+        receipt = json.loads(match.group(1))
+    except ValueError:
+        return False
+    return (
+        isinstance(receipt, dict)
+        and type(receipt.get("lease_comment_id")) is int
+        and receipt["lease_comment_id"] == claim["comment_id"]
+    )
+
+
+def _settles_parked_claim(comment: dict, claim: dict) -> bool:
+    """Whether a later bot comment settles this claim, as the observer reads it."""
+    if (comment.get("user") or {}).get("login") != BOT_LOGIN:
+        return False
+    if comment.get("id") == claim["comment_id"]:
+        return False
+    created = _parse_time(comment.get("created_at"))
+    if claim["created_at"] and created and created <= claim["created_at"]:
+        return False
+    body = str(comment.get("body") or "")
+    if body.startswith(_BOUND_RELEASE_PREFIXES):
+        if _names_lease(comment, claim):
+            return True
+        run = _GOVERNOR_RUN.search(body)
+        return bool(
+            body.startswith(_BOUND_RELEASE_PREFIXES[0])
+            and run
+            and int(run.group(1)) == claim["run_id"]
+        )
+    return _is_settlement(body) or _names_lease(comment, claim)
+
+
+def _is_parked_lease_receipt(body: str) -> bool:
+    match = _RECEIPT_JSON.search(body)
+    try:
+        receipt = json.loads(match.group(1)) if match else None
+    except ValueError:
+        return False
+    return isinstance(receipt, dict) and receipt.get("reason") == PARKED_LEASE_REASON
+
+
 def _recovery_count(comments: Iterable[dict]) -> int:
+    # A parked-lease receipt requeues nothing, so it spends none of the budget.
     return sum(
         1
         for c in comments
         if (c.get("user") or {}).get("login") == BOT_LOGIN
         and str(c.get("body") or "").startswith(RECOVERY_PREFIX)
+        and not _is_parked_lease_receipt(str(c.get("body") or ""))
     )
 
 
@@ -372,6 +459,69 @@ def classify_stranded_validation(
     return decision
 
 
+def classify_parked_leases(
+    issue: dict,
+    comments: list[dict],
+    *,
+    repository: str,
+    run_status: Callable[[int], str],
+    now: datetime,
+) -> list[dict]:
+    """Decide, without mutating anything, which leases on a parked issue to release.
+
+    A lease is unsettled when no later bot receipt settles it as the health
+    observer reads receipts: a generic settlement settles every earlier claim,
+    while a governor denial or worker disposition settles only the claim it
+    names.
+    Unsettled leases are released only together, and only when every one of
+    their runs has completed or no longer exists, so the receipt can never hide
+    a lease whose run is still live or unreadable.
+    """
+    number = int(issue["number"])
+    labels = _labels(issue)
+    if (
+        str(issue.get("state") or "OPEN").upper() != "OPEN"
+        or RUNNING in labels
+        or not labels & set(LEASE_PARKED)
+    ):
+        return []
+    unsettled = [
+        claim
+        for claim in _claims(comments, repository=repository, number=number)
+        if not any(_settles_parked_claim(comment, claim) for comment in comments)
+    ]
+    statuses = {claim["run_id"]: run_status(claim["run_id"]) for claim in unsettled}
+    if any(status not in {"completed", "missing"} for status in statuses.values()):
+        return []
+    return [
+        {
+            "schema": RECOVERY_SCHEMA,
+            "issue_number": number,
+            "action": "recover",
+            "reason": PARKED_LEASE_REASON,
+            "target": None,
+            "lease_id": claim["lease_id"],
+            "lease_comment_id": claim["comment_id"],
+            "run_id": claim["run_id"],
+            "run_status": statuses[claim["run_id"]],
+            "lease_age_seconds": int((now - claim["created_at"]).total_seconds()),
+            "recoveries_before": _recovery_count(comments),
+            "durable_pr": None,
+            "labels": sorted(labels),
+        }
+        for claim in unsettled
+    ]
+
+
+def parked_scan_window(numbers: Iterable[int], run_id: int) -> list[int]:
+    """The parked issues this wave reads: a window chosen by the run id."""
+    ordered = sorted(set(numbers))
+    if len(ordered) <= PARKED_SCAN_PER_WAVE:
+        return ordered
+    start = run_id % len(ordered)
+    return [ordered[(start + i) % len(ordered)] for i in range(PARKED_SCAN_PER_WAVE)]
+
+
 # ---------------------------------------------------------------------------
 # GitHub transport (gh CLI). Never interpolates issue text into a shell.
 # ---------------------------------------------------------------------------
@@ -451,6 +601,30 @@ class GitHubTransport:
             ]
         )
         return list(rows or [])
+
+    def parked_issues(self) -> list[dict]:
+        rows: list[dict] = []
+        for label in LEASE_PARKED:
+            rows += list(
+                self._run(
+                    [
+                        "issue",
+                        "list",
+                        "--repo",
+                        self.repository,
+                        "--state",
+                        "open",
+                        "--label",
+                        label,
+                        "--limit",
+                        "200",
+                        "--json",
+                        "number,state,labels",
+                    ]
+                )
+                or []
+            )
+        return rows
 
     def pull_requests(self) -> list[dict]:
         rows = self._run(
@@ -610,6 +784,32 @@ def apply_stranded_recovery(
     return {**decision, "recovery_comment_id": saved["id"]}
 
 
+def apply_parked_recovery(
+    transport: GitHubTransport, decision: dict, *, controller_run_url: str
+) -> dict:
+    """Receipt one released lease on a parked issue; labels are left as they are."""
+    number = decision["issue_number"]
+    current = transport.issue(number)
+    labels = _labels(current)
+    if (
+        str(current.get("state") or "OPEN").upper() != "OPEN"
+        or RUNNING in labels
+        or not labels & set(LEASE_PARKED)
+    ):
+        raise ValueError("parked state changed before release")
+    receipt = {k: v for k, v in decision.items() if k != "action"}
+    receipt["released_state"] = sorted(labels)
+    body = (
+        RECOVERY_PREFIX
+        + json.dumps(receipt, sort_keys=True, separators=(",", ":"))
+        + f"`. Controller run: {controller_run_url}."
+    )
+    saved = transport.comment(number, body)
+    if saved.get("body") != body or not saved.get("id"):
+        raise ValueError("recovery receipt unconfirmed")
+    return {**decision, "recovery_comment_id": saved["id"]}
+
+
 def reconcile(
     transport: GitHubTransport,
     *,
@@ -667,7 +867,8 @@ def reconcile(
             )
     stranded: list[dict] = []
     handled = {int(i["number"]) for i in running}
-    for issue in transport.validating_issues():
+    validating = transport.validating_issues()
+    for issue in validating:
         number = int(issue["number"])
         if number in handled:
             continue
@@ -706,6 +907,45 @@ def reconcile(
                     "error_type": type(exc).__name__,
                 }
             )
+    parked: list[dict] = []
+    handled |= {int(i["number"]) for i in validating}
+    candidates = {
+        int(i["number"])
+        for i in transport.parked_issues()
+        if int(i["number"]) not in handled
+    }
+    for number in parked_scan_window(candidates, run_id):
+        try:
+            decisions = classify_parked_leases(
+                transport.issue(number),
+                transport.comments(number),
+                repository=transport.repository,
+                run_status=transport.run_status,
+                now=now,
+            )
+            for decision in decisions:
+                if dry_run:
+                    parked.append({**decision, "dry_run": True})
+                    continue
+                parked.append(
+                    apply_parked_recovery(
+                        transport, decision, controller_run_url=controller_run_url
+                    )
+                )
+        except (
+            OSError,
+            subprocess.SubprocessError,
+            ValueError,
+            TypeError,
+            KeyError,
+        ) as exc:
+            errors.append(
+                {
+                    "issue": number,
+                    "reason": "parked_lease_unconfirmed",
+                    "error_type": type(exc).__name__,
+                }
+            )
     return {
         "schema": SCHEMA,
         "run_id": run_id,
@@ -717,6 +957,8 @@ def reconcile(
         "kept": kept,
         "stranded_recovered_count": len(stranded),
         "stranded_recovered": stranded,
+        "parked_lease_recovered_count": len(parked),
+        "parked_lease_recovered": parked,
         "errors": errors,
         "dry_run": dry_run,
         "safety": {
@@ -745,6 +987,10 @@ def main(argv: list[str] | None = None) -> int:
             handle.write(f"running_after={report['running_after']}\n")
             handle.write(
                 f"stranded_recovered_count={report['stranded_recovered_count']}\n"
+            )
+            handle.write(
+                "parked_lease_recovered_count="
+                f"{report['parked_lease_recovered_count']}\n"
             )
             handle.write(f"reconcile_errors={len(report['errors'])}\n")
     json.dump(report, sys.stdout, sort_keys=True, default=str)
