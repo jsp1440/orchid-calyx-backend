@@ -31,7 +31,7 @@ from app.brain.reasoning_map import (
 )
 from runtime.knowledge_graph.repository import GraphRepository
 
-from .contested_scope import ScopeAdjudication, adjudicate, is_citation
+from .contested_scope import ScopeAdjudication, adjudicate, is_citation, visible_text
 from .fixture import EXPECTED_BUT_ABSENT, SUBJECT_KEY, build_pollination_repository
 
 CONTRACT_VERSION = "1.0.0"
@@ -372,7 +372,8 @@ def _disjointness_provenance(repository: GraphRepository) -> dict[frozenset[str]
         # citation is usable is decided by the scope test, not assumed here.
         # A cited declaration is never overwritten by an uncited duplicate.
         pair = frozenset({first, second})
-        citation = str(payload.get("citation") or "").strip()
+        # Only a string is a citation. str() made 42 or a dict into one.
+        citation = visible_text(payload.get("citation"))
         if not is_citation(out.get(pair)):
             out[pair] = citation
     return out

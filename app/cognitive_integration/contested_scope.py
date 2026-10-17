@@ -24,6 +24,7 @@ a report; constructing one that does raises.
 
 from __future__ import annotations
 
+import unicodedata
 from dataclasses import asdict, dataclass
 from enum import StrEnum
 from typing import Any
@@ -43,16 +44,31 @@ COMPATIBLE_BY_SCOPE = "compatible_by_scope"
 NO_CITATION = "no citation recorded"
 
 
-def is_citation(value: object) -> bool:
-    """A usable citation: a non-blank string that is not the placeholder.
+def visible_text(value: object) -> str:
+    """The text a reader would see: format characters removed, then stripped.
 
-    The placeholder is truthy, so a bare truthiness check let an uncited
-    disjointness declaration resolve a contradiction.
+    ``str.strip`` keeps format characters (Unicode category ``Cf``), so a
+    zero-width space or byte-order mark alone passed as non-blank, and one
+    appended to the placeholder made it compare unequal. Only a ``str`` is
+    text; anything else yields ``""``.
     """
     if not isinstance(value, str):
+        return ""
+    return "".join(ch for ch in value if unicodedata.category(ch) != "Cf").strip()
+
+
+def is_citation(value: object) -> bool:
+    """A usable citation: visible, non-blank text that is not the placeholder.
+
+    The placeholder is truthy, so a bare truthiness check let an uncited
+    disjointness declaration resolve a contradiction. The placeholder
+    comparison is made after NFKC folding and casefolding, so a compatibility
+    or case variant of it is still the placeholder.
+    """
+    text = visible_text(value)
+    if not text:
         return False
-    text = value.strip()
-    return bool(text) and text.casefold() != NO_CITATION
+    return unicodedata.normalize("NFKC", text).casefold() != NO_CITATION
 
 
 class ScopeReason(StrEnum):
@@ -217,7 +233,9 @@ def adjudicate(
     else:
         reason = ScopeReason.DISJOINT_DECLARED
 
-    resolved_by = citation.strip() if reason is ScopeReason.DISJOINT_DECLARED else None
+    resolved_by = (
+        visible_text(citation) if reason is ScopeReason.DISJOINT_DECLARED else None
+    )
 
     return ScopeAdjudication(
         between=(
@@ -235,5 +253,5 @@ def _region(value: object) -> str | None:
     """A structured region key, or ``None``. Blank or whitespace is absent."""
     if value is None:
         return None
-    text = str(value).strip()
+    text = visible_text(value if isinstance(value, str) else str(value))
     return text or None

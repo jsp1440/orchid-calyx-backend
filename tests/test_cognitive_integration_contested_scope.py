@@ -199,6 +199,14 @@ def test_declared_disjoint_regions_make_the_reports_compatible_and_cite_why():
         {frozenset({"region:a", "region:b"}): NO_CITATION},
         {frozenset({"region:a", "region:b"}): "  No Citation Recorded  "},
         {frozenset({"region:a", "region:b"}): None},
+        {frozenset({"region:a", "region:b"}): "\u200b"},
+        {frozenset({"region:a", "region:b"}): "\ufeff"},
+        {frozenset({"region:a", "region:b"}): "no citation recorded\u200b"},
+        {frozenset({"region:a", "region:b"}): " \u2060\u00a0\u200d\u3000 "},
+        {frozenset({"region:a", "region:b"}): "no\u200b citation\u00ad recorded"},
+        {frozenset({"region:a", "region:b"}): "\uff4eo citation recorded"},
+        {frozenset({"region:a", "region:b"}): 42},
+        {frozenset({"region:a", "region:b"}): {"citation": "x"}},
     ],
     ids=[
         "none",
@@ -208,6 +216,14 @@ def test_declared_disjoint_regions_make_the_reports_compatible_and_cite_why():
         "placeholder",
         "placeholder-case",
         "null",
+        "zero-width-space",
+        "byte-order-mark",
+        "placeholder-zero-width",
+        "format-and-unicode-space",
+        "placeholder-interleaved-format",
+        "placeholder-fullwidth",
+        "int",
+        "dict",
     ],
 )
 def test_declared_disjointness_without_a_real_citation_stays_contested(provenance):
@@ -229,6 +245,24 @@ def test_a_whitespace_region_is_absent(blank):
     one = adjudicate(*_pair("region:a", blank), DISJOINT)
     assert one.reason is ScopeReason.SCOPE_ABSENT_ONE
     assert one.resolution == CONTESTED
+
+
+def test_a_citation_with_format_characters_is_served_as_visible_text():
+    verdict = adjudicate(
+        *_pair("region:a", "region:b"),
+        DISJOINT,
+        {frozenset({"region:a", "region:b"}): "\ufeff Kullenberg 1961\u200b "},
+    )
+    assert verdict.resolution == RESOLVED_BY_SCOPE
+    assert verdict.resolved_by == "Kullenberg 1961"
+
+
+@pytest.mark.parametrize("blank", ["\u200b", "\ufeff", " \u2060 "])
+def test_a_format_character_region_is_absent(blank):
+    assert (
+        adjudicate(*_pair(blank, blank), DISJOINT).reason
+        is ScopeReason.SCOPE_ABSENT_BOTH
+    )
 
 
 def test_a_padded_region_is_compared_by_its_key():
@@ -259,7 +293,20 @@ def _with_disjoint_citation(citation) -> InMemoryGraphRepository:
     return InMemoryGraphRepository(nodes=list(repo.all_nodes()), edges=edges)
 
 
-@pytest.mark.parametrize("citation", [None, "", "   ", NO_CITATION])
+@pytest.mark.parametrize(
+    "citation",
+    [
+        None,
+        "",
+        "   ",
+        NO_CITATION,
+        "\u200b",
+        "\ufeff",
+        NO_CITATION + "\u200b",
+        42,
+        {"a": 1},
+    ],
+)
 def test_an_uncited_disjoint_edge_does_not_resolve_end_to_end(citation):
     repo = _with_disjoint_citation(citation)
     record = contradiction_adjudication(repo)[0]
@@ -341,6 +388,22 @@ def _adjudication(**overrides) -> ScopeAdjudication:
                 "reason": ScopeReason.DISJOINT_DECLARED,
                 "disjointness_declared": True,
                 "resolved_by": "   ",
+            },
+            "SCOPE_TEST_AUDIT",
+        ),
+        (
+            {
+                "reason": ScopeReason.DISJOINT_DECLARED,
+                "disjointness_declared": True,
+                "resolved_by": "no citation recorded\u200b",
+            },
+            "SCOPE_TEST_AUDIT",
+        ),
+        (
+            {
+                "reason": ScopeReason.DISJOINT_DECLARED,
+                "disjointness_declared": True,
+                "resolved_by": "\ufeff",
             },
             "SCOPE_TEST_AUDIT",
         ),
