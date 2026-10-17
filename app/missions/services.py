@@ -184,6 +184,9 @@ class MissionService:
         if handler == "literature_ingestion_review":
             from .literature_review import build_literature_ingestion_review
             return build_literature_ingestion_review(mission.get("input_manifest") or {})
+        if handler == "source_registry_refresh":
+            from .source_registry_refresh import build_source_registry_refresh_plan
+            return build_source_registry_refresh_plan(mission.get("input_manifest") or {})
         if handler == "ontology_resolution":
             from .ontology_resolution import build_ontology_resolution_report
             return build_ontology_resolution_report(mission.get("input_manifest") or {})

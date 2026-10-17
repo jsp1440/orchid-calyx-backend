@@ -430,6 +430,7 @@ def test_mission_gap_observer_uses_only_explicit_safe_blocks(monkeypatch):
     for implemented in (
         "ontology resolution",
         "literature ingestion review",
+        "source registry refresh",
         "evidence readiness evaluation",
     ):
         assert not any(implemented in title for title in real_titles)
