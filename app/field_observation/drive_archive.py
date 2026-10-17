@@ -131,9 +131,28 @@ def strip_coordinate_like(text: str) -> str:
     return _COORDINATE_LIKE.sub("_", text)
 
 
-def archive_filename(display_filename: str, sha256: str) -> str:
-    name = strip_coordinate_like(display_filename).strip(" ._") or "original"
-    return name[:200] or f"{sha256[:16]}.bin"
+#: Extensions a Drive copy may carry. The user's own filename can name a place
+#: (``Cerro_X_trailhead.jpg``), so it stays in backend provenance only.
+SAFE_EXTENSIONS = frozenset(
+    {
+        ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".avif", ".tif", ".tiff", ".bmp",
+        ".mp4", ".mov", ".webm", ".3gp", ".m4v", ".mpg", ".mpeg", ".ogv",
+    }
+)
+_EXTENSION_BY_TYPE = {
+    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif", "image/webp": ".webp",
+    "image/heic": ".heic", "image/heif": ".heif", "image/avif": ".avif", "image/tiff": ".tiff",
+    "image/bmp": ".bmp", "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm",
+    "video/3gpp": ".3gp", "video/x-m4v": ".m4v", "video/mpeg": ".mpg", "video/ogg": ".ogv",
+}
+
+
+def archive_filename(display_filename: str, sha256: str, mime_type: str = "") -> str:
+    """``{sha256[:16]}{ext}``: no part of the user's filename reaches Drive."""
+    suffix = os.path.splitext(display_filename or "")[1].lower()
+    if suffix not in SAFE_EXTENSIONS:
+        suffix = _EXTENSION_BY_TYPE.get((mime_type or "").split(";", 1)[0].strip().lower(), ".bin")
+    return f"{sha256[:16]}{suffix}"
 
 
 def _bounded_property(key: str, value: str | None) -> str | None:
@@ -164,7 +183,15 @@ def load_authorized_user_info(raw: str) -> dict[str, Any]:
         raise ArchiveConfigError(
             "FIELD_MEDIA_DRIVE_CREDENTIALS_JSON is missing: " + ", ".join(missing)
         )
-    return {**info, "type": "authorized_user"}
+    # Only the client and the refresh token are used: a pasted access ``token``,
+    # its ``expiry`` or a broader ``scopes`` list must not widen or pin access.
+    return {
+        "type": "authorized_user",
+        "client_id": info["client_id"],
+        "client_secret": info["client_secret"],
+        "refresh_token": info["refresh_token"],
+        **({"token_uri": info["token_uri"]} if isinstance(info.get("token_uri"), str) else {}),
+    }
 
 
 class DriveMediaArchive:
@@ -179,6 +206,11 @@ class DriveMediaArchive:
         self.folder_name = folder_name
         self.timeout_seconds = timeout_seconds
         self._root_id: str | None = None
+        # Held across the network upload on purpose: the Google client's httplib2
+        # transport is not thread-safe, and serialising find-then-upload keeps two
+        # concurrent retries of the same bytes from creating duplicate Drive files.
+        # Each call is bounded by the socket timeout, and callers wait with their
+        # own deadline, so a slow upload delays the pool, never a response.
         self._lock = threading.Lock()
 
     # -- folders -----------------------------------------------------------------------
@@ -262,7 +294,7 @@ class DriveMediaArchive:
             if client_property:
                 properties["oc_client_media_id"] = client_property
             uploaded = self.gateway.upload(
-                name=archive_filename(display_filename, sha256),
+                name=archive_filename(display_filename, sha256, mime_type),
                 parent_id=folder_id,
                 data=data,
                 mime_type=mime_type or "application/octet-stream",

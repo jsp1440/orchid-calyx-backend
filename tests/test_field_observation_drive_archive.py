@@ -20,6 +20,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.field_observation import drive_archive
+from app.field_observation import routes as observation_routes
 from app.field_observation import service as observation_service
 from app.field_observation.drive_archive import (
     DRIVE_FILE_SCOPE,
@@ -27,6 +28,7 @@ from app.field_observation.drive_archive import (
     ArchiveConfigError,
     DriveMediaArchive,
     GoogleDriveArchiveGateway,
+    archive_filename,
     load_authorized_user_info,
 )
 from app.field_observation.routes import router
@@ -218,7 +220,7 @@ def test_verified_drive_copy_makes_the_upload_durable(owner, fake_drive):
         "oc_sha256": SHA,
         "oc_client_media_id": "local-media-1",
     }
-    assert upload["name"] == "IMG_0412.JPG"
+    assert upload["name"] == f"{SHA[:16]}.jpg"
 
     record = observation_service.FieldObservationService(observation_service.get_store()).photo_record_by_hash(
         observation_id, SHA
@@ -349,9 +351,13 @@ def test_retry_endpoint_archives_pending_media_in_a_bounded_batch(owner, fake_dr
         "still_pending": 0,
         "skipped_local_bytes_missing": 0,
         "remaining": 1,
+        "deadline_reached": False,
+        "pending_after": 1,
     }
     second = owner.post("/api/field-observations/archive/retry").json()
     assert second["attempted"] == 1 and second["verified"] == 1 and second["remaining"] == 0
+    assert second["pending_after"] == 0
+    assert owner.post("/api/field-observations/archive/retry", params={"limit": 11}).status_code == 422
 
     status = owner.get("/api/field-observations/archive/status")
     assert status.status_code == 200, status.text
@@ -594,3 +600,97 @@ def test_google_gateway_queries_are_marker_scoped_and_never_share():
         assert "permissions" not in json.dumps(kwargs.get("body", {}))
     with pytest.raises(ValueError):
         gateway.build_query(app_properties={}, parent_id="folder-1", folders_only=False)
+
+
+# -- review fixes: filename privacy, no downgrade, credential hygiene, retry deadline ------------
+
+
+def test_drive_file_name_never_carries_the_users_filename(owner, fake_drive):
+    observation_id = _observation(owner)
+    resp = _upload(owner, observation_id, filename="Cerro_X_trailhead.jpg")
+    assert resp.status_code == 201, resp.text
+    drive_metadata = json.dumps([args for name, args in fake_drive.calls if name in {"upload", "create_folder"}])
+    assert "Cerro" not in drive_metadata and "trailhead" not in drive_metadata
+    (upload,) = fake_drive.uploads()
+    assert upload["name"] == f"{SHA[:16]}.jpg"
+    record = observation_service.FieldObservationService(observation_service.get_store()).photo_record_by_hash(
+        observation_id, SHA
+    )
+    assert record["provenance"]["original_filename"] == "Cerro_X_trailhead.jpg"
+
+
+@pytest.mark.parametrize(
+    ("display", "mime", "expected_ext"),
+    [
+        ("IMG_1.HEIC", "image/heic", ".heic"),
+        ("clip.MOV", "video/quicktime", ".mov"),
+        ("Cerro_X.php", "image/png", ".png"),
+        ("no-extension", "video/mp4", ".mp4"),
+        ("weird.exe", "application/x-unknown", ".bin"),
+        (f"pt{LAT_TEXT}", "", ".bin"),
+    ],
+)
+def test_archive_filename_is_hash_plus_allowlisted_extension(display, mime, expected_ext):
+    assert archive_filename(display, SHA, mime) == f"{SHA[:16]}{expected_ext}"
+
+
+def test_verified_archive_state_is_never_downgraded(owner, fake_drive):
+    observation_id = _observation(owner)
+    verified = _upload(owner, observation_id).json()["archive"]
+    service = observation_service.FieldObservationService(observation_service.get_store())
+    stale = {"provider": "google_drive", "state": "pending", "error_code": "drive_timeout"}
+    row = service.set_media_archive(observation_id, SHA, stale)
+    assert row["provenance"]["archive"]["state"] == "verified"
+    assert service.photo_record_by_hash(observation_id, SHA)["provenance"]["archive"]["drive_file_id"] == verified[
+        "drive_file_id"
+    ]
+
+
+def test_stale_timed_out_attempt_reports_the_verified_state(owner, fake_drive):
+    """A request whose attempt timed out after another request verified the copy reports verified."""
+    observation_id = _observation(owner)
+    _upload(owner, observation_id)
+    service = observation_service.FieldObservationService(observation_service.get_store())
+    record = service.photo_record_by_hash(observation_id, SHA)
+    stale_record = {**record, "provenance": {**record["provenance"], "archive": {"state": "pending"}}}
+    failing_drive = FakeDrive()
+    failing_drive.upload_error = RuntimeError("down")
+    config = drive_archive.ArchiveConfig(DriveMediaArchive(failing_drive, folder_name="Other", timeout_seconds=5), None)
+    state = observation_routes.archive_original_sync(service, config, observation_id, stale_record, ORIGINAL)
+    assert state["state"] == "verified"
+
+
+def test_credential_json_drops_token_expiry_and_scopes():
+    info = load_authorized_user_info(
+        json.dumps(
+            {
+                **AUTHORIZED_USER,
+                "token": "stale-access-token",
+                "expiry": "2030-01-01T00:00:00Z",
+                "scopes": ["https://www.googleapis.com/auth/drive"],
+                "universe_domain": "googleapis.com",
+            }
+        )
+    )
+    assert info == {**AUTHORIZED_USER}
+    gateway = GoogleDriveArchiveGateway.from_authorized_user_info(info, timeout_seconds=5)
+    credentials = gateway.service._http.credentials
+    assert credentials.token is None
+    assert list(credentials.scopes) == [DRIVE_FILE_SCOPE]
+
+
+def test_retry_request_stops_at_its_deadline(owner, fake_drive, monkeypatch):
+    fake_drive.upload_error = RuntimeError("down")
+    observation_id = _observation(owner)
+    for index in range(3):
+        _upload(owner, observation_id, data=ORIGINAL + bytes([index]))
+    fake_drive.upload_error = None
+    fake_drive.upload_delay = 0.6
+    monkeypatch.setattr(observation_routes, "ARCHIVE_RETRY_DEADLINE_SECONDS", 0.3)
+    started = time.monotonic()
+    body = owner.post("/api/field-observations/archive/retry").json()
+    assert time.monotonic() - started < 0.6
+    assert body["attempted"] == 1 and body["still_pending"] == 1
+    assert body["deadline_reached"] is True and body["remaining"] == 2
+    assert body["pending_after"] == 3
+    time.sleep(0.5)  # let the background upload finish before teardown

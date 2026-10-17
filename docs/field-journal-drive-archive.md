@@ -22,9 +22,13 @@ storage.
 - When the Field Journal re-uploads the same bytes (its normal idempotent
   retry), the server tries the pending archive again. Once a copy is
   verified, a re-upload does not upload anything new to Drive.
-- `POST /api/field-observations/archive/retry?limit=20` retries pending
-  archives in batches (at most 50) for originals whose bytes are still held
-  locally. It needs the owner session, or the API key without `X-Auth-Subject`.
+- `POST /api/field-observations/archive/retry?limit=10` retries pending
+  archives for originals whose bytes are still held locally. Each request
+  handles at most 10 items and stops after 120 seconds. `pending_after` says
+  how many still need archiving; call it again until that is `0`. It needs the
+  owner session, or the API key without `X-Auth-Subject`.
+- A verified archive state is never downgraded. A slow attempt that times out
+  after another attempt succeeded cannot mark the copy pending again.
 - `GET /api/field-observations/archive/status` returns counts by state and
   error code. It contains no ids, names, observers or locality. Add
   `?probe=true` to make one read-only Drive call that proves the credentials
@@ -45,9 +49,13 @@ storage.
   is therefore safe, but **do not delete it**.
 - **One subfolder per observation**, named with the opaque observation id
   (`fo-…`).
-- **Files:** each file keeps its original name, with any coordinate-like
-  number removed. Its hidden properties are `oc_observation_id`, `oc_sha256`
-  and `oc_client_media_id` only.
+- **Files:** each file is named `{first 16 hex characters of its SHA-256}{ext}`,
+  for example `3f9a…c2e1.jpg`. The extension comes from a fixed list of
+  photo/video types, otherwise `.bin`. The user's original filename might name
+  a place, so it is kept **only** in the backend's private provenance record.
+  It never appears in a Drive name, description or property. The hidden
+  properties are `oc_observation_id`, `oc_sha256` and `oc_client_media_id`
+  only; an id that looks like a coordinate is left out.
 - **No coordinates, locality, notes or observer identity** are written to any
   Drive name or property.
 - **No sharing:** the backend never creates sharing permissions, so files stay
@@ -140,6 +148,10 @@ print(json.dumps({
     "refresh_token": creds.refresh_token,
 }))
 ```
+
+The backend uses only `client_id`, `client_secret` and `refresh_token` (plus
+`token_uri` if present). It ignores any `token`, `expiry` or `scopes` in the
+JSON and always requests the `drive.file` scope.
 
 Run `python get_drive_token.py`. A browser opens. Sign in as
 the Drive owner's account and allow access to "files created by this app". The

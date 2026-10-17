@@ -18,6 +18,7 @@ import asyncio
 import concurrent.futures
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
@@ -91,8 +92,10 @@ def field_media_durability() -> str:
 
 # -- Google Drive archive of originals ---------------------------------------------------
 
-ARCHIVE_RETRY_DEFAULT_BATCH = 20
-ARCHIVE_RETRY_MAX_BATCH = 50
+ARCHIVE_RETRY_DEFAULT_BATCH = 10
+ARCHIVE_RETRY_MAX_BATCH = 10
+#: Wall-clock budget for one retry request, so it ends well inside proxy limits.
+ARCHIVE_RETRY_DEADLINE_SECONDS = 120.0
 _TIMEOUT_ERRORS = (TimeoutError, asyncio.TimeoutError, concurrent.futures.TimeoutError)
 
 
@@ -166,8 +169,7 @@ async def archive_original_async(
             state = _outcome_state(previous, receipt=receipt)
         except Exception as exc:  # noqa: BLE001 - a Drive failure never fails the upload
             state = _outcome_state(previous, exc=exc)
-    service.set_media_archive(observation_id, str(record["content_hash"]), state)
-    return state
+    return _archive_state_of(service.set_media_archive(observation_id, str(record["content_hash"]), state))
 
 
 def archive_original_sync(
@@ -176,19 +178,20 @@ def archive_original_sync(
     observation_id: str,
     record: dict[str, Any],
     data: bytes,
+    *,
+    timeout: float | None = None,
 ) -> dict[str, Any]:
     previous = _archive_state_of(record)
     if config.archive is None:
         state = _not_attempted_state(config)
-        service.set_media_archive(observation_id, str(record["content_hash"]), state)
-        return state
+        return _archive_state_of(service.set_media_archive(observation_id, str(record["content_hash"]), state))
     future = drive_archive.submit_bounded(_archive_call(config.archive, observation_id, record, data))
     try:
-        state = _outcome_state(previous, receipt=future.result(timeout=config.archive.timeout_seconds))
+        wait = config.archive.timeout_seconds if timeout is None else min(timeout, config.archive.timeout_seconds)
+        state = _outcome_state(previous, receipt=future.result(timeout=max(wait, 0.0)))
     except Exception as exc:  # noqa: BLE001 - recorded as an error code, never raised
         state = _outcome_state(previous, exc=exc)
-    service.set_media_archive(observation_id, str(record["content_hash"]), state)
-    return state
+    return _archive_state_of(service.set_media_archive(observation_id, str(record["content_hash"]), state))
 
 
 def _archive_out(state: dict[str, Any]) -> MediaArchiveOut | None:
@@ -420,7 +423,11 @@ def retry_archive(
     x_auth_subject: AuthSubjectHeader = None,
     limit: Annotated[int, Query(ge=1, le=ARCHIVE_RETRY_MAX_BATCH)] = ARCHIVE_RETRY_DEFAULT_BATCH,
 ) -> dict[str, Any]:
-    """Retry the archive copy for at most ``limit`` unarchived originals still held locally."""
+    """Retry the archive copy for at most ``limit`` unarchived originals still held locally.
+
+    The whole request is bounded by ``ARCHIVE_RETRY_DEADLINE_SECONDS``; whatever
+    is not attempted in time is reported in ``remaining`` and ``pending_after``.
+    """
     _require_reviewer(auth, x_auth_subject)
     config = drive_archive.get_field_media_archive()
     if config.archive is None:
@@ -432,11 +439,16 @@ def retry_archive(
             },
         )
     storage = field_media_storage()
+    deadline = time.monotonic() + ARCHIVE_RETRY_DEADLINE_SECONDS
     attempted = verified = still_pending = skipped_missing = remaining = 0
+    deadline_reached = False
     for row in service.iter_media_records():
         if _archive_state_of(row).get("state") == drive_archive.STATE_VERIFIED:
             continue
-        if attempted >= limit:
+        time_left = deadline - time.monotonic()
+        if time_left <= 0:
+            deadline_reached = True
+        if attempted >= limit or deadline_reached:
             remaining += 1
             continue
         observation_id = str(row["observation_id"])
@@ -451,7 +463,7 @@ def retry_archive(
             )
             continue
         attempted += 1
-        state = archive_original_sync(service, config, observation_id, row, data)
+        state = archive_original_sync(service, config, observation_id, row, data, timeout=time_left)
         if state.get("state") == drive_archive.STATE_VERIFIED:
             verified += 1
         else:
@@ -463,6 +475,8 @@ def retry_archive(
         "still_pending": still_pending,
         "skipped_local_bytes_missing": skipped_missing,
         "remaining": remaining,
+        "deadline_reached": deadline_reached,
+        "pending_after": still_pending + skipped_missing + remaining,
     }
 
 

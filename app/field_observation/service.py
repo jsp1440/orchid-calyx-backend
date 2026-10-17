@@ -248,9 +248,20 @@ class FieldObservationService:
     def set_media_archive(
         self, observation_id: str, content_hash: str, archive: dict[str, Any]
     ) -> dict[str, Any]:
-        """Record the Drive archive state in the media provenance (upsert of the photo row)."""
+        """Record the Drive archive state in the media provenance (upsert of the photo row).
+
+        A ``verified`` state is never replaced by a non-verified one.
+        """
         row = self.photo_record_by_hash(observation_id, content_hash)
         provenance = dict(row.get("provenance") or {})
+        current = provenance.get("archive")
+        if (
+            isinstance(current, dict)
+            and current.get("state") == "verified"
+            and archive.get("state") != "verified"
+        ):
+            # A stale (e.g. timed-out) attempt never downgrades a verified copy.
+            return row
         provenance["archive"] = archive
         updated = {**row, "provenance": provenance}
         self._store.put(
