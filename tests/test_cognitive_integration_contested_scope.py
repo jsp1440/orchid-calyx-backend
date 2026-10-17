@@ -17,6 +17,7 @@ from app.cognitive_integration.contested_scope import (
     COMPATIBLE_BY_SCOPE,
     CONTESTED,
     LEAVE_CONTESTED,
+    NO_CITATION,
     OPERATION,
     RESOLVED_BY_SCOPE,
     ScopeAdjudication,
@@ -188,6 +189,92 @@ def test_declared_disjoint_regions_make_the_reports_compatible_and_cite_why():
     assert verdict.preferred_report is None
 
 
+@pytest.mark.parametrize(
+    "provenance",
+    [
+        None,
+        {},
+        {frozenset({"region:a", "region:b"}): ""},
+        {frozenset({"region:a", "region:b"}): "   \t\n"},
+        {frozenset({"region:a", "region:b"}): NO_CITATION},
+        {frozenset({"region:a", "region:b"}): "  No Citation Recorded  "},
+        {frozenset({"region:a", "region:b"}): None},
+    ],
+    ids=[
+        "none",
+        "missing",
+        "empty",
+        "whitespace",
+        "placeholder",
+        "placeholder-case",
+        "null",
+    ],
+)
+def test_declared_disjointness_without_a_real_citation_stays_contested(provenance):
+    """Checker FAIL on #1966: the truthy placeholder resolved an uncited edge."""
+    verdict = adjudicate(*_pair("region:a", "region:b"), DISJOINT, provenance)
+    assert verdict.reason is ScopeReason.DISJOINTNESS_UNCITED
+    assert verdict.resolution == CONTESTED
+    assert verdict.decision == LEAVE_CONTESTED
+    assert verdict.resolved_by is None
+    assert verdict.disjointness_declared is True
+    assert "citable source" in verdict.to_record()["would_change_if"]
+
+
+@pytest.mark.parametrize("blank", ["", " ", "\t", "  \n "])
+def test_a_whitespace_region_is_absent(blank):
+    both = adjudicate(*_pair(blank, blank), DISJOINT)
+    assert both.reason is ScopeReason.SCOPE_ABSENT_BOTH
+    assert both.scope_region_declared == (False, False)
+    one = adjudicate(*_pair("region:a", blank), DISJOINT)
+    assert one.reason is ScopeReason.SCOPE_ABSENT_ONE
+    assert one.resolution == CONTESTED
+
+
+def test_a_padded_region_is_compared_by_its_key():
+    verdict = adjudicate(
+        *_pair(" region:a ", "region:b\n"),
+        DISJOINT,
+        {frozenset({"region:a", "region:b"}): " Cited "},
+    )
+    assert verdict.resolution == RESOLVED_BY_SCOPE
+    assert verdict.resolved_by == "Cited"
+
+
+def _with_disjoint_citation(citation) -> InMemoryGraphRepository:
+    repo = _with_scope_regions("region:mediterranean", "region:north-western-europe")
+    edges = []
+    for edge in repo.all_edges():
+        if edge.edge_type == "disjoint_from":
+            payload = {**edge.payload, "citation": citation}
+            edge = Edge(
+                kg_edge_id=edge.kg_edge_id,
+                edge_type=edge.edge_type,
+                from_node_id=edge.from_node_id,
+                to_node_id=edge.to_node_id,
+                evidence_class=edge.evidence_class,
+                payload=payload,
+            )
+        edges.append(edge)
+    return InMemoryGraphRepository(nodes=list(repo.all_nodes()), edges=edges)
+
+
+@pytest.mark.parametrize("citation", [None, "", "   ", NO_CITATION])
+def test_an_uncited_disjoint_edge_does_not_resolve_end_to_end(citation):
+    repo = _with_disjoint_citation(citation)
+    record = contradiction_adjudication(repo)[0]
+    assert record["reason"] == ScopeReason.DISJOINTNESS_UNCITED.value
+    assert record["decision"] == LEAVE_CONTESTED
+    assert record["resolved_by"] is None
+    contradiction = execute(repository=repo)["contradictions"][0]
+    assert contradiction["resolution"] == CONTESTED
+    assert contradiction["resolved_by"] is None
+    candidates = discover(execute(repository=repo), contradiction_adjudication(repo))
+    conflict = [c for c in candidates if "Two reports conflict" in c.statement]
+    assert conflict[0].deficiency is Deficiency.MISSING_EVIDENCE
+    assert "citable source" in conflict[0].bounded_next_step
+
+
 def test_the_outcome_does_not_depend_on_evidence_strength_or_order():
     """No weighting: a SUPPORTED report does not beat a CONTESTED one."""
     first, second = _pair(None, None)
@@ -241,6 +328,29 @@ def _adjudication(**overrides) -> ScopeAdjudication:
         ({"may_activate_scientific_conclusion": True}, "SCOPE_TEST_REVIEW_INVARIANT"),
         ({"disjointness_declared": True}, "SCOPE_TEST_DISJOINTNESS"),
         ({"resolved_by": "fiat"}, "SCOPE_TEST_AUDIT"),
+        (
+            {
+                "reason": ScopeReason.DISJOINT_DECLARED,
+                "disjointness_declared": True,
+                "resolved_by": NO_CITATION,
+            },
+            "SCOPE_TEST_AUDIT",
+        ),
+        (
+            {
+                "reason": ScopeReason.DISJOINT_DECLARED,
+                "disjointness_declared": True,
+                "resolved_by": "   ",
+            },
+            "SCOPE_TEST_AUDIT",
+        ),
+        (
+            {
+                "reason": ScopeReason.DISJOINTNESS_UNCITED,
+                "disjointness_declared": False,
+            },
+            "SCOPE_TEST_DISJOINTNESS",
+        ),
         (
             {"reason": ScopeReason.DISJOINT_DECLARED, "disjointness_declared": True},
             "SCOPE_TEST_AUDIT",

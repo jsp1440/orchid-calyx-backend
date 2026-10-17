@@ -8,8 +8,8 @@ it. This module is that operation, and its decision rule is deliberately narrow.
 incompatible reports are compatible only when they are established to describe
 separate ground: both name a structured region, and the graph declares those
 regions disjoint with a cited ``disjoint_from`` edge. Every other case — a
-missing scope on either side, the same region on both, or two regions nothing
-declares separate — is left *contested*, on purpose, with the reason recorded.
+missing scope on either side, the same region on both, two regions nothing
+declares separate, or a declaration with no citation — is left *contested*, on purpose, with the reason recorded.
 
 **No weighting rule.** Evidence state, source type and publication date are not
 commensurable measures of which report is true for this taxon, and ranking them
@@ -38,6 +38,22 @@ RESOLVED_BY_SCOPE = "resolved_by_scope"
 LEAVE_CONTESTED = "leave_contested"
 COMPATIBLE_BY_SCOPE = "compatible_by_scope"
 
+#: What older code wrote where a ``disjoint_from`` edge had no citation. It is a
+#: placeholder, not a source, and it never counts as one.
+NO_CITATION = "no citation recorded"
+
+
+def is_citation(value: object) -> bool:
+    """A usable citation: a non-blank string that is not the placeholder.
+
+    The placeholder is truthy, so a bare truthiness check let an uncited
+    disjointness declaration resolve a contradiction.
+    """
+    if not isinstance(value, str):
+        return False
+    text = value.strip()
+    return bool(text) and text.casefold() != NO_CITATION
+
 
 class ScopeReason(StrEnum):
     """Why the scope test reached its outcome. One per adjudication."""
@@ -47,6 +63,13 @@ class ScopeReason(StrEnum):
     SCOPE_ABSENT_ONE = "scope_region_absent_on_one_report"
     SAME_REGION = "same_region_on_both_reports"
     DISJOINTNESS_NOT_ESTABLISHED = "regions_differ_but_disjointness_not_declared"
+    DISJOINTNESS_UNCITED = "disjointness_declared_without_citation"
+
+
+#: Reasons for which the graph carries a ``disjoint_from`` edge for the pair.
+_DISJOINTNESS_PRESENT = frozenset(
+    {ScopeReason.DISJOINT_DECLARED, ScopeReason.DISJOINTNESS_UNCITED}
+)
 
 
 #: What would have to be retrieved for the outcome to change. Stated per reason
@@ -72,6 +95,10 @@ _WOULD_CHANGE_IF: dict[ScopeReason, str] = {
     ScopeReason.DISJOINTNESS_NOT_ESTABLISHED: (
         "A cited source establishes that the two named regions do not overlap, "
         "recorded as a disjoint_from edge between them."
+    ),
+    ScopeReason.DISJOINTNESS_UNCITED: (
+        "The disjoint_from declaration between the two named regions carries a "
+        "citable source. An uncited declaration cannot remove a disagreement."
     ),
 }
 
@@ -114,11 +141,11 @@ class ScopeAdjudication:
                 "SCOPE_TEST_REVIEW_INVARIANT: an adjudication is a record for a human "
                 "reviewer, not a scientific conclusion"
             )
-        if (self.reason is ScopeReason.DISJOINT_DECLARED) != self.disjointness_declared:
+        if (self.reason in _DISJOINTNESS_PRESENT) != self.disjointness_declared:
             raise ValueError(
                 "SCOPE_TEST_DISJOINTNESS: only declared disjointness separates the reports"
             )
-        if self.resolution == RESOLVED_BY_SCOPE and not self.resolved_by:
+        if self.resolution == RESOLVED_BY_SCOPE and not is_citation(self.resolved_by):
             raise ValueError(
                 "SCOPE_TEST_AUDIT: a scope resolution must cite what declared the "
                 "regions separate"
@@ -162,13 +189,17 @@ def adjudicate(
 ) -> ScopeAdjudication:
     """Apply the scope test to two conflicting reports.
 
-    Resolution requires *established* disjointness. Anything short of it leaves
+    Resolution requires *established* disjointness: both regions present, a
+    ``disjoint_from`` edge for the pair, and a real citation for that edge.
+    Anything short of it leaves
     the contradiction standing, which is the fail-closed direction: a conflict
     wrongly left open costs a reader some care, while one wrongly closed deletes
     a real scientific disagreement.
     """
-    first_region = first.get("scope_region") or None
-    second_region = second.get("scope_region") or None
+    first_region = _region(first.get("scope_region"))
+    second_region = _region(second.get("scope_region"))
+    pair = frozenset({first_region, second_region})
+    citation = (provenance or {}).get(pair)
     declared = (first_region is not None, second_region is not None)
 
     if not any(declared):
@@ -177,16 +208,16 @@ def adjudicate(
         reason = ScopeReason.SCOPE_ABSENT_ONE
     elif first_region == second_region:
         reason = ScopeReason.SAME_REGION
-    elif frozenset({first_region, second_region}) not in disjoint:
+    elif pair not in disjoint:
         reason = ScopeReason.DISJOINTNESS_NOT_ESTABLISHED
+    elif not is_citation(citation):
+        # Declared but uncited: the one inference that deletes a disagreement
+        # must be auditable, so without a source the pair stays contested.
+        reason = ScopeReason.DISJOINTNESS_UNCITED
     else:
         reason = ScopeReason.DISJOINT_DECLARED
 
-    resolved_by = None
-    if reason is ScopeReason.DISJOINT_DECLARED:
-        resolved_by = (provenance or {}).get(
-            frozenset({first_region, second_region}), "no citation recorded"
-        )
+    resolved_by = citation.strip() if reason is ScopeReason.DISJOINT_DECLARED else None
 
     return ScopeAdjudication(
         between=(
@@ -195,6 +226,14 @@ def adjudicate(
         ),
         reason=reason,
         scope_region_declared=declared,
-        disjointness_declared=reason is ScopeReason.DISJOINT_DECLARED,
+        disjointness_declared=reason in _DISJOINTNESS_PRESENT,
         resolved_by=resolved_by,
     )
+
+
+def _region(value: object) -> str | None:
+    """A structured region key, or ``None``. Blank or whitespace is absent."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None

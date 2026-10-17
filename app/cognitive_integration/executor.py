@@ -31,7 +31,7 @@ from app.brain.reasoning_map import (
 )
 from runtime.knowledge_graph.repository import GraphRepository
 
-from .contested_scope import ScopeAdjudication, adjudicate
+from .contested_scope import ScopeAdjudication, adjudicate, is_citation
 from .fixture import EXPECTED_BUT_ABSENT, SUBJECT_KEY, build_pollination_repository
 
 CONTRACT_VERSION = "1.0.0"
@@ -367,7 +367,14 @@ def _disjointness_provenance(repository: GraphRepository) -> dict[frozenset[str]
         if not first or not second or first == second:
             continue
         payload = edge.payload or {}
-        out[frozenset({first, second})] = str(payload.get("citation") or "no citation recorded")
+        # Recorded as found, blank included. Substituting a placeholder here
+        # produced a truthy "citation" that resolved the pair; whether a
+        # citation is usable is decided by the scope test, not assumed here.
+        # A cited declaration is never overwritten by an uncited duplicate.
+        pair = frozenset({first, second})
+        citation = str(payload.get("citation") or "").strip()
+        if not is_citation(out.get(pair)):
+            out[pair] = citation
     return out
 
 
@@ -388,18 +395,6 @@ def _disjoint_regions(repository: GraphRepository) -> set[frozenset[str]]:
         if first and second and first != second:
             pairs.add(frozenset({first, second}))
     return pairs
-
-
-def _scope_resolution(
-    first: dict[str, Any], second: dict[str, Any], disjoint: set[frozenset[str]]
-) -> str:
-    """Whether a disagreement is resolved by the two claims applying elsewhere.
-
-    Delegates to the scope test in :mod:`.contested_scope`, which is the one
-    place the rule lives. Equal, absent and merely differently-worded scopes
-    never resolve anything; only declared disjointness does.
-    """
-    return adjudicate(first, second, disjoint).resolution
 
 
 def _describe_conflict(first: dict[str, Any], second: dict[str, Any]) -> str:
