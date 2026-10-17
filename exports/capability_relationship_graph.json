@@ -1,0 +1,339 @@
+{
+  "contract": "oc-capability-registry-v1",
+  "view": "relationship-graph",
+  "read_only": true,
+  "nodes": [
+    {
+      "node_id": "oc.capability.atlas.occurrence-persistence",
+      "kind": "capability",
+      "title": "Occurrence persistence & reconciliation"
+    },
+    {
+      "node_id": "oc.capability.atlas.viewport-explorer-api",
+      "kind": "capability",
+      "title": "Atlas viewport occurrence explorer API"
+    },
+    {
+      "node_id": "oc.capability.autonomy-engine.portfolio-steward",
+      "kind": "capability",
+      "title": "Portfolio Steward (oc-prepared to oc-queued reconciler)"
+    },
+    {
+      "node_id": "oc.capability.autonomy-engine.swarm-controller",
+      "kind": "capability",
+      "title": "Orchid Swarm Controller (scheduled autonomy)"
+    },
+    {
+      "node_id": "oc.capability.brain.autonomy-loop",
+      "kind": "capability",
+      "title": "Continuous autonomy loop (observe-authorize-execute-learn-replenish)"
+    },
+    {
+      "node_id": "oc.capability.brain.context-memory",
+      "kind": "capability",
+      "title": "Cross-repo agent context memory (durable handoff packets)"
+    },
+    {
+      "node_id": "oc.capability.brain.cross-repo-observation",
+      "kind": "capability",
+      "title": "Coding-agent lifecycle observation across repos"
+    },
+    {
+      "node_id": "oc.capability.brain.mission-replenishment",
+      "kind": "capability",
+      "title": "Homeostatic dependency-aware mission replenishment"
+    },
+    {
+      "node_id": "oc.capability.brain.reasoning-planning",
+      "kind": "capability",
+      "title": "Brain reasoning & planning (five-module lifecycle)"
+    },
+    {
+      "node_id": "oc.capability.calyx.acquisition-ledger",
+      "kind": "capability",
+      "title": "Shared acquisition ledger (fetch-once, lease fencing)"
+    },
+    {
+      "node_id": "oc.capability.calyx.capability-memory",
+      "kind": "capability",
+      "title": "Brain capability & dependency registry (v1 seed)"
+    },
+    {
+      "node_id": "oc.capability.calyx.executor-authority-registry",
+      "kind": "capability",
+      "title": "Authoritative executor registry (kernel)"
+    },
+    {
+      "node_id": "oc.capability.calyx.programs-jobs-receipts",
+      "kind": "capability",
+      "title": "Calyx programs, jobs, leases, completion receipts"
+    },
+    {
+      "node_id": "oc.capability.calyx.queue-director",
+      "kind": "capability",
+      "title": "Executive planning / queue director"
+    },
+    {
+      "node_id": "oc.capability.capability-registry.brain-query-interface",
+      "kind": "capability",
+      "title": "Read-only Brain query interface (oc-registry-query-v1)"
+    },
+    {
+      "node_id": "oc.capability.capability-registry.json-store",
+      "kind": "capability",
+      "title": "Version-controlled JSON registry store + engine"
+    },
+    {
+      "node_id": "oc.capability.conservatory.collection-management",
+      "kind": "capability",
+      "title": "Conservatory collections, locations, measurements, readiness"
+    },
+    {
+      "node_id": "oc.capability.field-journal.offline-mvp",
+      "kind": "capability",
+      "title": "Field Journal offline MVP backend"
+    },
+    {
+      "node_id": "oc.capability.harvesters.globi-interactions",
+      "kind": "capability",
+      "title": "GloBI interaction harvesting"
+    },
+    {
+      "node_id": "oc.capability.harvesters.world-plants-intake",
+      "kind": "capability",
+      "title": "World Plants (WFO) durable intake & staging"
+    },
+    {
+      "node_id": "oc.capability.knowledge-graph.graph-schema",
+      "kind": "capability",
+      "title": "OC graph schema & trait/taxonomy edge builders"
+    },
+    {
+      "node_id": "oc.capability.knowledge-graph.oao-lexicon-matrix-kg-bridge",
+      "kind": "capability",
+      "title": "OAO-Lexicon-Matrix-KG integration bridge"
+    },
+    {
+      "node_id": "oc.capability.lexicon.concept-registry",
+      "kind": "capability",
+      "title": "Core concept registry & lexical definitions"
+    },
+    {
+      "node_id": "oc.capability.lexicon.oao-accession-resolution",
+      "kind": "capability",
+      "title": "OAO external accession resolution (PO/PATO/FLOPO)"
+    },
+    {
+      "node_id": "oc.capability.literature.evidence-slice",
+      "kind": "capability",
+      "title": "Literature-to-Evidence slice (canonical spine)"
+    },
+    {
+      "node_id": "oc.capability.literature.harvest-acquisition",
+      "kind": "capability",
+      "title": "Literature harvesting & staging"
+    },
+    {
+      "node_id": "oc.capability.matrix.contributor-intake",
+      "kind": "capability",
+      "title": "Matrix contributor image intake (review-gated)"
+    },
+    {
+      "node_id": "oc.capability.matrix.identification-sessions",
+      "kind": "capability",
+      "title": "Matrix identification sessions & registry versions"
+    },
+    {
+      "node_id": "oc.capability.traitbank.v1-vertical-slice",
+      "kind": "capability",
+      "title": "TraitBank oc-traitbank-v1 contract + vertical slice"
+    },
+    {
+      "node_id": "oc.capability.vision-ai.vertical-slice",
+      "kind": "capability",
+      "title": "Vision AI first vertical slice (local CPU engine)"
+    },
+    {
+      "node_id": "oc.division.autonomy",
+      "kind": "division",
+      "title": "Autonomy & Governance"
+    },
+    {
+      "node_id": "oc.division.data",
+      "kind": "division",
+      "title": "Data Acquisition & Federation"
+    },
+    {
+      "node_id": "oc.division.experience",
+      "kind": "division",
+      "title": "Member & Operator Experience"
+    },
+    {
+      "node_id": "oc.division.science",
+      "kind": "division",
+      "title": "Scientific Intelligence"
+    },
+    {
+      "node_id": "oc.module.atlas",
+      "kind": "module",
+      "title": "Atlas (occurrence mapping)"
+    },
+    {
+      "node_id": "oc.module.autonomy-engine",
+      "kind": "module",
+      "title": "Autonomy Engine (swarm controller, stewards, replenishers)"
+    },
+    {
+      "node_id": "oc.module.brain",
+      "kind": "module",
+      "title": "Brain (institutional & scientific memory, orchestration)"
+    },
+    {
+      "node_id": "oc.module.calyx",
+      "kind": "module",
+      "title": "Calyx (governed execution backend)"
+    },
+    {
+      "node_id": "oc.module.capability-registry",
+      "kind": "module",
+      "title": "Capability Registry (this assignment)"
+    },
+    {
+      "node_id": "oc.module.conservatory",
+      "kind": "module",
+      "title": "My Conservatory"
+    },
+    {
+      "node_id": "oc.module.field-journal",
+      "kind": "module",
+      "title": "Field Journal"
+    },
+    {
+      "node_id": "oc.module.harvesters",
+      "kind": "module",
+      "title": "Harvesters (acquisition workers)"
+    },
+    {
+      "node_id": "oc.module.knowledge-graph",
+      "kind": "module",
+      "title": "Knowledge Graph (GRAPH-001)"
+    },
+    {
+      "node_id": "oc.module.lexicon",
+      "kind": "module",
+      "title": "Illustrated Lexicon"
+    },
+    {
+      "node_id": "oc.module.literature",
+      "kind": "module",
+      "title": "Literature Intelligence"
+    },
+    {
+      "node_id": "oc.module.matrix",
+      "kind": "module",
+      "title": "Matrix (identification)"
+    },
+    {
+      "node_id": "oc.module.mission-control",
+      "kind": "module",
+      "title": "Mission Control (telemetry & operator surface)"
+    },
+    {
+      "node_id": "oc.module.traitbank",
+      "kind": "module",
+      "title": "TraitBank (oc-traitbank-v1)"
+    },
+    {
+      "node_id": "oc.module.vision-ai",
+      "kind": "module",
+      "title": "Vision AI (image intelligence)"
+    },
+    {
+      "node_id": "oc.platform.orchid-continuum",
+      "kind": "platform",
+      "title": "Orchid Continuum"
+    }
+  ],
+  "edges": [
+    {
+      "from_id": "oc.capability.atlas.viewport-explorer-api",
+      "to_id": "oc.capability.atlas.occurrence-persistence",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.autonomy-engine.portfolio-steward",
+      "to_id": "oc.capability.calyx.acquisition-ledger",
+      "edge_type": "integrated_with"
+    },
+    {
+      "from_id": "oc.capability.brain.autonomy-loop",
+      "to_id": "oc.capability.brain.reasoning-planning",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.brain.autonomy-loop",
+      "to_id": "oc.capability.calyx.programs-jobs-receipts",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.calyx.capability-memory",
+      "to_id": "oc.capability.calyx.executor-authority-registry",
+      "edge_type": "integrated_with"
+    },
+    {
+      "from_id": "oc.capability.capability-registry.brain-query-interface",
+      "to_id": "oc.capability.capability-registry.json-store",
+      "edge_type": "integrated_with"
+    },
+    {
+      "from_id": "oc.capability.capability-registry.json-store",
+      "to_id": "oc.capability.calyx.capability-memory",
+      "edge_type": "implements"
+    },
+    {
+      "from_id": "oc.capability.knowledge-graph.oao-lexicon-matrix-kg-bridge",
+      "to_id": "oc.capability.lexicon.concept-registry",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.knowledge-graph.oao-lexicon-matrix-kg-bridge",
+      "to_id": "oc.capability.matrix.identification-sessions",
+      "edge_type": "integrated_with"
+    },
+    {
+      "from_id": "oc.capability.literature.evidence-slice",
+      "to_id": "oc.capability.lexicon.oao-accession-resolution",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.literature.evidence-slice",
+      "to_id": "oc.capability.traitbank.v1-vertical-slice",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.matrix.contributor-intake",
+      "to_id": "oc.capability.matrix.identification-sessions",
+      "edge_type": "depends_on"
+    },
+    {
+      "from_id": "oc.capability.matrix.identification-sessions",
+      "to_id": "oc.capability.lexicon.concept-registry",
+      "edge_type": "consumes_data_from"
+    },
+    {
+      "from_id": "oc.capability.traitbank.v1-vertical-slice",
+      "to_id": "oc.capability.literature.harvest-acquisition",
+      "edge_type": "consumes_data_from"
+    },
+    {
+      "from_id": "oc.capability.vision-ai.vertical-slice",
+      "to_id": "oc.capability.matrix.identification-sessions",
+      "edge_type": "produces_data_for"
+    },
+    {
+      "from_id": "oc.module.brain",
+      "to_id": "oc.module.calyx",
+      "edge_type": "duplicates"
+    }
+  ]
+}

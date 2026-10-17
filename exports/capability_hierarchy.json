@@ -1,0 +1,742 @@
+{
+  "contract": "oc-capability-registry-v1",
+  "view": "mission-control-hierarchy",
+  "read_only": true,
+  "tree": {
+    "node_id": "oc.platform.orchid-continuum",
+    "kind": "platform",
+    "title": "Orchid Continuum",
+    "status": {
+      "implementation": "partial",
+      "test": "unknown",
+      "merge": "unknown",
+      "deployment": "unverified",
+      "operational": "unverified"
+    },
+    "blockers": [],
+    "children": [
+      {
+        "node_id": "oc.division.autonomy",
+        "kind": "division",
+        "title": "Autonomy & Governance",
+        "status": {
+          "implementation": "unknown",
+          "test": "unknown",
+          "merge": "unknown",
+          "deployment": "unknown",
+          "operational": "unknown"
+        },
+        "blockers": [],
+        "children": [
+          {
+            "node_id": "oc.module.autonomy-engine",
+            "kind": "module",
+            "title": "Autonomy Engine (swarm controller, stewards, replenishers)",
+            "status": {
+              "implementation": "partial",
+              "test": "tests_present_unverified",
+              "merge": "open_draft_pr",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.autonomy-engine.portfolio-steward",
+                "kind": "capability",
+                "title": "Portfolio Steward (oc-prepared to oc-queued reconciler)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "deployed",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.autonomy-engine.swarm-controller",
+                "kind": "capability",
+                "title": "Orchid Swarm Controller (scheduled autonomy)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "deployed",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.brain",
+            "kind": "module",
+            "title": "Brain (institutional & scientific memory, orchestration)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.brain.autonomy-loop",
+                "kind": "capability",
+                "title": "Continuous autonomy loop (observe-authorize-execute-learn-replenish)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "stacked draft PR chain not merged to main in either repo"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.brain.context-memory",
+                "kind": "capability",
+                "title": "Cross-repo agent context memory (durable handoff packets)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.brain.cross-repo-observation",
+                "kind": "capability",
+                "title": "Coding-agent lifecycle observation across repos",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.brain.mission-replenishment",
+                "kind": "capability",
+                "title": "Homeostatic dependency-aware mission replenishment",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "deployed",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.brain.reasoning-planning",
+                "kind": "capability",
+                "title": "Brain reasoning & planning (five-module lifecycle)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.calyx",
+            "kind": "module",
+            "title": "Calyx (governed execution backend)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.calyx.acquisition-ledger",
+                "kind": "capability",
+                "title": "Shared acquisition ledger (fetch-once, lease fencing)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "PR #1716 (Firecrawl spend closure) unmerged"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.calyx.capability-memory",
+                "kind": "capability",
+                "title": "Brain capability & dependency registry (v1 seed)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "passing",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.calyx.executor-authority-registry",
+                "kind": "capability",
+                "title": "Authoritative executor registry (kernel)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.calyx.programs-jobs-receipts",
+                "kind": "capability",
+                "title": "Calyx programs, jobs, leases, completion receipts",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.calyx.queue-director",
+                "kind": "capability",
+                "title": "Executive planning / queue director",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.capability-registry",
+            "kind": "module",
+            "title": "Capability Registry (this assignment)",
+            "status": {
+              "implementation": "partial",
+              "test": "passing",
+              "merge": "open_draft_pr",
+              "deployment": "not_deployed",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.capability-registry.brain-query-interface",
+                "kind": "capability",
+                "title": "Read-only Brain query interface (oc-registry-query-v1)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "passing",
+                  "merge": "open_draft_pr",
+                  "deployment": "not_deployed",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.capability-registry.json-store",
+                "kind": "capability",
+                "title": "Version-controlled JSON registry store + engine",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "passing",
+                  "merge": "open_draft_pr",
+                  "deployment": "not_deployed",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.mission-control",
+            "kind": "module",
+            "title": "Mission Control (telemetry & operator surface)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": []
+          }
+        ]
+      },
+      {
+        "node_id": "oc.division.data",
+        "kind": "division",
+        "title": "Data Acquisition & Federation",
+        "status": {
+          "implementation": "unknown",
+          "test": "unknown",
+          "merge": "unknown",
+          "deployment": "unknown",
+          "operational": "unknown"
+        },
+        "blockers": [],
+        "children": [
+          {
+            "node_id": "oc.module.harvesters",
+            "kind": "module",
+            "title": "Harvesters (acquisition workers)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.harvesters.globi-interactions",
+                "kind": "capability",
+                "title": "GloBI interaction harvesting",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.harvesters.world-plants-intake",
+                "kind": "capability",
+                "title": "World Plants (WFO) durable intake & staging",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "node_id": "oc.division.experience",
+        "kind": "division",
+        "title": "Member & Operator Experience",
+        "status": {
+          "implementation": "unknown",
+          "test": "unknown",
+          "merge": "unknown",
+          "deployment": "unknown",
+          "operational": "unknown"
+        },
+        "blockers": [],
+        "children": [
+          {
+            "node_id": "oc.module.conservatory",
+            "kind": "module",
+            "title": "My Conservatory",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.conservatory.collection-management",
+                "kind": "capability",
+                "title": "Conservatory collections, locations, measurements, readiness",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.field-journal",
+            "kind": "module",
+            "title": "Field Journal",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "open_draft_pr",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.field-journal.offline-mvp",
+                "kind": "capability",
+                "title": "Field Journal offline MVP backend",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "PR #1785 unmerged"
+                ],
+                "children": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "node_id": "oc.division.science",
+        "kind": "division",
+        "title": "Scientific Intelligence",
+        "status": {
+          "implementation": "unknown",
+          "test": "unknown",
+          "merge": "unknown",
+          "deployment": "unknown",
+          "operational": "unknown"
+        },
+        "blockers": [],
+        "children": [
+          {
+            "node_id": "oc.module.atlas",
+            "kind": "module",
+            "title": "Atlas (occurrence mapping)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.atlas.occurrence-persistence",
+                "kind": "capability",
+                "title": "Occurrence persistence & reconciliation",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.atlas.viewport-explorer-api",
+                "kind": "capability",
+                "title": "Atlas viewport occurrence explorer API",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "PR #1802 unmerged"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.knowledge-graph",
+            "kind": "module",
+            "title": "Knowledge Graph (GRAPH-001)",
+            "status": {
+              "implementation": "partial",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.knowledge-graph.graph-schema",
+                "kind": "capability",
+                "title": "OC graph schema & trait/taxonomy edge builders",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.knowledge-graph.oao-lexicon-matrix-kg-bridge",
+                "kind": "capability",
+                "title": "OAO-Lexicon-Matrix-KG integration bridge",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "integration bridge PRs unmerged"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.lexicon",
+            "kind": "module",
+            "title": "Illustrated Lexicon",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "open_draft_pr",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.lexicon.concept-registry",
+                "kind": "capability",
+                "title": "Core concept registry & lexical definitions",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.lexicon.oao-accession-resolution",
+                "kind": "capability",
+                "title": "OAO external accession resolution (PO/PATO/FLOPO)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.literature",
+            "kind": "module",
+            "title": "Literature Intelligence",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.literature.evidence-slice",
+                "kind": "capability",
+                "title": "Literature-to-Evidence slice (canonical spine)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "depends on unmerged TraitBank + Lexicon slices"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.literature.harvest-acquisition",
+                "kind": "capability",
+                "title": "Literature harvesting & staging",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.matrix",
+            "kind": "module",
+            "title": "Matrix (identification)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "merged",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.matrix.contributor-intake",
+                "kind": "capability",
+                "title": "Matrix contributor image intake (review-gated)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "stacked PR chain unmerged"
+                ],
+                "children": []
+              },
+              {
+                "node_id": "oc.capability.matrix.identification-sessions",
+                "kind": "capability",
+                "title": "Matrix identification sessions & registry versions",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "merged",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.traitbank",
+            "kind": "module",
+            "title": "TraitBank (oc-traitbank-v1)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "open_draft_pr",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.traitbank.v1-vertical-slice",
+                "kind": "capability",
+                "title": "TraitBank oc-traitbank-v1 contract + vertical slice",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "contract slice unmerged in both repos"
+                ],
+                "children": []
+              }
+            ]
+          },
+          {
+            "node_id": "oc.module.vision-ai",
+            "kind": "module",
+            "title": "Vision AI (image intelligence)",
+            "status": {
+              "implementation": "implemented",
+              "test": "tests_present_unverified",
+              "merge": "open_draft_pr",
+              "deployment": "unverified",
+              "operational": "unverified"
+            },
+            "blockers": [],
+            "children": [
+              {
+                "node_id": "oc.capability.vision-ai.vertical-slice",
+                "kind": "capability",
+                "title": "Vision AI first vertical slice (local CPU engine)",
+                "status": {
+                  "implementation": "implemented",
+                  "test": "tests_present_unverified",
+                  "merge": "open_draft_pr",
+                  "deployment": "unverified",
+                  "operational": "unverified"
+                },
+                "blockers": [
+                  "VISION-AI-001 and IMAGE-INTEL-001 unmerged"
+                ],
+                "children": []
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
