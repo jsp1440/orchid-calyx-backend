@@ -23,8 +23,6 @@ from dataclasses import dataclass
 
 from .contract import oao_terms
 from .models import (
-    AssertionIn,
-    EnvironmentRelationIn,
     ProvenanceIn,
     TraitBankBatch,
     TraitDefinitionIn,
@@ -60,19 +58,50 @@ class Violation:
         return {"code": self.code, "where": self.where}
 
 
-def _texts_of_provenance(p: ProvenanceIn) -> Iterable[tuple[str, str]]:
-    for name in (
+#: Fields excluded from the phone-number screen only (never from the
+#: coordinate or e-mail screens): citations and URLs carry page ranges,
+#: volumes and DOIs, and identifiers are opaque digit runs by design.
+PHONE_EXEMPT_FIELDS = frozenset(
+    {
         "citation",
-        "contributor",
-        "locator",
-        "original_text",
         "source_url",
+        "assertion_id",
+        "relation_id",
         "source_id",
         "original_record_id",
-    ):
-        value = getattr(p, name)
+        "specimen_id",
+        "population_id",
+        "observation_id",
+        "taxon_id",
+        "target_id",
+        "derived_from",
+        "taxon_scope",
+        "retrieved_at",
+        "contract_version",
+    }
+)
+
+
+def _all_texts(value: object, path: str = "") -> Iterable[tuple[str, str]]:
+    """Every string in a record, with its dotted path.
+
+    Walking the dumped model rather than listing fields means a text field
+    added to the contract later is screened by default instead of silently
+    skipped.
+    """
+    if isinstance(value, str):
         if value:
-            yield name, value
+            yield path, value
+    elif isinstance(value, dict):
+        for key, item in value.items():
+            yield from _all_texts(item, f"{path}.{key}" if path else str(key))
+    elif isinstance(value, (list, tuple)):
+        for index, item in enumerate(value):
+            yield from _all_texts(item, f"{path}[{index}]")
+
+
+def _leaf(field: str) -> str:
+    return field.rsplit(".", 1)[-1].split("[", 1)[0]
 
 
 def _privacy(where: str, field: str, text: str) -> list[Violation]:
@@ -81,11 +110,7 @@ def _privacy(where: str, field: str, text: str) -> list[Violation]:
         out.append(Violation("COORDINATES_REFUSED", f"{where}.{field}"))
     if EMAIL_RE.search(text):
         out.append(Violation("PRIVATE_CONTACT_REFUSED", f"{where}.{field}"))
-    # Citations legitimately carry page ranges and volume numbers; phone-like
-    # digit runs are only checked in fields where a citation cannot appear.
-    if field not in ("citation", "original_text", "source_url") and PHONE_RE.search(
-        text
-    ):
+    if _leaf(field) not in PHONE_EXEMPT_FIELDS and PHONE_RE.search(text):
         out.append(Violation("PRIVATE_CONTACT_REFUSED", f"{where}.{field}"))
     return out
 
@@ -97,33 +122,6 @@ def _placeholder(where: str, field: str, text: str) -> list[Violation]:
     if TEST_DOI_RE.search(text):
         out.append(Violation("TEST_DOI_REFUSED_IN_LIVE", f"{where}.{field}"))
     return out
-
-
-def _assertion_texts(a: AssertionIn) -> Iterable[tuple[str, str]]:
-    yield from _texts_of_provenance(a.provenance)
-    for name in ("notes", "scope_justification", "life_stage"):
-        value = getattr(a, name)
-        if value:
-            yield name, value
-    if a.value.verbatim:
-        yield "value.verbatim", a.value.verbatim
-    yield "subject.verbatim_taxon_name", a.subject.verbatim_taxon_name
-    for i, habitat in enumerate(a.habitats):
-        yield f"habitats[{i}]", habitat
-    for i, link in enumerate(a.links):
-        yield f"links[{i}].target_label", link.target_label
-        yield f"links[{i}].target_id", link.target_id
-        yield f"links[{i}].source_id", link.source_id
-        if link.note:
-            yield f"links[{i}].note", link.note
-
-
-def _relation_texts(r: EnvironmentRelationIn) -> Iterable[tuple[str, str]]:
-    yield from _texts_of_provenance(r.provenance)
-    yield "statement", r.statement
-    yield "environment_variable", r.environment_variable
-    if r.test_design:
-        yield "test_design", r.test_design
 
 
 def _verified_requires_review(
@@ -145,7 +143,7 @@ def check_batch(batch: TraitBankBatch, *, live: bool) -> list[Violation]:
     for a in batch.assertions:
         where = f"assertion:{a.assertion_id}"
         violations += _verified_requires_review(where, a.evidence_state, a.provenance)
-        for field, text in _assertion_texts(a):
+        for field, text in _all_texts(a.model_dump(mode="json")):
             violations += _privacy(where, field, text)
             if live:
                 violations += _placeholder(where, field, text)
@@ -172,12 +170,22 @@ def check_batch(batch: TraitBankBatch, *, live: bool) -> list[Violation]:
                     )
     for r in batch.environment_relations:
         where = f"relation:{r.relation_id}"
-        for field, text in _relation_texts(r):
+        for field, text in _all_texts(r.model_dump(mode="json")):
             violations += _privacy(where, field, text)
             if live:
                 violations += _placeholder(where, field, text)
         if live and r.provenance.fixture_status:
             violations.append(Violation("FIXTURE_RECORD_REFUSED_IN_LIVE", where))
+        if live:
+            for field, value in (
+                ("relation_id", r.relation_id),
+                ("provenance.source_id", r.provenance.source_id),
+                ("provenance.original_record_id", r.provenance.original_record_id),
+            ):
+                if FIXTURE_ID_RE.match(value):
+                    violations.append(
+                        Violation("FIXTURE_ID_REFUSED_IN_LIVE", f"{where}.{field}")
+                    )
     if live and FIXTURE_ID_RE.match(batch.batch_key):
         violations.append(Violation("FIXTURE_ID_REFUSED_IN_LIVE", "batch_key"))
     return violations
