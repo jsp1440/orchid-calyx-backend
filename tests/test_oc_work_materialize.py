@@ -462,7 +462,8 @@ class TestRecurrence:
         assert "oc-queued" in issue["labels"]
         assert not issue["labels"] & {"oc-done", "oc-condition-cleared"}
         assert len(transport.of(FP)) == 1
-        receipt = transport.writes("comment")[0]
+        clearance, receipt = transport.writes("comment")
+        assert f"{materialize.CLEARANCE_MARKER}: {FP}" in clearance[clearance.index("--body") + 1]
         assert f"{materialize.RECURRENCE_MARKER}: {FP}" in receipt[receipt.index("--body") + 1]
 
     def test_a_requeued_lineage_is_in_flight_on_the_next_pass(self) -> None:

@@ -32,6 +32,7 @@ import ast
 import hashlib
 import json
 import re
+import subprocess
 import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -49,6 +50,14 @@ from scripts.oc_product_lanes import (
 from scripts.oc_validation_commands import PARAMETER_VALUE, VALIDATION_COMMANDS
 
 REPORT_SCHEMA = "oc.work-discovery.v1"
+
+#: A full commit id. Abbreviations are refused: two commits can share a prefix,
+#: and "the revision discovery read" must not be a string that could later name
+#: something else.
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
+
+#: Bound on the changed paths a dirty revision record lists.
+CHANGED_PATH_LIMIT = 50
 
 #: Sources whose remedy is a single line the evidence fully determines: the
 #: distribution is named by the evidence, the file is fixed by the source, and
@@ -757,6 +766,73 @@ def discover_matrix_coverage(coverage: dict[str, Any]) -> list[Candidate]:
     return result
 
 
+def read_revision(root: Path, *, run: Any = subprocess.run) -> dict[str, Any]:
+    """The commit this pass read, observed from the tree itself.
+
+    Discovery and settlement must judge one revision. #1977 flapped between
+    done and requeued because discovery read ``main`` on ``issues`` runs while
+    the edit lane settled against integration heads that lacked the file. A
+    report that names the commit it read makes that visible, so the revision
+    is recorded on every report.
+
+    It is read, never supplied by the caller: a revision passed in is a claim,
+    and the point is to record what was actually on disk. ``state`` is
+
+    * ``clean`` -- ``root`` is the top of a work tree whose HEAD is ``sha`` and
+      which has no tracked or untracked changes, so the files read are exactly
+      that commit's;
+    * ``dirty`` -- HEAD is ``sha`` but the work tree differs from it. The
+      differing paths are listed (``changed_paths``, at most
+      ``CHANGED_PATH_LIMIT`` of ``changed_path_count``) so a reader can tell a
+      runtime journal some earlier step rewrote from a source file that
+      changes what discovery saw;
+    * ``unavailable`` -- not a git work tree rooted here, or git did not answer.
+    """
+    resolved = root.resolve()
+
+    def git(*args: str) -> bytes | None:
+        # Bytes, not text: a non-UTF-8 path in the status listing must not
+        # raise out of here and be read as a discovery failure.
+        try:
+            completed = run(
+                ["git", "--no-optional-locks", "-C", str(resolved), *args],
+                capture_output=True,
+                check=False,
+                timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        return completed.stdout if completed.returncode == 0 else None
+
+    unavailable: dict[str, Any] = {"sha": None, "state": "unavailable"}
+    top = git("rev-parse", "--show-toplevel")
+    if top is None or Path(top.decode("utf-8", "surrogateescape").strip()).resolve() != resolved:
+        return unavailable
+    head = git("rev-parse", "--verify", "HEAD^{commit}")
+    sha = head.decode("ascii", "replace").strip() if head is not None else ""
+    if not FULL_SHA.fullmatch(sha):
+        return unavailable
+    # Every option that decides which paths are listed is on the command
+    # line, so a reader's git config cannot hide a change.
+    status = git(
+        "status", "--porcelain=v1", "-z", "--no-renames",
+        "--ignore-submodules=none", "--untracked-files=all",
+    )
+    if status is None:
+        return {"sha": sha, "state": "unavailable"}
+    changed = sorted(
+        entry[3:].decode("utf-8", "replace") for entry in status.split(b"\0") if len(entry) > 3
+    )
+    if not changed:
+        return {"sha": sha, "state": "clean"}
+    return {
+        "sha": sha,
+        "state": "dirty",
+        "changed_path_count": len(changed),
+        "changed_paths": changed[:CHANGED_PATH_LIMIT],
+    }
+
+
 def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
     """Run every source and return a ranked, deduplicated report."""
     candidates = discover_dependency_gaps(root)
@@ -792,6 +868,10 @@ def discover(root: Path, *, pytest_report: str = "") -> dict[str, Any]:
 
     return {
         "schema": REPORT_SCHEMA,
+        # The commit every finding below was read from. The materializer
+        # carries it into the issue, the clearance and the recurrence receipt,
+        # and refuses a report whose revision is not the one settlement uses.
+        "revision": read_revision(root),
         "brain": brain_observations(root),
         # Which sources this pass actually evaluated. The materializer treats a
         # condition's absence as evidence only when its source ran: without a
@@ -907,11 +987,23 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="with --check undeclared-import: decide only this distribution's finding",
     )
+    parser.add_argument(
+        "--expect-revision",
+        default="",
+        help=(
+            "full commit id the tree's HEAD must be; exit 2 otherwise. The "
+            "controller passes the integration head its workers settle against."
+        ),
+    )
     args = parser.parse_args(argv)
+    if args.expect_revision and not FULL_SHA.fullmatch(args.expect_revision):
+        parser.error("--expect-revision must be a full 40-hex commit id")
 
     root = Path(args.root).resolve()
     if args.distribution is not None and not args.check:
         parser.error("--distribution requires --check")
+    if args.check and args.expect_revision:
+        parser.error("--check does not take --expect-revision")
     if args.check:
         status, record = check_condition(
             args.check, root, distribution=args.distribution
@@ -922,8 +1014,15 @@ def main(argv: list[str] | None = None) -> int:
     report_text = ""
     if args.pytest_report:
         report_text = _read(Path(args.pytest_report))
-    json.dump(discover(root, pytest_report=report_text), sys.stdout, indent=2, sort_keys=True)
+    report = discover(root, pytest_report=report_text)
+    json.dump(report, sys.stdout, indent=2, sort_keys=True)
     sys.stdout.write("\n")
+    if args.expect_revision and report["revision"]["sha"] != args.expect_revision:
+        sys.stderr.write(
+            f"discovery read revision {report['revision']}, not {args.expect_revision}; "
+            "a report about another revision must not be materialized\n"
+        )
+        return 2
     return 0
 
 

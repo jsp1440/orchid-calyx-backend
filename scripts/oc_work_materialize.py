@@ -66,6 +66,8 @@ NO_REQUEUE = re.compile(r"^OC-AUTO-REQUEUE:\s*false\s*$", re.IGNORECASE | re.MUL
 #: -> present, and this label is the durable proof of the "absent" step.
 CLEARED_LABEL = "oc-condition-cleared"
 RECURRENCE_MARKER = "OC-DISCOVERY-RECURRENCE"
+CLEARANCE_MARKER = "OC-DISCOVERY-CLEARED"
+FULL_SHA = re.compile(r"[0-9a-f]{40}")
 DISCOVERY_SOURCE = re.compile(r"^- Discovery source: `(?P<source>[a-z0-9-]+)`\s*$", re.MULTILINE)
 
 #: Every label on a node is read; `labels.totalCount` is checked against it.
@@ -504,7 +506,22 @@ def is_mechanically_remediable(candidate: Mapping[str, Any]) -> bool:
     )
 
 
-def issue_body(candidate: dict[str, Any]) -> str:
+def report_revision(report: Mapping[str, Any]) -> str | None:
+    """The full commit a discovery report says it read, or None.
+
+    ``oc_work_discovery`` observes it from the tree; a report without one (a
+    Brain pulse, or an older discoverer) records nothing rather than a guess.
+    """
+    revision = report.get("revision")
+    sha = revision.get("sha") if isinstance(revision, Mapping) else None
+    return sha if isinstance(sha, str) and FULL_SHA.fullmatch(sha) else None
+
+
+def _revision_phrase(revision: str | None) -> str:
+    return f"`{revision}`" if revision else "unrecorded (the report named no revision)"
+
+
+def issue_body(candidate: dict[str, Any], *, revision: str | None = None) -> str:
     """The issue text, including the machine-readable markers the lanes read."""
     lines = [
         candidate["summary"],
@@ -538,6 +555,7 @@ def issue_body(candidate: dict[str, Any]) -> str:
         "",
         f"- Product lane: {lane or 'UNBOUND — no path prefix matched, so none was assigned'}",
         f"- Discovery source: `{candidate['source']}`",
+        *([f"- Discovery revision: `{revision}`"] if revision else []),
         "",
         (
             "This task was filed by `scripts/oc_work_materialize.py` from a "
@@ -617,8 +635,16 @@ def plan(
     max_new: int = DEFAULT_MAX_NEW,
     search: Search | None = None,
     max_cleared: int = DEFAULT_MAX_NEW,
+    expected_revision: str | None = None,
 ) -> dict[str, Any]:
     """Decide what to file, requeue, and mark cleared, without doing any of it.
+
+    ``expected_revision`` is the commit the deterministic lane settles against.
+    When it is given, a report that read any other revision -- or names none --
+    plans nothing: presence on one revision and absence on another is how #1977
+    flapped between done and requeued. Every action carries the revision the
+    report read, so the issue, the clearance and the recurrence say which commit
+    each observation was about.
 
     ``index`` is :func:`scan_discovered_issues` output. ``search`` is consulted
     only for a candidate the index does not know, and only while the pass
@@ -633,6 +659,26 @@ def plan(
         raise ValueError("unrecognised discovery report")
     if max_new < 0 or max_cleared < 0:
         raise ValueError("bounds must not be negative")
+    revision = report_revision(report)
+    if expected_revision is not None:
+        if not FULL_SHA.fullmatch(expected_revision):
+            raise ValueError("expected revision must be a full 40-hex commit id")
+        if revision != expected_revision:
+            return {
+                "schema": "oc.work-materialization-plan.v1",
+                "mutates": False,
+                "discovery_revision": revision,
+                "action_count": 0,
+                "actions": [],
+                "skipped": [],
+                "errors": [
+                    {
+                        "reason": "discovery_revision_mismatch",
+                        "expected_revision": expected_revision,
+                        "report_revision": revision,
+                    }
+                ],
+            }
 
     if report.get("source") == "brain-reasoning-gap" and "calyx_product" in report:
         from scripts.oc_brain_pulse import calyx_product_materialization_report
@@ -728,6 +774,7 @@ def plan(
                     "issue_number": number,
                     "lane": candidate.get("lane"),
                     "rank": candidate.get("rank"),
+                    "revision": revision,
                 }
             )
             continue
@@ -737,9 +784,10 @@ def plan(
                 "fingerprint": fingerprint,
                 "title": candidate["title"],
                 "labels": list(candidate["labels"]),
-                "body": issue_body(candidate),
+                "body": issue_body(candidate, revision=revision),
                 "lane": candidate.get("lane"),
                 "rank": candidate.get("rank"),
+                "revision": revision,
             }
         )
 
@@ -763,11 +811,13 @@ def plan(
                 "action": "mark_condition_cleared",
                 "fingerprint": fingerprint,
                 "issue_number": disposition.issue.number,
+                "revision": revision,
             }
         )
     return {
         "schema": "oc.work-materialization-plan.v1",
         "mutates": False,
+        "discovery_revision": revision,
         "action_count": len(actions),
         "actions": actions,
         "skipped": skipped,
@@ -796,7 +846,10 @@ def _requeue(repository: str, action: dict[str, Any], issue: FiledIssue, *, call
         "Work discovery saw this condition absent after the issue was resolved, "
         "and has now seen it present again. The lineage is requeued rather than "
         "re-filed so the condition keeps one authoritative issue. No person "
-        "selected it."
+        "selected it.\n\n"
+        f"- Present at discovery revision: {_revision_phrase(action.get('revision'))}\n"
+        f"- Absent at: the revision on this issue's latest `{CLEARANCE_MARKER}` comment, "
+        "where one was recorded."
     )
     call(["issue", "comment", number, "--repo", repository, "--body", receipt], None)
 
@@ -845,7 +898,8 @@ def apply_plan(
                 if not match:
                     raise ValueError("issue creation returned no issue URL")
                 results.append({"fingerprint": fingerprint, "outcome": "created",
-                                "issue_number": int(match.group(1)), "url": url})
+                                "issue_number": int(match.group(1)), "url": url,
+                                "revision": action.get("revision")})
             elif kind == "requeue_issue":
                 issue = disposition.issue
                 if not (disposition.kind == "resolved" and disposition.cleared and issue is not None
@@ -855,7 +909,8 @@ def apply_plan(
                     continue
                 _requeue(repository, action, issue, call=call)
                 results.append({"fingerprint": fingerprint, "outcome": "requeued",
-                                "issue_number": issue.number})
+                                "issue_number": issue.number,
+                                "revision": action.get("revision")})
             elif kind == "mark_condition_cleared":
                 issue = disposition.issue
                 if not (disposition.kind == "resolved" and not disposition.cleared and issue is not None
@@ -866,8 +921,19 @@ def apply_plan(
                 ensure_labels(repository, [CLEARED_LABEL], call=call)
                 call(["issue", "edit", str(issue.number), "--repo", repository,
                       "--add-label", CLEARED_LABEL], None)
+                # The label is the durable state; this receipt says which
+                # revision the absence was observed on, so a recurrence seen on
+                # a different revision is visible as such.
+                clearance = (
+                    f"{CLEARANCE_MARKER}: {fingerprint}\n\n"
+                    "Work discovery evaluated this condition's source and did not find it.\n\n"
+                    f"- Absent at discovery revision: {_revision_phrase(action.get('revision'))}"
+                )
+                call(["issue", "comment", str(issue.number), "--repo", repository,
+                      "--body", clearance], None)
                 results.append({"fingerprint": fingerprint, "outcome": "marked_cleared",
-                                "issue_number": issue.number})
+                                "issue_number": issue.number,
+                                "revision": action.get("revision")})
             else:
                 raise ValueError("unknown action")
         except (OSError, subprocess.SubprocessError, TypeError, ValueError, KeyError,
@@ -889,6 +955,7 @@ def apply_plan(
         "cleared_count": sum(row["outcome"] == "marked_cleared" for row in results),
         "results": results,
         "errors": errors,
+        "discovery_revision": materialization.get("discovery_revision"),
         "calyx_product": materialization.get("calyx_product"),
         "safety": {"provider_calls": False, "merge": False, "deploy": False},
     }
@@ -901,7 +968,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--max-new", type=int, default=DEFAULT_MAX_NEW)
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--github-output")
+    parser.add_argument(
+        "--expected-revision",
+        default=None,
+        help="full commit id settlement uses; a report about any other revision plans nothing",
+    )
     args = parser.parse_args(argv)
+    if args.expected_revision is not None and not FULL_SHA.fullmatch(args.expected_revision):
+        parser.error("--expected-revision must be a full 40-hex commit id")
 
     with open(args.report, encoding="utf-8") as handle:
         report = json.load(handle)
@@ -931,10 +1005,12 @@ def main(argv: list[str] | None = None) -> int:
             return search_fingerprint(repository, fingerprint, call=github)
 
         materialization = plan(report, index, max_new=args.max_new, search=search,
-                               max_cleared=args.max_new)
+                               max_cleared=args.max_new,
+                               expected_revision=args.expected_revision)
     else:
         # Dry run reads nothing, so it can only describe first filings.
-        materialization = plan(report, {}, max_new=args.max_new, max_cleared=args.max_new)
+        materialization = plan(report, {}, max_new=args.max_new, max_cleared=args.max_new,
+                               expected_revision=args.expected_revision)
     outcome = apply_plan(materialization, args.repository, dry_run=not args.apply, call=github)
     if args.github_output:
         created = [row["issue_number"] for row in outcome["results"] if row["outcome"] == "created"]
