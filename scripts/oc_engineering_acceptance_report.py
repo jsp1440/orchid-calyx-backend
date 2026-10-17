@@ -84,6 +84,8 @@ RECOVER_REASONS = frozenset(
         "settled_without_label_release",
         "worker_run_terminated_without_settlement",
         "manual_lease_expired",
+        # #1938: a worker run that opened its PR but did not succeed.
+        "validating_worker_run_unsuccessful",
     }
 )
 
