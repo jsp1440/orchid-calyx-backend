@@ -38,10 +38,15 @@ def test_provider_lane_is_gated_before_job_initialization(lane_text):
     document = yaml.safe_load(lane_text)
     execute = document["jobs"]["execute"]
     assert execute["if"] == "vars.NO_API_MODE == 'false'"
+    # Every job of the lane is gated before initialization, not only the first.
+    for name, job in document["jobs"].items():
+        assert "vars.NO_API_MODE == 'false'" in job["if"], name
     assert "scripts/swarm_anthropic_direct.py" in lane_text
     assert "anthropics/claude-code-action@v1" not in lane_text
-    assert "@google/gemini-cli" in lane_text
-    assert "@openai/codex" in lane_text
+    # The disabled fallbacks pushed from the job that ran the model; the job
+    # split removed them rather than leave a credentialed model path dormant.
+    assert "@google/gemini-cli" not in lane_text
+    assert "@openai/codex" not in lane_text
 
 
 def test_lane_requires_a_bound_live_claim_before_provider(lane_text):
