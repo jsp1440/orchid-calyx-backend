@@ -646,8 +646,18 @@ def run_regressions() -> dict[str, str]:
         # is present in CI checkout but not in the test's expected set — pre-existing on this branch.
         # test_durable_e2e_conductor_proof, test_durable_e2e_restart_proof: use schema-qualified SQLite tables
         # (research_station.*); SQLite doesn't support schema-qualified DDL — same root cause as test_durable_reservoir.
+        # complete_backend receives no database credentials (run_command
+        # strips DATABASE_URL/TEST_DATABASE_URL) and this job keeps
+        # localhost:5432 unreachable by design. Under CI=true tests/conftest.py
+        # fails, rather than skips, every requires_postgres test with no usable
+        # database, so they are deselected here exactly as oc-critical-suites'
+        # critical-suites job does. They run against real disposable PostgreSQL
+        # in oc-critical-suites' postgres-ledger job (-m requires_postgres),
+        # orchid-autonomous-validation (changed tests), and the postgres_backed
+        # step above (tests/test_build_067_pg_writer.py).
         "complete_backend": run_command([
             sys.executable, "-m", "pytest", "-q",
+            "-m", "not requires_postgres",
             "--ignore=tests/calyx_certification",
             "--ignore=tests/test_run_live_dispatch_canary.py",
             "--ignore=tests/test_durable_reservoir.py",
