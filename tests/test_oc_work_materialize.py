@@ -8,6 +8,7 @@ or the thousand-and-first.
 from __future__ import annotations
 
 import copy
+import dataclasses
 import json
 import subprocess
 from pathlib import Path
@@ -734,7 +735,26 @@ def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
     tmp_path, monkeypatch, capsys, calyx_state
 ):
     product = brain_pulse.calyx_product_operation()
-    brain_candidates = brain_pulse.mission_gap_candidates()[:3]
+    # This test needs more Brain candidates than --max-new admits. Real gaps
+    # shrink as mission handlers land (#1731, #1732), so give the pulse a
+    # registry view in which every mapped mission type is still safe-blocked;
+    # the candidates are still built by the real mission_gap_candidates().
+    with monkeypatch.context() as registry_patch:
+        registry_patch.setattr(
+            brain_pulse,
+            "MISSION_TYPES",
+            {
+                **brain_pulse.MISSION_TYPES,
+                **{
+                    key: dataclasses.replace(
+                        brain_pulse.MISSION_TYPES[key],
+                        handler="not_implemented_safe_block",
+                    )
+                    for key in brain_pulse.MISSION_GAP_LANES
+                },
+            },
+        )
+        brain_candidates = brain_pulse.mission_gap_candidates()[:3]
     assert len(brain_candidates) == 3
     for item in brain_candidates:
         item["rank"] = 1
