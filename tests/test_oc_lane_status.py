@@ -7,6 +7,8 @@ summary, and 32 consecutive zero-launch waves left no durable reason.
 from __future__ import annotations
 
 import json
+import subprocess
+from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -14,6 +16,9 @@ import pytest
 import yaml
 
 from scripts import oc_lane_status as lanes
+from scripts.oc_swarm_claim import claim_workers
+from tests.test_oc_swarm_claim import GitHub as ClaimGitHub
+from tests.test_oc_swarm_claim import issue as claim_issue
 
 NOW = datetime(2026, 10, 16, 18, 0, tzinfo=timezone.utc)
 CONTROLLER = Path(".github/workflows/orchid-swarm-controller.yml")
@@ -576,10 +581,12 @@ def claims_doc(confirmed=(), errors=(), skipped=()):
         "schema": "oc.swarm-claim-handoff.v1",
         "run_id": 1,
         "launch_count": len(confirmed),
+        "planned_count": len(confirmed) + len(skipped) + len(errors),
         "skipped": [{"issue": n, "reason": reason} for n, reason in skipped],
         "confirmed": [
-            {"issue_number": n, "lane_executable": free, "acquisition": False,
-             "lease_comment_id": 900 + n}
+            {"issue_number": n, "reads": [], "writes": ["control-plane"], "dependencies": [],
+             "provider_free": free, "lane_executable": free, "acquisition": False,
+             "lease_comment_id": 900 + n, "material_fingerprint": f"fp{n}"}
             for n, free in confirmed
         ],
         "errors": [
@@ -657,12 +664,26 @@ def test_claim_evidence_still_yields_to_lease_evidence_on_the_same_lane():
         "recovering", "lease_recovered:claim_confirmed:provider")
 
 
-def test_missing_claims_are_explicitly_unavailable_and_keep_the_old_mapping():
-    doc = with_lanes({"taxonomy": planned_lane(7)})
+def test_missing_claims_make_planned_lanes_unknown_and_leave_unplanned_lanes_alone():
+    # Reverses the earlier "missing file keeps the old mapping": a step that fails
+    # before the claim step leaves no handoff, and the pre-claim plan is then stale.
+    doc = with_lanes({"taxonomy": planned_lane(7), "literature": lane("empty")})
     rec = record(doc)
     assert rec["module_lanes"]["claims"] == {"status": "unavailable", "reason": "claims_missing"}
-    assert rec["module_lanes"]["lanes"]["taxonomy"]["reason"] == "module_state:replenishable"
-    assert rec["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "idle"
+    planned = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert (planned["lane_state"], planned["reason"]) == ("unknown", "claims_unavailable")
+    unplanned = rec["module_lanes"]["lanes"]["literature"]
+    assert (unplanned["lane_state"], unplanned["reason"]) == ("idle", "module_state:empty")
+
+
+def test_default_claims_input_absent_planned_lane_is_unknown_through_main(tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("RUNNER_TEMP", raising=False)
+    (tmp_path / "plan.json").write_text(json.dumps(with_lanes({"taxonomy": planned_lane(7)})))
+    monkeypatch.setattr(lanes.subprocess, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("x")))
+    lanes.main(["--repository", "o/r", "--plan", str(tmp_path / "plan.json"),
+                "--run-id", "1", "--run-url", "u"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["record"]["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "unknown"
 
 
 @pytest.mark.parametrize(
@@ -946,11 +967,14 @@ def test_a_missing_or_non_list_skipped_field_is_malformed(skipped):
 
 
 @pytest.mark.parametrize("row", [{"issue": 7}, {"issue": 7, "reason": ""}, {"issue": 7, "reason": 5}])
-def test_a_skipped_row_without_a_usable_reason_is_still_unknown_with_an_explicit_reason(row):
+def test_a_skipped_row_without_a_usable_reason_is_malformed_the_producer_always_writes_one(row):
     doc = claims_doc()
     doc["skipped"] = [row]
-    entry = claimed_record({"taxonomy": planned_lane(7)}, doc)["module_lanes"]["lanes"]["taxonomy"]
-    assert (entry["lane_state"], entry["reason"]) == ("unknown", "claim_skipped:no_reason_recorded")
+    doc["planned_count"] = 1
+    rec = claimed_record({"taxonomy": planned_lane(7)}, doc)
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert rec["module_lanes"]["claims"] == {"status": "malformed", "reason": "claims_skipped_invalid"}
+    assert (entry["lane_state"], entry["reason"]) == ("unknown", "claims_malformed")
 
 
 def test_a_skipped_issue_planned_in_no_lane_leaves_lanes_alone_but_is_recorded():
@@ -1105,3 +1129,207 @@ def test_duplicate_confirmed_rows_are_malformed():
 
 def test_a_string_run_id_that_matches_is_accepted():
     assert lanes.claim_evidence(_with(run_id="1"))["status"] == "ok"
+
+
+# --- one strict validator per producer row type + an exhaustive mutation fuzz ---
+
+class _SelectiveGitHub(ClaimGitHub):
+    """The claim fixtures' fake, failing the lease receipt of one issue only."""
+
+    def __init__(self, rows, fail_issue):
+        super().__init__(rows)
+        self.fail_issue = fail_issue
+
+    def __call__(self, args, payload=None):
+        if args[:3] == ["api", "--method", "POST"] and f"/issues/{self.fail_issue}/" in args[3]:
+            raise subprocess.TimeoutExpired("redacted", 30)
+        return super().__call__(args, payload)
+
+
+def _worker(number, *, free=False, writes="control-plane"):
+    return {"issue_number": number, "reads": [], "writes": [writes], "dependencies": [],
+            "provider_free": free, "lane_executable": free, "acquisition": False}
+
+
+def producer_handoff():
+    """Built by the real claim_workers() on the claim tests' own fixtures:
+    1 confirmed (provider), 2 skipped, 3 error, 4 confirmed (provider-free)."""
+    rows = [
+        claim_issue(1),
+        claim_issue(2, labels=["oc-blocked"]),
+        claim_issue(3),
+        claim_issue(4, body="OC-SWARM-PROVIDER-FREE: reconcile\nOC-SWARM-DISPOSITION: done"),
+    ]
+    plan = {"workers": [_worker(1), _worker(2), _worker(3), _worker(4, free=True, writes="literature")]}
+    api = _SelectiveGitHub(rows, fail_issue=3)
+    # Only issue 2's labels are changed in the snapshot the claim step re-reads.
+    api.rows[2]["labels"] = ["oc-blocked"]
+    return claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=1,
+                         run_attempt=2, call=api)
+
+
+def producer_abort_handoff():
+    """Plan-validation failure: the claim step processes nobody."""
+    rows = [claim_issue(1), claim_issue(2)]
+    plan = {"workers": [_worker(1), {**_worker(2), "lane_executable": True}]}
+    return claim_workers(plan, {"issues": rows}, repository="owner/repo", run_id=1,
+                         call=ClaimGitHub(rows))
+
+
+FUZZ_LANES = {
+    "taxonomy": planned_lane(1),
+    "literature": planned_lane(2),
+    "matrix-id": planned_lane(3),
+    "pollinator": planned_lane(4),
+    "conservation": lane("empty"),
+}
+
+
+def _lane_view(handoff):
+    rec = claimed_record(FUZZ_LANES, handoff)
+    return rec["module_lanes"]["claims"], rec["module_lanes"]["lanes"]
+
+
+def test_the_fixture_is_a_real_producer_handoff_and_is_accepted_ok():
+    handoff = producer_handoff()
+    assert [r["issue_number"] for r in handoff["confirmed"]] == [1, 4]
+    assert handoff["skipped"] == [{"issue": 2, "reason": "not_exclusively_queued"}]
+    assert [e["issue"] for e in handoff["errors"]] == [3]
+    claims, out = _lane_view(handoff)
+    assert claims["status"] == "ok"
+    assert out["taxonomy"]["reason"] == "claim_confirmed:provider"
+    assert out["pollinator"]["reason"] == "claim_confirmed:provider_free"
+    assert out["literature"]["reason"] == "claim_skipped:not_exclusively_queued"
+    assert out["matrix-id"]["reason"] == "claim_error:planned_unconfirmed"
+    abort = producer_abort_handoff()
+    assert abort["confirmed"] == [] and abort["errors"][0]["phase"] == "plan_validation"
+    assert _lane_view(abort)[0]["status"] == "ok"
+
+
+_MISSING = object()
+_VALUES = [
+    _MISSING, None, True, False, 0, -1, 2**63, 10**9, 1.5, 1.0, "", " ", "x", "1",
+    [], [1], {}, {"a": 1},
+]
+#: Top-level keys the parser never reads for a lane's state. Mutating them cannot
+#: change a lane, so an ok result with changed lanes would be a bug elsewhere:
+#: run_attempt (retry counter), healthy (== not errors), matrix / provider_matrix /
+#: provider_free_matrix / acquisition_matrix and the three per-kind launch counts
+#: (copies of `confirmed` split by kind; the kind is derived from `confirmed`).
+IRRELEVANT_TOP = {
+    "run_attempt", "healthy", "matrix", "provider_matrix", "provider_free_matrix",
+    "acquisition_matrix", "acquisition_launch_count", "provider_free_launch_count",
+    "provider_launch_count",
+}
+#: Row fields whose *valid* values are the evidence itself, so substituting another
+#: valid value is a different (still well-formed) handoff, not a parser hole:
+#: issue numbers (attribution), skipped reason (text), the two kind booleans.
+def _legit_substitution(section, key, value):
+    if key in {"issue_number", "issue"}:
+        return lanes._issue_no(value) is not None
+    if (section, key) == ("skipped", "reason"):
+        return isinstance(value, str) and bool(value.strip())
+    return key in {"lane_executable", "acquisition"} and isinstance(value, bool)
+
+
+def _mutations(handoff):
+    for key in handoff:
+        for value in _VALUES:
+            mutated = deepcopy(handoff)
+            if value is _MISSING:
+                del mutated[key]
+            else:
+                mutated[key] = deepcopy(value)
+            yield ("top", key, value), key in IRRELEVANT_TOP, mutated
+    for section in ("confirmed", "skipped", "errors"):
+        for index, row in enumerate(handoff[section]):
+            for key in row:
+                for value in _VALUES:
+                    mutated = deepcopy(handoff)
+                    if value is _MISSING:
+                        del mutated[section][index][key]
+                    else:
+                        mutated[section][index][key] = deepcopy(value)
+                    legit = value is not _MISSING and _legit_substitution(section, key, value)
+                    yield (section, key, value), legit, mutated
+            mutated = deepcopy(handoff)
+            del mutated[section][index]
+            yield (section, "<row deleted>", _MISSING), False, mutated
+            mutated = deepcopy(handoff)
+            mutated[section][index] = "not-a-row"
+            yield (section, "<row not a dict>", "not-a-row"), False, mutated
+
+
+@pytest.mark.parametrize("make", [producer_handoff, producer_abort_handoff])
+def test_no_mutated_handoff_that_still_parses_ok_can_change_a_lane(make):
+    handoff = make()
+    base_claims, base_lanes = _lane_view(handoff)
+    assert base_claims["status"] == "ok"
+    checked = still_ok = 0
+    for label, allowed, mutated in _mutations(handoff):
+        checked += 1
+        claims, out = _lane_view(mutated)
+        if claims["status"] != "ok":
+            # Fail closed: every lane with a planned issue is unknown, nothing is working.
+            assert claims["status"] == "malformed" and claims["reason"], label
+            for name in ("taxonomy", "literature", "matrix-id", "pollinator"):
+                assert out[name]["lane_state"] == "unknown", label
+            continue
+        still_ok += 1
+        if not allowed:
+            assert out == base_lanes, label
+    assert checked > 300 and still_ok > 0
+
+
+# Producer-exact row contracts, one case per rule.
+ROW_CASES = [
+    ("confirmed", "issue_number", "claims_confirmed_invalid"),
+    ("confirmed", "reads", "claims_confirmed_invalid"),
+    ("confirmed", "writes", "claims_confirmed_invalid"),
+    ("confirmed", "dependencies", "claims_confirmed_invalid"),
+    ("confirmed", "provider_free", "claims_confirmed_invalid"),
+    ("confirmed", "lane_executable", "claims_confirmed_invalid"),
+    ("confirmed", "acquisition", "claims_confirmed_invalid"),
+    ("confirmed", "lease_comment_id", "claims_confirmed_invalid"),
+    ("confirmed", "material_fingerprint", "claims_confirmed_invalid"),
+    ("skipped", "issue", "claims_skipped_invalid"),
+    ("skipped", "reason", "claims_skipped_invalid"),
+    ("errors", "issue", "claims_errors_invalid"),
+    ("errors", "phase", "claims_errors_invalid"),
+    ("errors", "reason", "claims_errors_invalid"),
+]
+
+
+@pytest.mark.parametrize(("section", "key", "reason"), ROW_CASES)
+@pytest.mark.parametrize("how", ["delete", "none", "str-for-bool-or-int", "empty-string"])
+def test_every_producer_row_field_is_required_with_its_exact_type(section, key, reason, how):
+    handoff = producer_handoff()
+    row = handoff[section][0]
+    if how == "delete":
+        del row[key]
+    elif how == "none":
+        row[key] = None
+    elif how == "str-for-bool-or-int":
+        row[key] = "true" if isinstance(row[key], bool | int | list) else 5
+    else:
+        row[key] = ""
+    assert lanes.claim_evidence(handoff) == {"status": "malformed", "reason": reason}
+
+
+def test_planned_count_must_account_for_every_outcome_unless_planning_aborted():
+    handoff = producer_handoff()
+    handoff["planned_count"] = 3
+    assert lanes.claim_evidence(handoff)["reason"] == "claims_planned_count_invalid"
+    del handoff["planned_count"]
+    assert lanes.claim_evidence(handoff)["reason"] == "claims_planned_count_invalid"
+    abort = producer_abort_handoff()
+    abort["confirmed"] = deepcopy(producer_handoff()["confirmed"][:1])
+    abort["launch_count"] = 1
+    assert lanes.claim_evidence(abort)["status"] == "malformed"
+
+
+def test_an_unavailable_claim_file_makes_only_planned_lanes_unknown():
+    rec = record(with_lanes({"taxonomy": planned_lane(7), "literature": lane("executing", running=[2])}))
+    out = rec["module_lanes"]["lanes"]
+    assert out["taxonomy"]["reason"] == "claims_unavailable"
+    assert out["literature"]["lane_state"] == "working"

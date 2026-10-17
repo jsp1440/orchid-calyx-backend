@@ -154,6 +154,41 @@ def _malformed(reason: str) -> dict:
     return {"status": "malformed", "reason": reason}
 
 
+def _is_bool(value: Any) -> bool:
+    return isinstance(value, bool)
+
+
+def _text(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _confirmed_row_ok(row: Any) -> bool:
+    """A confirmed row exactly as ``claim_workers`` writes it: the plan worker's
+    reads/writes/dependencies/provider_free/lane_executable/acquisition plus the
+    lease receipt id and the work-packet fingerprint."""
+    return (
+        isinstance(row, dict)
+        and _issue_no(row.get("issue_number")) is not None
+        and all(isinstance(row.get(k), list) for k in ("reads", "writes", "dependencies"))
+        and all(_is_bool(row.get(k)) for k in ("provider_free", "lane_executable", "acquisition"))
+        and _issue_no(row.get("lease_comment_id")) is not None
+        and _text(row.get("material_fingerprint"))
+    )
+
+
+def _skipped_row_ok(row: Any) -> bool:
+    return isinstance(row, dict) and _issue_no(row.get("issue")) is not None and _text(row.get("reason"))
+
+
+def _error_row_ok(row: Any) -> bool:
+    return (
+        isinstance(row, dict)
+        and _issue_no(row.get("issue")) is not None
+        and _text(row.get("phase"))
+        and _text(row.get("reason"))
+    )
+
+
 def claim_evidence(doc: Any) -> dict:
     """Parse the claim step's handoff (``oc.swarm-claim-handoff.v1``).
 
@@ -162,10 +197,13 @@ def claim_evidence(doc: Any) -> dict:
     ``unavailable`` (no file); anything unparseable is ``malformed``, never "nothing
     launched".
 
-    The producer (``oc_swarm_claim.claim_workers``) always writes ``schema``,
-    ``run_id``, ``launch_count`` (= ``len(confirmed)``) and the lists ``confirmed``,
-    ``skipped`` and ``errors``; each is relied on here, so each is required. Every
-    issue lands in exactly one of confirmed/skipped/errors, once.
+    Validation mirrors the producer (``oc_swarm_claim.claim_workers``) exactly. It
+    always writes ``schema``, ``run_id``, ``planned_count``, ``launch_count`` and the
+    lists ``confirmed``/``skipped``/``errors`` with fixed row shapes (see the
+    ``_*_row_ok`` validators). Every planned worker lands in exactly one of the three
+    lists, once, so ``planned_count`` equals their combined length; the one exception
+    is a plan-validation failure, which aborts before any worker is processed and
+    leaves only ``plan_validation`` error rows.
     """
     if doc is None:
         return {"status": "unavailable", "reason": "claims_missing"}
@@ -174,58 +212,57 @@ def claim_evidence(doc: Any) -> dict:
     if doc.get("schema") != CLAIMS_SCHEMA:
         return _malformed("claims_schema_mismatch")
     run_id = doc.get("run_id")
-    if not (
-        _issue_no(run_id) is not None or (isinstance(run_id, str) and run_id.strip())
-    ):
+    if not (_issue_no(run_id) is not None or _text(run_id)):
         return _malformed("claims_run_id_missing")
     for field in ("confirmed", "skipped", "errors"):
         if not isinstance(doc.get(field), list):
             return _malformed(f"claims_{field}_invalid")
-    launch = doc.get("launch_count")
-    if (
-        not isinstance(launch, int)
-        or isinstance(launch, bool)
-        or launch != len(doc["confirmed"])
-    ):
+    for field in ("launch_count", "planned_count"):
+        count = doc.get(field)
+        if not isinstance(count, int) or isinstance(count, bool) or count < 0:
+            return _malformed(f"claims_{field}_invalid")
+    if doc["launch_count"] != len(doc["confirmed"]):
         return _malformed("claims_launch_count_invalid")
+    for field, valid in (
+        ("confirmed", _confirmed_row_ok),
+        ("skipped", _skipped_row_ok),
+        ("errors", _error_row_ok),
+    ):
+        if not all(valid(row) for row in doc[field]):
+            return _malformed(f"claims_{field}_invalid")
+    confirmed_rows = [r["issue_number"] for r in doc["confirmed"]]
+    skipped_rows = [r["issue"] for r in doc["skipped"]]
+    error_rows = [r["issue"] for r in doc["errors"]]
+    outcomes = confirmed_rows + skipped_rows + error_rows
+    if len(outcomes) != len(set(outcomes)):
+        return _malformed("claims_rows_conflict")
+    aborted = any(r["phase"] == "plan_validation" for r in doc["errors"])
+    if aborted:
+        accounted = (
+            not confirmed_rows
+            and not skipped_rows
+            and all(r["phase"] == "plan_validation" for r in doc["errors"])
+        )
+    else:
+        accounted = len(outcomes) == doc["planned_count"]
+    if not accounted:
+        return _malformed("claims_planned_count_invalid")
     confirmed: dict[int, str] = {}
     for row in doc["confirmed"]:
-        if not isinstance(row, dict) or _issue_no(row.get("issue_number")) is None:
-            return _malformed("claims_confirmed_invalid")
         kind = (
             "provider_free"
-            if row.get("lane_executable") is True
+            if row["lane_executable"]
             else "acquisition"
-            if row.get("acquisition") is True
+            if row["acquisition"]
             else "provider"
         )
-        confirmed.setdefault(row["issue_number"], kind)
-    errors: list[int] = []
-    for row in doc["errors"]:
-        if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
-            return _malformed("claims_errors_invalid")
-        errors.append(row["issue"])
-    # Skipped: selected issues the claim step refused because they no longer match
-    # the plan ({issue, reason}). Their pre-claim lane observation is stale.
-    skipped: dict[int, str] = {}
-    skipped_rows: list[int] = []
-    for row in doc["skipped"]:
-        if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
-            return _malformed("claims_skipped_invalid")
-        reason = row.get("reason")
-        skipped_rows.append(row["issue"])
-        skipped.setdefault(
-            row["issue"], reason.strip() if isinstance(reason, str) and reason.strip() else NO_REASON
-        )
-    outcomes = [*confirmed, *skipped_rows, *errors]
-    if len(outcomes) != len(set(outcomes)) or len(confirmed) != len(doc["confirmed"]):
-        return _malformed("claims_rows_conflict")
+        confirmed[row["issue_number"]] = kind
     return {
         "status": "ok",
         "reason": None,
         "confirmed": confirmed,
-        "errors": set(errors),
-        "skipped": skipped,
+        "errors": set(error_rows),
+        "skipped": {r["issue"]: r["reason"].strip() for r in doc["skipped"]},
         "run_id": run_id,
     }
 
@@ -306,8 +343,11 @@ def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int
     state, reason = MODULE_STATE_MAP[module_state], _module_reason(module_state, entry)
     issues = _lane_issues(entry)
     planned = set(entry.get("planned") or [])
-    if claims.get("status") == "malformed" and planned:
-        return {"lane_state": "unknown", "reason": "claims_malformed", "module_state": module_state}
+    if claims.get("status") in {"malformed", "unavailable"} and planned:
+        # No usable claim evidence: the pre-claim plan is stale for a planned lane
+        # (a step before the claim step may have failed), so never call it idle.
+        why = "claims_malformed" if claims["status"] == "malformed" else "claims_unavailable"
+        return {"lane_state": "unknown", "reason": why, "module_state": module_state}
     skipped_issues: list[int] = []
     if claims.get("status") == "ok":
         kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
