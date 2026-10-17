@@ -203,6 +203,10 @@ def test_a_provider_that_fails_mid_turn_still_yields_a_governed_answer_and_names
 ):
     failing = FailingGenerativeProvider()
     monkeypatch.setattr(speak_routes, "configured_reply_provider", lambda: failing)
+    # Retrieval is stubbed empty only to isolate provider-outage handling; the evidence-free
+    # abstention rule (tests/test_calyx_speak_evidence_free_abstention.py) is
+    # out of scope here, so treat the turn as evidence-bearing.
+    monkeypatch.setattr(speak_routes, "_evidence_free_turn", lambda **_: False)
     conversation_id = start_conversation(privileged)
     turn = privileged.post(
         f"/api/calyx/speak/conversations/{conversation_id}/turns",

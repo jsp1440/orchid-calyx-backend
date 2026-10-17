@@ -199,6 +199,25 @@ def _safe_knowledge_context(message: str) -> dict[str, Any]:
         }
 
 
+def _evidence_free_turn(
+    *, casual: bool, retrieval: dict[str, Any], knowledge: dict[str, Any], mission: dict[str, Any] | None,
+) -> bool:
+    """True when a scientific turn has no evidence of any kind to answer from.
+
+    Such a turn must not be answered by a generative provider: with nothing
+    retrieved, a fluent answer can only come from provider memory, which the
+    epistemic policy says is not evidence. The deterministic governed composer
+    answers instead and states the gap; no paid turn is reserved.
+    """
+    if casual or mission is not None:
+        return False
+    if retrieval.get("results"):
+        return False
+    if (retrieval.get("external_literature") or {}).get("results"):
+        return False
+    return not ((knowledge.get("literature") or {}).get("matched_papers") or 0)
+
+
 def _external_citations(retrieval: dict[str, Any]) -> list[dict[str, Any]]:
     records = (retrieval.get("external_literature") or {}).get("results") or []
     citations: list[dict[str, Any]] = []
@@ -414,13 +433,14 @@ def _run_governed_turn(
     external_only = bool(external_records) and canonical_empty
     if canonical_empty:
         retrieval["conversation_synthesis_mode"] = (
-            "external_review_literature" if external_only else "general_knowledge_with_retrieval_gap"
+            "external_review_literature" if external_only else "insufficient_evidence_retrieval_gap"
         )
         retrieval["canonical_mission_deferred"] = research_mode == "auto"
         retrieval["canonical_mission_deferred_reason"] = (
             "No canonical retrieval evidence was available for this turn. In automatic mode, Calyx must not launch "
             "a canonical Brain mission that can only block with zero sources. The conversational synthesis may use "
-            "review-required external literature when present and otherwise must disclose the retrieval gap."
+            "review-required external literature when present and otherwise must state that the evidence is "
+            "insufficient instead of answering from provider memory."
         )
 
     # A one-word follow-up is not a trivial turn -- it continues a substantive
@@ -631,6 +651,7 @@ def append_turn(
             "climate_claims_must_be_supported_by_retrieved_product_text": True,
             "conversation_does_not_publish_knowledge": True,
             "candidate_knowledge_auto_promotion": False, "knowledge_graph_mutation": False,
+            "evidence_free_turns_use_generative_provider": False,
         },
     }
     messages = STORE.provider_messages(conversation_id, owner=owner, turns=8)
@@ -638,17 +659,23 @@ def append_turn(
     # generative (paid) turn may be spent is decided per subject and tier, and
     # the deterministic governed composer answers whenever it may not.
     candidate = configured_reply_provider()
+    evidence_free = _evidence_free_turn(casual=casual, retrieval=retrieval, knowledge=knowledge, mission=mission)
+    # An evidence-free turn previews the decision without reserving a turn.
     access = ACCESS_POLICY.decide(
         auth=auth, subject=owner, generative_mode=payload.generative_mode, candidate=candidate,
+        commit=not evidence_free,
     )
-    provider = candidate if access.generative_allowed else DeterministicGovernedReplyProvider()
+    generative = access.generative_allowed and not evidence_free
+    provider = candidate if generative else DeterministicGovernedReplyProvider()
     provider_error: str | None = None
-    provider_outcome = "generative" if access.generative_allowed else "deterministic"
+    provider_outcome = (
+        "generative" if generative else "deterministic_insufficient_evidence" if evidence_free else "deterministic"
+    )
     try:
         reply = provider.generate(messages=messages, governed_context=governed_context)
     except Exception as exc:  # noqa: BLE001
         provider_error = str(exc)
-        if access.generative_allowed:
+        if generative:
             # The reserved turn produced nothing; give it back before falling back.
             ACCESS_POLICY.release(access)
             provider_outcome = "deterministic_fallback_after_provider_error"

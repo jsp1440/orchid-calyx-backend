@@ -132,6 +132,6 @@ def test_auto_mode_defers_doomed_mission_when_all_retrieval_is_empty(monkeypatch
     assert casual is False
     assert mission is None
     assert mission_error is None
-    assert retrieval["conversation_synthesis_mode"] == "general_knowledge_with_retrieval_gap"
+    assert retrieval["conversation_synthesis_mode"] == "insufficient_evidence_retrieval_gap"
     assert retrieval["canonical_mission_deferred"] is True
     assert "zero sources" in retrieval["canonical_mission_deferred_reason"]
