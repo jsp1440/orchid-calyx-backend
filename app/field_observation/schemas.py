@@ -36,6 +36,11 @@ HYPOTHESES_PATH_TEMPLATE = "/api/field-observations/{observation_id}/hypotheses"
 LocalityVisibility = Literal["private", "research_restricted", "public"]
 IdentificationStatus = Literal["unresolved", "observer_hint_unresolved"]
 MediaKind = Literal["photo", "video"]
+#: Whether the server copy of an uploaded original is on storage the operator has
+#: declared durable. ``not_guaranteed`` is the default: the local adapter may sit
+#: on an ephemeral filesystem, so a client must keep its own original until a
+#: durable copy is declared.
+MediaDurability = Literal["durable", "not_guaranteed"]
 
 
 class EpistemicCertaintyLabel(str, Enum):
@@ -193,6 +198,13 @@ class PhotoOut(BaseModel):
     captured_at: datetime | None
     license: str | None
     created_at: datetime
+    durability: MediaDurability | None = Field(
+        default=None,
+        description=(
+            "Set by the original-media upload route only. 'durable' requires the operator to "
+            "declare FIELD_MEDIA_STORAGE_DURABLE=true; otherwise the server copy is 'not_guaranteed'."
+        ),
+    )
 
 
 class FieldObservationOut(BaseModel):

@@ -19,7 +19,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Response, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    UploadFile,
+)
 
 from app.security import verify_owner_or_api_key
 from app.storage import INTAKE_STORAGE_DIR, LocalImmutableStorage, sanitize_filename
@@ -55,6 +65,21 @@ def field_media_storage() -> LocalImmutableStorage:
     """Storage for original field media. Tests point this at tmp_path; production must mount durable private storage."""
     root = Path(os.environ.get("FIELD_MEDIA_STORAGE_DIR", str(INTAKE_STORAGE_DIR / "field-journal")))
     return LocalImmutableStorage(root=root)
+
+
+_TRUE_VALUES = frozenset({"1", "true", "yes", "on"})
+
+
+def field_media_durability() -> str:
+    """Truthful durability of the server copy of uploaded originals.
+
+    Nothing in this repository proves that ``FIELD_MEDIA_STORAGE_DIR`` sits on a
+    persistent disk, so durability is claimed only when the operator explicitly
+    declares it with ``FIELD_MEDIA_STORAGE_DURABLE=true`` after mounting durable,
+    backed-up private storage at that path.
+    """
+    declared = os.environ.get("FIELD_MEDIA_STORAGE_DURABLE", "").strip().lower()
+    return "durable" if declared in _TRUE_VALUES else "not_guaranteed"
 
 
 def resolve_observer_subject(auth: dict[str, Any], header_subject: str | None) -> str:
@@ -202,6 +227,9 @@ async def upload_original_media(
     The storage adapter is content-addressed and immutable: re-uploading the
     same bytes for the same observation returns the same attached media record,
     which is the sync idempotency boundary for the Saturday MVP.
+
+    ``durability`` reports whether the server copy is on storage the operator
+    has declared durable; see :func:`field_media_durability`.
     """
     subject = resolve_observer_subject(auth, x_auth_subject)
     _authorise_record(auth, subject, _load(service, observation_id))
@@ -229,10 +257,15 @@ async def upload_original_media(
                 "byte_size": stored.byte_size,
                 "client_media_id": client_media_id,
                 "offline_original_preserved": True,
+                # Originals are stored unmodified, so camera EXIF (which may hold
+                # device GPS) is retained in the private master. Readback is
+                # authenticated and observer-scoped; nothing here is public.
+                "embedded_metadata": "original_unmodified_may_include_device_location",
                 "uploaded_at": datetime.now(tz=timezone.utc).isoformat(),
             },
         )
-        return service.attach_photo(observation_id, attach)
+        stored_media = service.attach_photo(observation_id, attach)
+        return stored_media.model_copy(update={"durability": field_media_durability()})
     finally:
         await file.close()
 
