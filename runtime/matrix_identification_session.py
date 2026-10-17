@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from runtime.matrix_identification import Observation, rank_candidates
+from runtime.matrix_identification import Observation, _is_blank_state, rank_candidates
 from runtime.matrix_identification_registry import (
     candidates_from_registry,
     get_registry_version,
@@ -201,7 +201,7 @@ def recommend_next_observation(
         if weight <= 0:
             continue
         states = [candidate.get("states", {}).get(character) for candidate in candidates]
-        present = [state for state in states if state is not None]
+        present = [state for state in states if not _is_blank_state(state)]
         if len(present) < 2:
             continue
         distinct = len({_normalized_state(state) for state in present})
