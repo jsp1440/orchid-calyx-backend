@@ -962,6 +962,11 @@ def main() -> int:
     if not api_key:
         raise SystemExit("ANTHROPIC_API_KEY_REQUIRED")
     if not harden_process():
+        # In the split lane model-written code shares this account; a dumpable
+        # executor would let it read the provider key from /proc. Refuse before
+        # any model call rather than run unprotected.
+        if emit_dir is not None:
+            raise SystemExit("PROCESS_HARDENING_REQUIRED")
         print("[OC-ANTHROPIC-DIRECT] warning: process not hardened", file=sys.stderr)
     run_id = os.getenv("GITHUB_RUN_ID", str(int(time.time())))
     packet = Path(args.packet_file).read_text(encoding="utf-8")

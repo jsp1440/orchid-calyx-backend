@@ -9,9 +9,13 @@ boundary as a contract on the workflow itself.
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
+import pytest
 import yaml
 
 WORKFLOW = Path(".github/workflows/orchid-completion-lane.yml")
@@ -96,17 +100,179 @@ def test_model_driven_code_runs_as_an_unprivileged_account():
     assert 'test -r "$GITHUB_WORKSPACE/.git/config"' in body
 
 
-def test_model_output_is_collected_by_digest_after_killing_model_processes():
+def _collect_step():
     (collect,) = [
         s
         for s in _steps("model")
         if s.get("name") == "Collect model output for the trusted publisher"
     ]
-    run = collect["run"]
-    assert run.index('sudo pkill -KILL -u "$MODEL_USER"') < run.index(
-        "oc_patch_publish.py collect"
-    )
+    return collect
+
+
+def test_model_output_is_collected_by_digest_after_killing_model_processes():
+    run = _collect_step()["run"]
+    kill = run.index('sudo -n -u "$MODEL_USER" kill -9 -1')
+    verify = run.index('pgrep -u "$MODEL_USER"')
+    assert kill < verify < run.index("oc_patch_publish.py collect")
     assert "python3 -I scripts/oc_patch_publish.py collect" in run
+    # The collector reads as the model account, never as root.
+    assert '--model-user "$MODEL_USER"' in run
+
+
+def _run_collect_step(tmp_path, pgrep_survivors):
+    """Run the real step script against stubbed sudo, pgrep, sleep and python3.
+
+    ``pgrep_survivors`` is the list of exit statuses pgrep returns, call by
+    call; the last one repeats. 0 is "a process matched", 1 is "none".
+    """
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    log = tmp_path / "calls.log"
+    statuses = tmp_path / "pgrep-statuses"
+    statuses.write_text("\n".join(str(s) for s in pgrep_survivors) + "\n")
+    stubs = {
+        "sudo": f'echo "sudo $*" >> "{log}"\n',
+        "sleep": f'echo "sleep $*" >> "{log}"\n',
+        "python3": f'echo "python3 $*" >> "{log}"\n',
+        "pgrep": (
+            f'echo "pgrep $*" >> "{log}"\n'
+            f'status=$(head -n 1 "{statuses}")\n'
+            f'if [ "$(wc -l < "{statuses}")" -gt 1 ]; then\n'
+            f'  tail -n +2 "{statuses}" > "{statuses}.next"\n'
+            f'  mv "{statuses}.next" "{statuses}"\n'
+            "fi\n"
+            'exit "$status"\n'
+        ),
+    }
+    for name, body in stubs.items():
+        stub = bin_dir / name
+        stub.write_text("#!/bin/sh\n" + body)
+        stub.chmod(0o755)
+    script = tmp_path / "step.sh"
+    script.write_text(_collect_step()["run"])
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "MODEL_USER": "oc-model",
+        "MODEL_HOME": str(tmp_path / "home"),
+        "RUNNER_TEMP": str(tmp_path),
+    }
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    calls = log.read_text().splitlines() if log.exists() else []
+    return result, calls
+
+
+def test_a_fork_loop_is_killed_repeatedly_until_none_remain(tmp_path):
+    # Survivors on the first two checks, gone on the third.
+    result, calls = _run_collect_step(tmp_path, [0, 0, 1])
+    assert result.returncode == 0, result.stderr
+    kills = [c for c in calls if c.startswith("sudo ")]
+    assert kills == ["sudo -n -u oc-model kill -9 -1"] * 3
+    assert sum(c.startswith("pgrep ") for c in calls) == 3
+    assert calls[-1].startswith("python3 -I scripts/oc_patch_publish.py collect")
+
+
+def test_a_process_that_survives_every_round_fails_closed(tmp_path):
+    result, calls = _run_collect_step(tmp_path, [0])
+    assert result.returncode != 0
+    assert "survived" in result.stderr
+    # Bounded, and nothing is collected.
+    assert sum(c.startswith("sudo ") for c in calls) == 30
+    assert not any(c.startswith("python3 ") for c in calls)
+
+
+def test_a_pgrep_error_is_not_read_as_none_remaining(tmp_path):
+    result, calls = _run_collect_step(tmp_path, [2])
+    assert result.returncode != 0
+    assert not any(c.startswith("python3 ") for c in calls)
+
+
+def _classify(tmp_path, record, conclusion="failure", outcome="failure"):
+    (step,) = [s for s in _steps("publish") if s.get("id") == "claude_provider"]
+    execution = tmp_path / "execution.json"
+    execution.write_text(json.dumps(record))
+    output = tmp_path / "github_output"
+    output.write_text("")
+    script = tmp_path / "classify.sh"
+    script.write_text(step["run"])
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "CLAUDE_EXECUTION_FILE": str(execution),
+        "CLAUDE_OUTCOME": outcome,
+        "CLAUDE_CONCLUSION": conclusion,
+        "GITHUB_OUTPUT": str(output),
+    }
+    result = subprocess.run(
+        ["bash", "--noprofile", "--norc", "-eo", "pipefail", str(script)],
+        env=env,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
+    return output.read_text().splitlines()
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the step runs jq")
+def test_model_controlled_values_cannot_inject_github_output_lines(tmp_path):
+    injected = "end\nkind=healthy\nfallback_allowed=true"
+    lines = _classify(
+        tmp_path,
+        {
+            "type": "result",
+            "api_error_status": 401,
+            "terminal_reason": injected,
+            "error": "x\rkind=healthy",
+            "subtype": "error kind=healthy",
+            "num_turns": 3,
+            "modelUsage": {"m": {}},
+        },
+    )
+    keys = [line.split("=", 1)[0] for line in lines]
+    assert keys == [
+        "kind",
+        "fallback_allowed",
+        "terminal_reason",
+        "error_type",
+        "result_error",
+        "api_error_status",
+        "is_error",
+        "num_turns",
+        "model_usage_count",
+    ]
+    values = dict(line.split("=", 1) for line in lines)
+    assert values["kind"] == "security"
+    assert values["fallback_allowed"] == "false"
+    assert values["terminal_reason"] == "invalid"
+    assert values["result_error"] == "invalid"
+    for line in lines:
+        assert re.fullmatch(r"[a-z_]+=[A-Za-z0-9_.:/-]+", line), line
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="the step runs jq")
+def test_ordinary_classifier_values_pass_through_unchanged(tmp_path):
+    lines = _classify(
+        tmp_path,
+        {
+            "type": "result",
+            "subtype": "error_max_turns",
+            "terminal_reason": "max_turns",
+            "num_turns": 12,
+            "modelUsage": {"m": {}},
+        },
+    )
+    values = dict(line.split("=", 1) for line in lines)
+    assert values["kind"] == "max_turns"
+    assert values["terminal_reason"] == "max_turns"
+    assert values["num_turns"] == "12"
+    assert values["model_usage_count"] == "1"
 
 
 def test_the_model_job_saves_no_dependency_cache():

@@ -442,12 +442,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Nothing the model started outlives the run.
-          sudo pkill -KILL -u "$MODEL_USER" || true
+          # Nothing the model started outlives the run. One signal pass can
+          # lose a race with a fork loop, so kill as the model account (kill -1
+          # reaches every process it owns) until pgrep finds none, bounded. If
+          # anything survives, nothing is collected and the step fails closed.
+          cleared=false
+          for ((attempt = 1; attempt <= 30; attempt++)); do
+            sudo -n -u "$MODEL_USER" kill -9 -1 2>/dev/null || true
+            set +e
+            pgrep -u "$MODEL_USER" >/dev/null
+            pgrep_status=$?
+            set -e
+            # 1 means no process matched; 0 or an error is not proof of none.
+            if [[ "$pgrep_status" -eq 1 ]]; then
+              cleared=true
+              break
+            fi
+            sleep 1
+          done
+          if [[ "$cleared" != "true" ]]; then
+            echo "model account processes survived termination; nothing collected" >&2
+            exit 1
+          fi
           python3 -I scripts/oc_patch_publish.py collect \
             --stdout-log "$RUNNER_TEMP/worker-stdout.log" \
             --source "$MODEL_HOME/out" \
-            --destination "$RUNNER_TEMP/model-output"
+            --destination "$RUNNER_TEMP/model-output" \
+            --model-user "$MODEL_USER"
 
       - name: Hand the model output to the trusted publisher
         if: always() && steps.claude.outcome != 'skipped'
@@ -580,16 +601,30 @@ jobs:
               kind=unknown
             fi
           fi
+          # Every value below except kind and fallback is copied out of the
+          # model job's execution record. A newline in one would start a new
+          # output line and could redefine kind, so each value must be a single
+          # bounded token or is replaced; kind and fallback are checked too.
+          output_token() {
+            local value="$1"
+            if [[ "$value" != *$'\n'* && "$value" != *$'\r'* && "$value" =~ ^[A-Za-z0-9_.:/-]{1,120}$ ]]; then
+              printf '%s' "$value"
+            else
+              printf 'invalid'
+            fi
+          }
+          [[ "$kind" =~ ^[a-z_]{1,40}$ ]] || kind=unknown
+          [[ "$fallback" == "true" ]] || fallback=false
           {
             echo "kind=$kind"
             echo "fallback_allowed=$fallback"
-            echo "terminal_reason=${terminal_reason:-unknown}"
-            echo "error_type=${error_type:-unknown}"
-            echo "result_error=${result_error:-unknown}"
-            echo "api_error_status=${api_error_status:-unknown}"
-            echo "is_error=${is_error:-unknown}"
-            echo "num_turns=${num_turns:-unknown}"
-            echo "model_usage_count=${model_usage_count:-unknown}"
+            echo "terminal_reason=$(output_token "${terminal_reason:-unknown}")"
+            echo "error_type=$(output_token "${error_type:-unknown}")"
+            echo "result_error=$(output_token "${result_error:-unknown}")"
+            echo "api_error_status=$(output_token "${api_error_status:-unknown}")"
+            echo "is_error=$(output_token "${is_error:-unknown}")"
+            echo "num_turns=$(output_token "${num_turns:-unknown}")"
+            echo "model_usage_count=$(output_token "${model_usage_count:-unknown}")"
           } >> "$GITHUB_OUTPUT"
           echo "Claude classification: kind=$kind fallback_allowed=$fallback"
 

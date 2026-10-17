@@ -57,6 +57,9 @@ BOT_NAME = "orchid-continuum-orchestrator[bot]"
 BOT_EMAIL = "41898282+github-actions[bot]@users.noreply.github.com"
 
 
+_PROTECTED_BASENAMES_FOLDED = frozenset(name.casefold() for name in PROTECTED_BASENAMES)
+
+
 class PatchRefused(ValueError):
     """The artifact is not something trusted code may publish."""
 
@@ -70,16 +73,16 @@ def path_admissible(path: str) -> bool:
     """A plain repository-relative path no grant or executor may write."""
     if not SAFE_PATH.fullmatch(path) or str(PurePosixPath(path)) != path:
         return False
-    parts = PurePosixPath(path).parts
-    if any(part in {".", ".."} or part.startswith(".git") for part in parts):
+    # Every name comparison is case-insensitive: ``app/x.PTH`` or ``app/.ENV``
+    # must not slip past a check spelled in lower case.
+    folded = [part.casefold() for part in PurePosixPath(path).parts]
+    if any(part in {".", ".."} or part.startswith(".git") for part in folded):
         return False
-    if any(
-        part.casefold() in PROTECTED_SEGMENTS or part.endswith(".pth") for part in parts
-    ):
+    if any(part in PROTECTED_SEGMENTS or part.endswith(".pth") for part in folded):
         return False
     if path.startswith(PROTECTED) or path in PROTECTED_FILES:
         return False
-    if PurePosixPath(path).name in PROTECTED_BASENAMES:
+    if folded[-1] in _PROTECTED_BASENAMES_FOLDED:
         return False
     return not any(
         path == prefix.rstrip("/") or path.startswith(prefix)
@@ -149,13 +152,56 @@ COLLECTED = ("execution.json", "manifest.json", "patch.diff")
 MAX_COLLECTED_BYTES = 4_000_000
 
 
-def _sudo_read(path: Path) -> bytes:
-    """Read a file the unprivileged model account owns, as root, bounded."""
+MODEL_USER = "oc-model"
+
+#: Runs as the model account, not root, so a symlink or hard link the model
+#: planted cannot reach anything that account could not already read; and it
+#: refuses anything but a regular file itself. ``O_NOFOLLOW`` fails on a final
+#: symlink, ``O_NONBLOCK`` keeps a FIFO from hanging the open, and ``fstat`` on
+#: the opened descriptor (not the path) decides what was actually opened.
+READER = """
+import os, stat, sys
+path, limit = sys.argv[1], int(sys.argv[2])
+flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_NOCTTY
+fd = os.open(path, flags)
+if not stat.S_ISREG(os.fstat(fd).st_mode):
+    sys.exit("not a regular file")
+chunks, size = [], 0
+while size <= limit:
+    chunk = os.read(fd, min(65536, limit + 1 - size))
+    if not chunk:
+        break
+    chunks.append(chunk)
+    size += len(chunk)
+sys.stdout.buffer.write(b"".join(chunks))
+"""
+
+
+def _reader_command(path: Path) -> list[str]:
+    """The in-account reader, isolated from site, environment and cwd imports."""
+    return [sys.executable, "-I", "-S", "-c", READER, str(path)]
+
+
+def _sudo_read(path: Path, user: str = MODEL_USER) -> bytes:
+    """Read a regular file the model account owns, as that account, bounded."""
+    _refuse(
+        user != "root" and re.fullmatch(r"[a-z_][a-z0-9_-]{0,31}", user) is not None,
+        "user_invalid",
+    )
     result = subprocess.run(
-        ["sudo", "-n", "head", "-c", str(MAX_COLLECTED_BYTES + 1), "--", str(path)],
+        [
+            "sudo",
+            "-n",
+            "-u",
+            user,
+            "--",
+            *_reader_command(path),
+            str(MAX_COLLECTED_BYTES),
+        ],
         capture_output=True,
         check=True,
         timeout=60,
+        cwd="/",
     )
     return result.stdout
 
@@ -187,7 +233,7 @@ def collect(
             continue
         try:
             data = read(source / name)
-        except (OSError, subprocess.SubprocessError):
+        except (OSError, subprocess.SubprocessError, PatchRefused):
             continue
         if (
             len(data) > MAX_COLLECTED_BYTES
@@ -369,9 +415,13 @@ def main() -> int:
         collector.add_argument("--stdout-log", required=True)
         collector.add_argument("--source", required=True)
         collector.add_argument("--destination", required=True)
+        collector.add_argument("--model-user", default=MODEL_USER)
         options = collector.parse_args()
         copied = collect(
-            Path(options.stdout_log), Path(options.source), Path(options.destination)
+            Path(options.stdout_log),
+            Path(options.source),
+            Path(options.destination),
+            read=lambda path: _sudo_read(path, options.model_user),
         )
         print("[OC-PATCH-COLLECT] " + json.dumps({"copied": copied}))
         return 0
