@@ -1,0 +1,12 @@
+**
+!containers/
+!containers/azure-worker/
+!containers/azure-worker/Dockerfile
+!containers/azure-worker/requirements.lock
+!app/
+!app/calyx_orchestrator/
+!app/calyx_orchestrator/__init__.py
+!app/calyx_orchestrator/engineering_core.py
+!app/calyx_orchestrator/executor.py
+!app/calyx_orchestrator/azure_execution_contract.py
+!app/calyx_orchestrator/azure_worker.py

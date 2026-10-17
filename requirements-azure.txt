@@ -1,0 +1,2 @@
+# Optional managed authentication. Never needed for provider-free tests/demo.
+azure-identity==1.25.1
