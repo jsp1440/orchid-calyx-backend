@@ -12,6 +12,7 @@ from app.missions.ontology_resolution import (
     MAX_CANDIDATES,
     MAX_COMPARISONS,
     MAX_ID,
+    MAX_MATCH_CHARACTER_WORK,
     MAX_SOURCE_LENGTH,
     MAX_SYNONYMS_PER_TERM,
     MAX_TERM_ROWS,
@@ -395,16 +396,30 @@ def test_input_bounds_accept_values_at_the_limit():
     )
     assert report["summary"]["terms_eligible"] == MAX_TERM_ROWS // 4
 
-    rows = [term(i, f"t{i}") for i in range(1, MAX_TERMS + 1)]
-
-    per_candidate = MAX_COMPARISONS // MAX_CANDIDATES
+    # Exactly MAX_COMPARISONS SequenceMatcher runs: every row has a synonym,
+    # so each costs two runs per candidate.
+    assert MAX_TERMS * 2 * MAX_CANDIDATES == MAX_COMPARISONS
     report = build_ontology_resolution_report(
         manifest(
-            rows[:per_candidate],
+            _synonym_terms(MAX_TERMS, 1),
             [candidate(i, f"c{i}") for i in range(1, MAX_CANDIDATES + 1)],
         )
     )
     assert report["summary"]["candidates_evaluated"] == MAX_CANDIDATES
+
+    # Exactly MAX_MATCH_CHARACTER_WORK: one 200-character candidate against
+    # 100 labels of 200 normalized characters.
+    assert MAX_TEXT_LENGTH * MAX_TEXT_LENGTH * 100 == MAX_MATCH_CHARACTER_WORK
+    report = build_ontology_resolution_report(
+        manifest(_long_label_terms(100), [candidate(1, "a" * MAX_TEXT_LENGTH)])
+    )
+    assert report["summary"]["terms_eligible"] == 100
+
+
+def _long_label_terms(count: int) -> list[dict[str, Any]]:
+    return [
+        term(i, f"{i:03d}" + "b" * (MAX_TEXT_LENGTH - 3)) for i in range(1, count + 1)
+    ]
 
 
 def _synonym_terms(count: int, synonyms: int) -> list[dict[str, Any]]:
@@ -451,14 +466,19 @@ def _synonym_terms(count: int, synonyms: int) -> list[dict[str, Any]]:
             "too_many_term_rows",
         ),
         (
+            # One extra synonym row: 501 rows, 1002 runs per candidate.
             manifest(
                 [
-                    term(i, f"t{i}")
-                    for i in range(1, MAX_COMPARISONS // MAX_CANDIDATES + 2)
+                    *_synonym_terms(MAX_TERMS - 1, 1),
+                    term(MAX_TERMS, "z", synonyms=["y", "x"]),
                 ],
-                [candidate(i, "a") for i in range(1, MAX_CANDIDATES + 1)],
+                [candidate(i, f"c{i}") for i in range(1, MAX_CANDIDATES + 1)],
             ),
             "too_many_comparisons",
+        ),
+        (
+            manifest(_long_label_terms(101), [candidate(1, "a" * MAX_TEXT_LENGTH)]),
+            "matching_work_too_large",
         ),
     ],
 )
@@ -507,3 +527,93 @@ def test_handler_module_has_no_provider_network_or_db_imports():
         "CandidateResolutionService",
     ):
         assert token not in source, token
+
+
+FDFA = "\ufdfa"  # one code point; NFKC expands it to 18 characters
+
+
+@pytest.mark.parametrize(
+    ("bad_manifest", "detail"),
+    [
+        (
+            manifest(TERMS, [candidate(1, FDFA * 12)]),
+            "candidate_0_name_normalized_too_long",
+        ),
+        (
+            manifest([term(1, FDFA * 12)], [candidate(1, "a")]),
+            "term_0_canonical_key_normalized_too_long",
+        ),
+        (
+            manifest([term(1, "a", preferred_label=FDFA * 12)], [candidate(1, "a")]),
+            "term_0_preferred_label_normalized_too_long",
+        ),
+        (
+            manifest([term(1, "a", synonyms=[FDFA * 12])], [candidate(1, "a")]),
+            "term_0_synonym_normalized_too_long",
+        ),
+    ],
+)
+def test_text_cap_applies_after_nfkc_expansion(bad_manifest: Any, detail: str):
+    assert len(FDFA * 12) <= MAX_TEXT_LENGTH
+    with pytest.raises(ValueError, match=f"^{CODE}:{detail}"):
+        build_ontology_resolution_report(bad_manifest)
+
+
+def test_nfkc_expansion_within_the_cap_is_accepted():
+    # 11 x 18 = 198 normalized characters.
+    report = build_ontology_resolution_report(
+        manifest([term(1, FDFA * 11)], [candidate(1, FDFA * 11)])
+    )
+    assert by_id(report)[1]["proposals"][0]["resolution_method"] == "EXACT"
+
+
+def test_reviewer_worst_case_shapes_are_refused_before_matching(monkeypatch):
+    # The independent check's probe shapes, at lengths the text cap admits:
+    # 100 labels x 50 candidates, and 5 terms x 20 synonyms x 50 candidates,
+    # all 200 characters. Both must be refused by the size checks, so the
+    # engine is never reached.
+    import app.missions.ontology_resolution as handler
+
+    def unreachable(*_args: Any, **_kwargs: Any) -> None:
+        raise AssertionError("engine reached")
+
+    monkeypatch.setattr(handler, "DeterministicResolutionEngine", unreachable)
+    long = "a" * MAX_TEXT_LENGTH
+    candidates = [candidate(i, long) for i in range(1, MAX_CANDIDATES + 1)]
+    labels = manifest(_long_label_terms(100), candidates)
+    synonyms = manifest(
+        [
+            term(i, f"{i:03d}" + "b" * (MAX_TEXT_LENGTH - 3), synonyms=[long] * 20)
+            for i in range(1, 6)
+        ],
+        candidates,
+    )
+    for shape in (labels, synonyms):
+        with pytest.raises(ValueError, match=f"^{CODE}:matching_work_too_large"):
+            build_ontology_resolution_report(shape)
+
+
+def test_admissible_worst_case_stays_fast():
+    # Generous wall-clock guard at the character-work limit with
+    # near-duplicate binary-alphabet strings, which made SequenceMatcher
+    # slowest in local probing. The deterministic size checks above are the
+    # real bound; this only catches a regression that defeats them.
+    import random
+    import time
+
+    rnd = random.Random(2)
+    base = "".join(rnd.choice("ab") for _ in range(120))
+
+    def near(seed: int) -> str:
+        chars = list(base)
+        for index in range(seed % 3, len(chars), 3):
+            chars[index] = rnd.choice("ab")
+        return "".join(chars)
+
+    count = MAX_MATCH_CHARACTER_WORK // (120 * 120)
+    terms = [term(i, near(i), canonical_key=f"k{i}") for i in range(1, count + 1)]
+    started = time.perf_counter()
+    build_ontology_resolution_report(
+        manifest(terms, [candidate(1, near(0))], fuzzy_threshold=0.75)
+    )
+    assert time.perf_counter() - started < 20

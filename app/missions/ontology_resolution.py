@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import unicodedata
 from collections.abc import Mapping
 from typing import Any
 
@@ -44,10 +45,16 @@ MAX_SYNONYMS_PER_TERM = 20
 # One engine row per synonym (or one per term without synonyms), as the
 # repository's term lookup returns them.
 MAX_TERM_ROWS = 1000
-# Bounds the fuzzy-matching work: candidates x eligible term rows. With random
-# 200-character inputs at this budget one local run (machine under load) took
-# about 5 s, inside the registry's 60 s timeout.
-MAX_COMPARISONS = 5_000
+# Fuzzy matching is bounded by two budgets over the SequenceMatcher runs the
+# engine performs (see _matching_work). For each candidate the engine runs one
+# against every row's label and a second against the row's synonym, so a row
+# with a synonym costs two runs. MAX_COMPARISONS caps the number of runs;
+# MAX_MATCH_CHARACTER_WORK caps the sum of len(candidate) * len(target) over
+# them, measured on the normalized text the engine actually compares, which is
+# what makes long, repetitive strings expensive. Both are deterministic size
+# checks, not timings.
+MAX_COMPARISONS = 50_000
+MAX_MATCH_CHARACTER_WORK = 4_000_000
 MAX_SOURCE_LENGTH = 500
 MAX_TEXT_LENGTH = 200
 MAX_NAMESPACE_LENGTH = 200
@@ -84,13 +91,22 @@ def _invalid(detail: str) -> ValueError:
     return ValueError(f"ONTOLOGY_RESOLUTION_MANIFEST_INVALID:{detail}")
 
 
-def _text(value: Any, name: str, limit: int) -> str:
+def _text(value: Any, name: str, limit: int, *, matched: bool = False) -> str:
     if not isinstance(value, str):
         raise _invalid(f"{name}_not_string")
     if not value.strip():
         raise _invalid(f"{name}_required")
     if len(value) > limit:
         raise _invalid(f"{name}_too_long>{limit}")
+    if matched:
+        # NFKC can expand one code point to many (U+FDFA becomes 18), and the
+        # engine matches normalized text, so the cap must hold after it too.
+        expanded = max(
+            len(unicodedata.normalize("NFKC", value)),
+            len(normalize_ontology_text(value, scientific_name=True)),
+        )
+        if expanded > limit:
+            raise _invalid(f"{name}_normalized_too_long>{limit}")
     # Matching uses the value as supplied: the engine's EXACT tier compares
     # the raw string, and normalization is the engine's job.
     return value
@@ -156,10 +172,16 @@ def _validate_term(index: int, row: Any) -> dict[str, Any]:
         "term_id": _identifier(row["term_id"], f"{prefix}_term_id"),
         "registry_id": _identifier(row["registry_id"], f"{prefix}_registry_id"),
         "canonical_key": _text(
-            row["canonical_key"], f"{prefix}_canonical_key", MAX_TEXT_LENGTH
+            row["canonical_key"],
+            f"{prefix}_canonical_key",
+            MAX_TEXT_LENGTH,
+            matched=True,
         ),
         "preferred_label": _text(
-            row["preferred_label"], f"{prefix}_preferred_label", MAX_TEXT_LENGTH
+            row["preferred_label"],
+            f"{prefix}_preferred_label",
+            MAX_TEXT_LENGTH,
+            matched=True,
         ),
         "namespace": _text(
             row["namespace"], f"{prefix}_namespace", MAX_NAMESPACE_LENGTH
@@ -168,7 +190,8 @@ def _validate_term(index: int, row: Any) -> dict[str, Any]:
         "registry_status": registry_status,
         "term_status": term_status,
         "synonyms": [
-            _text(synonym, f"{prefix}_synonym", MAX_TEXT_LENGTH) for synonym in synonyms
+            _text(synonym, f"{prefix}_synonym", MAX_TEXT_LENGTH, matched=True)
+            for synonym in synonyms
         ],
     }
 
@@ -180,7 +203,7 @@ def _validate_candidate(index: int, row: Any) -> dict[str, Any]:
     _check_keys(row, prefix, ALLOWED_CANDIDATE_KEYS, REQUIRED_CANDIDATE_KEYS)
     return {
         "candidate_id": _identifier(row["candidate_id"], f"{prefix}_candidate_id"),
-        "name": _text(row["name"], f"{prefix}_name", MAX_TEXT_LENGTH),
+        "name": _text(row["name"], f"{prefix}_name", MAX_TEXT_LENGTH, matched=True),
     }
 
 
@@ -332,6 +355,30 @@ def _resolve(
     }
 
 
+def _normalized_length(value: str | None) -> int:
+    return (
+        0
+        if value is None
+        else len(normalize_ontology_text(value, scientific_name=True))
+    )
+
+
+def _matching_work(
+    rows: list[dict[str, Any]], candidates: list[dict[str, Any]]
+) -> tuple[int, int]:
+    """Upper bounds on (SequenceMatcher runs, sum of len products) for a batch."""
+    runs_per_candidate = sum(2 if row["synonym"] is not None else 1 for row in rows)
+    target_characters = sum(
+        _normalized_length(row["preferred_label"]) + _normalized_length(row["synonym"])
+        for row in rows
+    )
+    candidate_characters = sum(_normalized_length(item["name"]) for item in candidates)
+    return (
+        runs_per_candidate * len(candidates),
+        target_characters * candidate_characters,
+    )
+
+
 def build_ontology_resolution_report(manifest: Any) -> dict[str, Any]:
     """Build a deterministic, human-review-only ontology resolution proposal report."""
     source, threshold, terms, candidates = validate_ontology_resolution_manifest(
@@ -340,8 +387,11 @@ def build_ontology_resolution_report(manifest: Any) -> dict[str, Any]:
     rows, excluded = _engine_rows(terms)
     if len(rows) > MAX_TERM_ROWS:
         raise _invalid(f"too_many_term_rows>{MAX_TERM_ROWS}")
-    if len(rows) * len(candidates) > MAX_COMPARISONS:
+    runs, character_work = _matching_work(rows, candidates)
+    if runs > MAX_COMPARISONS:
         raise _invalid(f"too_many_comparisons>{MAX_COMPARISONS}")
+    if character_work > MAX_MATCH_CHARACTER_WORK:
+        raise _invalid(f"matching_work_too_large>{MAX_MATCH_CHARACTER_WORK}")
     engine = DeterministicResolutionEngine(threshold)
     resolutions = [
         _resolve(engine, candidate, rows)
