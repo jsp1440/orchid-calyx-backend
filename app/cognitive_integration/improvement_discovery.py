@@ -20,6 +20,8 @@ from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from typing import Any
 
+from .contested_scope import LEAVE_CONTESTED
+
 DISCOVERY_SCHEMA = "oc.improvement-candidate.v1"
 
 #: Used where a candidate is worth recording but holds nothing up. Stated
@@ -138,13 +140,21 @@ def classify(statement: str) -> tuple[Deficiency, str]:
     )
 
 
-def discover(reasoning_map: dict[str, Any]) -> list[ImprovementCandidate]:
+def discover(
+    reasoning_map: dict[str, Any],
+    adjudications: list[dict[str, Any]] | None = None,
+) -> list[ImprovementCandidate]:
     """Derive candidates from what a reasoning map could not settle.
 
     Sources, in order: the gaps the executor found in the graph, an unresolved
     contradiction (which is a *different* deficiency — evidence exists, it simply
     disagrees), and a capability the question needed but nothing deterministic
     supplies.
+
+    ``adjudications`` are the scope test's records for the same map (see
+    :func:`.executor.contradiction_adjudication`). A contested pair the test
+    evaluated and explicitly left contested is a shortage of scope evidence; a
+    contested pair with no record is still a missing reasoning operation.
     """
     question = str(reasoning_map.get("question") or "")
     candidates: list[ImprovementCandidate] = []
@@ -162,8 +172,41 @@ def discover(reasoning_map: dict[str, Any]) -> list[ImprovementCandidate]:
             )
         )
 
+    adjudicated = {
+        tuple(record.get("between") or ()): record
+        for record in adjudications or []
+        if record.get("operation") and record.get("decision") == LEAVE_CONTESTED
+    }
+
     for contradiction in reasoning_map.get("contradictions") or []:
         if contradiction.get("resolution") != "unresolved_presented_as_contested":
+            continue
+        verdict = adjudicated.get(tuple(contradiction.get("between") or ()))
+        if verdict is not None:
+            # An operation ran and explicitly left the pair contested. What is
+            # missing now is the evidence that operation would need, not the
+            # operation; calling it a missing operation would send the work back
+            # to an engineer who has nothing left to build.
+            candidates.append(
+                ImprovementCandidate(
+                    deficiency=Deficiency.MISSING_EVIDENCE,
+                    statement=(
+                        "Two reports conflict and the "
+                        f"{verdict['operation']} left them contested "
+                        f"({verdict['reason']}): "
+                        + "; ".join(contradiction.get("between") or [])
+                    ),
+                    why_it_matters=(
+                        "Evidence exists on both sides. The scope test cannot separate "
+                        "them and no weighting rule is applied, by design, so the honest "
+                        "output stays 'contested' until the scope evidence below exists."
+                    ),
+                    bounded_next_step=str(verdict.get("would_change_if") or "")
+                    or _next_step(Deficiency.MISSING_EVIDENCE),
+                    blocks_question=question,
+                    evidence=["reasoning_map.contradictions", "contradiction_adjudication"],
+                )
+            )
             continue
         candidates.append(
             ImprovementCandidate(
@@ -238,9 +281,12 @@ def _next_step(kind: Deficiency) -> str:
     }[kind]
 
 
-def to_report(reasoning_map: dict[str, Any]) -> dict[str, Any]:
+def to_report(
+    reasoning_map: dict[str, Any],
+    adjudications: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     """The discovery result, grouped by kind so it can be routed."""
-    candidates = discover(reasoning_map)
+    candidates = discover(reasoning_map, adjudications)
     by_kind: dict[str, list[dict[str, Any]]] = {}
     for candidate in candidates:
         by_kind.setdefault(candidate.deficiency.value, []).append(candidate.to_record())

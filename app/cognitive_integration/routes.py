@@ -15,7 +15,8 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query
 
-from .executor import CognitiveIntegrationError, execute
+from .contested_scope import OPERATION, OPERATION_VERSION
+from .executor import CognitiveIntegrationError, contradiction_adjudication, execute
 from .improvement_discovery import to_report
 
 router = APIRouter(prefix="/api/cognitive-integration", tags=["cognitive-integration"])
@@ -91,6 +92,40 @@ def improvement_candidates(
                     "supported_questions": list(SUPPORTED_QUESTIONS)},
         )
     try:
-        return to_report(execute(question))
+        return to_report(execute(question), contradiction_adjudication())
     except CognitiveIntegrationError as exc:
         raise HTTPException(status_code=503, detail={"reason": str(exc)}) from exc
+
+
+@router.get("/contradiction-adjudication")
+def contradiction_adjudication_route(
+    question: str = Query(default=SUPPORTED_QUESTIONS[0], max_length=500),
+) -> dict[str, Any]:
+    """How each contradiction in the reasoning map was evaluated, and why.
+
+    The scope test either finds the reports compatible because they are
+    established to describe separate places, or leaves them contested and says
+    what evidence would change that. It never weights or prefers a report.
+    """
+    if question not in SUPPORTED_QUESTIONS:
+        raise HTTPException(
+            status_code=422,
+            detail={"reason": "question_not_in_deterministic_set",
+                    "supported_questions": list(SUPPORTED_QUESTIONS)},
+        )
+    try:
+        adjudications = contradiction_adjudication()
+    except CognitiveIntegrationError as exc:
+        raise HTTPException(status_code=503, detail={"reason": str(exc)}) from exc
+    return {
+        "schema": "oc.contradiction-adjudication.v1",
+        "question": question,
+        "operation": OPERATION,
+        "operation_version": OPERATION_VERSION,
+        "adjudications": adjudications,
+        "authority": {
+            "requires_human_review": True,
+            "weighting_applied": False,
+            "may_activate_scientific_conclusion": False,
+        },
+    }

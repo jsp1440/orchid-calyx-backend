@@ -31,6 +31,7 @@ from app.brain.reasoning_map import (
 )
 from runtime.knowledge_graph.repository import GraphRepository
 
+from .contested_scope import ScopeAdjudication, adjudicate
 from .fixture import EXPECTED_BUT_ABSENT, SUBJECT_KEY, build_pollination_repository
 
 CONTRACT_VERSION = "1.0.0"
@@ -394,33 +395,11 @@ def _scope_resolution(
 ) -> str:
     """Whether a disagreement is resolved by the two claims applying elsewhere.
 
-    Resolution requires *established* disjointness: both claims naming a region,
-    and the graph declaring those two regions non-overlapping. Anything short of
-    that leaves the contradiction standing, which is the fail-closed direction —
-    a contradiction wrongly left open costs a reader some care, and one wrongly
-    closed deletes a real scientific disagreement.
-
-    Three things this deliberately does not treat as resolution:
-
-    * **Equal scopes.** Two incompatible claims about the *same* place is the
-      definition of a live conflict. The predicate this replaced returned
-      ``resolved_by_scope`` for exactly that case, and because absent scopes
-      compare equal, it did so for every claim that named no place at all —
-      then dropped the contradiction from ``unresolved`` and *raised* the
-      confidence for it.
-    * **Absent scopes.** Unknown is not the same as equal, and it is not the
-      same as disjoint.
-    * **Different free-text scopes.** Different wording is not disjointness.
+    Delegates to the scope test in :mod:`.contested_scope`, which is the one
+    place the rule lives. Equal, absent and merely differently-worded scopes
+    never resolve anything; only declared disjointness does.
     """
-    first_region = first.get("scope_region")
-    second_region = second.get("scope_region")
-    if not first_region or not second_region:
-        return "unresolved_presented_as_contested"
-    if first_region == second_region:
-        return "unresolved_presented_as_contested"
-    if frozenset({first_region, second_region}) not in disjoint:
-        return "unresolved_presented_as_contested"
-    return "resolved_by_scope"
+    return adjudicate(first, second, disjoint).resolution
 
 
 def _describe_conflict(first: dict[str, Any], second: dict[str, Any]) -> str:
@@ -438,43 +417,55 @@ def _describe_conflict(first: dict[str, Any], second: dict[str, Any]) -> str:
     )
 
 
+def _conflicting_pairs(
+    relationships: list[dict[str, Any]],
+) -> list[tuple[dict[str, Any], dict[str, Any]]]:
+    """Reproductive reports with different predicates, in graph order."""
+    reproductive = [r for r in relationships if r["predicate"] in _REPRODUCTIVE_PREDICATES]
+    return [
+        (first, second)
+        for index, first in enumerate(reproductive)
+        for second in reproductive[index + 1 :]
+        if first["predicate"] != second["predicate"]
+    ]
+
+
+def _adjudications(
+    relationships: list[dict[str, Any]],
+    disjoint: set[frozenset[str]],
+    provenance: dict[frozenset[str], str] | None = None,
+) -> list[ScopeAdjudication]:
+    """The scope test, applied once to every conflicting pair."""
+    return [
+        adjudicate(first, second, disjoint, provenance)
+        for first, second in _conflicting_pairs(relationships)
+    ]
+
+
 def _contradictions(
     relationships: list[dict[str, Any]],
     disjoint: set[frozenset[str]],
     provenance: dict[frozenset[str], str] | None = None,
 ) -> list[dict[str, Any]]:
     """Find claims that disagree, and keep both rather than choosing."""
-    reproductive = [r for r in relationships if r["predicate"] in _REPRODUCTIVE_PREDICATES]
     found: list[dict[str, Any]] = []
-    for index, first in enumerate(reproductive):
-        for second in reproductive[index + 1 :]:
-            if first["predicate"] == second["predicate"]:
-                continue
-            resolution = _scope_resolution(first, second, disjoint)
-            found.append(
-                {
-                    "between": [
-                        f"{first['predicate']} {first['object']}",
-                        f"{second['predicate']} {second['object']}",
-                    ],
-                    "description": _describe_conflict(first, second),
-                    "resolution": resolution,
-                    "scopes": [first.get("geographic_scope"), second.get("geographic_scope")],
-                    # When scope removes a disagreement, say what declared the
-                    # two places separate. Without it the reader is asked to
-                    # accept the one inference here that deletes a conflict.
-                    "resolved_by": (
-                        (provenance or {}).get(
-                            frozenset(
-                                {first.get("scope_region") or "", second.get("scope_region") or ""}
-                            ),
-                            "no citation recorded",
-                        )
-                        if resolution == "resolved_by_scope"
-                        else None
-                    ),
-                }
-            )
+    for (first, second), verdict in zip(
+        _conflicting_pairs(relationships),
+        _adjudications(relationships, disjoint, provenance),
+        strict=True,
+    ):
+        found.append(
+            {
+                "between": list(verdict.between),
+                "description": _describe_conflict(first, second),
+                "resolution": verdict.resolution,
+                "scopes": [first.get("geographic_scope"), second.get("geographic_scope")],
+                # When scope removes a disagreement, say what declared the two
+                # places separate. Without it the reader is asked to accept the
+                # one inference here that deletes a conflict.
+                "resolved_by": verdict.resolved_by,
+            }
+        )
     return found
 
 
@@ -678,9 +669,8 @@ def execute(
     relationships = _relationships(repo, identity["kg_node_id"])
     geography = _geographic_context(relationships, _disjoint_regions(repo))
     mechanisms = _mechanisms(repo, relationships)
-    contradictions = _contradictions(
-        relationships, _disjoint_regions(repo), _disjointness_provenance(repo)
-    )
+    disjoint, disjoint_provenance = _disjoint_regions(repo), _disjointness_provenance(repo)
+    contradictions = _contradictions(relationships, disjoint, disjoint_provenance)
     gaps = _evidence_gaps(repo, relationships)
 
     traversal = ReasoningMapEngine(repo).build(
@@ -784,6 +774,33 @@ def execute(
 
     # Fail closed rather than serving a map that leaked. The suspicion pattern is
     # broader than the redactor on purpose.
+    leaked = _COORDINATE_SUSPICION.search(_fold_digits(str(redacted)))
+    if leaked:
+        raise CognitiveIntegrationError(
+            f"coordinate-shaped content survived redaction: {leaked.group(0)!r}"
+        )
+    return redacted
+
+
+def contradiction_adjudication(repository: GraphRepository | None = None) -> list[dict[str, Any]]:
+    """The scope test's verdict on every contradiction ``execute`` reports.
+
+    Served separately from the reasoning map because the Brain contract closes
+    every object in the map, ``contradictions`` and ``execution`` included;
+    adding the audit trail there would be a cross-repository contract change.
+    The pairs and resolutions are computed by the same functions ``execute``
+    uses, so the two cannot disagree. Redacted and checked like the map.
+    """
+    repo = repository or build_pollination_repository()
+    identity = _resolve_taxonomy(repo)
+    relationships = _relationships(repo, identity["kg_node_id"])
+    records = [
+        verdict.to_record()
+        for verdict in _adjudications(
+            relationships, _disjoint_regions(repo), _disjointness_provenance(repo)
+        )
+    ]
+    redacted = _redact(records, RedactionOutcome())
     leaked = _COORDINATE_SUSPICION.search(_fold_digits(str(redacted)))
     if leaked:
         raise CognitiveIntegrationError(
