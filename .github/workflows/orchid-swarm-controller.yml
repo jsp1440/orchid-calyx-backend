@@ -219,15 +219,29 @@ jobs:
           echo "materialize_error_count=$(jq -r '.errors | length' "$RUNNER_TEMP/brain-materialization.json")" >> "$GITHUB_OUTPUT"
           test "$(jq -r '.errors | length' "$RUNNER_TEMP/brain-materialization.json")" -eq 0
 
+      # Discovery reads the same revision the workers settle against: the
+      # integration head, and only on a run of it. `issues`/`pull_request` runs
+      # check out `github.sha` (main's head, or a PR merge ref) while the edit
+      # lane settles only on integration heads, so a condition present on one
+      # and absent on the other flapped done/requeued (#1977: filed and
+      # requeued from main-side revisions, settled at integration 4a35c540 and
+      # fe8604ef, which lacked the file). The Brain pulse above is gated the
+      # same way, and the `*/5` schedule runs on the integration head, so no
+      # discovery is lost, only moved to the revision settlement reads. The
+      # revision is recorded in the report and must be the controller SHA.
       - name: Discover product work from repository evidence
         id: discovery
+        if: steps.controller_revision.outputs.canonical_integration == 'true'
         continue-on-error: true
         shell: bash
+        env:
+          DISCOVERY_REVISION: ${{ steps.controller_revision.outputs.sha }}
         run: |
           set -euo pipefail
           python3 -m scripts.oc_work_discovery --root . \
+            --expect-revision "$DISCOVERY_REVISION" \
             > "$RUNNER_TEMP/work-discovery.json"
-          jq '{schema, candidate_count,
+          jq '{schema, revision, candidate_count,
                candidates: [.candidates[] | {source, lane, rank, fingerprint, title}]}' \
             "$RUNNER_TEMP/work-discovery.json"
 
@@ -236,11 +250,14 @@ jobs:
         if: steps.discovery.outcome == 'success'
         continue-on-error: true
         shell: bash
+        env:
+          DISCOVERY_REVISION: ${{ steps.controller_revision.outputs.sha }}
         run: |
           set -euo pipefail
           python3 -m scripts.oc_work_materialize \
             --repository "$REPO" \
             --report "$RUNNER_TEMP/work-discovery.json" \
+            --expected-revision "$DISCOVERY_REVISION" \
             --max-new 3 \
             --github-output "$GITHUB_OUTPUT" \
             --apply \
@@ -443,8 +460,10 @@ jobs:
           # The edit lane executes only on a run of the integration ref (see the
           # provider_free_workers guard). Any other run leaves edit-mode issues
           # queued and unleased for that run instead of claiming and parking them.
+          # Discovered issues likewise settle only on the integration head that
+          # discovery read; any other run leaves them queued and unleased.
           if [[ "${{ steps.controller_revision.outputs.canonical_integration }}" != "true" ]]; then
-            provider_args+=(--defer-edit-mode)
+            provider_args+=(--defer-edit-mode --defer-discovered)
           fi
           python3 scripts/oc_swarm_controller.py \
             --input "$RUNNER_TEMP/swarm-snapshot.json" \

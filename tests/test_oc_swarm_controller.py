@@ -476,6 +476,60 @@ def test_edit_mode_issues_stay_queued_on_runs_off_the_integration_ref(monkeypatc
     assert "oc-queued" in snapshot["issues"][1]["labels"]
 
 
+def _discovered_snapshot():
+    snapshot = _snapshot()
+    snapshot["issues"][1]["body"] = (
+        "OC-SWARM-PROVIDER-FREE: validate\nOC-SWARM-VALIDATE: ruff-check\n\n"
+        "OC-DISCOVERY-FINGERPRINT: 578850d1e54d328d"
+    )
+    return snapshot
+
+
+def test_discovered_issues_stay_queued_on_runs_off_the_integration_head(monkeypatch):
+    """Discovery reads the integration head; its findings settle nowhere else (#1977)."""
+    captured = {}
+
+    class CapturingScheduler:
+        @staticmethod
+        def build_plan(snapshot):
+            captured.update(snapshot)
+            queued = [issue["number"] for issue in snapshot["issues"] if "oc-queued" in issue["labels"]]
+            return {
+                "ranking": [
+                    {"number": number, "lane_id": "L3", "priority": 0, "repair": False}
+                    for number in queued
+                ],
+                "active_lanes": [],
+                "eligible_count": len(queued),
+                "suppressed": [],
+                "generated_at": None,
+            }
+
+    def loader(name, filename):
+        if filename == "oc_portfolio_scheduler.py":
+            return CapturingScheduler
+        return _loader(name, filename)
+
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+    snapshot = _discovered_snapshot()
+    plan = swarm.build_swarm_plan(snapshot, worker_slots=8, defer_edit_mode=True, defer_discovered=True)
+    deferred = next(issue for issue in captured["issues"] if issue["number"] == 100)
+    assert "oc-queued" not in deferred["labels"]
+    assert plan["selected_numbers"] == [101, 102]
+    assert plan["discovered_deferred_numbers"] == [100]
+    assert plan["edit_mode_deferred_numbers"] == []
+    assert plan["safety"]["discovered_deferred"] is True
+    assert "oc-queued" in snapshot["issues"][1]["labels"]
+
+
+def test_discovered_issues_are_planned_on_the_integration_head(monkeypatch):
+    monkeypatch.setattr(swarm, "_load_sibling", _loader)
+    plan = swarm.build_swarm_plan(_discovered_snapshot(), worker_slots=8, defer_edit_mode=True)
+    assert 100 in plan["selected_numbers"]
+    assert plan["discovered_deferred_numbers"] == []
+    assert plan["safety"]["discovered_deferred"] is False
+
+
 def test_edit_mode_issues_are_planned_on_the_integration_ref(monkeypatch):
     monkeypatch.setattr(swarm, "_load_sibling", _loader)
     plan = swarm.build_swarm_plan(_edit_snapshot(), worker_slots=8)
