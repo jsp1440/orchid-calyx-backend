@@ -75,7 +75,7 @@ jobs:
           if [ "$PRODUCTION" = "true" ]; then
             # Never falls back to the acceptance credential.
             dsn="$PRODUCTION_DSN"
-            flags+=(--require-loop --database autonomy_prod)
+            flags+=(--require-loop --database autonomy_prod --production)
           elif [ "$MIDRUN" = "true" ]; then
             flags+=(--require-midrun)
             dsn="$MIDRUN_DSN"

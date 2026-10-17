@@ -108,7 +108,9 @@ at these points:
 3. daily during a 7-day soak;
 4. weekly afterwards.
 
-All 17 checks must pass. The checks that need a restart or new inputs pass
+The production run passes `--production`: `ten_consecutive_productive` is
+still reported but is advisory, because on live `main` work arrives in bursts
+and a healthy worker idles between merges. The other 16 checks must pass. The checks that need a restart or new inputs pass
 naturally as real merges arrive. To run it, add the label
 `render-autonomy-verify-production` to any pull request:
 `render-autonomy-acceptance-verify.yml` then verifies `autonomy_prod` with
@@ -158,10 +160,30 @@ database). It does not widen any executor or provider permission.
 Nothing in rollback touches the production web service, its database, or any
 GitHub branch.
 
-## 9. Out of scope (separate approvals)
+## 9. Approving proposals (issue handoff)
+
+Engineering and repair work is never run by the worker; it is recorded as a
+proposal in the `autonomy_prod` ledger. To turn proposals into real work:
+
+1. **Review.** Run *Autonomy proposal handoff* (Actions → Run workflow, mode
+   `review`). The job summary lists every proposal with its fingerprint,
+   class, origin, rationale and evidence. It reads with the SELECT-only
+   `OC_AUTONOMY_PROD_VERIFY_DATABASE_URL` secret.
+2. **Approve.** Add an entry to `deploy/autonomy/approvals.json`
+   (`fingerprint`, `approved_by`, `reason`, optional `expires_at`) in a pull
+   request, and merge it after review. Approving is a reviewed commit.
+3. **Handoff.** The merge to `main` runs the same workflow in `handoff`
+   mode: one GitHub issue per newly approved engineering or repair proposal,
+   labelled `autonomy-handoff`, carrying the fingerprint so it is never filed
+   twice. `handoff-dry-run` shows the plan without opening anything.
+
+The issue is ordinary reviewed work: a branch, a pull request, CI and review.
+Nothing is merged, deployed or published automatically. Pointing the worker at
+the same file (`OC_BRAIN_LOOP_APPROVALS`) is optional and only changes how the
+ledger labels approved proposals.
+
+## 10. Out of scope (separate approvals)
 
 - **Paid coding lane:** requires `NO_API_MODE=false`, an allowlisted provider
   and `ANTHROPIC_API_KEY`.
-- **Issue handoff** for approved proposals.
-- **An approvals interface.**
 - **Scientific ingestion and publication.**

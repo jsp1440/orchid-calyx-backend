@@ -403,3 +403,67 @@ def test_loop_acceptance_requires_new_input_executed_once_and_learning(tmp_path)
 def test_loop_acceptance_fails_closed(tmp_path, kwargs, failing):
     checks = _module().verify_loop(_loop_db(tmp_path, **kwargs), owner=OWNER)
     assert checks[failing]["passed"] is False
+
+
+# --- production profile: throughput is reported, not gated -------------------
+
+
+def _checks(**passed):
+    return {name: {"passed": value} for name, value in passed.items()}
+
+
+def test_production_profile_makes_only_throughput_advisory():
+    module = _module()
+    checks = _checks(
+        ten_consecutive_productive=False,
+        paid_execution_gated=True,
+        no_duplicate_execution=True,
+    )
+    module.apply_production_profile(checks)
+    assert checks["ten_consecutive_productive"]["advisory"] is True
+    assert "advisory" not in checks["paid_execution_gated"]
+    assert "advisory" not in checks["no_duplicate_execution"]
+    assert module.overall_passed(checks) is True
+
+
+def test_production_profile_still_fails_on_any_safety_check():
+    module = _module()
+    checks = _checks(ten_consecutive_productive=True, paid_execution_gated=False)
+    module.apply_production_profile(checks)
+    assert module.overall_passed(checks) is False
+
+
+def test_acceptance_keeps_throughput_as_a_hard_gate():
+    module = _module()
+    checks = _checks(ten_consecutive_productive=False, paid_execution_gated=True)
+    assert module.overall_passed(checks) is False  # no profile applied
+
+
+def test_a_report_of_only_advisory_checks_never_passes():
+    module = _module()
+    checks = _checks(ten_consecutive_productive=True)
+    module.apply_production_profile(checks)
+    assert module.overall_passed(checks) is False
+
+
+def test_operational_snapshot_reports_live_facts_without_judging(tmp_path):
+    module = _module()
+    db = _loop_db(tmp_path)
+    snapshot = module.operational_snapshot(db, owner=OWNER)
+    cycles = snapshot["cycles"]
+    assert cycles["total"] == 10
+    assert (
+        cycles["productive"] == 4
+        and cycles["waiting"] == 6
+        and cycles["unhealthy"] == 0
+    )
+    assert cycles["worker_starts"] == 2  # first start and the restart
+    assert cycles["by_category"] == {"productive": 4, "owner_gate": 6}
+    assert cycles["last_finished_at"] is not None
+    assert snapshot["last_cycle"]["worker_id"] == "w"
+    assert snapshot["jobs"]["total"] == 0 and snapshot["jobs"]["leases_held"] == 0
+    assert snapshot["proposals"]["by_state"] == {"awaiting_approval": 1}
+    assert snapshot["proposals"]["awaiting_approval"] == [
+        "f"
+    ]  # ledger key is the fingerprint
+    assert "passed" not in snapshot  # facts, never a verdict
