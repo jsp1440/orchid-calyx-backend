@@ -5,7 +5,14 @@ from __future__ import annotations
 import subprocess
 import sys
 
-from scripts.oc_validation_commands import VALIDATION_COMMANDS, resolve
+import pytest
+
+from scripts.oc_validation_commands import (
+    VALIDATION_COMMANDS,
+    UnknownValidationCommand,
+    argv_for,
+    resolve,
+)
 
 
 def test_autonomy_restart_continuity_proof_is_fixed_and_provider_free() -> None:
@@ -116,6 +123,7 @@ def test_undeclared_imports_check_is_fixed_and_re_runs_discovery() -> None:
         "undeclared-import",
     )
     assert command.settles == ("undeclared-import",)
+    assert command.parameter == "--distribution"
     assert "declares" in command.proves
     assert resolve(["undeclared-imports"]) == [command]
 
@@ -177,3 +185,54 @@ class TestConditionValidatorContract:
                 candidate.validation_command
                 == discovery.CONDITION_VALIDATORS[candidate.source]
             )
+
+
+class TestParameterIsValidatedNotInjectable:
+    def test_a_valid_distribution_is_one_argv_element_after_the_fixed_flag(self) -> None:
+        command = VALIDATION_COMMANDS["undeclared-imports"]
+        assert argv_for(command) == command.argv
+        assert argv_for(command, "google-auth-httplib2") == (
+            *command.argv,
+            "--distribution",
+            "google-auth-httplib2",
+        )
+        assert argv_for(command, "zope.interface")[-1] == "zope.interface"
+
+    @pytest.mark.parametrize(
+        "value",
+        [
+            "",
+            "-x",
+            "--root=/",
+            "httplib2 --root /",
+            "httplib2;rm -rf /",
+            "$(id)",
+            "a/b",
+            "../x",
+            "HTTPLIB2",
+            "httplib2-",
+            "x" * 101,
+        ],
+    )
+    def test_an_unsafe_value_is_refused(self, value) -> None:
+        with pytest.raises(UnknownValidationCommand, match="invalid parameter"):
+            argv_for(VALIDATION_COMMANDS["undeclared-imports"], value)
+
+    def test_only_a_command_that_declares_a_parameter_takes_one(self) -> None:
+        for command in VALIDATION_COMMANDS.values():
+            if command.parameter:
+                continue
+            with pytest.raises(UnknownValidationCommand, match="takes no parameter"):
+                argv_for(command, "httplib2")
+        assert [c for c, cmd in VALIDATION_COMMANDS.items() if cmd.parameter] == [
+            "undeclared-imports"
+        ]
+
+    def test_the_check_cli_rejects_an_invalid_distribution(self) -> None:
+        from scripts import oc_work_discovery as discovery
+
+        with pytest.raises(SystemExit) as raised:
+            discovery.main(
+                ["--check", "undeclared-import", "--distribution", "--root=/"]
+            )
+        assert raised.value.code == 2

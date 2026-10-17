@@ -46,7 +46,7 @@ from scripts.oc_product_lanes import (
     lane_for_path,
     rank_of,
 )
-from scripts.oc_validation_commands import VALIDATION_COMMANDS
+from scripts.oc_validation_commands import PARAMETER_VALUE, VALIDATION_COMMANDS
 
 REPORT_SCHEMA = "oc.work-discovery.v1"
 
@@ -495,6 +495,20 @@ def _imported_modules(source: str) -> set[str]:
     return {name for name in names if name and not name.startswith("_")}
 
 
+def undeclared_import_key(distribution: str, paths: list[str]) -> str:
+    """The semantic key (and so the fingerprint) of one undeclared-import finding.
+
+    One function, so the edit lane can verify an issue's declared distribution
+    against its fingerprint with exactly the formula discovery used.
+    """
+    return f"undeclared-import:{distribution}:" + ",".join(sorted(paths))
+
+
+def canonical_distribution(name: str) -> str:
+    """PEP 503 normalised distribution name."""
+    return re.sub(r"[-_.]+", "-", str(name)).lower()
+
+
 def discover_undeclared_imports(root: Path, *, provided_by: dict[str, list[str]] | None = None) -> list[Candidate]:
     """Production code importing a distribution no requirements file declares.
 
@@ -564,7 +578,7 @@ def discover_undeclared_imports(root: Path, *, provided_by: dict[str, list[str]]
                     )
                     for item in relative
                 ),
-                semantic_key=f"undeclared-import:{distribution}:" + ",".join(relative),
+                semantic_key=undeclared_import_key(distribution, relative),
                 proposed_remedy=(
                     f"Add {distribution} to requirements.txt with a pin consistent with the "
                     "dependency that currently supplies it, so the deployment declares what it imports."
@@ -808,12 +822,19 @@ CHECKABLE_SOURCES = ("undeclared-import",)
 
 
 def check_condition(
-    source: str, root: Path, *, provided_by: dict[str, list[str]] | None = None
+    source: str,
+    root: Path,
+    *,
+    provided_by: dict[str, list[str]] | None = None,
+    distribution: str | None = None,
 ) -> tuple[int, dict[str, Any]]:
     """Re-run one discovery source and say whether its condition still holds.
 
     Exit status: 0 when the source finds nothing, 1 while any finding remains,
-    2 when the environment cannot decide. An environment exposing no
+    2 when the environment cannot decide. With ``distribution`` the statement
+    is about that distribution's finding only: another distribution that is
+    still undeclared is reported under ``other_remaining`` and does not fail
+    it, because it is a different issue with its own settlement. An environment exposing no
     distribution metadata at all would make ``discover_undeclared_imports``
     silent -- it fails closed toward *no finding* -- and silence there must not
     read as "resolved", so it is reported as inconclusive instead.
@@ -825,7 +846,9 @@ def check_condition(
         "schema": CHECK_SCHEMA,
         "source": source,
         "root": str(root),
+        "distribution": distribution,
         "remaining": [],
+        "other_remaining": [],
     }
     if not provides:
         record.update(
@@ -834,17 +857,31 @@ def check_condition(
             reason="the environment exposes no installed distribution metadata",
         )
         return 2, record
-    remaining = discover_undeclared_imports(root, provided_by=provides)
-    record["remaining"] = [
+    found = discover_undeclared_imports(root, provided_by=provides)
+    scope = canonical_distribution(distribution) if distribution else None
+    rows = [
         {
             "distribution": candidate.remedy.get("distribution"),
             "fingerprint": candidate.fingerprint,
             "paths": [item.where for item in candidate.evidence],
         }
-        for candidate in remaining
+        for candidate in found
     ]
+    remaining = [
+        row
+        for row in rows
+        if scope is None or canonical_distribution(row["distribution"]) == scope
+    ]
+    record["remaining"] = remaining
+    record["other_remaining"] = [row for row in rows if row not in remaining]
     record.update(passed=not remaining, conclusive=True)
     return (1 if remaining else 0), record
+
+
+def _parameter_value(value: str) -> str:
+    if not PARAMETER_VALUE.fullmatch(value):
+        raise argparse.ArgumentTypeError(f"invalid distribution name: {value!r}")
+    return value
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -864,11 +901,21 @@ def main(argv: list[str] | None = None) -> int:
             "absent, 1 while any finding remains, 2 when undecidable"
         ),
     )
+    parser.add_argument(
+        "--distribution",
+        type=_parameter_value,
+        default=None,
+        help="with --check undeclared-import: decide only this distribution's finding",
+    )
     args = parser.parse_args(argv)
 
     root = Path(args.root).resolve()
+    if args.distribution is not None and not args.check:
+        parser.error("--distribution requires --check")
     if args.check:
-        status, record = check_condition(args.check, root)
+        status, record = check_condition(
+            args.check, root, distribution=args.distribution
+        )
         json.dump(record, sys.stdout, indent=2, sort_keys=True)
         sys.stdout.write("\n")
         return status

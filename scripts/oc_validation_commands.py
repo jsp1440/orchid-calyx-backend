@@ -39,6 +39,13 @@ from dataclasses import dataclass
 #: crosses the trust boundary from issue text into an argument vector.
 COMMAND_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 
+#: The only shape a command parameter value may take: a distribution name as
+#: discovery records it (lower case; ``-``, ``.`` separators). It must start
+#: and end alphanumeric, so it can never be read as an option, and it carries
+#: no whitespace, quoting or path separator. It is appended as one argv element
+#: after the command's fixed flag, never interpolated into a string.
+PARAMETER_VALUE = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,98}[a-z0-9])?$")
+
 #: Ceiling on how many commands one task may request. A validation task is a
 #: bounded unit of work, not a way to run the whole suite under a lease that
 #: another lane is waiting on.
@@ -80,12 +87,20 @@ class ValidationCommand:
     #: undeclared-import finding was resolved. See
     #: ``oc_work_discovery.CONDITION_VALIDATORS``.
     settles: tuple[str, ...] = ()
+    #: The one option this command accepts a scoped value for, or "". Only a
+    #: command that declares it may be given a value, and the value must match
+    #: ``PARAMETER_VALUE``; see ``argv_for``. Without a value the command runs
+    #: its fixed argv, which for a condition check is the stricter, unscoped
+    #: statement.
+    parameter: str = ""
 
     def __post_init__(self) -> None:
         if not COMMAND_ID.fullmatch(self.command_id):
             raise ValueError(f"invalid validation command id: {self.command_id!r}")
         if not self.argv or not all(isinstance(part, str) and part for part in self.argv):
             raise ValueError(f"validation command {self.command_id!r} has no argument vector")
+        if self.parameter and not re.fullmatch(r"--[a-z][a-z-]{0,31}", self.parameter):
+            raise ValueError(f"validation command {self.command_id!r} has an invalid parameter")
 
 
 def _pytest(*targets: str) -> tuple[str, ...]:
@@ -220,6 +235,9 @@ _COMMANDS = (
             "declares; it says nothing about distributions the runner has not installed"
         ),
         settles=("undeclared-import",),
+        # Scoped to the finding's own distribution when settled for one issue,
+        # so another distribution's still-open finding cannot fail it.
+        parameter="--distribution",
     ),
     ValidationCommand(
         command_id="calyx-product-advisory",
@@ -245,6 +263,27 @@ _COMMANDS = (
 VALIDATION_COMMANDS: dict[str, ValidationCommand] = {
     command.command_id: command for command in _COMMANDS
 }
+
+
+def argv_for(command: ValidationCommand, value: str | None = None) -> tuple[str, ...]:
+    """The argument vector to execute, optionally scoped by one validated value.
+
+    ``None`` runs the registered argv unchanged. A value is accepted only for a
+    command that declares a ``parameter`` and only when it matches
+    ``PARAMETER_VALUE``; anything else raises rather than running a command
+    with an argument nobody registered.
+    """
+    if value is None:
+        return command.argv
+    if not command.parameter:
+        raise UnknownValidationCommand(
+            f"validation command {command.command_id!r} takes no parameter"
+        )
+    if not isinstance(value, str) or not PARAMETER_VALUE.fullmatch(value):
+        raise UnknownValidationCommand(
+            f"invalid parameter value for {command.command_id!r}: {value!r}"
+        )
+    return (*command.argv, command.parameter, value)
 
 
 def resolve(command_ids: list[str]) -> list[ValidationCommand]:

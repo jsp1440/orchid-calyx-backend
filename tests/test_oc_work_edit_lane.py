@@ -9,6 +9,7 @@ repository itself with the pytest-asyncio gap re-created and the real
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import os
@@ -1484,6 +1485,27 @@ class TestUndeclaredImportConditionCheck:
         assert result["passed"] is False
 
 
+def undeclared_candidate(
+    distribution: str,
+    paths: tuple[str, ...] = ("app/field_observation/drive_archive.py",),
+    command: str = "undeclared-imports",
+) -> dict:
+    """An undeclared-import candidate whose fingerprint is discovery's own."""
+    key = discovery.undeclared_import_key(distribution, list(paths))
+    cand = candidate(
+        source="undeclared-import",
+        distribution=distribution,
+        command=command,
+        fingerprint=hashlib.sha256(key.encode("utf-8")).hexdigest()[:16],
+    )
+    cand["semantic_key"] = key
+    cand["evidence"] = [
+        {"kind": "undeclared-direct-import", "where": path, "detail": "d"}
+        for path in sorted(paths)
+    ]
+    return cand
+
+
 class TestConditionAbsentNeedsTheConditionCheck:
     def run(self, tiny_repo, cand, runner):
         _origin, work, base = tiny_repo
@@ -1533,11 +1555,7 @@ class TestConditionAbsentNeedsTheConditionCheck:
     def test_the_condition_check_settles_absent_from_its_own_exit_code(
         self, tiny_repo
     ) -> None:
-        cand = candidate(
-            source="undeclared-import",
-            distribution="httplib2",
-            command="undeclared-imports",
-        )
+        cand = undeclared_candidate("httplib2")
         receipt, _ = self.run(
             tiny_repo, cand, lambda argv, cwd, timeout: completed(argv, 1, "{}")
         )
@@ -1549,14 +1567,101 @@ class TestConditionAbsentNeedsTheConditionCheck:
         )
         assert receipt["outcome"] == "condition_absent_validated"
         assert receipt["disposition"] == "done"
-        assert receipt["after"]["argv"][-2:] == ["--check", "undeclared-import"]
+        # Scoped to the issue's own distribution, verified against its
+        # fingerprint, so #1976's finding cannot fail #1977's settlement.
+        assert receipt["after"]["argv"][-4:] == [
+            "--check",
+            "undeclared-import",
+            "--distribution",
+            "httplib2",
+        ]
+        assert receipt["after"]["scope"] == "httplib2"
+
+    def test_a_marker_that_does_not_reproduce_the_fingerprint_is_refused(
+        self, tiny_repo
+    ) -> None:
+        ran: list[tuple] = []
+
+        def runner(argv, cwd, timeout):
+            ran.append(tuple(argv))
+            return completed(argv, 0, "{}")
+
+        cand = undeclared_candidate("httplib2")
+        issue = issue_for(cand)
+        issue["body"] = issue["body"].replace(
+            "OC-DISCOVERY-DISTRIBUTION: httplib2",
+            "OC-DISCOVERY-DISTRIBUTION: google-auth-httplib2",
+        )
+        _origin, work, base = tiny_repo
+        receipt = lane.run_lane(
+            issue,
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=FakeGitHub(),
+            git_call=lane.git,
+            runner=runner,
+            discover=lambda root: {"candidates": []},
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "refused"
+        assert receipt["reason"] == "issue_distribution_does_not_match_fingerprint"
+        assert ran == []
+
+    @pytest.mark.parametrize(
+        "value", ["--root=/", "httplib2 --root /", "x;rm", "-x", "HTTPLIB2", "a/b"]
+    )
+    def test_an_injected_marker_value_never_reaches_argv(
+        self, tiny_repo, value
+    ) -> None:
+        ran: list[tuple] = []
+        cand = undeclared_candidate("httplib2")
+        issue = issue_for(cand)
+        issue["body"] = issue["body"].replace(
+            "OC-DISCOVERY-DISTRIBUTION: httplib2", f"OC-DISCOVERY-DISTRIBUTION: {value}"
+        )
+        _origin, work, base = tiny_repo
+        receipt = lane.run_lane(
+            issue,
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=FakeGitHub(),
+            git_call=lane.git,
+            runner=lambda argv, cwd, timeout: ran.append(tuple(argv)),
+            discover=lambda root: {"candidates": []},
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "refused" and ran == []
+
+    def test_an_issue_without_the_marker_runs_the_stricter_unscoped_check(
+        self, tiny_repo
+    ) -> None:
+        cand = undeclared_candidate("httplib2")
+        issue = issue_for(cand)
+        issue["body"] = issue["body"].replace(
+            "OC-DISCOVERY-DISTRIBUTION: httplib2\n", ""
+        )
+        _origin, work, base = tiny_repo
+        receipt = lane.run_lane(
+            issue,
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=FakeGitHub(),
+            git_call=lane.git,
+            runner=lambda argv, cwd, timeout: completed(argv, 0, "{}"),
+            discover=lambda root: {"candidates": []},
+            worktree_root=work.parent,
+        )
+        assert receipt["after"]["scope"] is None
+        assert "--distribution" not in receipt["after"]["argv"]
 
     def test_the_settled_receipt_is_accepted_by_the_worker(self, tiny_repo) -> None:
-        cand = candidate(
-            source="undeclared-import",
-            distribution="httplib2",
-            command="undeclared-imports",
-        )
+        cand = undeclared_candidate("httplib2")
         receipt, _ = self.run(
             tiny_repo, cand, lambda argv, cwd, timeout: completed(argv, 0, "{}")
         )
@@ -1564,3 +1669,132 @@ class TestConditionAbsentNeedsTheConditionCheck:
             "done",
             None,
         )
+
+
+# -- Per-distribution scoping: two findings, one declared (#1981/#1982 shape) --
+
+
+def _two_lazy_imports(root: Path, first: str, second: str) -> Path:
+    (root / "requirements.txt").write_text("fastapi<0.116\n")
+    (root / "app").mkdir()
+    (root / "app" / "__init__.py").write_text("")
+    (root / "app" / "a.py").write_text(f"def a():\n    import {first}\n")
+    (root / "runtime").mkdir()
+    (root / "runtime" / "b.py").write_text(f"def b():\n    import {second}\n")
+    return root
+
+
+TWO_PROVIDERS = {
+    "httplib2": ["httplib2"],
+    "google_auth_httplib2": ["google-auth-httplib2"],
+}
+
+
+class TestScopedToTheFindingsOwnDistribution:
+    def test_declaring_one_settles_it_while_the_other_still_fails(
+        self, tmp_path: Path
+    ) -> None:
+        root = _two_lazy_imports(tmp_path, "httplib2", "google_auth_httplib2")
+        (root / "requirements.txt").write_text("fastapi<0.116\nhttplib2==0.22.0\n")
+
+        def check(distribution):
+            return discovery.check_condition(
+                "undeclared-import",
+                root,
+                provided_by=TWO_PROVIDERS,
+                distribution=distribution,
+            )
+
+        status, record = check("httplib2")
+        assert status == 0 and record["passed"] is True
+        assert [row["distribution"] for row in record["other_remaining"]] == [
+            "google-auth-httplib2"
+        ]
+        status, record = check("google-auth-httplib2")
+        assert status == 1
+        assert [row["distribution"] for row in record["remaining"]] == [
+            "google-auth-httplib2"
+        ]
+        # PEP 503 spelling variants name the same finding.
+        assert check("google.auth_httplib2")[0] == 1
+        # Unscoped stays the stricter statement.
+        assert check(None)[0] == 1
+
+    def test_the_registered_argv_scopes_with_real_installed_distributions(
+        self, tmp_path: Path
+    ) -> None:
+        pytest.importorskip("starlette")
+        from scripts.oc_validation_commands import VALIDATION_COMMANDS, argv_for
+
+        root = _two_lazy_imports(tmp_path, "starlette", "anyio")
+        (root / "requirements.txt").write_text("fastapi<0.116\nstarlette\n")
+        command = VALIDATION_COMMANDS["undeclared-imports"]
+        declared = _registered_command_runner(
+            argv_for(command, "starlette"), str(root), 120
+        )
+        assert declared.returncode == 0, declared.stdout + declared.stderr
+        undeclared = _registered_command_runner(
+            argv_for(command, "anyio"), str(root), 120
+        )
+        assert undeclared.returncode == 1, undeclared.stdout + undeclared.stderr
+        bad = _registered_command_runner(
+            (*command.argv, "--distribution", "anyio;id"), str(root), 60
+        )
+        assert bad.returncode == 2 and "invalid distribution name" in bad.stderr
+
+    def test_the_lane_opens_a_pr_for_one_of_two_undeclared_distributions(
+        self, tiny_repo
+    ) -> None:
+        """The engine's own #1981/#1982 shape: one package per PR."""
+        pytest.importorskip("starlette")
+        from importlib.metadata import version
+
+        _origin, work, base = tiny_repo
+        _two_lazy_imports_in_repo(work, "starlette", "anyio")
+        base = _git(["rev-parse", "HEAD"], work)
+        report = discovery.discover(work)
+        found = {
+            c["remedy"]["distribution"]: c
+            for c in report["candidates"]
+            if c["source"] == "undeclared-import"
+        }
+        assert set(found) == {"starlette", "anyio"}
+        cand = found["starlette"]
+        receipt = lane.run_lane(
+            issue_for(cand),
+            repository=REPO,
+            lease_comment=LANE_LEASE,
+            root=work,
+            base_sha=base,
+            call=FakeGitHub(),
+            git_call=lane.git,
+            runner=_registered_command_runner,
+            version_of=lambda name: version(name),
+            provision=None,
+            worktree_root=work.parent,
+        )
+        assert receipt["outcome"] == "pr_opened", receipt
+        assert receipt["before"]["exit_code"] == 1 and receipt["after"]["passed"]
+        assert receipt["after"]["argv"][-2:] == ["--distribution", "starlette"]
+
+
+def _two_lazy_imports_in_repo(work: Path, first: str, second: str) -> None:
+    (work / "app").mkdir()
+    (work / "app" / "__init__.py").write_text("")
+    (work / "app" / "a.py").write_text(f"def a():\n    import {first}\n")
+    (work / "runtime").mkdir()
+    (work / "runtime" / "b.py").write_text(f"def b():\n    import {second}\n")
+    _git(["add", "."], work)
+    _git(
+        [
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@example.com",
+            "commit",
+            "-q",
+            "-m",
+            "two",
+        ],
+        work,
+    )
