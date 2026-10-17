@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: orchid-agent-coordinator-staging
+    runtime: docker
+    repo: https://github.com/jsp1440/orchid-calyx-backend
+    branch: feat/agent-coordination-1823
+    plan: starter
+    region: oregon
+    autoDeployTrigger: 'off'
+    numInstances: 1
+    dockerfilePath: deploy/coordination/Dockerfile
+    dockerContext: .
+    healthCheckPath: /healthz
+    disk:
+      name: acs-staging-state
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: COORDINATOR_STAGE
+        value: staging
+      - key: COORDINATOR_INGRESS_KEYS
+        sync: false
+      - key: COORDINATOR_GITHUB_TOKEN
+        sync: false
+      - key: COORDINATOR_PRINCIPALS
+        sync: false
+      - key: COORDINATOR_REPORTER_IDS
+        sync: false
+      - key: COORDINATOR_WEBHOOK_SECRET
+        sync: false
