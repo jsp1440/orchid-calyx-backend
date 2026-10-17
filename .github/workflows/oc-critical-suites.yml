@@ -54,6 +54,7 @@ env:
     tests/test_eligible_ledger_discovery.py
     tests/test_eligible_ledger_discovery_observability.py
     tests/test_swarm_governor_github_ledger.py
+    tests/test_governor_cost_settlement.py
     tests/test_ledger_exact_revision_retrieval.py
     tests/test_reasoning_ledger_exact_revision.py
     tests/test_reasoning_ledger_exact_service.py
