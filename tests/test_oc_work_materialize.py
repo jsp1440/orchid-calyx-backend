@@ -763,6 +763,11 @@ def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
     path = tmp_path / "brain-pulse.json"
     monkeypatch.setattr("sys.argv", ["oc_brain_pulse", "--output", str(path)])
     assert brain_pulse.main() == 0
+    reported_brain_candidates = [
+        item
+        for item in json.loads(path.read_text(encoding="utf-8"))["candidates"]
+        if item["source"] == brain_pulse.MISSION_SOURCE
+    ]
     transport = FakeGitHub()
     monkeypatch.setattr(materialize, "github", transport)
     output = tmp_path / "github-output"
@@ -793,7 +798,10 @@ def test_default_workflow_combined_cli_reserves_calyx_and_preserves_brain(
                 "Discovery source: `calyx-product-advisory`" not in issue["body"]
                 for issue in transport.issues
             )
-        assert all(transport.of(item["fingerprint"]) for item in brain_candidates[:2])
+        assert all(
+            transport.of(item["fingerprint"])
+            for item in reported_brain_candidates[:2]
+        )
 
 
 def test_combined_pulse_zero_bound_does_not_insert_work():
