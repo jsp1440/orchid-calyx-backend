@@ -1,4 +1,9 @@
-from app.lexicon.routes import _definition_map, _entry_payload, lexicon_capabilities
+from app.lexicon.routes import (
+    _citation_identity,
+    _definition_map,
+    _entry_payload,
+    lexicon_capabilities,
+)
 
 
 def test_definition_priority_and_famous_shape():
@@ -46,6 +51,97 @@ def test_definition_priority_and_famous_shape():
     assert "scientifically_enriched" in entry["maturity"]
     assert "expert_reviewed" in entry["maturity"]
     assert entry["source_system"] == "oc_concepts"
+
+
+def test_definition_version_exposes_source_provided_citation_and_evidence_identity():
+    concept = {
+        "concept_id": "11111111-1111-1111-1111-111111111111",
+        "status": "ACTIVE",
+        "review_state": "APPROVED",
+    }
+    definitions = [
+        {
+            "definition_id": "d1",
+            "definition_type": "GLOSSARY",
+            "text": "A source-grounded definition.",
+            "review_state": "APPROVED",
+            "provenance": {
+                "citation": "Example orchid study",
+                "identifiers": [
+                    {"scheme": "doi", "value": "10.1234/example"},
+                    {"scheme": "pmid", "value": "12345678"},
+                    {"scheme": "isbn", "value": "9780306406157"},
+                    {"scheme": "uri", "value": "https://example.org/private"},
+                    {"scheme": "other", "value": "local-id"},
+                    {"scheme": "doi", "value": "file:///private/source.pdf"},
+                    {"scheme": "doi", "value": "10.1234/file:///private/source.pdf"},
+                    {"scheme": "doi", "value": "10.1234/C:/Users/alice/private.pdf"},
+                    {"scheme": "doi", "value": "10.1234/C:UsersAlice.private.pdf"},
+                    {"scheme": "doi", "value": "10.1234//home/alice/private.pdf"},
+                    {"scheme": "doi", "value": "10.1234/http:/home/alice/private.pdf"},
+                ],
+                "evidence_id": "evidence-1",
+                "source_hash": "a" * 64,
+                "excerpt_hash": "b" * 64,
+                "confidence": 0.72,
+                "uncertainty": "PROVISIONAL",
+                "storage_uri": "file:///private/source.pdf",
+            },
+        }
+    ]
+
+    entry = _entry_payload(concept, [], definitions)
+
+    assert entry["definition_versions"][0]["sources"] == ["Example orchid study"]
+    assert entry["definition_versions"][0]["citation_identity"] == {
+        "identifiers": [
+            {"scheme": "doi", "value": "10.1234/example"},
+            {"scheme": "pmid", "value": "12345678"},
+            {"scheme": "isbn", "value": "9780306406157"},
+        ],
+        "evidence_id": "evidence-1",
+        "source_hash": "a" * 64,
+        "excerpt_hash": "b" * 64,
+        "confidence": 0.72,
+        "uncertainty": "PROVISIONAL",
+    }
+
+
+def test_citation_identity_omits_unstructured_or_invalid_provenance():
+    assert (
+        _citation_identity(
+            {
+                "identifiers": [{"scheme": "pmid", "value": "file:///private"}],
+                "evidence_id": "C:UsersAlice.private.pdf",
+                "source_hash": "not-a-sha256",
+                "confidence": 2,
+                "uncertainty": {"storage_uri": "file:///private/source.pdf"},
+            }
+        )
+        is None
+    )
+
+
+def test_definition_version_does_not_synthesize_missing_citation_identity():
+    concept = {
+        "concept_id": "11111111-1111-1111-1111-111111111111",
+        "status": "ACTIVE",
+        "review_state": "APPROVED",
+    }
+    definitions = [
+        {
+            "definition_id": "d1",
+            "definition_type": "GLOSSARY",
+            "text": "A definition with display-only provenance.",
+            "review_state": "APPROVED",
+            "provenance": {"citation": "Unresolved source"},
+        }
+    ]
+
+    entry = _entry_payload(concept, [], definitions)
+
+    assert entry["definition_versions"][0]["sources"] == ["Unresolved source"]
+    assert entry["definition_versions"][0]["citation_identity"] is None
 
 
 def test_capabilities_preserve_governance_boundaries():
