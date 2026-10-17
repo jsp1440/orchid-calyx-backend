@@ -26,10 +26,16 @@ def test_autonomy_restart_continuity_proof_is_fixed_and_provider_free() -> None:
 
 
 def test_autonomy_restart_continuity_proof_command_executes() -> None:
-    """Exercise the exact fixed argv that the provider-free worker will run."""
+    """Exercise the exact fixed argv that the provider-free worker will run.
+
+    The interpreter is this test's own (``sys.executable``), not whatever bare
+    ``python3`` resolves to on ``PATH``: a system interpreter without the
+    project dependencies (e.g. no sqlalchemy) otherwise fails the child run
+    for an environmental reason. The argv itself is pinned by the test above.
+    """
     command = VALIDATION_COMMANDS["autonomy-restart-continuity-tests"]
     result = subprocess.run(
-        command.argv,
+        (sys.executable, *command.argv[1:]),
         check=False,
         capture_output=True,
         text=True,
@@ -64,10 +70,16 @@ def test_bounded_lane_runtime_proof_resolves_without_free_form_shell() -> None:
 
 
 def test_bounded_lane_runtime_proof_command_executes() -> None:
-    """Exercise the exact fixed argv that the provider-free worker will run."""
+    """Exercise the exact fixed argv that the provider-free worker will run.
+
+    The interpreter is this test's own (``sys.executable``), not whatever bare
+    ``python3`` resolves to on ``PATH``: a system interpreter without the
+    project dependencies (e.g. no sqlalchemy) otherwise fails the child run
+    for an environmental reason. The argv itself is pinned by the test above.
+    """
     command = VALIDATION_COMMANDS["bounded-lane-runtime-tests"]
     result = subprocess.run(
-        command.argv,
+        (sys.executable, *command.argv[1:]),
         check=False,
         capture_output=True,
         text=True,
