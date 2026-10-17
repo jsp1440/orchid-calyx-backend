@@ -75,9 +75,11 @@ is an integer from 1 to 10. `max_reserved_usd_per_issue` is a two-decimal string
 no larger than the router's largest per-run reservation (2.00). `allowed_lanes`
 are full `oc-lane:*` label names, `allowed_sources` the discovery sources named in
 the issue's `Discovery source:` line, and `allowed_paths` exact, unprotected file
-paths (at most 12): the checker's write-scope check is exact membership, so a
-discovered PR may touch only those files, and must include a `tests/*.py` file
-among them.
+paths (at most 12, at least one `tests/*.py`): the checker's write-scope check is
+exact membership, so a discovered PR may touch only those files. No grant of any
+kind may name `conftest.py`, `sitecustomize.py`, `usercustomize.py`,
+`pytest.ini`, `setup.cfg`, `tox.ini` or a `.pth` file in any directory, nor the
+admission, materializer, discovery, router or controller-trust scripts.
 
 An issue qualifies only when it is open, not a pull request, and opened by
 `github-actions[bot]` (account type Bot, which a person cannot impersonate); its
@@ -88,16 +90,41 @@ one listed `oc-lane:*` label; it has no `oc-owner-gate`, `blocked-on-owner`,
 `OC-AUTO-REQUEUE: false` and no owner-gate disposition; its body was never
 edited and its title never renamed, by anyone (read from GraphQL `lastEditedAt`
 and rename events, because REST `updated_at` moves on every label change); and
-any `Allowed paths:` it declares lie inside the grant, narrowing it. An
-owner-opened issue is never on this path; it stays on the digest-listed grant.
+any `Allowed paths:` it declares lie inside the grant, narrowing it, and still
+include a test. Hold labels match case-insensitively. An owner-opened issue is
+never on this path; it stays on the digest-listed grant.
 
 Paid admission (`scripts/oc_paid_issue_admission.py`) then requires the route's
 reservation to be within `max_reserved_usd_per_issue` and counts today's (UTC)
-`[OC-DISCOVERY-ADMISSION]` receipts on governor ledger #1330, refusing at
-`max_issues_per_day`. The receipt is written and read back before admission is
-reported; a run the governor then refuses still uses its slot. Budget, kill
-switch, NO-API, provider allowlist and paid concurrency all still apply, as do
-one checker call per issue and the factory gate.
+`[OC-DISCOVERY-ADMISSION]` receipts written by `github-actions[bot]` on governor
+ledger #1330, refusing at `max_issues_per_day`. It writes the admitted paths
+into the worker's packet as its `Allowed paths:` (a declaration already there
+must match exactly), so the worker never runs with an unbounded write scope.
+The receipt is written and read back before admission is reported; a run the
+governor then refuses still uses its slot. A daily cap
+(`DISCOVERY_DAILY_CAP_REACHED`), reservation ceiling
+(`DISCOVERY_RESERVATION_ABOVE_GRANT`) or unreadable edit history or ledger
+(`DISCOVERY_AUTHORITY_UNAVAILABLE`) returns the issue to the queue unpaid; every
+other refusal still parks it as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED`.
+Budget, kill switch, NO-API, provider allowlist and paid concurrency all still
+apply, as do one checker call per issue and the factory gate.
+
+The worker runs pytest on model-written tests, so it holds no credential a
+child can use: every subprocess except its own `gh` and git remote steps gets an
+environment with GH_TOKEN, GITHUB_TOKEN, provider keys, `ACTIONS_*` and any
+TOKEN/KEY/SECRET/PASSWORD/CREDENTIAL/PRIVATE name removed, git hooks and
+fsmonitor are disabled, the executor makes itself non-dumpable (a child cannot
+read `/proc/<executor>/environ`) and replaces the step shell with `exec`, and
+the lane checkout no longer persists a token in `.git/config` (`gh auth
+setup-git` authenticates pushes from GH_TOKEN at use time). The fallback CLIs
+also drop GITHUB_TOKEN and the OIDC request variables. Residual, not closed
+here: model-written code still runs as the runner user, which on hosted runners
+has passwordless sudo, so a deliberately hostile test can escalate and reach
+the job's credentials, and can tamper with files that later trusted steps
+execute. Closing that needs model-written code to run in a separate job or
+sandbox that holds no credential. Until then a discovered issue's paid spend is
+bounded by the daily cap, the per-issue ceiling and the governor budgets (whose
+ledger is equally exposed to a token holder).
 
 This grant authorizes only a bounded maker run and one checker call whose PR
 targets `oc-autonomous-integration` through the normal independent checker and

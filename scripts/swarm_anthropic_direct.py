@@ -59,6 +59,8 @@ PROTECTED_FILES = {
     "scripts/swarm_governor_postrun.py",
     "scripts/swarm_governor_github_ledger.py",
     "scripts/oc_hosted_completion.py",
+    "scripts/oc_paid_issue_admission.py",
+    "scripts/oc_work_materialize.py",
 }
 PROTECTED_BASENAMES = {
     ".env",
@@ -162,9 +164,81 @@ def _writable(path: Path) -> bool:
     )
 
 
+#: Every subprocess this executor starts runs model-written code or reads
+#: model-written files: pytest imports the tests the model wrote, ruff and git
+#: read its files. None of it may inherit a credential. GH_TOKEN (issues:
+#: write) in a test's environment could open an issue shaped like engine
+#: discovery, which the owner's discovery grant would then pay for, or delete
+#: admission receipts. So the default environment is scrubbed, and only the
+#: deterministic network steps this script itself issues -- ``gh`` and the git
+#: remote commands -- receive the inherited one.
+SECRET_ENV_NAMES = frozenset(
+    {
+        "GH_TOKEN",
+        "GITHUB_TOKEN",
+        "GH_ENTERPRISE_TOKEN",
+        "GITHUB_ENTERPRISE_TOKEN",
+        "ANTHROPIC_API_KEY",
+        "OPENAI_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "DATABASE_URL",
+        "TEST_DATABASE_URL",
+    }
+)
+SECRET_ENV_PATTERN = re.compile(
+    r"TOKEN|KEY|SECRET|PASSWORD|PASSWD|CREDENTIAL|PRIVATE|_DSN$|DATABASE_URL$",
+    re.IGNORECASE,
+)
+#: Runner and OIDC plumbing (ACTIONS_ID_TOKEN_REQUEST_URL/TOKEN,
+#: ACTIONS_RUNTIME_TOKEN, ACTIONS_CACHE_URL, ...) is dropped wholesale.
+SECRET_ENV_PREFIXES = ("ACTIONS_",)
+CREDENTIAL_GIT_COMMANDS = frozenset({"push", "fetch", "pull", "ls-remote", "clone"})
+#: A model-written test can write .git/hooks or core.fsmonitor; neither may then
+#: run inside a trusted git call. Set through the environment so the command
+#: lines stay exactly as they were.
+GIT_SAFETY = {
+    "GIT_CONFIG_COUNT": "2",
+    "GIT_CONFIG_KEY_0": "core.hooksPath",
+    "GIT_CONFIG_VALUE_0": "/dev/null",
+    "GIT_CONFIG_KEY_1": "core.fsmonitor",
+    "GIT_CONFIG_VALUE_1": "false",
+}
+
+
+def _secret_env_name(name: str) -> bool:
+    upper = name.upper()
+    return (
+        upper in SECRET_ENV_NAMES
+        or upper.startswith(SECRET_ENV_PREFIXES)
+        or bool(SECRET_ENV_PATTERN.search(upper))
+    )
+
+
+def tool_environment(environ: dict[str, str] | None = None) -> dict[str, str]:
+    """The inherited environment with every credential-shaped name removed."""
+    source = os.environ if environ is None else environ
+    clean = {k: v for k, v in source.items() if not _secret_env_name(k)}
+    clean.update(GIT_SAFETY)
+    return clean
+
+
+def _needs_credentials(cmd: list[str]) -> bool:
+    """Only this script's own remote steps; never a model-chosen check."""
+    if not cmd:
+        return False
+    program = Path(cmd[0]).name
+    if program == "gh":
+        return True
+    return program == "git" and len(cmd) > 1 and cmd[1] in CREDENTIAL_GIT_COMMANDS
+
+
 def _run(
     cmd: list[str], *, timeout: int = 120, check: bool = False
 ) -> subprocess.CompletedProcess[str]:
+    env = (
+        {**os.environ, **GIT_SAFETY} if _needs_credentials(cmd) else tool_environment()
+    )
     return subprocess.run(
         cmd,
         cwd=REPO_ROOT,
@@ -172,7 +246,25 @@ def _run(
         text=True,
         timeout=timeout,
         check=check,
+        env=env,
     )
+
+
+def harden_process() -> bool:
+    """Make this process non-dumpable, so a child cannot read its environment.
+
+    A model-written test runs as the same user; without this it could read
+    ``/proc/<this pid>/environ`` and recover the credentials the scrub above
+    withheld. Linux only; reports whether it took effect.
+    """
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        pr_set_dumpable = 4
+        return libc.prctl(pr_set_dumpable, 0, 0, 0, 0) == 0
+    except (OSError, AttributeError):
+        return False
 
 
 def _truncate(text: str, limit: int = 12000) -> str:
@@ -788,6 +880,8 @@ def main() -> int:
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
     if not api_key:
         raise SystemExit("ANTHROPIC_API_KEY_REQUIRED")
+    if not harden_process():
+        print("[OC-ANTHROPIC-DIRECT] warning: process not hardened", file=sys.stderr)
     run_id = os.getenv("GITHUB_RUN_ID", str(int(time.time())))
     packet = Path(args.packet_file).read_text(encoding="utf-8")
     execution_path = Path(args.execution_file)

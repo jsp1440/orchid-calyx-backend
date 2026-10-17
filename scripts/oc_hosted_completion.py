@@ -163,6 +163,9 @@ PROTECTED = (
     "scripts/oc_hosted_completion.py",
     "scripts/oc_paid_issue_admission",
     "scripts/oc_work_materialize",
+    "scripts/oc_work_discovery",
+    "scripts/oc_model_router",
+    "scripts/oc_controller_trust",
     "scripts/agent_security_guard.py",
     "scripts/oc_swarm",
     "scripts/oc_health_contract.py",
@@ -205,6 +208,24 @@ PROTECTED = (
     "Dockerfile",
     "render",
 )
+
+
+# Files that run code or change test collection wherever they sit, so no
+# grant may name one in any directory.
+PROTECTED_SEGMENTS = frozenset(
+    {
+        "conftest.py",
+        "sitecustomize.py",
+        "usercustomize.py",
+        "pytest.ini",
+        "setup.cfg",
+        "tox.ini",
+    }
+)
+
+
+class AuthorizationUnavailable(ValueError):
+    """Authority could not be read right now; never a grant, never a verdict."""
 
 
 def require(condition, reason):
@@ -313,6 +334,10 @@ def _safe_allowed_paths(allowed):
             and ".." not in PurePosixPath(p).parts
             and not p.startswith("/")
             and not p.startswith(PROTECTED)
+            and not any(
+                part.casefold() in PROTECTED_SEGMENTS or part.endswith(".pth")
+                for part in PurePosixPath(p).parts
+            )
             for p in allowed
         ),
         "unsafe_allowed_paths",
@@ -496,6 +521,9 @@ def _discovery_grant(record, repository):
         "discovery_authorization_invalid",
     )
     _safe_allowed_paths(grant["allowed_paths"])
+    # The checker refuses a change without a regression test, so a grant that
+    # names none could only ever pay for work that cannot be integrated.
+    require(_has_test_path(grant["allowed_paths"]), "discovery_authorization_invalid")
     expiry = _expiry(grant["expires_at"])
     lifetime = expiry - _expiry(record["created_at"])
     require(
@@ -503,6 +531,10 @@ def _discovery_grant(record, repository):
         "discovery_authorization_invalid",
     )
     return grant, expiry
+
+
+def _has_test_path(paths):
+    return any(p.startswith("tests/") and p.endswith(".py") for p in paths)
 
 
 def discovery_authorization(issue, standing, repository, now=None, history=None):
@@ -564,8 +596,9 @@ def discovery_authorization(issue, standing, repository, now=None, history=None)
         len(lanes) == 1 and lanes <= set(grant["allowed_lanes"]),
         "discovery_lane_not_authorized",
     )
+    holds = {name.casefold() for name in DISCOVERY_HOLDS}
     require(
-        not labels & DISCOVERY_HOLDS
+        not {name.casefold() for name in labels} & holds
         and not NO_REQUEUE.search(body)
         and not re.search(r"(?m)^OC-SWARM-DISPOSITION:\s*owner-gate\s*$", body),
         "issue_owner_held",
@@ -590,6 +623,7 @@ def discovery_authorization(issue, standing, repository, now=None, history=None)
         )
         allowed = sorted(declared)
     _safe_allowed_paths(allowed)
+    require(_has_test_path(allowed), "issue_paths_outside_discovery_authorization")
     return {
         "repository": repository,
         "issue": issue["number"],
@@ -620,8 +654,25 @@ def issue_edit_history(repository, number):
     """Whether anyone ever edited the issue body or renamed its title.
 
     REST reports neither (``updated_at`` moves on every label change), so this
-    reads ``lastEditedAt`` and the rename events. Any error is a refusal.
+    reads ``lastEditedAt`` and the rename events. Any failure to read them
+    raises ``AuthorizationUnavailable``: a refusal, which paid admission
+    returns to the queue rather than parking as owner-gated.
     """
+    try:
+        return _issue_edit_history(repository, number)
+    except AuthorizationUnavailable:
+        raise
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        ValueError,
+        KeyError,
+        TypeError,
+    ) as exc:
+        raise AuthorizationUnavailable("issue_edit_history_unavailable") from exc
+
+
+def _issue_edit_history(repository, number):
     owner, name = repository.split("/")
     result = subprocess.run(
         [
@@ -643,7 +694,8 @@ def issue_edit_history(repository, number):
         timeout=45,
     )
     payload = json.loads(result.stdout)
-    require(not payload.get("errors"), "issue_edit_history_unavailable")
+    if payload.get("errors"):
+        raise AuthorizationUnavailable("issue_edit_history_unavailable")
     node = payload["data"]["repository"]["issue"]
     return {
         "number": node["number"],

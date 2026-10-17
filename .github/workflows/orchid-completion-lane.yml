@@ -58,6 +58,16 @@ jobs:
         with:
           ref: ${{ env.INTEGRATION_BRANCH }}
           fetch-depth: 0
+          # Model-driven commands run in this checkout. A persisted token in
+          # .git/config would hand them the issues:write credential the
+          # executor withholds from their environment.
+          persist-credentials: false
+
+      # Git remote operations authenticate through gh, which reads GH_TOKEN
+      # from the calling process's environment at use time. A process whose
+      # environment was scrubbed has nothing to present.
+      - name: Authenticate git remote operations through GH_TOKEN
+        run: gh auth setup-git
 
       - name: Verify scheduler lease
         id: lease
@@ -191,7 +201,8 @@ jobs:
         run: |
           python3 scripts/oc_paid_issue_admission.py \
             --repository "$GITHUB_REPOSITORY" --issue-number "$ISSUE_NUMBER" \
-            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}"
+            --reserved-usd "${{ steps.route.outputs.estimated_cost_usd }}" \
+            --packet-file "$RUNNER_TEMP/swarm-work-packet.md"
 
       - name: Swarm governor precheck — primary provider
         if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.issue_auth.outputs.authorized == 'true'
@@ -217,8 +228,24 @@ jobs:
       # work goes back to the queue for the lane that cannot spend, and
       # everything else parks with its durable blocker. Paid eligibility is
       # never restored by this step.
+      # A discovery daily cap, reservation ceiling or unreadable authority is
+      # not an owner decision; the issue goes back to the queue unpaid rather
+      # than parking behind governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED.
+      - name: Return deferred discovery admission to the queue
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.issue_auth.outputs.authorized != 'true' && steps.issue_auth.outputs.requeue == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DEFERRED_REASON: ${{ steps.issue_auth.outputs.reason }}
+        run: |
+          set -euo pipefail
+          python3 -m scripts.oc_swarm_settlement --disposition queued \
+            --message "Discovery admission deferred (${DEFERRED_REASON}); no provider executed." \
+            --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
+            --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
+            --run-attempt "$GITHUB_RUN_ATTEMPT"
+
       - name: Settle denied provider work without restoring paid eligibility
-        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true'
+        if: steps.lease.outputs.execute == 'true' && steps.no_api.outputs.blocked == 'false' && steps.governor.outputs.authorized != 'true' && steps.issue_auth.outputs.requeue != 'true'
         shell: bash
         env:
           LEASE_COMMENT_ID: ${{ inputs.lease_comment_id }}
@@ -284,7 +311,10 @@ jobs:
             --issue-number "$ISSUE_NUMBER" --comment-id "$LEASE_COMMENT_ID" \
             --repository "$GITHUB_REPOSITORY" --run-id "$GITHUB_RUN_ID" \
             --run-attempt "$GITHUB_RUN_ATTEMPT"
-          python3 scripts/swarm_anthropic_direct.py \
+          # exec: no shell is left holding this step's credentials in an
+          # environment a model-driven child could read; the executor makes
+          # itself non-dumpable and scrubs every child's environment.
+          exec python3 scripts/swarm_anthropic_direct.py \
             --issue-number "$ISSUE_NUMBER" \
             --title "$ISSUE_TITLE" \
             --packet-file "$RUNNER_TEMP/swarm-work-packet.md" \
@@ -440,7 +470,7 @@ jobs:
           JSON
 
           set +e
-          HOME="$gemini_home" env -u GH_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
+          HOME="$gemini_home" env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN GEMINI_API_KEY="$GEMINI_API_KEY" GEMINI_CLI_TRUST_WORKSPACE=true \
             timeout 35m npx -y @google/gemini-cli@latest \
             --approval-mode auto_edit --output-format json -p "$prompt" \
             > "$RUNNER_TEMP/gemini-result.json" 2> "$RUNNER_TEMP/gemini-stderr.log"
@@ -548,7 +578,7 @@ jobs:
 
           set +e
           timeout 30s npx -y @openai/codex@0.151.0 --version 2>> "$RUNNER_TEMP/openai-stderr.log"
-          env -u GH_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
+          env -u GH_TOKEN -u GITHUB_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL -u ACTIONS_RUNTIME_TOKEN OPENAI_API_KEY="$OPENAI_API_KEY" timeout 35m \
             npx -y @openai/codex@0.151.0 --ask-for-approval never exec \
             --sandbox workspace-write --skip-git-repo-check --ephemeral -C "$GITHUB_WORKSPACE" "$prompt" \
             > "$RUNNER_TEMP/openai-stdout.log" 2>> "$RUNNER_TEMP/openai-stderr.log"

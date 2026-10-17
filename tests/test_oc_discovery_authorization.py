@@ -205,6 +205,7 @@ def test_a_stray_non_owner_copy_cannot_block_the_owner_grant():
         {"allowed_sources": []},
         {"allowed_sources": ["Brain Gap"]},
         {"allowed_paths": PATHS + PATHS[:1]},
+        {"allowed_paths": PATHS[:1]},
         {"issues": {"1968": "0" * 64}},
     ],
 )
@@ -220,6 +221,15 @@ def test_a_malformed_grant_is_refused(overrides):
         ["scripts/oc_paid_issue_admission.py"],
         ["scripts/oc_work_materialize.py"],
         [".github/workflows/orchid-completion-lane.yml"],
+        ["scripts/oc_model_router.py"],
+        ["scripts/oc_controller_trust.py"],
+        ["scripts/oc_work_discovery.py"],
+        ["tests/conftest.py"],
+        ["app/x/CONFTEST.py"],
+        ["tests/sub/sitecustomize.py"],
+        ["pytest.ini"],
+        ["tests/pytest.ini"],
+        ["app/x/evil.pth"],
         [],
     ],
 )
@@ -304,7 +314,15 @@ def test_each_issue_qualification_rule_is_enforced(issue, detail):
 
 
 @pytest.mark.parametrize(
-    "hold", ["oc-owner-gate", "blocked-on-owner", "oc-scientific-gate", "owner-gate"]
+    "hold",
+    [
+        "oc-owner-gate",
+        "blocked-on-owner",
+        "oc-scientific-gate",
+        "owner-gate",
+        "OC-Owner-Gate",
+        "OC-SCIENTIFIC-GATE",
+    ],
 )
 def test_an_owner_or_scientific_gated_discovered_issue_is_refused(hold):
     issue = _issue(
@@ -345,6 +363,11 @@ def test_missing_edit_history_is_refused():
         hosted.authorization(_issue(), [], REPO, NOW, [_record()])
 
 
+def test_declared_issue_paths_without_a_test_are_refused():
+    issue = _issue(body=BODY + f"\nAllowed paths: `{PATHS[0]}`")
+    _refused("issue_paths_outside_discovery_authorization", issue=issue)
+
+
 def test_declared_issue_paths_inside_the_grant_narrow_it():
     issue = _issue(body=BODY + f"\nAllowed paths: `{PATHS[1]}`")
     assert _authorize(issue=issue)["allowed_paths"] == [PATHS[1]]
@@ -363,12 +386,18 @@ def test_a_per_issue_record_still_decides_alone():
         )
 
 
-# -- paid admission: reservation ceiling and daily cap -----------------------
+# -- paid admission: reservation ceiling, daily cap, packet scope ------------
+
+BOT_ROW = {"login": "github-actions[bot]", "type": "Bot"}
+
+
+def _row(body, user=None, created_at="2026-10-17T01:00:00Z"):
+    return {"body": body, "user": user or dict(BOT_ROW), "created_at": created_at}
 
 
 class Ledger:
-    def __init__(self, bodies=(), fail_append=False):
-        self.rows = [{"body": body} for body in bodies]
+    def __init__(self, rows=(), fail_append=False):
+        self.rows = [r if isinstance(r, dict) else _row(r) for r in rows]
         self.appended = []
         self.since_calls = []
         self.fail_append = fail_append
@@ -381,7 +410,7 @@ class Ledger:
         if self.fail_append:
             raise RuntimeError("receipt_unconfirmed")
         self.appended.append(body)
-        self.rows.append({"body": body})
+        self.rows.append(_row(body))
         return 1
 
 
@@ -391,7 +420,14 @@ def _receipt(day="2026-10-17", issue=1900):
     )
 
 
-def _admit(issue=None, ledger=None, reserved="0.50", standing=None):
+@pytest.fixture
+def packet(tmp_path):
+    path = tmp_path / "swarm-work-packet.md"
+    path.write_text("# Work packet\n\n" + BODY + "\n", encoding="utf-8")
+    return path
+
+
+def _admit(packet, issue=None, ledger=None, reserved="0.50", standing=None):
     issue = issue or _issue()
     return admission.admit(
         REPO,
@@ -406,12 +442,13 @@ def _admit(issue=None, ledger=None, reserved="0.50", standing=None):
         reserved_usd=reserved,
         ledger=ledger if ledger is not None else Ledger(),
         run_id="38990149027",
+        packet_file=str(packet),
     )
 
 
-def test_a_discovery_admission_records_a_durable_receipt():
+def test_a_discovery_admission_records_a_durable_receipt(packet):
     ledger = Ledger()
-    decision = _admit(ledger=ledger)
+    decision = _admit(packet, ledger=ledger)
     assert decision["authorized"] is True
     assert decision["discovery"] is True and decision["standing"] is True
     assert ledger.since_calls == ["2026-10-17T00:00:00Z"]
@@ -423,71 +460,198 @@ def test_a_discovery_admission_records_a_durable_receipt():
     ]
 
 
-def test_the_daily_cap_is_counted_from_receipts_and_enforced():
+def test_the_grant_paths_bound_the_worker_packet(packet):
+    """A discovered issue declares no paths; the worker must not run unbounded."""
+    from scripts.swarm_anthropic_direct import _parse_allowed_paths
+
+    assert _parse_allowed_paths(packet.read_text(encoding="utf-8")) is None
+    assert _admit(packet)["authorized"] is True
+    assert _parse_allowed_paths(packet.read_text(encoding="utf-8")) == set(PATHS)
+
+
+def test_a_packet_declaring_a_different_scope_is_refused(packet):
+    packet.write_text(
+        packet.read_text(encoding="utf-8") + "\nAllowed paths: `app/main.py`\n",
+        encoding="utf-8",
+    )
+    ledger = Ledger()
+    decision = _admit(packet, ledger=ledger)
+    assert decision["authorized"] is False
+    assert decision["reason"] == "OWNER_ISSUE_AUTHORIZATION_REQUIRED"
+    assert decision["detail"] == "discovery_packet_unbound"
+    assert ledger.appended == []
+
+
+def test_a_missing_packet_is_refused(packet):
+    decision = _admit(packet.parent / "absent.md")
+    assert decision["authorized"] is False
+    assert "requeue" not in decision
+
+
+def test_the_daily_cap_is_counted_from_bot_receipts_and_defers(packet):
     ledger = Ledger(
         [
             _receipt(issue=1),
             _receipt(issue=2),
-            _receipt(day="2026-10-16", issue=3),
+            # Yesterday's, edited (so ``since`` returned it): not today's.
+            _row(
+                _receipt(day="2026-10-16", issue=3), created_at="2026-10-16T22:00:00Z"
+            ),
+            # Not the bot: cannot consume the cap.
+            _row(_receipt(issue=5), user={"login": "mallory", "type": "User"}),
             (
                 "[OC-GOVERNOR-COST] run_id=1 issue=4 provider=anthropic "
                 "reserved_usd=0.50 actual_usd=unknown date=2026-10-17 month=2026-10"
             ),
         ]
     )
-    assert _admit(ledger=ledger)["authorized"] is True  # third of three today
-    decision = _admit(ledger=ledger)
+    assert _admit(packet, ledger=ledger)["authorized"] is True  # third of three
+    decision = _admit(packet, ledger=ledger)
     assert decision["authorized"] is False
-    assert decision["reason"] == "OWNER_ISSUE_AUTHORIZATION_REQUIRED"
+    assert decision["reason"] == "DISCOVERY_DAILY_CAP_REACHED"
     assert decision["detail"] == "discovery_daily_cap_reached"
+    assert decision["requeue"] is True
     assert len(ledger.appended) == 1
 
 
-def test_receipts_in_one_comment_each_count():
+def test_receipts_in_one_comment_each_count(packet):
     ledger = Ledger(
         ["\n".join([_receipt(issue=1), _receipt(issue=2), _receipt(issue=3)])]
     )
-    assert _admit(ledger=ledger)["detail"] == "discovery_daily_cap_reached"
+    assert _admit(packet, ledger=ledger)["detail"] == "discovery_daily_cap_reached"
+
+
+def test_a_malformed_bot_receipt_created_today_still_counts():
+    rows = [_row("[OC-DISCOVERY-ADMISSION] garbled")]
+    assert admission.admitted_today(rows, "2026-10-17") == 1
+    stale = [
+        _row("[OC-DISCOVERY-ADMISSION] garbled", created_at="2026-10-16T23:00:00Z")
+    ]
+    assert admission.admitted_today(stale, "2026-10-17") == 0
 
 
 @pytest.mark.parametrize("reserved", ["0.51", "2.00", "", "abc", "NaN", "-1", "0"])
-def test_a_reservation_above_the_grant_ceiling_is_refused(reserved):
+def test_a_reservation_above_the_grant_ceiling_defers(packet, reserved):
     ledger = Ledger()
-    decision = _admit(ledger=ledger, reserved=reserved)
+    decision = _admit(packet, ledger=ledger, reserved=reserved)
     assert decision["authorized"] is False
-    assert decision["detail"] in {
-        "discovery_reservation_exceeds_grant",
-        "discovery_reservation_unknown",
-    }
+    assert decision["reason"] == "DISCOVERY_RESERVATION_ABOVE_GRANT"
+    assert decision["requeue"] is True
     assert ledger.appended == []
 
 
-def test_an_unconfirmed_receipt_refuses_admission():
-    decision = _admit(ledger=Ledger(fail_append=True))
+def test_an_unconfirmed_receipt_defers_admission(packet):
+    decision = _admit(packet, ledger=Ledger(fail_append=True))
     assert decision["authorized"] is False
-    assert decision["detail"] == "receipt_unconfirmed"
+    assert decision["reason"] == "DISCOVERY_AUTHORITY_UNAVAILABLE"
+    assert decision["detail"] == "discovery_receipt_unconfirmed"
+    assert decision["requeue"] is True
 
 
-def test_a_ledger_read_failure_refuses_admission():
+def test_a_ledger_read_failure_defers_admission(packet):
     class Broken(Ledger):
         def since(self, moment):
             raise OSError("api unavailable")
 
-    assert _admit(ledger=Broken())["authorized"] is False
+    decision = _admit(packet, ledger=Broken())
+    assert decision["authorized"] is False
+    assert decision["reason"] == "DISCOVERY_AUTHORITY_UNAVAILABLE"
+    assert decision["requeue"] is True
 
 
-def test_a_refused_issue_writes_no_receipt():
+def test_unreadable_edit_history_defers_and_never_admits(packet):
+    def unavailable():
+        raise hosted.AuthorizationUnavailable("issue_edit_history_unavailable")
+
+    issue = _issue()
+    decision = admission.admit(
+        REPO,
+        1968,
+        fetch=lambda *_: (issue, [], lambda: [_record()], unavailable),
+        now=NOW,
+        reserved_usd="0.50",
+        ledger=Ledger(),
+        run_id="1",
+        packet_file=str(packet),
+    )
+    assert decision["authorized"] is False
+    assert decision["reason"] == "DISCOVERY_AUTHORITY_UNAVAILABLE"
+    assert decision["requeue"] is True
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        __import__("subprocess").CalledProcessError(1, ["gh"]),
+        __import__("subprocess").TimeoutExpired(["gh"], 45),
+        OSError("gh missing"),
+    ],
+)
+def test_the_graphql_reader_reports_failures_as_unavailable(monkeypatch, failure):
+    def broken(*_args, **_kwargs):
+        raise failure
+
+    monkeypatch.setattr(hosted.subprocess, "run", broken)
+    with pytest.raises(hosted.AuthorizationUnavailable):
+        hosted.issue_edit_history(REPO, 1968)
+
+
+@pytest.mark.parametrize(
+    "stdout",
+    [
+        '{"errors": [{"message": "rate limited"}]}',
+        "not json",
+        '{"data": {"repository": {"issue": null}}}',
+    ],
+)
+def test_the_graphql_reader_refuses_bad_payloads(monkeypatch, stdout):
+    import subprocess
+
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout, ""),
+    )
+    with pytest.raises(hosted.AuthorizationUnavailable):
+        hosted.issue_edit_history(REPO, 1968)
+
+
+def test_the_graphql_reader_parses_an_unedited_issue(monkeypatch):
+    import subprocess
+
+    payload = (
+        '{"data": {"repository": {"issue": {"number": 1968, "lastEditedAt": null,'
+        ' "timelineItems": {"totalCount": 0}}}}}'
+    )
+    monkeypatch.setattr(
+        hosted.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, payload, ""),
+    )
+    assert hosted.issue_edit_history(REPO, 1968) == _history()
+
+
+def test_an_owner_refusal_is_not_requeued(packet):
     ledger = Ledger()
     issue = _issue(
         labels=_labels("oc-discovered", "oc-lane:research-station", "oc-owner-gate")
     )
-    decision = _admit(issue=issue, ledger=ledger)
+    decision = _admit(packet, issue=issue, ledger=ledger)
     assert decision["authorized"] is False
+    assert decision["reason"] == "OWNER_ISSUE_AUTHORIZATION_REQUIRED"
     assert decision["detail"] == "issue_owner_held"
+    assert "requeue" not in decision
     assert ledger.appended == []
 
 
-def test_a_standing_grant_admission_writes_no_discovery_receipt():
+def test_every_deferral_reason_is_in_the_governor_vocabulary():
+    from scripts.oc_budget_denial_route import DENIAL_REASON
+
+    for reason in (admission.DAILY_CAP, admission.CEILING, admission.UNAVAILABLE):
+        assert DENIAL_REASON.fullmatch(reason)
+
+
+def test_a_standing_grant_admission_writes_no_discovery_receipt(packet):
     ledger = Ledger()
     owner_issue = {
         "number": 1914,
@@ -515,9 +679,11 @@ def test_a_standing_grant_admission_writes_no_discovery_receipt():
             },
         ),
     }
+    before = packet.read_text(encoding="utf-8")
     decision = _admit(
-        issue=owner_issue, ledger=ledger, standing=[standing], reserved=""
+        packet, issue=owner_issue, ledger=ledger, standing=[standing], reserved=""
     )
+    assert packet.read_text(encoding="utf-8") == before
     assert decision["authorized"] is True
     assert decision["discovery"] is False
     assert ledger.appended == []
@@ -550,3 +716,29 @@ def test_the_documented_grant_parses_and_admits():
         )["discovery"]
         is True
     )
+
+
+def _lane_steps():
+    import yaml
+
+    with open(".github/workflows/orchid-completion-lane.yml", encoding="utf-8") as fh:
+        (job,) = yaml.safe_load(fh)["jobs"].values()
+    return job["steps"]
+
+
+def test_the_lane_requeues_deferrals_and_parks_everything_else():
+    steps = _lane_steps()
+    (auth,) = [s for s in steps if s.get("id") == "issue_auth"]
+    assert '--packet-file "$RUNNER_TEMP/swarm-work-packet.md"' in auth["run"]
+    assert "--reserved-usd" in auth["run"]
+    (requeue,) = [
+        s
+        for s in steps
+        if "steps.issue_auth.outputs.requeue == 'true'" in str(s.get("if"))
+    ]
+    assert "--disposition queued" in requeue["run"]
+    assert "--park-denied" not in requeue["run"]
+    (park,) = [s for s in steps if "--park-denied" in str(s.get("run") or "")]
+    assert "steps.issue_auth.outputs.requeue != 'true'" in park["if"]
+    # A crashed admission writes no requeue output, so it parks.
+    assert "steps.governor.outputs.authorized != 'true'" in park["if"]
