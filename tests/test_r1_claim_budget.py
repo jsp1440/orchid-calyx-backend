@@ -128,13 +128,12 @@ def test_workflow_bounds_and_current_claim_calls_are_wired_in_real_lanes():
     controller = yaml.safe_load((root / "orchid-swarm-controller.yml").read_text())
     completion = yaml.safe_load((root / "orchid-completion-lane.yml").read_text())
     free = controller["jobs"]["provider_free_workers"]
-    paid = next(
-        job
-        for job in completion["jobs"].values()
-        if job.get("env", {}).get("ISSUE_NUMBER")
-    )
+    # The paid lane is split: the model job runs the provider, the publish job
+    # settles. The provider job keeps the same execution bound.
+    paid = completion["jobs"]["model"]
+    publish = completion["jobs"]["publish"]
     assert free["timeout-minutes"] == paid["timeout-minutes"] == 70
-    for job in (free, paid):
+    for job in (free, publish):
         terminal = next(
             x
             for x in job["steps"]
@@ -147,8 +146,17 @@ def test_workflow_bounds_and_current_claim_calls_are_wired_in_real_lanes():
     providers = [
         x for x in paid["steps"] if x.get("id") in {"claude", "gemini", "openai"}
     ]
-    assert len(providers) == 3
-    assert all("--min-remaining-seconds 4500" in x["run"] for x in providers)
+    assert [x["id"] for x in providers] == ["claude"]
+    # The lease's remaining time is verified in the provider job, by trusted
+    # code, immediately before the provider step and with nothing in between
+    # that could take time except isolating the model account.
+    names = [x.get("name") for x in paid["steps"]]
+    verify = names.index("Verify lease time before paid execution")
+    assert "--min-remaining-seconds 4500" in paid["steps"][verify]["run"]
+    assert names[verify + 1 :][:2] == [
+        "Isolate model-driven execution in an unprivileged account",
+        "Execute issue with governed direct Anthropic API",
+    ]
 
 
 def test_recovery_reads_beyond_its_old_ten_page_cutoff_and_fails_closed_if_truncated():

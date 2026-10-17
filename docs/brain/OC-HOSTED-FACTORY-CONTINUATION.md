@@ -53,6 +53,123 @@ record count only when typed by the owner directly: a comment posted through an
 app (performed_via_github_app, as an agent using the owner's token produces) never
 counts, so the maker cannot authorize its own work.
 
+### Discovery grant for engine-filed work
+
+A digest-listed standing grant cannot cover work the engine discovers after the
+owner signs: #1968 was filed by `scripts/oc_work_materialize.py`, claimed, and
+parked as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED`, so the queue drained and
+could not replenish unattended. One OC-HOSTED-DISCOVERY-AUTHORIZATION-V1 comment
+on issue #1924 covers such work by policy instead. It is honoured under the same
+record checks as the standing grant (exactly one, typed by the owner directly,
+never through an app, never edited, expiring at most 31 days after posting), and
+its JSON has exactly these fields:
+
+```
+<!-- OC-HOSTED-DISCOVERY-AUTHORIZATION-V1
+{"allowed_lanes": ["oc-lane:research-station"], "allowed_paths": ["app/cognitive_integration/improvement_discovery.py", "tests/test_improvement_discovery.py"], "allowed_sources": ["brain-reasoning-gap", "brain-mission-capability-gap", "brain-source-contract-gap"], "expires_at": "2026-11-16T00:00:00Z", "max_issues_per_day": 3, "max_reserved_usd_per_issue": "0.50", "repository": "jsp1440/orchid-calyx-backend", "risk": "low", "target": "oc-autonomous-integration"}
+-->
+```
+
+`risk` is "low" only and `target` the integration branch. `max_issues_per_day`
+is an integer from 1 to 10. `max_reserved_usd_per_issue` is a two-decimal string
+no larger than the router's largest per-run reservation (2.00). `allowed_lanes`
+are full `oc-lane:*` label names, `allowed_sources` the discovery sources named in
+the issue's `Discovery source:` line, and `allowed_paths` exact, unprotected file
+paths (at most 12, at least one `tests/*.py`): the checker's write-scope check is
+exact membership, so a discovered PR may touch only those files. No grant of any
+kind may name `conftest.py`, `sitecustomize.py`, `usercustomize.py`,
+`pytest.ini`, `setup.cfg`, `tox.ini` or a `.pth` file in any directory, nor the
+admission, materializer, discovery, router or controller-trust scripts.
+
+An issue qualifies only when it is open, not a pull request, and opened by
+`github-actions[bot]` (account type Bot, which a person cannot impersonate); its
+body has the materializer's filing line, exactly one `OC-DISCOVERY-FINGERPRINT`
+and exactly one listed discovery source; it carries `oc-discovered` and exactly
+one listed `oc-lane:*` label; it has no `oc-owner-gate`, `blocked-on-owner`,
+`oc-scientific-gate`, `owner-gate` or `scientific-gate` label, no
+`OC-AUTO-REQUEUE: false` and no owner-gate disposition; its body was never
+edited and its title never renamed, by anyone (read from GraphQL `lastEditedAt`
+and rename events, because REST `updated_at` moves on every label change); and
+any `Allowed paths:` it declares lie inside the grant, narrowing it, and still
+include a test. Hold labels match case-insensitively. An owner-opened issue is
+never on this path; it stays on the digest-listed grant.
+
+Paid admission (`scripts/oc_paid_issue_admission.py`) then requires the route's
+reservation to be within `max_reserved_usd_per_issue` and counts today's (UTC)
+`[OC-DISCOVERY-ADMISSION]` receipts written by `github-actions[bot]` on governor
+ledger #1330, refusing at `max_issues_per_day`. It writes the admitted paths
+into the worker's packet as its `Allowed paths:` (a declaration already there
+must match exactly), so the worker never runs with an unbounded write scope.
+The receipt is written and read back before admission is reported; a run the
+governor then refuses still uses its slot. A daily cap
+(`DISCOVERY_DAILY_CAP_REACHED`), reservation ceiling
+(`DISCOVERY_RESERVATION_ABOVE_GRANT`) or unreadable edit history or ledger
+(`DISCOVERY_AUTHORITY_UNAVAILABLE`) returns the issue to the queue unpaid; every
+other refusal still parks it as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED`.
+Budget, kill switch, NO-API, provider allowlist and paid concurrency all still
+apply, as do one checker call per issue and the factory gate.
+
+### Completion lane job boundary
+
+The worker runs pytest on model-written tests, so model-written code executes
+on the runner. Scrubbing that code's environment was not enough (#1973 review):
+in the job that held GH_TOKEN it could rewrite `.git/config` or `~/.gitconfig`
+(a credential helper, an `ext::` remote), shadow `git` on PATH, or edit modules
+that later trusted steps imported, and so reach the token through the trusted
+steps themselves; runner sudo made every same-job secret reachable. The lane
+(`.github/workflows/orchid-completion-lane.yml`) is therefore three jobs:
+
+* `execute` -- trusted admission from a fresh checkout of the integration ref:
+  lease, issue, packet, route, owner authorization, governor, every denial
+  settlement. It records the revision it ran (`trusted_sha`) and the admitted
+  write scope (`allowed_paths`) as job outputs and uploads the packet.
+* `model` -- the only job that runs the model. Its token can read contents and
+  issues and nothing else, and only a lease-time check that runs before any
+  model-driven code receives it. The executor runs as a separate account
+  (`oc-model`) that cannot sudo, is in no docker/sudo/adm group and cannot
+  read the runner's home, so it cannot reach runner processes, files, actions
+  or tokens; the job fails before the model runs if any of that is not so.
+  The executor gets the provider key alone (`sudo --preserve-env`), runs with
+  `python -I` so the model's tree is never on its import path, is
+  non-dumpable, and scrubs every child's environment. It writes a patch, a
+  manifest and its execution record and prints their sha256 on its own
+  stdout; after killing every `oc-model` process, trusted code copies only
+  files whose bytes still match and uploads them. No dependency cache is
+  saved from this job.
+* `publish` -- trusted publication on a fresh runner from a fresh checkout of
+  `trusted_sha`. It never checks out, installs, imports or executes the
+  model's tree. `scripts/oc_patch_publish.py` admits only additions and
+  modifications of mode-100644 text files at exact paths inside `allowed_paths`
+  (no renames, copies, deletions, mode changes, symlinks, gitlinks, binary
+  hunks, quoted or traversing paths, `.git*`, protected paths), requires the
+  patch base to be an ancestor of the integration branch, applies it in a
+  worktree outside the workspace with hooks disabled, re-derives the changed
+  set from git and requires it to match, commits, pushes a branch name it
+  chooses, opens the draft PR, records cost and settles.
+
+The checker and supervisor flow is unchanged: the PR is still opened by the
+workflow bot in the same controller run, bound to the same lease. Standing and
+per-issue grants use the same split, with the grant's `allowed_paths` as the
+publish scope. The disabled Gemini and OpenAI fallbacks were removed, because
+they pushed from the job that ran the model.
+
+Residual: the provider key is in the model job, held only by the executor
+process; model-driven code under `oc-model` cannot read it short of a kernel
+or runner escape, which would then reach only that key and a read-only token.
+`persist-credentials: false`, the account separation and the cross-job
+artifact handoff are verified by workflow-contract tests and local runs of the
+scripts, not yet by a hosted run of the lane.
+
+A discovery issue whose reservation exceeds the grant ceiling three times in a
+row parks as owner-gated instead of cycling through the queue.
+
+This grant authorizes only a bounded maker run and one checker call whose PR
+targets `oc-autonomous-integration` through the normal independent checker and
+factory gate. It never authorizes a merge to main, a deployment, production
+mutation, taxonomy activation or scientific publication; those stay owner-gated.
+Issues already parked as `governor:OWNER_ISSUE_AUTHORIZATION_REQUIRED` stay held
+by blocked reconciliation until released through its owner-gated path.
+
 A separate privileged job rereads all mutable authority and the exact checker
 comments produced by this run, invokes the existing factory gate, and uses the
 GitHub merge API's expected-head SHA fence. The actual merged PR and both merge
