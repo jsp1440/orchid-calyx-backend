@@ -358,3 +358,23 @@ def test_handler_module_has_no_provider_network_or_db_imports():
         "time.time",
     ):
         assert token not in source, token
+
+
+def test_finished_scan_status_without_timestamp_is_contradictory():
+    plan = build_source_registry_refresh_plan(
+        manifest(
+            row("completed", last_scan=None, last_scan_status="COMPLETED"),
+            row("failed", last_scan=None, last_scan_status="FAILED"),
+            row("partial", last_scan=None, last_scan_status="COMPLETED_WITH_ERRORS"),
+            row("first-running", last_scan=None, last_scan_status="RUNNING"),
+        )
+    )
+    items = by_id(plan)
+    for key in ("completed", "failed", "partial"):
+        assert items[key]["freshness"] == "CONTRADICTORY", key
+        assert "LAST_SCAN_STATUS_WITHOUT_TIMESTAMP" in items[key]["findings"], key
+        assert items[key]["recommendation"] == "OPERATOR_ATTENTION", key
+    # A first scan still running has no timestamp yet; that is not a conflict.
+    assert items["first-running"]["freshness"] == "NEVER_SCANNED"
+    assert items["first-running"]["findings"] == []
+    assert items["first-running"]["recommendation"] == "NO_REFRESH_SCAN_IN_PROGRESS"

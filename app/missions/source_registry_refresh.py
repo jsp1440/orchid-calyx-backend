@@ -192,7 +192,14 @@ def _assess(
     findings: list[str] = []
     last_scan: datetime | None = item["last_scan"]
     age_days: float | None = None
-    if last_scan is None:
+    scan_status = item["last_scan_status"]
+    if last_scan is None and scan_status not in {None, "RUNNING"}:
+        # finish_scan always stamps oc_sources.sources.last_scan, so a finished
+        # scan without a timestamp is a self-contradictory snapshot. A RUNNING
+        # first scan legitimately has none yet.
+        freshness = "CONTRADICTORY"
+        findings.append("LAST_SCAN_STATUS_WITHOUT_TIMESTAMP")
+    elif last_scan is None:
         freshness = "NEVER_SCANNED"
     elif last_scan > as_of:
         # The snapshot contradicts itself; do not pick a side.
@@ -203,7 +210,6 @@ def _assess(
         age_days = round(age.total_seconds() / 86400, 6)
         freshness = "STALE" if age > max_age else "FRESH"
 
-    scan_status = item["last_scan_status"]
     if scan_status is None:
         findings.append("LAST_SCAN_STATUS_UNKNOWN")
     elif scan_status == "FAILED":
