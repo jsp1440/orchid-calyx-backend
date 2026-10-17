@@ -378,6 +378,38 @@ def edit_deferred_numbers(snapshot: dict) -> list[int]:
     return numbers
 
 
+#: The marker every issue ``oc_work_materialize`` files carries.
+_DISCOVERY_FINGERPRINT = re.compile(r"^OC-DISCOVERY-FINGERPRINT:\s*[a-f0-9]{16}\s*$", re.MULTILINE)
+
+
+def discovered_deferred_numbers(snapshot: dict) -> list[int]:
+    """Queued discovered issues a run off the integration ref must not claim.
+
+    Discovery runs only on the integration head, so that is the revision its
+    findings are about. A run on another ref checks out that ref, and a worker
+    there would settle the finding against a revision discovery never read:
+    "absent" on ``main`` closes an issue whose condition is present on
+    integration, and the next pass sees it again. #1977 flapped done/requeued
+    that way. Deferring leaves the issue queued and unleased for a run on the
+    integration head; nothing about it is changed.
+    """
+    numbers: list[int] = []
+    for issue in snapshot.get("issues") or []:
+        if str(issue.get("state") or "").upper() != "OPEN":
+            continue
+        names = {
+            label if isinstance(label, str) else label.get("name")
+            for label in issue.get("labels") or []
+        }
+        if (
+            "oc-queued" in names
+            and _DISCOVERY_FINGERPRINT.search(str(issue.get("body") or ""))
+            and issue.get("number") is not None
+        ):
+            numbers.append(int(issue["number"]))
+    return numbers
+
+
 def _provider_free_snapshot(snapshot: dict) -> dict:
     """Hide entries this lane cannot execute, without losing dependency state.
 
@@ -759,6 +791,7 @@ def build_swarm_plan(
     worker_slots: int = DEFAULT_WORKER_SLOTS,
     provider_free_only: bool = False,
     defer_edit_mode: bool = False,
+    defer_discovered: bool = False,
     coding_executor_available: bool = False,
     paid_launch_capacity: int | None = None,
 ) -> dict:
@@ -777,6 +810,9 @@ def build_swarm_plan(
 
     ``defer_edit_mode`` is set by runs that are not on the integration ref: the
     edit lane cannot execute there, so its issues stay queued for a run that can.
+
+    ``defer_discovered`` is set by the same runs: discovered issues settle only
+    on the integration head that discovery read (``discovered_deferred_numbers``).
     """
     if coding_executor_available and provider_free_only:
         raise ValueError("coding executor cannot be available in provider-free-only mode")
@@ -788,7 +824,11 @@ def build_swarm_plan(
 
     planning_snapshot = _provider_free_snapshot(snapshot) if provider_free_only else snapshot
 
-    deferred_edit = set(edit_deferred_numbers(planning_snapshot)) if defer_edit_mode else set()
+    edit_only = set(edit_deferred_numbers(planning_snapshot)) if defer_edit_mode else set()
+    deferred_discovered = (
+        set(discovered_deferred_numbers(planning_snapshot)) if defer_discovered else set()
+    )
+    deferred_edit = edit_only | deferred_discovered
     if deferred_edit:
         planning_snapshot = dict(planning_snapshot)
         planning_snapshot["issues"] = [
@@ -991,7 +1031,7 @@ def build_swarm_plan(
         lock_suppressed=lock_suppressed,
         lane_refused=sorted(homeostasis_lane_refused),
         provider_parked=provider_parked_numbers(snapshot) if provider_free_only else [],
-        edit_deferred=sorted(deferred_edit),
+        edit_deferred=sorted(edit_only),
         lane_refusal_reasons=lane_refusal_reasons,
         paid_deferred=paid_deferred,
     )
@@ -1044,7 +1084,8 @@ def build_swarm_plan(
         "homeostasis": homeostasis,
         "coding_executor_available": bool(coding_executor_available),
         "coding_dispatch": coding_dispatch,
-        "edit_mode_deferred_numbers": sorted(deferred_edit),
+        "edit_mode_deferred_numbers": sorted(edit_only),
+        "discovered_deferred_numbers": sorted(deferred_discovered),
         "generated_at": plan.get("generated_at"),
         "safety": {
             "merge_to_main": False,
@@ -1060,6 +1101,7 @@ def build_swarm_plan(
             "write_conflicts_fail_closed": True,
             "provider_free_only": provider_free_only,
             "edit_mode_deferred": defer_edit_mode,
+            "discovered_deferred": defer_discovered,
             "provider_free_lane_split": True,
             "blocked_work_fail_closed": True,
             "blocked_reconciliation_mutates": False,
@@ -1114,6 +1156,11 @@ def main(argv: list[str] | None = None) -> int:
         help="leave edit-mode issues queued (runs not on the integration ref)",
     )
     parser.add_argument(
+        "--defer-discovered",
+        action="store_true",
+        help="leave discovered issues queued (runs not on the integration head discovery read)",
+    )
+    parser.add_argument(
         "--coding-executor",
         action="store_true",
         help="providers are authorised: route code-authoring work to the completion lane",
@@ -1132,6 +1179,7 @@ def main(argv: list[str] | None = None) -> int:
         worker_slots=args.worker_slots,
         provider_free_only=args.provider_free_only,
         defer_edit_mode=args.defer_edit_mode,
+        defer_discovered=args.defer_discovered,
         coding_executor_available=args.coding_executor,
         paid_launch_capacity=args.paid_launch_capacity,
     )

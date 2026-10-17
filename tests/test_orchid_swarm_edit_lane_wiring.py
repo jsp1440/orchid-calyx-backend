@@ -296,7 +296,7 @@ def test_runs_off_the_integration_ref_defer_edit_mode_in_the_planner():
     run = step["run"]
     guard = (
         'if [[ "${{ steps.controller_revision.outputs.canonical_integration }}" '
-        '!= "true" ]]; then\n  provider_args+=(--defer-edit-mode)'
+        '!= "true" ]]; then\n  provider_args+=(--defer-edit-mode --defer-discovered)'
     )
     assert guard in run
     assert run.index("--defer-edit-mode") < run.index("scripts/oc_swarm_controller.py")
