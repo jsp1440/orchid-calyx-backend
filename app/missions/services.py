@@ -181,6 +181,9 @@ class MissionService:
         if handler == "evidence_readiness_evaluation":
             from .evidence_readiness import build_evidence_readiness_report
             return build_evidence_readiness_report(mission.get("input_manifest") or {})
+        if handler == "literature_ingestion_review":
+            from .literature_review import build_literature_ingestion_review
+            return build_literature_ingestion_review(mission.get("input_manifest") or {})
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 

@@ -68,6 +68,38 @@ def test_brain_pulse_emits_deduplicable_governed_candidates():
         assert candidate["capabilities"] == []
 
 
+def test_brain_pulse_routes_the_adjudicated_bee_orchid_conflict_to_evidence(
+    monkeypatch,
+):
+    """#1741: once the scope test has run, the conflict is a scope-evidence gap.
+
+    Without the adjudication the pulse rediscovered the same "missing reasoning
+    operation" forever, although the operation exists and explicitly leaves the
+    pair contested.
+    """
+    monkeypatch.setattr(brain_pulse, "mission_gap_candidates", list)
+    monkeypatch.setattr(brain_pulse, "source_registry_gap_candidates", list)
+    report = build_report()
+    reasoning = [c for c in report["candidates"] if c["source"] == SOURCE]
+    titles = {c["title"] for c in reasoning}
+    assert "[Brain] missing reasoning operation" not in titles
+    conflict = [c for c in reasoning if "Two reports conflict" in c["summary"]]
+    assert len(conflict) == 1
+    assert conflict[0]["title"] == "[Brain] missing evidence"
+    assert conflict[0]["lane"] == "research-station"
+    assert "scope-disjointness-test" in conflict[0]["summary"]
+    assert "reported_pollinated_by Eucera (solitary bees)" in conflict[0]["summary"]
+    assert (
+        "reported_reproductive_strategy Habitual self-pollination"
+        in conflict[0]["summary"]
+    )
+    # Deterministic: a second pass yields the same fingerprints.
+    again = [
+        c["fingerprint"] for c in build_report()["candidates"] if c["source"] == SOURCE
+    ]
+    assert again == [c["fingerprint"] for c in reasoning]
+
+
 def test_brain_fingerprint_changes_only_when_material_identity_changes():
     base = fingerprint("q", "missing_evidence", "gap")
     assert base == fingerprint("q", "missing_evidence", "gap")
@@ -367,7 +399,9 @@ def test_mission_gap_observer_uses_only_explicit_safe_blocks():
     assert {candidate["source"] for candidate in candidates} == {MISSION_SOURCE}
     titles = {candidate["title"] for candidate in candidates}
     assert any("source registry refresh" in title for title in titles)
-    assert any("literature ingestion review" in title for title in titles)
+    assert any("ontology resolution" in title for title in titles)
+    # literature_ingestion_review now has a deterministic handler (#1731).
+    assert not any("literature ingestion review" in title for title in titles)
     for candidate in candidates:
         assert "not_implemented_safe_block" in candidate["summary"]
         assert candidate["validation_command"] == ""
