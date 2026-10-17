@@ -176,6 +176,9 @@ class MissionService:
             result = get_import_service().import_batch(registry_ids, "mission_control", mission_id=mission["mission_id"])
             return {**result, "semantic_extraction_performed": False, "ontology_mutated": False,
                     "embeddings_created": False, "canonical_graph_mutated": False, "taxonomy_mutated": False}
+        if handler == "evidence_readiness_evaluation":
+            from .evidence_readiness import build_evidence_readiness_report
+            return build_evidence_readiness_report(mission.get("input_manifest") or {})
         raise ValueError("MISSION_HANDLER_NOT_REGISTERED")
 
 

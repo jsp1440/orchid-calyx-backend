@@ -82,7 +82,7 @@ MISSION_TYPES: dict[str, MissionType] = {
     "intake_batch_review": MissionType("intake_batch_review", "not_implemented_safe_block", risk_level="medium"),
     "semantic_extraction": MissionType("semantic_extraction", "not_implemented_safe_block", risk_level="medium", write_scope="semantic_review_only", allowed_database_schemas=("oc_semantic",)),
     "ontology_resolution": MissionType("ontology_resolution", "not_implemented_safe_block", risk_level="medium", write_scope="ontology_review_only", allowed_database_schemas=("oc_ontology",)),
-    "evidence_readiness_evaluation": MissionType("evidence_readiness_evaluation", "not_implemented_safe_block", risk_level="medium", allowed_database_schemas=("oc_ontology",)),
+    "evidence_readiness_evaluation": MissionType("evidence_readiness_evaluation", "evidence_readiness_evaluation", risk_level="medium", allowed_database_schemas=("oc_ontology",), human_approval_required=True),
     "publication_dry_run": MissionType("publication_dry_run", "not_implemented_safe_block", risk_level="medium", allowed_database_schemas=("oc_publication",), dry_run_required=True),
     "controlled_publication": MissionType("controlled_publication", "not_implemented_safe_block", risk_level="high", write_scope="controlled_publication_only", allowed_database_schemas=("oc_publication", "oc_graph"), human_approval_required=True, dry_run_required=True, publication_authority_required=True, canonical_graph_writes_permitted=True),
     "graph_integrity_audit": MissionType("graph_integrity_audit", "graph_integrity_audit", allowed_database_schemas=("oc_graph",)),
