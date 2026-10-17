@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from collections.abc import Iterator
 from datetime import datetime, timezone
 from typing import Any
 
@@ -243,6 +244,31 @@ class FieldObservationService:
             if row.get("content_hash") == content_hash:
                 return row
         raise ObservationNotFound(f"media {content_hash}")
+
+    def set_media_archive(
+        self, observation_id: str, content_hash: str, archive: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Record the Drive archive state in the media provenance (upsert of the photo row)."""
+        row = self.photo_record_by_hash(observation_id, content_hash)
+        provenance = dict(row.get("provenance") or {})
+        provenance["archive"] = archive
+        updated = {**row, "provenance": provenance}
+        self._store.put(
+            owner_key=OWNER_KEY,
+            project_id=observation_id,
+            kind=KIND_PHOTO,
+            record_id=str(row["id"]),
+            record=updated,
+        )
+        return updated
+
+    def iter_media_records(self) -> Iterator[dict[str, Any]]:
+        """Every attached media row, observation by observation (bounded by the store's size)."""
+        pointers = self._store.list(owner_key=OWNER_KEY, project_id=INDEX_PROJECT, kind=KIND_INDEX)
+        for observation_id in sorted({str(p.get("observation_id")) for p in pointers if p.get("observation_id")}):
+            rows = self._store.list(owner_key=OWNER_KEY, project_id=observation_id, kind=KIND_PHOTO)
+            rows.sort(key=lambda row: str(row.get("created_at", "")))
+            yield from rows
 
     # -- internals ----------------------------------------------------------------------
 
