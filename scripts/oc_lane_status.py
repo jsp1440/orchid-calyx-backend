@@ -166,6 +166,7 @@ def claim_evidence(doc: Any) -> dict:
         or doc.get("schema") != CLAIMS_SCHEMA
         or not isinstance(doc.get("confirmed"), list)
         or not isinstance(doc.get("errors"), list)
+        or not isinstance(doc.get("skipped"), list)
     ):
         return bad
     confirmed: dict[int, str] = {}
@@ -180,12 +181,33 @@ def claim_evidence(doc: Any) -> dict:
             else "provider"
         )
         confirmed[row["issue_number"]] = kind
+    # launch_count is written as len(confirmed); a mismatch means a corrupt file.
+    launch = doc.get("launch_count")
+    if launch is not None and (_int(launch) != len(doc["confirmed"]) or isinstance(launch, bool)):
+        return bad
     errors: set[int] = set()
     for row in doc["errors"]:
         if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
             return bad
         errors.add(row["issue"])
-    return {"status": "ok", "reason": None, "confirmed": confirmed, "errors": errors}
+    # Skipped: selected issues the claim step refused because they no longer match
+    # the plan ({issue, reason}). Their pre-claim lane observation is stale.
+    skipped: dict[int, str] = {}
+    for row in doc["skipped"]:
+        if not isinstance(row, dict) or _issue_no(row.get("issue")) is None:
+            return bad
+        reason = row.get("reason")
+        skipped.setdefault(
+            row["issue"], reason.strip() if isinstance(reason, str) and reason.strip() else NO_REASON
+        )
+    return {
+        "status": "ok",
+        "reason": None,
+        "confirmed": confirmed,
+        "errors": errors,
+        "skipped": skipped,
+        "run_id": doc.get("run_id"),
+    }
 
 
 def default_claims_path() -> str | None:
@@ -266,10 +288,21 @@ def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int
     planned = set(entry.get("planned") or [])
     if claims.get("status") == "malformed" and planned:
         return {"lane_state": "unknown", "reason": "claims_malformed", "module_state": module_state}
+    skipped_issues: list[int] = []
     if claims.get("status") == "ok":
         kinds = sorted({claims["confirmed"][n] for n in issues if n in claims["confirmed"]})
+        skipped_issues = sorted(planned & set(claims["skipped"]))
+        skip_text = ",".join(sorted({claims["skipped"][n] for n in skipped_issues}))
         if kinds:
+            # A launch is a fact about this lane, so it stays working; the skip
+            # of another planned issue is appended so it is not hidden.
             state, reason = "working", "claim_confirmed:" + ",".join(kinds)
+            if skipped_issues:
+                reason += f";claim_skipped:{skip_text}"
+        elif skipped_issues:
+            # Nothing launched and the plan no longer describes a planned issue:
+            # the observation is stale, so the lane is unknown, never idle.
+            state, reason = "unknown", f"claim_skipped:{skip_text}"
         elif planned and state == "idle":
             reason = "planned_unconfirmed"
         if issues & claims["errors"]:
@@ -278,7 +311,10 @@ def _derive_lane(entry: Any, claims: dict, recovered: set[int], errored: set[int
         state, reason = "failed", f"lease_reconcile_errors:{reason}"
     elif issues & recovered:
         state, reason = "recovering", f"lease_recovered:{reason}"
-    return {"lane_state": state, "reason": reason, "module_state": module_state}
+    result = {"lane_state": state, "reason": reason, "module_state": module_state}
+    if skipped_issues:
+        result["skipped_issues"] = skipped_issues
+    return result
 
 
 def module_lane_states(
@@ -298,6 +334,12 @@ def module_lane_states(
     """
     claims = claims if isinstance(claims, dict) else claim_evidence(None)
     claim_section = {"status": claims.get("status"), "reason": claims.get("reason")}
+    if claims.get("status") == "ok":
+        claim_section.update(
+            confirmed_count=len(claims["confirmed"]),
+            error_count=len(claims["errors"]),
+            skipped=[{"issue": n, "reason": r} for n, r in sorted(claims["skipped"].items())],
+        )
     if module_lanes is None:
         return {"status": "unavailable", "reason": "module_lanes_missing", "lanes": {}, "counts": {}, "claims": claim_section}
     block = module_lanes
@@ -366,6 +408,14 @@ def build_record(
 ) -> dict:
     plan = plan if isinstance(plan, dict) else {}
     recovery = recovery if isinstance(recovery, dict) else {}
+    if (
+        isinstance(claims, dict)
+        and claims.get("status") == "ok"
+        and claims.get("run_id") is not None
+        and str(claims["run_id"]) != str(run_id)
+    ):
+        # A handoff written by another run says nothing about this wave.
+        claims = {"status": "malformed", "reason": "claims_run_mismatch"}
     homeostasis = plan.get("homeostasis")
     paid = _int(provider_launch_count)
     free = _int(provider_free_launch_count)

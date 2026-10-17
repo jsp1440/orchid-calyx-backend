@@ -571,9 +571,11 @@ def test_a_real_module_lane_report_flows_through_end_to_end():
 # --- claim evidence: the plan is written BEFORE the claim step ----------------
 
 
-def claims_doc(confirmed=(), errors=()):
+def claims_doc(confirmed=(), errors=(), skipped=()):
     return {
         "schema": "oc.swarm-claim-handoff.v1",
+        "launch_count": len(confirmed),
+        "skipped": [{"issue": n, "reason": reason} for n, reason in skipped],
         "confirmed": [
             {"issue_number": n, "lane_executable": free, "acquisition": False,
              "lease_comment_id": 900 + n}
@@ -888,3 +890,118 @@ def test_selected_and_counts_reject_bools_and_non_integral_values():
 def test_cli_style_digit_strings_still_count():
     rec = record(plan("executing", "executing", [1]), paid="2", free=" 1 ")
     assert rec["launched"] == {"provider": 2, "provider_free": 1}
+
+
+# --- skipped rows: the plan no longer describes that issue ---------------------
+
+SKIP = (7, "not_exclusively_queued")
+
+
+def test_a_planned_issue_the_claim_step_skipped_is_unknown_with_the_engine_reason():
+    rec = claimed_record({"taxonomy": planned_lane(7)}, claims_doc(skipped=[SKIP]))
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert (entry["lane_state"], entry["reason"]) == (
+        "unknown", "claim_skipped:not_exclusively_queued")
+    assert entry["skipped_issues"] == [7]
+
+
+def test_skipped_and_confirmed_on_different_issues_keeps_working_and_shows_the_skip():
+    rec = claimed_record({"taxonomy": planned_lane(7, 8)},
+                         claims_doc(confirmed=[(8, False)], skipped=[SKIP]))
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert entry["lane_state"] == "working"
+    assert entry["reason"] == "claim_confirmed:provider;claim_skipped:not_exclusively_queued"
+    assert entry["skipped_issues"] == [7]
+
+
+def test_several_skip_reasons_are_all_named_sorted_and_unique():
+    rec = claimed_record(
+        {"taxonomy": planned_lane(7, 8, 9)},
+        claims_doc(skipped=[(7, "issue_changed_since_plan"), (8, "not_exclusively_queued"),
+                            (9, "not_exclusively_queued")]),
+    )
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert entry["reason"] == "claim_skipped:issue_changed_since_plan,not_exclusively_queued"
+    assert entry["skipped_issues"] == [7, 8, 9]
+
+
+@pytest.mark.parametrize("bad", [True, False, 0, -1, "7", 7.0, None])
+def test_a_skipped_row_with_a_bad_issue_makes_claims_malformed(bad):
+    doc = claims_doc()
+    doc["skipped"] = [{"issue": bad, "reason": "x"}]
+    rec = claimed_record({"taxonomy": planned_lane(7)}, doc)
+    assert rec["module_lanes"]["claims"]["status"] == "malformed"
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["reason"] == "claims_malformed"
+
+
+@pytest.mark.parametrize("skipped", [None, "x", {}, [3], ["x"]])
+def test_a_missing_or_non_list_skipped_field_is_malformed(skipped):
+    doc = claims_doc()
+    if skipped is None:
+        del doc["skipped"]
+    else:
+        doc["skipped"] = skipped
+    assert lanes.claim_evidence(doc)["status"] == "malformed"
+
+
+@pytest.mark.parametrize("row", [{"issue": 7}, {"issue": 7, "reason": ""}, {"issue": 7, "reason": 5}])
+def test_a_skipped_row_without_a_usable_reason_is_still_unknown_with_an_explicit_reason(row):
+    doc = claims_doc()
+    doc["skipped"] = [row]
+    entry = claimed_record({"taxonomy": planned_lane(7)}, doc)["module_lanes"]["lanes"]["taxonomy"]
+    assert (entry["lane_state"], entry["reason"]) == ("unknown", "claim_skipped:no_reason_recorded")
+
+
+def test_a_skipped_issue_planned_in_no_lane_leaves_lanes_alone_but_is_recorded():
+    rec = claimed_record({"taxonomy": planned_lane(8)}, claims_doc(skipped=[SKIP]))
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["reason"] == "planned_unconfirmed"
+    assert rec["module_lanes"]["claims"]["skipped"] == [
+        {"issue": 7, "reason": "not_exclusively_queued"}]
+
+
+def test_skipped_does_not_apply_to_an_unplanned_issue_of_a_lane():
+    lane_doc = lane("executing", running=[7]) | {"planned": []}
+    entry = claimed_record({"taxonomy": lane_doc}, claims_doc(skipped=[SKIP]))[
+        "module_lanes"]["lanes"]["taxonomy"]
+    assert entry["lane_state"] == "working"
+
+
+def test_a_skip_appends_a_transition_naming_the_lane():
+    gh = FakeGitHub()
+    lanes.publish(gh, 1949, claimed_record({"taxonomy": planned_lane(7)}, claims_doc()))
+    assert len(gh.created) == 2
+    result = lanes.publish(
+        gh, 1949, claimed_record({"taxonomy": planned_lane(7)}, claims_doc(skipped=[SKIP])))
+    assert len(gh.created) == 3
+    assert result["lane_changes"][0]["to"] == {
+        "lane_state": "unknown", "reason": "claim_skipped:not_exclusively_queued"}
+
+
+def test_a_lease_failure_still_overrides_a_skipped_lane():
+    rec = claimed_record({"taxonomy": planned_lane(7)}, claims_doc(skipped=[SKIP]),
+                         recovery={"errors": [{"issue": 7}]})
+    entry = rec["module_lanes"]["lanes"]["taxonomy"]
+    assert entry["lane_state"] == "failed"
+    assert entry["reason"] == "lease_reconcile_errors:claim_skipped:not_exclusively_queued"
+
+
+# --- remaining handoff fields that guard against a wrong or stale file ---------
+
+
+def test_launch_count_must_match_the_confirmed_rows():
+    doc = claims_doc(confirmed=[(7, False)])
+    doc["launch_count"] = 0
+    assert lanes.claim_evidence(doc)["status"] == "malformed"
+    doc["launch_count"] = True
+    assert lanes.claim_evidence(doc)["status"] == "malformed"
+
+
+def test_a_claim_file_from_another_run_is_not_trusted():
+    doc = claims_doc(confirmed=[(7, False)])
+    doc["run_id"] = 999
+    rec = claimed_record({"taxonomy": planned_lane(7)}, doc)  # record run_id is "1"
+    assert rec["module_lanes"]["claims"] == {"status": "malformed", "reason": "claims_run_mismatch"}
+    assert rec["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "unknown"
+    doc["run_id"] = 1
+    ok = claimed_record({"taxonomy": planned_lane(7)}, doc)
+    assert ok["module_lanes"]["lanes"]["taxonomy"]["lane_state"] == "working"
