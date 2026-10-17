@@ -23,6 +23,8 @@ from app.cognitive_integration.contested_scope import (
     ScopeAdjudication,
     ScopeReason,
     adjudicate,
+    has_visible_content,
+    is_citation,
 )
 from app.cognitive_integration.executor import contradiction_adjudication, execute
 from app.cognitive_integration.fixture import build_pollination_repository
@@ -245,6 +247,65 @@ def test_a_whitespace_region_is_absent(blank):
     one = adjudicate(*_pair("region:a", blank), DISJOINT)
     assert one.reason is ScopeReason.SCOPE_ABSENT_ONE
     assert one.resolution == CONTESTED
+
+
+#: Blank-looking inputs from the third re-check, plus placeholder spellings.
+_BLANK_LOOKING = {
+    "combining-acute": "\u0301",
+    "enclosing-circle": "\u20dd",
+    "cyrillic-hundred-thousands": "\u0488",
+    "nul": "\x00",
+    "bel-esc": "\x07\x1b",
+    "private-use-bmp": "\ue000",
+    "private-use-plane-15": "\U000f0000",
+    "hangul-filler": "\u3164",
+    "hangul-choseong-filler": "\u115f",
+    "hangul-jungseong-filler": "\u1160",
+    "halfwidth-hangul-filler": "\uffa0",
+    "braille-blank": "\u2800",
+    "mixed-blank": " \u0301\x00\ue000\u3164\u2800\u200b ",
+    "placeholder-double-space": "no  citation recorded",
+    "placeholder-zero-width-joined": "no\u200bcitation recorded",
+    "placeholder-punctuated": "No-Citation_Recorded!",
+}
+
+
+@pytest.mark.parametrize("value", _BLANK_LOOKING.values(), ids=_BLANK_LOOKING.keys())
+def test_a_blank_looking_citation_or_placeholder_never_resolves(value):
+    """Re-check FAIL on #1966: anything without a visible letter or number."""
+    assert not is_citation(value)
+    verdict = adjudicate(
+        *_pair("region:a", "region:b"),
+        DISJOINT,
+        {frozenset({"region:a", "region:b"}): value},
+    )
+    assert verdict.reason is ScopeReason.DISJOINTNESS_UNCITED
+    assert verdict.resolution == CONTESTED
+    assert verdict.resolved_by is None
+    with pytest.raises(ValueError, match="SCOPE_TEST_AUDIT"):
+        _adjudication(
+            reason=ScopeReason.DISJOINT_DECLARED,
+            disjointness_declared=True,
+            resolved_by=value,
+        )
+    if not has_visible_content(value):
+        # A blank-looking region is absent; the placeholder spellings are
+        # ordinary visible text and are only special as citations.
+        assert adjudicate(*_pair(value, value), DISJOINT).reason is (
+            ScopeReason.SCOPE_ABSENT_BOTH
+        )
+
+
+def test_every_non_placeholder_blank_looking_input_has_no_visible_content():
+    blank = {k: v for k, v in _BLANK_LOOKING.items() if not k.startswith("placeholder")}
+    assert not any(has_visible_content(v) for v in blank.values())
+
+
+def test_visible_text_is_still_a_citation():
+    assert is_citation("Kullenberg 1961")
+    assert is_citation("1961")
+    # Homoglyphs are visible text by design and are not chased.
+    assert is_citation("\u043eno citation recorded")
 
 
 def test_a_citation_with_format_characters_is_served_as_visible_text():

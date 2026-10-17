@@ -44,31 +44,65 @@ COMPATIBLE_BY_SCOPE = "compatible_by_scope"
 NO_CITATION = "no citation recorded"
 
 
-def visible_text(value: object) -> str:
-    """The text a reader would see: format characters removed, then stripped.
+#: Hangul fillers. Category ``Lo``, so they pass a letter test, yet they render
+#: as blank space. Checked after NFKC, which maps U+FFA0 to U+3164.
+_BLANK_LETTERS = frozenset({"\u115f", "\u1160", "\u3164", "\uffa0"})
 
-    ``str.strip`` keeps format characters (Unicode category ``Cf``), so a
-    zero-width space or byte-order mark alone passed as non-blank, and one
-    appended to the placeholder made it compare unequal. Only a ``str`` is
-    text; anything else yields ``""``.
+#: The placeholder reduced to its letters and digits, for comparison.
+_PLACEHOLDER_KEY = "".join(ch for ch in NO_CITATION if ch.isalnum())
+
+
+def _is_content(ch: str) -> bool:
+    """A letter or a number that renders as one."""
+    return unicodedata.category(ch)[0] in "LN" and ch not in _BLANK_LETTERS
+
+
+def has_visible_content(value: object) -> bool:
+    """Whether ``value`` is a string carrying at least one visible letter or number.
+
+    This *requires* content rather than subtracting invisible characters.
+    Three rounds of subtraction each missed a class — format characters, then
+    combining and enclosing marks, controls, private-use code points, Hangul
+    fillers and the braille blank — because "not whitespace" is an open set.
+    "Contains a letter or a number" is a closed one.
     """
     if not isinstance(value, str):
+        return False
+    return any(_is_content(ch) for ch in unicodedata.normalize("NFKC", value))
+
+
+def visible_text(value: object) -> str:
+    """The text as served: only a ``str`` that has visible content, else ``""``.
+
+    Format, control, private-use, surrogate and unassigned code points are
+    removed and the result is stripped. Nothing else is rewritten.
+    """
+    if not isinstance(value, str) or not has_visible_content(value):
         return ""
-    return "".join(ch for ch in value if unicodedata.category(ch) != "Cf").strip()
+    kept = (
+        " " if unicodedata.category(ch) == "Cc" else ch
+        for ch in value
+        if unicodedata.category(ch) not in ("Cf", "Co", "Cs", "Cn")
+    )
+    return "".join(kept).strip()
 
 
 def is_citation(value: object) -> bool:
-    """A usable citation: visible, non-blank text that is not the placeholder.
+    """A usable citation: visible letter or number content, not the placeholder.
 
     The placeholder is truthy, so a bare truthiness check let an uncited
-    disjointness declaration resolve a contradiction. The placeholder
-    comparison is made after NFKC folding and casefolding, so a compatibility
-    or case variant of it is still the placeholder.
+    disjointness declaration resolve a contradiction. It is recognised by its
+    letters and digits alone, after NFKC folding and casefolding, so spacing,
+    punctuation, invisible characters and compatibility or case variants do
+    not disguise it. Homoglyphs (a Cyrillic letter standing in for a Latin
+    one) are visible text and deliberately are not chased.
     """
-    text = visible_text(value)
-    if not text:
+    if not isinstance(value, str) or not has_visible_content(value):
         return False
-    return unicodedata.normalize("NFKC", text).casefold() != NO_CITATION
+    key = "".join(
+        ch for ch in unicodedata.normalize("NFKC", value) if _is_content(ch)
+    ).casefold()
+    return key != _PLACEHOLDER_KEY
 
 
 class ScopeReason(StrEnum):
@@ -250,8 +284,6 @@ def adjudicate(
 
 
 def _region(value: object) -> str | None:
-    """A structured region key, or ``None``. Blank or whitespace is absent."""
-    if value is None:
-        return None
-    text = visible_text(value if isinstance(value, str) else str(value))
+    """A structured region key, or ``None``. No visible letter or number is absent."""
+    text = visible_text(value)
     return text or None
