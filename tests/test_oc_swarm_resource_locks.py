@@ -98,11 +98,18 @@ def paths_body(*paths, extra=""):
     return f"{extra}\nAllowed paths:\n{listing}"
 
 
-def cand(number, title, body="", lane="L5", labels=None):
+def cand(number, title, body="", lane="L5", labels=None, enforced=True):
+    # ``enforced`` mirrors the controller flag: the executor refuses writes
+    # outside the declared Allowed paths (paid lane only).
     return (
         issue(number, title, body, labels),
         lane,
-        {"number": number, "priority": number, "repair": False},
+        {
+            "number": number,
+            "priority": number,
+            "repair": False,
+            "path_relaxation_executor": enforced,
+        },
     )
 
 
@@ -277,6 +284,9 @@ def test_active_lock_without_path_data_still_blocks():
 
 def test_active_lock_built_by_held_locks_carries_paths():
     held = locks.held_locks([(issue(9, "Scheduler queue A", paths_body("app/a.py")), "L5")])
+    assert held[0].get("path_relaxation_executor") is None  # fail closed by default
+    assert run([cand(2, "Scheduler queue B", paths_body("scripts/b.py"))], active=held)[0] == []
+    held[0]["path_relaxation_executor"] = True
     assert run([cand(2, "Scheduler queue B", paths_body("scripts/b.py"))], active=held)[0] == [2]
     assert run([cand(2, "Scheduler queue B", paths_body("app/a.py"))], active=held)[0] == []
 
@@ -367,3 +377,31 @@ def test_parser_subset_agrees_with_worker_enforcement_parser():
             accepted += 1
             assert set(mine) == mod._parse_allowed_paths(body)
     assert accepted == 3
+
+
+def test_unenforced_executor_is_never_relaxed_on_either_side():
+    # provider-free / acquisition / unroutable work: disjoint declared paths do
+    # not matter because its executor does not enforce them.
+    for left, right in ((False, True), (True, False), (False, False)):
+        pair = [
+            cand(1, "Scheduler queue A", paths_body("app/a.py"), enforced=left),
+            cand(2, "Scheduler queue B", paths_body("scripts/b.py"), enforced=right),
+        ]
+        picked, suppressed, _ = run(pair)
+        assert picked == [1]
+        reason = suppressed[0]["path_checks"][0]["reason"]
+        assert reason.endswith("-executor-does-not-enforce-declared-paths")
+
+
+def test_missing_or_truthy_non_true_flag_is_not_enforced():
+    for flag in (None, 1, "yes"):
+        a = cand(1, "Scheduler queue A", paths_body("app/a.py"))
+        b = cand(2, "Scheduler queue B", paths_body("scripts/b.py"))
+        if flag is None:
+            del b[2]["path_relaxation_executor"]
+        else:
+            b[2]["path_relaxation_executor"] = flag
+        assert run([a, b])[0] == [1]
+    held = [{"issue_number": 9, "lane_id": "L5", "reads": [], "writes": ["control-plane"],
+             "source": "keyword", "paths": ["app/a.py"]}]
+    assert run([cand(2, "Scheduler queue B", paths_body("scripts/b.py"))], active=held)[0] == []

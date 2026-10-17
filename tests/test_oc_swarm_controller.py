@@ -991,3 +991,74 @@ def test_plan_records_path_disjoint_pairs_with_real_locks(monkeypatch):
     suppressed = {row["issue_number"]: row for row in plan["resource_lock_suppressed"]}
     assert 202 in suppressed
     assert suppressed[202]["path_checks"][0]["reason"].startswith("paths-overlap")
+
+
+def _path_plan(monkeypatch, provider_free_numbers=(), active=()):
+    lock_spec = importlib.util.spec_from_file_location(
+        "oc_swarm_resource_locks_real2", ROOT / "scripts" / "oc_swarm_resource_locks.py"
+    )
+    real_locks = importlib.util.module_from_spec(lock_spec)
+    lock_spec.loader.exec_module(real_locks)
+
+    class Scheduler(FakeScheduler):
+        @staticmethod
+        def build_plan(snapshot):
+            plan = FakeScheduler.build_plan(snapshot)
+            plan["ranking"] = [
+                {"number": 300, "lane_id": "L5", "priority": 0, "repair": False},
+                {"number": 301, "lane_id": "L5", "priority": 1, "repair": False},
+            ]
+            if active:
+                plan["ranking"] = plan["ranking"][1:]
+            plan["active_lanes"] =[{"number": n, "lane_id": "L5"} for n in active]
+            return plan
+
+    def loader(name, filename):
+        if filename == "oc_swarm_resource_locks.py":
+            return real_locks
+        if filename == "oc_portfolio_scheduler.py":
+            return Scheduler
+        return _loader(name, filename)
+
+    real_exec = swarm.is_lane_executable
+    monkeypatch.setattr(
+        swarm,
+        "is_lane_executable",
+        lambda issue: int(issue["number"]) in provider_free_numbers or real_exec(issue),
+    )
+    monkeypatch.setattr(swarm, "_load_sibling", loader)
+
+    def issue(number, path, state="OPEN"):
+        return {
+            "number": number,
+            "title": "Scheduler queue tweak",
+            "body": f"Allowed paths:\n- `{path}`\n",
+            "labels": ["oc-queued"],
+            "state": state,
+        }
+
+    snapshot = {"issues": [issue(300, "app/a.py"), issue(301, "scripts/b.py")]}
+    return swarm.build_swarm_plan(snapshot, worker_slots=5)
+
+
+def test_paid_pair_with_disjoint_paths_is_relaxed_in_the_plan(monkeypatch):
+    plan = _path_plan(monkeypatch)
+    assert plan["selected_numbers"] == [300, 301]
+
+
+def test_provider_free_pair_with_disjoint_paths_stays_serialized(monkeypatch):
+    plan = _path_plan(monkeypatch, provider_free_numbers=(300, 301))
+    assert plan["selected_numbers"] == [300]
+    assert plan["resource_lock_path_disjoint_allowed"] == []
+    reason = plan["resource_lock_suppressed"][0]["path_checks"][0]["reason"]
+    assert reason == "candidate-executor-does-not-enforce-declared-paths"
+
+
+def test_mixed_provider_free_and_paid_pair_stays_serialized(monkeypatch):
+    assert _path_plan(monkeypatch, provider_free_numbers=(300,))["selected_numbers"] == [300]
+    assert _path_plan(monkeypatch, provider_free_numbers=(301,))["selected_numbers"] == [300]
+
+
+def test_provider_free_worker_already_running_blocks_paid_candidate(monkeypatch):
+    plan = _path_plan(monkeypatch, provider_free_numbers=(300,), active=(300,))
+    assert 301 not in plan["selected_numbers"]

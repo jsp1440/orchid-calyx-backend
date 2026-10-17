@@ -33,20 +33,28 @@ conflict is lifted for one pair of tasks ONLY when every condition holds:
    or the lane fallback). A resource from an explicit ``OC-SWARM-READS`` /
    ``OC-SWARM-WRITES`` marker or an ``oc-resource-*`` label stays authoritative
    and is never relaxed, on either side;
-2. BOTH tasks declare exactly one well-formed ``Allowed paths:`` block
+2. BOTH tasks run on an executor that enforces the declared paths on every
+   write. The controller sets ``path_relaxation_executor`` (on the candidate's
+   ranked metadata, and on active lock records) only for governed paid-lane
+   coding work, whose executor (``swarm_anthropic_direct``) refuses any write
+   outside ``Allowed paths:``. Provider-free (``lane_executable``) workers and
+   acquisition workers do NOT enforce the declaration -- their write set is
+   verified against resource categories, not the issue's paths -- so they are
+   never relaxed. A missing or non-True flag is treated as not enforced;
+3. BOTH tasks declare exactly one well-formed ``Allowed paths:`` block
    (``parse_allowed_paths``): at most ``MAX_ALLOWED_PATHS`` entries, each a
    relative POSIX path of plain ``[A-Za-z0-9._-]`` segments, optionally ending
    in ``/``. Absolute paths, ``..``/``.``/empty segments, backslashes, glob
    characters, whitespace, bare ``/`` or ``.``, duplicated declarations and
    oversize sets make the whole set invalid. Any invalid, empty or missing set
    means no relaxation (today's behaviour);
-3. no path of one set equals, or is an ancestor or descendant of, a path of the
+4. no path of one set equals, or is an ancestor or descendant of, a path of the
    other. The test compares whole path segments (``app/a`` vs ``app/ab`` are
    disjoint, ``app/a`` vs ``app/a/b.py`` overlap) and is case-insensitive.
 
-Why this is safe: the executor (``swarm_anthropic_direct``) only lets a worker
-write files named in its ``Allowed paths:`` and the hosted scope check rejects
-anything else, so two tasks with provably disjoint declared sets cannot write
+Why this is safe: the paid-lane executor (``swarm_anthropic_direct``) only lets
+a worker write files named in its ``Allowed paths:`` and the hosted scope check
+rejects anything else, so two such tasks with provably disjoint declared sets cannot write
 the same file. The relaxation is evaluated pair-wise against every *conflicting*
 held lock, so a candidate must be disjoint from each task it conflicts with.
 Active locks that carry no path data (older records) are never relaxed.
@@ -79,6 +87,10 @@ _LIST_PATH = re.compile(
     r"^\s*[-*]\s+(?:`(?P<quoted>[^`]+)`(?:\s.*)?|(?P<bare>[\w./-]+))\s*$"
 )
 _SEGMENT = re.compile(r"^[A-Za-z0-9._-]+$")
+# Set by the controller on a claim whose executor is known to enforce the
+# declared ``Allowed paths:`` on every write. Absent or not exactly True means
+# not enforced, so the relaxation never applies (fail closed).
+EXECUTOR_FLAG = "path_relaxation_executor"
 # Claim sources whose conflicts may be lifted by path disjointness.
 _INFERRED = ("keyword", "lane")
 
@@ -247,6 +259,12 @@ def _path_check(claim: dict, held: dict, overlap: list[str]) -> dict[str, Any]:
             "relaxed": False,
             "reason": "explicit-resource-authoritative:" + ",".join(overlap),
         }
+    for who, record in (("candidate", claim), ("blocker", held)):
+        if record.get(EXECUTOR_FLAG) is not True:
+            return {
+                "relaxed": False,
+                "reason": f"{who}-executor-does-not-enforce-declared-paths",
+            }
     mine, theirs = claim.get("paths"), held.get("paths")
     if not mine:
         return {"relaxed": False, "reason": "candidate-allowed-paths-missing-or-invalid"}
@@ -315,7 +333,12 @@ def select_with_resource_locks(
             break
         claim, source = _infer(issue, lane_id)
         paths = parse_allowed_paths(str(issue.get("body") or ""))
-        full_claim = {**claim, "source": source, "paths": paths}
+        full_claim = {
+            **claim,
+            "source": source,
+            "paths": paths,
+            EXECUTOR_FLAG: public.get(EXECUTOR_FLAG) is True,
+        }
         blockers = []
         path_checks = []
         relaxed = []
